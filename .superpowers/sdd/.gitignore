@@ -1,0 +1,5 @@
+*
+!.gitignore
+!*/
+*/*
+!*/deferred-sweep.md
