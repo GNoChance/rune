@@ -68,23 +68,65 @@ const submitWith = (username: string, password: string, confirm = password) => {
   click('Créer mon compte');
 };
 
+/** Textes qui décrivent un champ (aide, erreur), via aria-describedby. */
+const description = (el: Element) =>
+  (el.getAttribute('aria-describedby') ?? '')
+    .split(' ')
+    .map((id) => document.getElementById(id)?.textContent ?? '')
+    .join(' ');
+
+/**
+ * Refus (local ou du serveur) lié au champ `label` (aria-invalid, description), focus sur le champ, pas
+ * d'alerte. Le focus suit le rendu de l'erreur (effet) : après une réponse du serveur, il est attendu.
+ */
+async function expectFieldError(label: string, message: string) {
+  const field = screen.getByLabelText(label);
+  await until(() => field.getAttribute('aria-invalid') === 'true');
+  expect(description(field)).toContain(message);
+  await waitFor(() => expect(document.activeElement).toBe(field));
+  expect(screen.queryByRole('alert')).toBeNull();
+}
+
 describe('accueil (03 §13.1, R-ARR-1)', () => {
   it('titre « Bienvenue sur Rune », porteur, rappel « pas un service médical », lien vers Confidentialité', async () => {
     await renderInvite();
     expect(screen.getByRole('heading', { level: 1, name: 'Bienvenue sur Rune' })).toBeTruthy();
     expect(document.body.textContent).toContain(WELCOME);
-    expect(screen.getByRole('link', { name: 'Confidentialité et règles' }).getAttribute('href')).toBe(
-      '/privacy',
+    // Maquette A02 : le rappel et le lien dans une carte « À propos de Rune » ; le lien annonce le nouvel onglet.
+    const about = screen.getByRole('region', { name: 'À propos de Rune' });
+    expect(about.textContent).toContain(WELCOME);
+    const privacy = within(about).getByRole('link', { name: 'Confidentialité et règles (nouvel onglet)' });
+    expect(privacy.getAttribute('href')).toBe('/privacy');
+    expect(privacy.getAttribute('target')).toBe('_blank');
+  });
+
+  it('maquette A02 : Retour vers la connexion, aide du champ du code, « Pas de code ? »', async () => {
+    await renderInvite();
+    expect(screen.getByRole('link', { name: 'Retour' }).getAttribute('href')).toBe('/login');
+    expect(description(screen.getByLabelText("Lien ou code d'invitation"))).toBe(
+      'Colle le lien reçu, ou tape les 16 caractères du code. Les tirets sont facultatifs.',
     );
+    expect(
+      screen.getByText("Pas de code ? Demande à l'administrateur le lien complet ou le code."),
+    ).toBeTruthy();
+  });
+
+  it('maquette A03 : « Crée ton compte » a aussi son Retour vers la connexion', async () => {
+    await renderInvite({ url: LINK });
+    await screen.findByRole('heading', { level: 1, name: 'Crée ton compte' });
+    expect(screen.getByRole('link', { name: 'Retour' }).getAttribute('href')).toBe('/login');
   });
 
   it("« Crée ton compte » ouvert d'emblée par un lien : le rappel reste affiché, avec un lien vers Confidentialité", async () => {
     await renderInvite({ url: LINK });
     await screen.findByLabelText('Date de naissance');
     expect(document.body.textContent).toContain(WELCOME);
-    const links = screen.getAllByRole('link', { name: 'Confidentialité et règles' });
-    expect(links.length).toBeGreaterThan(0);
-    for (const link of links) expect(link.getAttribute('href')).toBe('/privacy');
+    // Le lien de la case « J'ai lu la page… » annonce son nouvel onglet, comme celui de l'accueil (A02).
+    const link = screen.getByRole('link', { name: 'Confidentialité et règles (nouvel onglet)' });
+    expect(link.getAttribute('href')).toBe('/privacy');
+    expect(link.getAttribute('target')).toBe('_blank');
+    // La case garde son nom : c'est le lien, pas elle, qui ouvre un onglet.
+    expect(screen.getByRole('checkbox', { name: "J'ai lu la page Confidentialité et règles" })).toBeTruthy();
   });
 
   it("route /invite de l'appli, sans session", async () => {
@@ -163,7 +205,7 @@ describe("lien d'invitation dans l'appli installée (R-ARR-1, R-INV-4)", () => {
     const { api, location } = await renderForm('admin');
     api.on('POST', ACCEPT, reply(makeMe({ id: 'u-9', role: 'admin', onboardingCompletedAt: null })));
     submitWith('boss', 'abcdefghijklm');
-    expect((await screen.findByRole('alert')).textContent).toBe('14 caractères au moins.');
+    await expectFieldError('Mot de passe', '14 caractères au moins.');
     expect(callsTo(api, ACCEPT)).toHaveLength(0);
     submitWith('boss', 'abcdefghijklmn');
     await waitFor(() => expect(location()).toBe('/onboarding'));
@@ -417,24 +459,28 @@ describe('création du compte sur un appareil qui garde des données non envoyé
 describe('création du compte : contrôles locaux et erreurs du serveur (R-CPT-1, R-MDP-1 à R-MDP-3)', () => {
   const alertText = async () => (await screen.findByRole('alert')).textContent;
 
-  it('11 caractères : « 12 caractères au moins. », aucune requête', async () => {
+  it('11 caractères : « 12 caractères au moins. » sous le mot de passe (maquette A03), aucune requête', async () => {
     const { api } = await renderForm();
     submitWith('lea', 'a1b2c3d4e5f');
-    expect(await alertText()).toBe('12 caractères au moins.');
+    await expectFieldError('Mot de passe', '12 caractères au moins.');
+    // L'erreur d'abord, puis l'astuce, comme dans la maquette ; la confirmation n'est pas en cause.
+    expect(description(screen.getByLabelText('Mot de passe'))).toMatch(/^12 caractères au moins\. Astuce/);
+    expect(screen.getByLabelText('Confirmation').getAttribute('aria-invalid')).toBeNull();
     expect(callsTo(api, ACCEPT)).toHaveLength(0);
   });
 
-  it('confirmation différente', async () => {
+  it('confirmation différente : erreur sous la confirmation', async () => {
     const { api } = await renderForm();
     submitWith('lea', PHRASE, 'cheval agrafe batterie');
-    expect(await alertText()).toBe('Les deux mots de passe ne correspondent pas.');
+    await expectFieldError('Confirmation', 'Les deux mots de passe ne correspondent pas.');
+    expect(screen.getByLabelText('Mot de passe').getAttribute('aria-invalid')).toBeNull();
     expect(callsTo(api, ACCEPT)).toHaveLength(0);
   });
 
   it('mot de passe contenant le pseudo', async () => {
     const { api } = await renderForm();
     submitWith('lea', 'bonjour lea 123456');
-    expect(await alertText()).toBe(PASSWORD_MESSAGES.contains_username);
+    await expectFieldError('Mot de passe', PASSWORD_MESSAGES.contains_username);
     expect(callsTo(api, ACCEPT)).toHaveLength(0);
   });
 
@@ -444,18 +490,64 @@ describe('création du compte : contrôles locaux et erreurs du serveur (R-CPT-1
     ['Admin', USERNAME_MESSAGES.reserved],
     ['le a', USERNAME_MESSAGES.characters],
     ['léa$', USERNAME_MESSAGES.characters],
-  ])('pseudo %j refusé sans requête', async (username, message) => {
+  ])('pseudo %j refusé sans requête, erreur sous le pseudo', async (username, message) => {
     const { api } = await renderForm();
     submitWith(username, PHRASE);
-    expect(await alertText()).toBe(message);
+    await expectFieldError('Pseudo', message);
+    expect(screen.getByLabelText('Mot de passe').getAttribute('aria-invalid')).toBeNull();
     expect(callsTo(api, ACCEPT)).toHaveLength(0);
   });
 
-  it('409 username_taken : message, formulaire gardé', async () => {
+  it('erreur corrigée : le compte est créé', async () => {
+    const { api, location } = await renderForm();
+    api.on('POST', ACCEPT, reply(makeMe({ id: 'u-9', username: 'lea', onboardingCompletedAt: null })));
+    submitWith('lea', 'a1b2c3d4e5f');
+    await expectFieldError('Mot de passe', '12 caractères au moins.');
+    submitWith('lea', PHRASE);
+    await waitFor(() => expect(location()).toBe('/onboarding'));
+    expect(callsTo(api, ACCEPT)).toHaveLength(1);
+  });
+
+  it("saisie après un refus : seule l'erreur du champ repris part, sans déplacer le focus", async () => {
+    await renderForm();
+    submitWith('ab', PHRASE);
+    await expectFieldError('Pseudo', USERNAME_MESSAGES.length);
+    // Saisie dans un autre champ : l'erreur du pseudo reste, et le focus reste là où l'on tape.
+    const password = screen.getByLabelText('Mot de passe');
+    password.focus();
+    fill('Mot de passe', `${PHRASE} solide`);
+    await settle();
+    expect(screen.getByLabelText('Pseudo').getAttribute('aria-invalid')).toBe('true');
+    expect(document.activeElement).toBe(password);
+    // Le pseudo repris : son erreur part dès la saisie, avant tout nouvel envoi.
+    fill('Pseudo', 'abc');
+    expect(screen.getByLabelText('Pseudo').getAttribute('aria-invalid')).toBeNull();
+    expect(screen.queryByText(USERNAME_MESSAGES.length)).toBeNull();
+    expect(document.activeElement).toBe(password);
+  });
+
+  it('mot de passe ou confirmation repris après un refus : leur erreur part dès la saisie', async () => {
+    await renderForm();
+    submitWith('lea', PHRASE, 'cheval agrafe batterie');
+    await expectFieldError('Confirmation', 'Les deux mots de passe ne correspondent pas.');
+    fill('Confirmation', PHRASE);
+    expect(screen.getByLabelText('Confirmation').getAttribute('aria-invalid')).toBeNull();
+    expect(screen.queryByText('Les deux mots de passe ne correspondent pas.')).toBeNull();
+    submitWith('lea', 'a1b2c3d4e5f');
+    await expectFieldError('Mot de passe', '12 caractères au moins.');
+    // La confirmation reprise ne corrige pas le mot de passe : son erreur reste.
+    fill('Confirmation', 'a1b2c3d4e5f6');
+    expect(screen.getByLabelText('Mot de passe').getAttribute('aria-invalid')).toBe('true');
+    fill('Mot de passe', 'a1b2c3d4e5f6');
+    expect(screen.getByLabelText('Mot de passe').getAttribute('aria-invalid')).toBeNull();
+    expect(screen.queryByText('12 caractères au moins.')).toBeNull();
+  });
+
+  it('409 username_taken : erreur sous le pseudo (maquette A03), formulaire gardé', async () => {
     const { api } = await renderForm();
     api.on('POST', ACCEPT, reply({ error: 'username_taken' }, 409));
     submitWith('lea', PHRASE);
-    expect(await alertText()).toBe('Ce pseudo est déjà pris.');
+    await expectFieldError('Pseudo', 'Ce pseudo est déjà pris.');
     expect((screen.getByLabelText('Pseudo') as HTMLInputElement).value).toBe('lea');
     expect((screen.getByLabelText('Mot de passe') as HTMLInputElement).value).toBe(PHRASE);
     expect((screen.getByRole('button', { name: 'Créer mon compte' }) as HTMLButtonElement).disabled).toBe(
@@ -463,14 +555,22 @@ describe('création du compte : contrôles locaux et erreurs du serveur (R-CPT-1
     );
   });
 
-  it('password_rejected et username_invalid du serveur lisent le motif', async () => {
+  it('password_rejected et username_invalid du serveur : le motif sous le champ en cause', async () => {
     const { api } = await renderForm();
+    // « common » : la liste des mots de passe courants reste au serveur.
     api.on('POST', ACCEPT, reply({ error: 'password_rejected', reason: 'common' }, 400));
     submitWith('lea', PHRASE);
-    expect(await alertText()).toBe(PASSWORD_MESSAGES.common);
+    await expectFieldError('Mot de passe', PASSWORD_MESSAGES.common);
+    expect(screen.getByLabelText('Pseudo').getAttribute('aria-invalid')).toBeNull();
     api.on('POST', ACCEPT, reply({ error: 'username_invalid', reason: 'reserved' }, 400));
     click('Créer mon compte');
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe(USERNAME_MESSAGES.reserved));
+    await expectFieldError('Pseudo', USERNAME_MESSAGES.reserved);
+    expect(screen.getByLabelText('Mot de passe').getAttribute('aria-invalid')).toBeNull();
+    // Motif inconnu : le message commun, toujours sous le mot de passe.
+    api.on('POST', ACCEPT, reply({ error: 'password_rejected' }, 400));
+    click('Créer mon compte');
+    await expectFieldError('Mot de passe', 'Ce mot de passe ne convient pas.');
+    expect(callsTo(api, ACCEPT)).toHaveLength(3);
   });
 
   it("invitation utilisée entre-temps : message d'invitation", async () => {
@@ -487,6 +587,34 @@ describe('création du compte : contrôles locaux et erreurs du serveur (R-CPT-1
     expect(await alertText()).toBe('Nécessite le réseau');
     expect((screen.getByLabelText('Pseudo') as HTMLInputElement).value).toBe('lea');
   });
+
+  // Le formulaire reste affiché après un refus du serveur : une erreur locale corrigée ne doit pas y traîner.
+  // Corrigée dans son champ, ou depuis un autre (un autre pseudo, que le mot de passe ne contient plus).
+  it.each([
+    ['12 caractères au moins.', 'a1b2c3d4e5f', () => submitWith('lea', PHRASE)],
+    [
+      PASSWORD_MESSAGES.contains_username,
+      'bonjour lea 123456',
+      () => {
+        fill('Pseudo', 'max');
+        click('Créer mon compte');
+      },
+    ],
+  ] as const)(
+    'erreur « %s » corrigée puis refus du serveur : le mot de passe redevient valide, seule l’alerte reste',
+    async (message, refused, correct) => {
+      const { api } = await renderForm();
+      api.setOffline('reject');
+      submitWith('lea', refused);
+      await expectFieldError('Mot de passe', message);
+      correct();
+      expect(await alertText()).toBe('Nécessite le réseau');
+      const password = screen.getByLabelText('Mot de passe');
+      expect(password.getAttribute('aria-invalid')).toBeNull();
+      expect(description(password)).not.toContain(message);
+      expect(screen.queryByText(message)).toBeNull();
+    },
+  );
 
   it("champs nommés pour les lecteurs d'écran et les gestionnaires de mots de passe", async () => {
     await renderForm();

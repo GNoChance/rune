@@ -14,7 +14,9 @@ import { ApiError } from '../../api/client';
 import { useRepos } from '../../repos';
 import { Banner, Button, ChoiceList, ERROR_MESSAGES, Field, plural, useAction } from '../../ui';
 import { EquipmentChecklist, sortEquipment } from './EquipmentChecklist';
+import { WarningIcon } from './icons';
 import styles from './places.module.css';
+import { useSubScreenBusy } from './SubScreen';
 
 const GYM_PRESETS = PRESET_IDS.filter((id) => PRESETS[id].kind === 'gym');
 
@@ -82,6 +84,7 @@ export function GymCreate(p: {
     }
     p.onDone();
   });
+  useSubScreenBusy(create.pending);
 
   /** Nom ou ville modifiés : les salles proches sont à revoir. */
   const edit = (set: (v: string) => void) => (v: string) => {
@@ -129,14 +132,17 @@ export function GymCreate(p: {
       {p.visibility}
       {check.error ? <Banner tone="error">{check.error}</Banner> : null}
       {stage === 'info' ? (
-        <Button onClick={submitInfo} disabled={check.pending}>
+        <Button block onClick={submitInfo} disabled={check.pending}>
           Continuer
         </Button>
       ) : null}
 
       {stage === 'similar' ? (
         <section className={styles.similar}>
-          <p>Ces salles existent peut-être déjà :</p>
+          <p className={styles.similarIntro}>
+            <WarningIcon />
+            Ces salles existent peut-être déjà :
+          </p>
           <ul className={styles.similarList}>
             {similar.map((g) => (
               <li key={g.id} className={styles.similarItem}>
@@ -151,7 +157,7 @@ export function GymCreate(p: {
               </li>
             ))}
           </ul>
-          <Button variant="secondary" onClick={() => setStage('equipment')}>
+          <Button variant="secondary" block onClick={() => setStage('equipment')}>
             Non, créer ma salle
           </Button>
         </section>
@@ -183,7 +189,7 @@ export function GymCreate(p: {
             </Banner>
           ) : null}
           {create.error ? <Banner tone="error">{create.error}</Banner> : null}
-          <Button onClick={() => void create.run()} disabled={preset === null || create.pending}>
+          <Button block onClick={() => void create.run()} disabled={preset === null || create.pending}>
             Créer la salle
           </Button>
         </>

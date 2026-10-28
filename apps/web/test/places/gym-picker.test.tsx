@@ -11,7 +11,8 @@ import { EquipmentChecklist, sortEquipment } from '../../src/features/places/Equ
 import { GymPicker } from '../../src/features/places/GymPicker';
 import { settle } from '../support/auth';
 import { createFakeApi, type FakeApi } from '../support/fake-api';
-import { button, checkbox, choose, radio } from '../support/onboarding';
+import { createTestLocalDb } from '../support/local-db';
+import { button, checkbox, choose, radio, seedPrimaryGym } from '../support/onboarding';
 import { renderWithServices } from '../support/render';
 import { until } from '../support/wait';
 
@@ -99,7 +100,9 @@ describe('GymCreate (R-SAL-2, R-SAL-3)', () => {
       .on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
     const { onDone } = await renderPicker({ api });
     startCreate('Basic-Fit', 'Lyon');
-    await screen.findByText('Ces salles existent peut-être déjà :');
+    const intro = await screen.findByText('Ces salles existent peut-être déjà :');
+    // Avertissement de la maquette D04 : icône triangle (décorative) puis texte.
+    expect(intro.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
     expect(gets(api, '/api/gyms/similar')).toEqual(['name=Basic-Fit&city=Lyon']);
     expect(screen.getByRole('button', { name: 'Non, créer ma salle' })).toBeTruthy();
     fireEvent.click(button("C'est ma salle"));
@@ -196,6 +199,58 @@ describe('GymPicker : recherche en échec et annonces (R-SAL-1)', () => {
     await screen.findByRole('radio', { name: BASIC_FIT_LABEL });
     expect(screen.queryByRole('alert')).toBeNull();
     expect(gets(api, '/api/gyms')).toEqual(['q=', 'q=']);
+  });
+
+  it('« Effacer la recherche » vide le champ, relance la recherche et rend le focus au champ', async () => {
+    const { api } = await renderPicker();
+    const search = screen.getByLabelText('Rechercher une salle') as HTMLInputElement;
+    expect(screen.queryByRole('button', { name: 'Effacer la recherche' })).toBeNull();
+    fireEvent.change(search, { target: { value: 'bas' } });
+    await until(() => gets(api, '/api/gyms').includes('q=bas'));
+    fireEvent.click(button('Effacer la recherche'));
+    expect(search.value).toBe('');
+    expect(document.activeElement).toBe(search);
+    await until(() => gets(api, '/api/gyms').filter((q) => q === 'q=').length === 2);
+  });
+
+  it('salle déjà parmi mes lieux : désactivée, « Déjà dans tes lieux »', async () => {
+    const db = createTestLocalDb();
+    await seedPrimaryGym(db);
+    const api = createFakeApi().on('GET', '/api/gyms', {
+      status: 200,
+      body: [BASIC_FIT, { id: 'g-2', name: 'Fitness Park', city: 'Lyon', visibleMemberCount: 0 }],
+    });
+    await renderWithServices(<GymPicker isPrimary={false} defaultVisible onDone={() => {}} />, { api, db });
+    const owned = await screen.findByRole('radio', { name: BASIC_FIT_LABEL });
+    await until(() => (owned as HTMLInputElement).disabled);
+    const reason = screen.getByText('Déjà dans tes lieux');
+    expect(owned.getAttribute('aria-describedby')?.split(' ')).toContain(reason.id);
+    expect(radio('Fitness Park · Lyon · 0 membre visible').disabled).toBe(false);
+  });
+
+  it('recherche qui trouve une salle à choisir : « Ta salle existe peut-être déjà », pas pour la sienne seule', async () => {
+    const db = createTestLocalDb();
+    await seedPrimaryGym(db);
+    const api = createFakeApi().on('GET', '/api/gyms', { status: 200, body: [BASIC_FIT] });
+    await renderWithServices(<GymPicker isPrimary={false} defaultVisible onDone={() => {}} />, { api, db });
+    await screen.findByRole('radio', { name: BASIC_FIT_LABEL });
+    expect(screen.queryByRole('note')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Rechercher une salle'), { target: { value: 'basic' } });
+    await until(() => gets(api, '/api/gyms').includes('q=basic'));
+    await settle();
+    // Seule trouvée, la salle déjà parmi les lieux : rien à choisir, pas d'avertissement.
+    expect(screen.queryByRole('note')).toBeNull();
+    api.on('GET', '/api/gyms', {
+      status: 200,
+      body: [BASIC_FIT, { id: 'g-2', name: 'Basic Fit 2', city: 'Lyon', visibleMemberCount: 0 }],
+    });
+    fireEvent.change(screen.getByLabelText('Rechercher une salle'), { target: { value: 'basic f' } });
+    const note = await screen.findByRole('note');
+    expect(note.textContent).toBe(
+      "Ta salle existe peut-être déjà : choisis-la plutôt que d'en créer une en double.",
+    );
+    // Maquette D04 : icône triangle (décorative) avant le texte.
+    expect(note.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
   });
 
   it('nombre de salles trouvées et « Aucune salle trouvée. » dans une zone annoncée (role status)', async () => {

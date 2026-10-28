@@ -1378,21 +1378,31 @@ describe('fiches des proches et recette : revue de la tâche 45', () => {
   });
 
   it("P6 : libellés de l'écran Membres et règle du dernier administrateur actif (R-ROLE-2)", () => {
-    const members = read('apps/web/src/features/admin/MembersPage.tsx');
-    expect(members).toContain("act('delete', 'Supprimer', true)");
-    expect(members).toContain('confirmLabel="Supprimer définitivement"');
+    // Écran refait (spec refonte §10.5) : la carte ouvre la feuille « Actions pour <pseudo> », qui range
+    // « Désactiver » et « Supprimer le compte » dans « Actions sensibles » ; la suppression se confirme ensuite.
+    // Seuls les libellés visibles que cite P6 sont cherchés, pas la syntaxe JSX qui les porte : l'écran lui-même
+    // (noms, ordre, groupe placé en dernier) est vérifié par apps/web/test/admin/members.test.tsx.
+    expect(read('apps/web/src/features/admin/MemberCard.tsx')).toContain('Actions pour ');
+    const sheet = read('apps/web/src/features/admin/MemberSheet.tsx');
+    for (const label of ['Actions sensibles', 'Désactiver', 'Supprimer le compte']) {
+      expect(sheet).toContain(label);
+    }
+    expect(read('apps/web/src/features/admin/MemberDialogs.tsx')).toContain('Supprimer définitivement');
     const lastAdmin = 'Il doit rester au moins un administrateur actif.';
     expect(read('apps/web/src/ui/errors.ts')).toContain(lastAdmin);
     const leave = section(p[6] as string, 'Retirer un proche');
     for (const needle of [
-      '« Supprimer »',
+      '« Actions pour <pseudo> »',
+      '« Désactiver »',
+      '« Actions sensibles »',
+      '« Supprimer le compte »',
       '« Supprimer définitivement »',
       lastAdmin,
       'dernier administrateur actif',
     ]) {
       expect(leave).toContain(needle);
     }
-    expect(leave).not.toContain('« Supprimer le compte »');
+    expect(leave).not.toContain('« Supprimer »');
   });
 
   it("recette-telephones : téléphones des proches, données fictives, chaque build avec son contenu, base vidée d'abord", () => {
