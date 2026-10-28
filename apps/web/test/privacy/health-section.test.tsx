@@ -1,8 +1,13 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { HEALTH_CONSENT_TEXT, HEALTH_QUESTIONNAIRE, type MeResponse } from '@rune/contracts';
 import { fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import privacyStyles from '../../src/features/privacy/privacy.module.css';
 import type { AppDb } from '../../src/local-db/db';
+import uiStyles from '../../src/ui/ui.module.css';
 import { settle } from '../support/auth';
+import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
 import { createFakeApi, type FakeApi } from '../support/fake-api';
 import { createTestLocalDb } from '../support/local-db';
 import { button, seedProfile, serveProfile } from '../support/onboarding';
@@ -121,6 +126,117 @@ describe('HealthSection sans accord (E7, P-CST-1, P-CST-2)', () => {
     expect(button('Enregistrer mes réponses')).toBeTruthy();
     expect(screen.getByRole('heading', { level: 2, name: 'Limitations' })).toBeTruthy();
     expect(screen.queryByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Mode prudent' })).toBeNull();
+  });
+
+  it('sous l’auto-vérification, la ligne « Mode prudent » mène à Mon profil, où se règle l’interrupteur (E7.4)', async () => {
+    const { location } = await renderHealth({ me: makeMe() });
+    const link = within(section(SCREENING_TITLE)).getByRole('link', {
+      name: 'Mode prudent',
+      description: 'Dans Mon profil',
+    });
+    expect(link.getAttribute('href')).toBe('/profile/edit');
+    const selfCheck = screen.getByText(SELF_CHECK);
+    expect(selfCheck.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // L'interrupteur reste dans Mon profil seulement (spec refonte §10.4).
+    expect(screen.queryByRole('switch', { name: CAUTIOUS })).toBeNull();
+    fireEvent.click(link);
+    await screen.findByRole('heading', { level: 1, name: 'Mon profil' });
+    expect(location()).toBe('/profile/edit');
+  });
+});
+
+describe('HealthSection › limitations ouvertes depuis une ligne (spec refonte §10.4, maquette C04)', () => {
+  const LIMITATIONS_PATH = '/api/me/limitations';
+  const ADD = 'Ajouter une limitation';
+  const addForm = () => within(screen.getByRole('form', { name: ADD }));
+  const addFormClosed = () => screen.queryByRole('form', { name: ADD }) === null;
+  const privacyCss = parseCssBlocks(
+    readFileSync(resolve(import.meta.dirname, '../../src/features/privacy/privacy.module.css'), 'utf8'),
+  );
+  /** Classe générée d'un module CSS ; son absence est une erreur, jamais un « undefined » qui passerait. */
+  const cls = (styles: Record<string, string>, name: string): string => {
+    const generated = styles[name];
+    if (!generated) throw new Error(`classe .${name} absente`);
+    return generated;
+  };
+
+  it('titre et « Facultatif », « Modifier » et « Supprimer » décrits par la limitation, aucun champ avant la ligne', async () => {
+    await renderHealth();
+    await screen.findByText(LIMITATION);
+    const limitations = within(section('Limitations'));
+    expect(limitations.getByText(/^Facultatif : une zone sensible ou une gêne à ménager/)).toBeTruthy();
+    const edit = limitations.getByRole('button', { name: 'Modifier', description: LIMITATION });
+    const remove = limitations.getByRole('button', { name: 'Supprimer', description: LIMITATION });
+    expect(limitations.getByRole('button', { name: ADD })).toBeTruthy();
+    expect(screen.queryByLabelText('Zone')).toBeNull();
+    expect(addFormClosed()).toBe(true);
+    // Maquette C04 : titre de section comme les autres, boutons d'icône de 44 × 44.
+    const title = screen.getByRole('heading', { level: 2, name: 'Limitations' });
+    expect(title.classList.contains(cls(privacyStyles, 'sectionTitle'))).toBe(true);
+    for (const b of [edit, remove]) expect(b.classList.contains(cls(privacyStyles, 'iconButton'))).toBe(true);
+    const size = declarationsOf(privacyCss, '.iconButton');
+    expect([size?.get('width'), size?.get('height')]).toEqual(['44px', '44px']);
+  });
+
+  it('la ligne ouvre le formulaire (Zone focalisée) ; « Ajouter » → POST, il se referme et le focus revient à la ligne', async () => {
+    const api = createFakeApi();
+    const { db } = await renderHealth({ api });
+    let body: unknown;
+    api.on('POST', LIMITATIONS_PATH, async (req) => {
+      body = req.body;
+      await seedMirror(db, 'limitation', [shoulder({ note: 'port de charges' })]);
+      return { status: 201, body: { id: 'l-2' } };
+    });
+    await screen.findByText(LIMITATION);
+    fireEvent.click(button(ADD));
+    await until(() => document.activeElement === addForm().getByLabelText('Zone'));
+    expect(screen.queryByRole('button', { name: ADD })).toBeNull();
+    const submit = addForm().getByRole('button', { name: 'Ajouter' }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    // Boutons pleine largeur sur téléphone (spec refonte §6).
+    for (const b of [submit, addForm().getByRole('button', { name: 'Annuler' })]) {
+      expect(b.classList.contains(cls(uiStyles, 'block'))).toBe(true);
+    }
+    fireEvent.change(addForm().getByLabelText('Zone'), { target: { value: 'shoulder' } });
+    fireEvent.change(addForm().getByLabelText('Côté'), { target: { value: 'right' } });
+    fireEvent.click(addForm().getByRole('radio', { name: 'Légère' }));
+    fireEvent.change(addForm().getByLabelText('Note'), { target: { value: ' port de charges ' } });
+    fireEvent.click(submit);
+    await until(addFormClosed);
+    expect(body).toEqual({ bodyArea: 'shoulder', side: 'right', severity: 'mild', note: 'port de charges' });
+    expect(await screen.findByText(SHOULDER)).toBeTruthy();
+    await until(() => document.activeElement === button(ADD));
+    expect(screen.queryByLabelText('Zone')).toBeNull();
+  });
+
+  it('« Annuler » referme sans requête, le focus revient à la ligne, et la saisie repart de zéro', async () => {
+    const { api } = await renderHealth();
+    await screen.findByText(LIMITATION);
+    fireEvent.click(button(ADD));
+    fireEvent.change(addForm().getByLabelText('Zone'), { target: { value: 'knee' } });
+    fireEvent.click(addForm().getByRole('button', { name: 'Annuler' }));
+    await until(addFormClosed);
+    await until(() => document.activeElement === button(ADD));
+    expect(sent(api, 'POST', LIMITATIONS_PATH)).toEqual([]);
+    fireEvent.click(button(ADD));
+    expect((addForm().getByLabelText('Zone') as HTMLSelectElement).value).toBe('');
+  });
+
+  it('refus du serveur (403) : l’erreur dans le formulaire, qui reste ouvert avec la saisie', async () => {
+    const api = createFakeApi().on('POST', LIMITATIONS_PATH, {
+      status: 403,
+      body: { error: 'health_consent_required' },
+    });
+    await renderHealth({ api });
+    await screen.findByText(LIMITATION);
+    fireEvent.click(button(ADD));
+    fireEvent.change(addForm().getByLabelText('Zone'), { target: { value: 'shoulder' } });
+    fireEvent.change(addForm().getByLabelText('Côté'), { target: { value: 'right' } });
+    fireEvent.click(addForm().getByRole('radio', { name: SEVERE }));
+    fireEvent.click(addForm().getByRole('button', { name: 'Ajouter' }));
+    expect((await addForm().findByRole('alert')).textContent).toBe('Cette action demande ton accord santé.');
+    expect((addForm().getByLabelText('Zone') as HTMLSelectElement).value).toBe('shoulder');
   });
 });
 
@@ -278,20 +394,59 @@ describe('HealthSection avec accord (E7, P-DRT-2)', () => {
   });
 });
 
-describe('HealthSection › mode prudent (E7.5, R-CST-7)', () => {
-  it('CautiousModeToggle → PATCH /api/me/training-profile { cautiousMode: false }', async () => {
-    const t = await renderHealth({ cautiousMode: true });
-    const toggle = (await screen.findByRole('switch', { name: CAUTIOUS })) as HTMLInputElement;
-    await until(() => toggle.checked);
-    fireEvent.click(toggle);
-    await until(() => t.patches.length === 1);
-    expect(t.patches).toEqual([{ cautiousMode: false }]);
+describe('HealthSection › accord, mode prudent et retrait (spec refonte §10.4, maquette C04)', () => {
+  const WITHDRAW_LIST =
+    "Seront effacés : ton indicateur de prudence (questionnaire), tes limitations et zones sensibles, et toute donnée de santé enregistrée par l'appli (douleurs, pesées, suivi nutritionnel). Le mode prudent est conservé.";
+
+  it('accord donné : sa date et « Actif » en tête de page', async () => {
+    await renderHealth();
+    const consent = screen.getByText('Accord santé').closest('li');
+    if (!consent) throw new Error('aucune ligne Accord santé');
+    expect(within(consent).getByText('Donné le 01/10/2026')).toBeTruthy();
+    expect(within(consent).getByText('Actif')).toBeTruthy();
+    // En tête : avant le questionnaire d'alerte, première section de la page.
+    const screening = await screen.findByRole('heading', { level: 2, name: SCREENING_TITLE });
+    expect(consent.compareDocumentPosition(screening) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('mineur : interrupteur imposé et désactivé', async () => {
-    await renderHealth({ me: consented({ ageBand: 'minor', birthDate: '2009-01-01' }), cautiousMode: false });
-    const toggle = (await screen.findByRole('switch', { name: CAUTIOUS })) as HTMLInputElement;
-    expect(toggle.disabled).toBe(true);
-    expect(toggle.checked).toBe(true);
+  it('le mode prudent est dans Mon profil seulement, pas dans Santé', async () => {
+    await renderHealth({ cautiousMode: true });
+    await screen.findByText(LIMITATION);
+    // Le profil lu (l'ancienne section du mode prudent l'attendait) avant de conclure à l'absence.
+    await settle();
+    expect(screen.queryByRole('switch', { name: CAUTIOUS })).toBeNull();
+    expect(screen.queryByRole('heading', { level: 2, name: 'Mode prudent' })).toBeNull();
+  });
+
+  it("« Retirer l'accord santé » : ce qui sera effacé et le bouton danger, isolés en bas de page", async () => {
+    await renderHealth();
+    const withdraw = within(section("Retirer l'accord santé"));
+    expect(withdraw.getByText(WITHDRAW_LIST)).toBeTruthy();
+    const confirm = withdraw.getByRole('button', { name: 'Retirer mon accord santé' });
+    const controls = within(screen.getByRole('main')).getAllByRole('button');
+    expect(controls.at(-1)).toBe(confirm);
+    // L'avertissement santé reste au-dessus, mot pour mot.
+    const warning = screen.getByText(/Rune ne remplace pas un avis médical/);
+    expect(warning.compareDocumentPosition(confirm) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("le retrait ouvre le dialogue « Retirer l'accord santé » avec le mot de passe", async () => {
+    await renderHealth();
+    fireEvent.click(button('Retirer mon accord santé'));
+    const dialog = within(await screen.findByRole('dialog', { name: "Retirer l'accord santé" }));
+    expect(dialog.getByLabelText('Mot de passe')).toBeTruthy();
+  });
+
+  it('sans accord : ni retrait ni renvoi vers Confidentialité', async () => {
+    await renderHealth({ me: makeMe() });
+    expect(screen.queryByRole('heading', { level: 2, name: "Retirer l'accord santé" })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retirer mon accord santé' })).toBeNull();
+    expect(screen.queryByText(/se retire dans/)).toBeNull();
+  });
+
+  it('avec accord : plus de renvoi « se retire dans Confidentialité »', async () => {
+    await renderHealth();
+    expect(screen.queryByText(/se retire dans/)).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Confidentialité' })).toBeNull();
   });
 });

@@ -24,26 +24,38 @@ afterEach(() => {
   openUrl('/');
 });
 
-describe('LogoutDialog (R-AUTH-9, R-SYN-14)', () => {
-  async function renderDialog(mode: 'current' | 'all', pending: number, open = true) {
+describe('LogoutDialog (R-AUTH-9, R-SYN-14, spec refonte §10.4)', () => {
+  async function renderDialog(pending: number, o: { open?: boolean; currentOnly?: boolean } = {}) {
     const db = createTestLocalDb();
     if (pending > 0) await seedOutbox(db, 'u-1', pending);
     const api = createFakeApi()
       .on('POST', '/api/auth/logout', reply(undefined, 204))
       .on('POST', '/api/auth/logout-all', reply(undefined, 204));
     const onClose = vi.fn();
-    const view = await renderWithServices(<LogoutDialog mode={mode} open={open} onClose={onClose} />, {
-      me: lea,
-      api,
-      db,
-      path: '/profile',
-    });
+    const view = await renderWithServices(
+      <LogoutDialog open={o.open ?? true} currentOnly={o.currentOnly} onClose={onClose} />,
+      { me: lea, api, db, path: '/profile' },
+    );
     return { ...view, api, db, onClose };
   }
+  const CURRENT_TEXT = 'Les données de cet appareil seront effacées. Tu les retrouveras en te reconnectant.';
+  const ALL_TEXT = 'Toutes tes sessions seront fermées, sur tous tes appareils, y compris celui-ci.';
+
+  it('une feuille « Se déconnecter » : « Cet appareil » choisi, « Tous mes appareils » proposé', async () => {
+    await renderDialog(0);
+    const dialog = within(await screen.findByRole('dialog', { name: 'Se déconnecter' }));
+    expect((dialog.getByRole('radio', { name: 'Cet appareil' }) as HTMLInputElement).checked).toBe(true);
+    expect((dialog.getByRole('radio', { name: 'Tous mes appareils' }) as HTMLInputElement).checked).toBe(
+      false,
+    );
+    expect(dialog.getByText(CURRENT_TEXT)).toBeTruthy();
+    expect(dialog.getByText(ALL_TEXT)).toBeTruthy();
+  });
 
   it('avec 3 éléments en attente : avertissement, export, Annuler, « Se déconnecter quand même »', async () => {
-    const { api, db, onClose } = await renderDialog('current', 3);
-    const dialog = await screen.findByRole('dialog');
+    const { api, db, onClose } = await renderDialog(3);
+    const dialog = await screen.findByRole('dialog', { name: 'Se déconnecter' });
+    expect(dialog.textContent).toContain('Données non envoyées');
     expect(dialog.textContent).toContain(pendingWarning(3, 'lea'));
     const exportLink = within(dialog).getByRole('link', { name: 'Exporter mes données' });
     expect(exportLink.getAttribute('href')).toBe('/profile/privacy');
@@ -54,8 +66,33 @@ describe('LogoutDialog (R-AUTH-9, R-SYN-14)', () => {
     expect(await db.outbox.count()).toBe(3);
   });
 
+  it('avec des éléments en attente : la feuille et « Se déconnecter quand même » sont décrits par l’avertissement (maquette C06)', async () => {
+    await renderDialog(2);
+    const warning = `Données non envoyées ${pendingWarning(2, 'lea')}.`;
+    // Le lecteur d'écran l'annonce à l'ouverture, avec le nom de la feuille, et sur le bouton qui efface.
+    const dialog = await screen.findByRole('dialog', { name: 'Se déconnecter', description: warning });
+    const confirm = within(dialog).getByRole('button', { name: 'Se déconnecter quand même' });
+    expect(within(dialog).getByRole('button', { description: warning })).toBe(confirm);
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Tous mes appareils' }));
+    expect(screen.getByRole('dialog', { name: 'Se déconnecter', description: warning })).toBe(dialog);
+  });
+
+  it('cet appareil seulement, avec un élément en attente : la feuille est décrite par l’avertissement', async () => {
+    await renderDialog(1, { currentOnly: true });
+    const warning = `Données non envoyées ${pendingWarning(1, 'lea')}.`;
+    expect(await screen.findByRole('dialog', { name: 'Se déconnecter', description: warning })).toBeTruthy();
+  });
+
+  it('sans élément en attente : ni la feuille ni « Se déconnecter » ne sont décrits', async () => {
+    await renderDialog(0);
+    const dialog = await screen.findByRole('dialog', { name: 'Se déconnecter' });
+    expect(dialog.hasAttribute('aria-describedby')).toBe(false);
+    const confirm = within(dialog).getByRole('button', { name: 'Se déconnecter' });
+    expect(confirm.hasAttribute('aria-describedby')).toBe(false);
+  });
+
   it('confirmation : POST /api/auth/logout {}, file vidée, profil local effacé, écran de connexion', async () => {
-    const { api, db, location } = await renderDialog('current', 3);
+    const { api, db, location } = await renderDialog(3);
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Se déconnecter quand même' }));
     await waitFor(() => expect(location()).toBe('/login'));
@@ -66,9 +103,9 @@ describe('LogoutDialog (R-AUTH-9, R-SYN-14)', () => {
     expect(await getMeta(db, 'userId')).toBeUndefined();
   });
 
-  it('sans élément en attente : « Se déconnecter de cet appareil ? » et « Se déconnecter »', async () => {
-    const { api, location } = await renderDialog('current', 0);
-    const dialog = await screen.findByRole('dialog', { name: 'Se déconnecter de cet appareil ?' });
+  it('sans élément en attente : pas d’avertissement, « Se déconnecter »', async () => {
+    const { api, location } = await renderDialog(0);
+    const dialog = await screen.findByRole('dialog', { name: 'Se déconnecter' });
     expect(within(dialog).queryByRole('link', { name: 'Exporter mes données' })).toBeNull();
     expect(dialog.textContent).not.toContain('non envoy');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Se déconnecter' }));
@@ -76,25 +113,39 @@ describe('LogoutDialog (R-AUTH-9, R-SYN-14)', () => {
     expect(callsTo(api, '/api/auth/logout')).toHaveLength(1);
   });
 
-  it('mode « all » : POST /api/auth/logout-all', async () => {
-    const { api, location } = await renderDialog('all', 0);
-    const dialog = await screen.findByRole('dialog', { name: 'Déconnecter tous les appareils ?' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Déconnecter tous les appareils' }));
+  it('« Tous mes appareils » : « Déconnecter tous les appareils » → POST /api/auth/logout-all', async () => {
+    const { api, location } = await renderDialog(0);
+    const dialog = within(await screen.findByRole('dialog', { name: 'Se déconnecter' }));
+    fireEvent.click(dialog.getByRole('radio', { name: 'Tous mes appareils' }));
+    expect(dialog.queryByRole('button', { name: 'Se déconnecter' })).toBeNull();
+    fireEvent.click(dialog.getByRole('button', { name: 'Déconnecter tous les appareils' }));
     await waitFor(() => expect(location()).toBe('/login'));
     expect(callsTo(api, '/api/auth/logout-all')).toHaveLength(1);
     expect(callsTo(api, '/api/auth/logout')).toHaveLength(0);
   });
 
-  it('mode « all » avec des éléments en attente : même avertissement', async () => {
-    const { api } = await renderDialog('all', 1);
+  it('« Tous mes appareils » avec des éléments en attente : même avertissement', async () => {
+    const { api } = await renderDialog(1);
     const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Tous mes appareils' }));
     expect(dialog.textContent).toContain(pendingWarning(1, 'lea'));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Se déconnecter quand même' }));
     await waitFor(() => expect(callsTo(api, '/api/auth/logout-all')).toHaveLength(1));
   });
 
+  it('cet appareil seulement (mot de passe à changer) : pas de choix, POST /api/auth/logout', async () => {
+    const { api, location } = await renderDialog(0, { currentOnly: true });
+    const dialog = within(await screen.findByRole('dialog', { name: 'Se déconnecter' }));
+    expect(dialog.queryByRole('radio')).toBeNull();
+    expect(dialog.queryByText(ALL_TEXT)).toBeNull();
+    expect(dialog.getByText(CURRENT_TEXT)).toBeTruthy();
+    fireEvent.click(dialog.getByRole('button', { name: 'Se déconnecter' }));
+    await waitFor(() => expect(location()).toBe('/login'));
+    expect(callsTo(api, '/api/auth/logout')).toHaveLength(1);
+  });
+
   it('hors ligne : « Nécessite le réseau », file et profil intacts, dialogue ouvert', async () => {
-    const { api, db, location } = await renderDialog('current', 3);
+    const { api, db, location } = await renderDialog(3);
     api.setOffline('reject');
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Se déconnecter quand même' }));
@@ -110,17 +161,16 @@ describe('LogoutDialog (R-AUTH-9, R-SYN-14)', () => {
     await seedOutbox(db, 'u-1', 2);
     await renderWithServices(
       <>
-        <LogoutDialog mode="current" open={false} onClose={() => {}} />
-        <LogoutDialog mode="all" open onClose={() => {}} />
+        <LogoutDialog open={false} onClose={() => {}} />
+        <LogoutDialog open currentOnly onClose={() => {}} />
       </>,
       { me: lea, db, path: '/profile' },
     );
     // Le dialogue ouvert a lu la base ; le fermé, monté avant lui, l'aurait lue aussi.
     await screen.findAllByRole('dialog');
     await settle();
-    expect(screen.getAllByRole('dialog').map((d) => d.textContent)).toEqual([
-      expect.stringContaining('Toutes tes sessions seront fermées'),
-    ]);
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.queryByRole('radio')).toBeNull();
   });
 
   /** Dialogue ouvert par le bouton « Ouvrir », fermé par ses propres actions. */
@@ -131,15 +181,18 @@ describe('LogoutDialog (R-AUTH-9, R-SYN-14)', () => {
         <button type="button" onClick={() => setOpen(true)}>
           Ouvrir
         </button>
-        <LogoutDialog mode="current" open={open} onClose={() => setOpen(false)} />
+        <LogoutDialog open={open} onClose={() => setOpen(false)} />
       </>
     );
   }
 
-  async function renderHarness(logout: FakeReply | (() => Promise<FakeReply>)) {
+  async function renderHarness(logout: FakeReply | (() => Promise<FakeReply>), o: { pending?: number } = {}) {
     const db = createTestLocalDb();
-    await seedOutbox(db, 'u-1', 2);
-    const api = createFakeApi().on('POST', '/api/auth/logout', logout);
+    const pending = o.pending ?? 2;
+    if (pending > 0) await seedOutbox(db, 'u-1', pending);
+    const api = createFakeApi()
+      .on('POST', '/api/auth/logout', logout)
+      .on('POST', '/api/auth/logout-all', reply(undefined, 204));
     const view = await renderWithServices(<Harness />, { me: lea, api, db, path: '/profile' });
     return { ...view, api, db };
   }
@@ -166,6 +219,27 @@ describe('LogoutDialog (R-AUTH-9, R-SYN-14)', () => {
     expect((within(dialog).getByRole('button', { name: 'Annuler' }) as HTMLButtonElement).disabled).toBe(
       false,
     );
+  });
+
+  it('« Tous mes appareils », Annuler, réouverture : la feuille repart de « Cet appareil »', async () => {
+    const { api, location } = await renderHarness(reply(undefined, 204), { pending: 0 });
+    let dialog = within(await screen.findByRole('dialog', { name: 'Se déconnecter' }));
+    fireEvent.click(dialog.getByRole('radio', { name: 'Tous mes appareils' }));
+    expect(dialog.getByRole('button', { name: 'Déconnecter tous les appareils' })).toBeTruthy();
+    fireEvent.click(dialog.getByRole('button', { name: 'Annuler' }));
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    click('Ouvrir');
+    dialog = within(await screen.findByRole('dialog', { name: 'Se déconnecter' }));
+    expect((dialog.getByRole('radio', { name: 'Cet appareil' }) as HTMLInputElement).checked).toBe(true);
+    expect((dialog.getByRole('radio', { name: 'Tous mes appareils' }) as HTMLInputElement).checked).toBe(
+      false,
+    );
+    expect(dialog.queryByRole('button', { name: 'Déconnecter tous les appareils' })).toBeNull();
+    fireEvent.click(dialog.getByRole('button', { name: 'Se déconnecter' }));
+    await waitFor(() => expect(location()).toBe('/login'));
+    expect(callsTo(api, '/api/auth/logout')).toHaveLength(1);
+    expect(callsTo(api, '/api/auth/logout-all')).toHaveLength(0);
   });
 
   it('Échap pendant la déconnexion : le dialogue reste ouvert, puis la déconnexion aboutit', async () => {

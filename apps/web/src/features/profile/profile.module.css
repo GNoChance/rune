@@ -1,14 +1,97 @@
+/*
+ * Espace Profil (spec refonte §5 et §10.4) : hub (maquette C01) et Mon profil (maquette C02). Couleurs, rayons
+ * et polices pris dans les jetons ; les lignes et leurs cartes viennent de la boîte à outils (ListGroup).
+ */
+
+/* ---------- Hub ---------- */
+
+/* Les blocs du hub entrent en cascade (classe commune .stagger) ; 12 px entre eux comme dans la maquette. */
+.hub,
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Carte du compte : initiale dans un rond cerclé d'accent, pseudo en Chakra Petch, rôle, rang. */
+.account {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: var(--space-3) 14px;
+  border-radius: calc(var(--radius-card) + 2px);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.initial {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.username {
+  max-width: 100%;
+  font-family: var(--font-title);
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+/* L'avatar du coach remplit la tuile d'icône de sa ligne (36 px), au lieu d'une icône de 20 px. */
+span.coachIcon {
+  display: block;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  overflow: hidden;
+}
+
+span.coachIcon svg {
+  width: 36px;
+  height: 36px;
+}
+
+/* ---------- Mon profil ---------- */
+
 .section,
 .form,
 .editor {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
-.section h2 {
+.section + .section {
+  margin-top: var(--space-1);
+}
+
+/* Titre de section (GUIDE : Chakra Petch 17, 700). */
+.sectionTitle {
   margin: 0;
-  font-size: 1.25rem;
+  font-family: var(--font-title);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .editor h2 {
@@ -16,65 +99,181 @@
   font-size: 1.125rem;
 }
 
-.form > button {
-  align-self: flex-start;
+.form {
+  gap: var(--space-4);
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.summary {
-  margin: 0;
-  display: grid;
-  gap: var(--space-2);
-}
-
-.summary div {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-}
-
-.summary dt {
-  flex-basis: 100%;
-  font-size: 0.875rem;
-  color: var(--color-muted);
-}
-
-.summary dd {
-  margin: 0;
-  font-weight: 600;
-}
-
-.summary dd:last-child {
-  margin-left: auto;
-}
-
-.links {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+/* Téléphone : boutons empilés en pleine largeur (étirés par la colonne) ; écran large : côte à côte. */
+.formActions {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 10px;
 }
 
-.links a {
+/* Valeur sur deux lignes : la date en gras, puis la raison de la lecture seule en petit (maquette C02). */
+.lines > span {
+  display: block;
+}
+
+.lines > span + span {
+  margin-top: 2px;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+.lock {
+  display: flex;
+  color: var(--text-muted);
+}
+
+span.lock svg {
+  width: 18px;
+  height: 18px;
+}
+
+/*
+ * Mode prudent : une carte avec son icône, le libellé et sa note en colonne, l'interrupteur à droite, le tout
+ * centré (maquette C02).
+ */
+.cautious {
   display: flex;
   align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 14px var(--space-3) var(--space-3);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+/*
+ * Colonne du texte (le bloc de la case de l'onboarding) : l'interrupteur en sort pour se placer à droite, centré
+ * sur le libellé et ses notes ; la colonne lui garde sa place (52 px de cible et 14 px d'écart, comme le
+ * `Switch` de la boîte à outils) : la note ne passe pas dessous.
+ */
+.cautious > :last-child {
+  position: relative;
+  flex: 1;
+  min-width: 0;
   min-height: 44px;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-surface);
+  justify-content: center;
+  padding-inline-end: calc(52px + 14px);
+}
+
+.cautiousIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--accent);
+}
+
+/*
+ * La case du mode prudent (celle de l'onboarding, `role="switch"`) prend ici l'allure de l'interrupteur de la
+ * boîte à outils (maquette C02) : libellé en gras au-dessus de sa note ; le libellé reste une cible.
+ */
+.cautious label:has(> input[role="switch"]) {
+  min-height: 0;
   font-weight: 600;
-  text-decoration: none;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+/*
+ * La case elle-même est la cible de 52 × 44 (cible tactile ≥ 44 px) ; elle dessine la piste de 50 × 30
+ * (::before) et le bouton de 24 px qui glisse de 20 px (::after), comme le `Switch` de la boîte à outils.
+ */
+.cautious input[role="switch"] {
+  appearance: none;
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: 52px;
+  height: 44px;
+  margin-block: auto;
+  margin-inline: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.cautious input[role="switch"]::before {
+  content: "";
+  position: absolute;
+  inset: 7px 1px;
+  border-radius: 999px;
+  background: var(--field-border);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.cautious input[role="switch"]::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition:
+    transform var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.cautious input[role="switch"]:checked::before {
+  background: var(--accent);
+}
+
+.cautious input[role="switch"]:checked::after {
+  transform: translateX(20px);
+  background: var(--accent-text);
+}
+
+/* Imposé (mineur) ou envoi en cours : verrouillé, et cela se voit (GUIDE, Disabled). */
+.cautious input[role="switch"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cautious input[role="switch"]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Mouvement réduit (spec refonte §7) : le bouton change de couleur sans glisser, comme dans la boîte à outils. */
+@media (prefers-reduced-motion: reduce) {
+  .cautious input[role="switch"]::after {
+    transition-property: background-color;
+  }
+}
+
+/* Couleurs forcées : piste et bouton redessinés, comme l'interrupteur de la boîte à outils. */
+@media (forced-colors: active) {
+  .cautious input[role="switch"]::before {
+    border: 1px solid ButtonText;
+  }
+
+  .cautious input[role="switch"]::after {
+    forced-color-adjust: none;
+    background: ButtonText;
+  }
+
+  .cautious input[role="switch"]:checked::before {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+
+  .cautious input[role="switch"]:checked::after {
+    background: HighlightText;
+  }
+}
+
+@media (min-width: 600px) {
+  .formActions {
+    flex-direction: row;
+  }
 }
