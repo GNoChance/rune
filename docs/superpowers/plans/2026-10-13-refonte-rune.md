@@ -264,11 +264,11 @@ Textes (mot pour mot ; `{pseudo}` remplacé par le pseudo) :
 **Interfaces:**
 - Consumes: Tasks 3–7 (`useThemeChoice`, `BottomSheet`, `CoachAvatar`, `COACHES`, `setCoach`).
 
-- [ ] **Step 1: Tests qui échouent** — hub : lignes « Mon profil », « Mon coach », « Mes lieux », « Santé », « Confidentialité et données », « Réglages », « Aide », « Administration » (admin seulement), « Se déconnecter » ; badge sur « Réglages » quand il y a des refus ; Mon coach affiche les deux avatars (entraînement et nutrition) et « Changer de coach » ouvre une feuille avec les 3 choix, confirmer appelle `setCoach` ; Réglages : `getByRole('radio', { name: 'Auto' })` coché par défaut, choisir « Carnet » appelle `writeThemeChoice('carnet')` et pose `data-theme="carnet"` ; Mon profil n'affiche pas les champs de mot de passe avant le clic ; Santé contient « Retirer l'accord santé » et Confidentialité ne le contient plus ; déconnexion : une ligne, la feuille propose « Cet appareil » et « Tous mes appareils », l'avertissement de données non envoyées reste.
-- [ ] **Step 2: Lancer** — FAIL.
-- [ ] **Step 3: Implémenter** selon `C01` à `C06`.
-- [ ] **Step 4: Lancer** `pnpm test` — PASS.
-- [ ] **Step 5: Commit** `feat(web): espace Profil, Mon coach, apparence, santé, confidentialité et déconnexion`.
+- [x] **Step 1: Tests qui échouent** — hub : lignes « Mon profil », « Mon coach », « Mes lieux », « Santé », « Confidentialité et données », « Réglages », « Aide », « Administration » (admin seulement), « Se déconnecter » ; badge sur « Réglages » quand il y a des refus ; Mon coach affiche les deux avatars (entraînement et nutrition) et « Changer de coach » ouvre une feuille avec les 3 choix, confirmer appelle `setCoach` ; Réglages : `getByRole('radio', { name: 'Auto' })` coché par défaut, choisir « Carnet » appelle `writeThemeChoice('carnet')` et pose `data-theme="carnet"` ; Mon profil n'affiche pas les champs de mot de passe avant le clic ; Santé contient « Retirer l'accord santé » et Confidentialité ne le contient plus ; déconnexion : une ligne, la feuille propose « Cet appareil » et « Tous mes appareils », l'avertissement de données non envoyées reste.
+- [x] **Step 2: Lancer** — FAIL.
+- [x] **Step 3: Implémenter** selon `C01` à `C06`.
+- [x] **Step 4: Lancer** `pnpm test` — PASS.
+- [x] **Step 5: Commit** `feat(web): espace Profil, Mon coach, apparence, santé, confidentialité et déconnexion`.
 
 ### Task 11: Salles et lieux
 
