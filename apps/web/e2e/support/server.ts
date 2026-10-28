@@ -5,6 +5,7 @@ import http, { type IncomingHttpHeaders } from 'node:http';
 import { type AddressInfo, createServer as createNetServer, type Socket } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { maskInvitation } from './sanitize';
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 export const WEB_DIR = join(REPO_ROOT, 'apps', 'web');
@@ -141,11 +142,11 @@ interface Backend {
   exited: Promise<void>;
 }
 
-/** Serveur sur `port` ; prêt quand /api/health répond 200 (30 s au plus). Journal : dernières lignes. */
+/** Serveur sur `port` ; prêt quand /api/health répond 200 (30 s au plus). Journal : dernières lignes, codes et liens d'invitation masqués (T38-F3). */
 async function startBackend(port: number, env: Env, log: string[]): Promise<Backend> {
   const child = spawnServer([], { ...env, PORT: String(port) });
   const keep = (chunk: string) => {
-    log.push(...chunk.split('\n').filter((line) => line !== ''));
+    log.push(...maskInvitation(chunk).split('\n').filter((line) => line !== ''));
     log.splice(0, Math.max(0, log.length - LOG_TAIL_LINES));
   };
   child.stdout?.setEncoding('utf8').on('data', keep);
@@ -360,7 +361,9 @@ export async function bootstrapAdmin(
   birthDate = '1990-01-01',
 ): Promise<{ code: string; link: string }> {
   const r = await s.cli(['admin:bootstrap', '--birth-date', birthDate]);
-  if (r.code !== 0) throw new Error(`admin:bootstrap a échoué (code ${r.code}) : ${r.stderr}`);
+  // stderr est masqué même si l'échec est antérieur à la génération du code : les futurs enrichissements du CLI pourraient y verser des exemples.
+  if (r.code !== 0)
+    throw new Error(`admin:bootstrap a échoué (code ${r.code}) : ${maskInvitation(r.stderr)}`);
   const link = /^Lien : (.+)$/m.exec(r.stdout)?.[1]?.trim();
   const code = /^Code : (.+)$/m.exec(r.stdout)?.[1]?.trim();
   if (!link || !code)
