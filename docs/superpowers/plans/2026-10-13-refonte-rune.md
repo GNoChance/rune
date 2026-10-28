@@ -279,33 +279,33 @@ Textes (mot pour mot ; `{pseudo}` remplacé par le pseudo) :
 **Interfaces:**
 - Produces: `EQUIPMENT_SHORT_LABELS: Record<EquipmentCode, string>` (libellé jusqu'à la parenthèse ; exceptions écrites à la main : « Barre guidée (Smith) » gardé entier) ; `useEquipmentDraft(initial: Set<EquipmentCode>): { selected; toggle(code); changes: { added: EquipmentCode[]; removed: EquipmentCode[] }; reset(); save(): Promise<void> }`.
 
-- [ ] **Step 1: Tests qui échouent** — `draft.test.tsx` : cocher puis décocher le même équipement → 0 changement, aucun appel ; 1 ajout + 1 retrait → barre « 2 changements · 1 ajout, 1 retrait », « Enregistrer » envoie exactement ces deux appels ; quitter la fiche sans enregistrer → aucun appel et l'état serveur est réaffiché au retour ; un échec réseau à l'enregistrement garde le brouillon et affiche l'erreur ; toucher une salle dans « Mes lieux » ouvre directement sa fiche ; l'interrupteur « Lieu principal » est `disabled` et coché sur le lieu principal ; la case « Qui va à cette salle » porte l'interrupteur de visibilité de l'utilisateur.
-- [ ] **Step 2: Lancer** — FAIL.
-- [ ] **Step 3: Implémenter** selon `D01` à `D05` (pastilles par catégorie, historique en frise).
-- [ ] **Step 4: Lancer** `pnpm test` — PASS.
-- [ ] **Step 5: Commit** `feat(web): salles et lieux Rune, équipement en brouillon et fiche directe`.
+- [x] **Step 1: Tests qui échouent** — `draft.test.tsx` : cocher puis décocher le même équipement → 0 changement, aucun appel ; 1 ajout + 1 retrait → barre « 2 changements · 1 ajout, 1 retrait », « Enregistrer » envoie exactement ces deux appels ; quitter la fiche sans enregistrer → aucun appel et l'état serveur est réaffiché au retour ; un échec réseau à l'enregistrement garde le brouillon et affiche l'erreur ; toucher une salle dans « Mes lieux » ouvre directement sa fiche ; l'interrupteur « Lieu principal » est `disabled` et coché sur le lieu principal ; la case « Qui va à cette salle » porte l'interrupteur de visibilité de l'utilisateur.
+- [x] **Step 2: Lancer** — FAIL.
+- [x] **Step 3: Implémenter** selon `D01` à `D05` (pastilles par catégorie, historique en frise).
+- [x] **Step 4: Lancer** `pnpm test` — PASS.
+- [x] **Step 5: Commit** `feat(web): salles et lieux Rune, équipement en brouillon et fiche directe`.
 
 ### Task 12: Administration
 
 **Files:**
 - Modify: `apps/web/src/features/admin/*.tsx` et `admin.module.css`, tests `apps/web/test/admin/*`
 
-- [ ] **Step 1: Tests qui échouent** — Membres : une carte par membre (`getAllByRole('article')`), badges rôle/statut/accord, dernière connexion relative ; le bouton « Actions pour ines.m » ouvre une feuille où « Désactiver » et « Supprimer le compte » sont dans un groupe « Actions sensibles » placé en dernier ; un membre désactivé garde « Réactiver » ; sous-navigation « Membres · Invitations · Salles · Serveur » ; Invitations : le code n'apparaît qu'à la création ; État du serveur : badges par section et « Dernier contrôle de l'hôte ».
-- [ ] **Step 2: Lancer** — FAIL.
-- [ ] **Step 3: Implémenter** selon `E01` à `E05`.
-- [ ] **Step 4: Lancer** — PASS.
-- [ ] **Step 5: Commit** `feat(web): administration en cartes, actions sensibles isolées`.
+- [x] **Step 1: Tests qui échouent** — Membres : une carte par membre (`getAllByRole('article')`), badges rôle/statut/accord, dernière connexion relative ; le bouton « Actions pour ines.m » ouvre une feuille où « Désactiver » et « Supprimer le compte » sont dans un groupe « Actions sensibles » placé en dernier ; un membre désactivé garde « Réactiver » ; sous-navigation « Membres · Invitations · Salles · Serveur » ; Invitations : le code n'apparaît qu'à la création ; État du serveur : badges par section et « Dernier contrôle de l'hôte ».
+- [x] **Step 2: Lancer** — FAIL.
+- [x] **Step 3: Implémenter** selon `E01` à `E05`.
+- [x] **Step 4: Lancer** — PASS.
+- [x] **Step 5: Commit** `feat(web): administration en cartes, actions sensibles isolées`.
 
 ### Task 13: Accès, pages publiques, 404, hors ligne et mise à jour
 
 **Files:**
 - Modify: `apps/web/src/features/auth/*.tsx` et `auth.module.css`, `apps/web/src/features/public/*.tsx` et `public.module.css`, `apps/web/src/sw/UpdateBanner.tsx`, tests `apps/web/test/auth/*`, `app/public-pages.test.tsx`
 
-- [ ] **Step 1: Tests qui échouent** — Connexion : logo, « RUNE », « Grave ta progression. », champs Pseudo et Mot de passe, lien « J'ai un code d'invitation » ; Aide : l'encadré d'urgence (15, 112) est avant « Installer Rune », la section Crédits est présente ; 404 : « Page introuvable » et « Zone inconnue. » avec un lien vers l'accueil ; bannière de mise à jour : « Plus tard » absent dans la variante 426 ; erreur de mot de passe rattachée au champ.
-- [ ] **Step 2: Lancer** — FAIL.
-- [ ] **Step 3: Implémenter** selon `A01` à `A06` et `E06`.
-- [ ] **Step 4: Lancer** `pnpm test` et `pnpm --filter @rune/web test:e2e` — PASS.
-- [ ] **Step 5: Commit** `feat(web): connexion, invitation, aide, 404 et bannière de mise à jour aux couleurs de Rune`.
+- [x] **Step 1: Tests qui échouent** — Connexion : logo, « RUNE », « Grave ta progression. », champs Pseudo et Mot de passe, lien « J'ai un code d'invitation » ; Aide : l'encadré d'urgence (15, 112) est avant « Installer Rune », la section Crédits est présente ; 404 : « Page introuvable » et « Zone inconnue. » avec un lien vers l'accueil ; bannière de mise à jour : « Plus tard » absent dans la variante 426 ; erreur de mot de passe rattachée au champ.
+- [x] **Step 2: Lancer** — FAIL.
+- [x] **Step 3: Implémenter** selon `A01` à `A06` et `E06`.
+- [x] **Step 4: Lancer** `pnpm test` et `pnpm --filter @rune/web test:e2e` — PASS.
+- [x] **Step 5: Commit** `feat(web): connexion, invitation, aide, 404 et bannière de mise à jour aux couleurs de Rune`.
 
 ## File R — revue finale (parallèle aux files F et E, fichiers disjoints)
 
