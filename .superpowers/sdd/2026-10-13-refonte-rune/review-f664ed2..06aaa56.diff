@@ -1,0 +1,2132 @@
+# Review package: f664ed2c997286eabad9d08afc19b0dc4a23c1cb..HEAD
+
+## Commits
+06aaa56 feat(web): boîte à outils de base (cartes de choix, pastilles, interrupteur, progression, listes, états vides)
+163df86 docs(readme): Rune renommé partout, refonte en cours, lancement local sans Docker
+
+## Files changed
+ README.md                             |  69 +++-
+ apps/web/src/ui/Badge.tsx             |  26 ++
+ apps/web/src/ui/Banner.tsx            |  50 ++-
+ apps/web/src/ui/Button.tsx            |  14 +-
+ apps/web/src/ui/Chips.tsx             |  43 +++
+ apps/web/src/ui/ChoiceCard.tsx        |  90 +++++
+ apps/web/src/ui/ChoiceList.tsx        |  34 +-
+ apps/web/src/ui/EmptyState.tsx        |  16 +
+ apps/web/src/ui/Field.tsx             |  50 ++-
+ apps/web/src/ui/ListRow.tsx           | 112 ++++++
+ apps/web/src/ui/PageHeader.tsx        |  42 ++
+ apps/web/src/ui/SegmentedProgress.tsx |  29 ++
+ apps/web/src/ui/Switch.tsx            |  46 +++
+ apps/web/src/ui/index.ts              |   8 +
+ apps/web/src/ui/ui.module.css         | 707 ++++++++++++++++++++++++++++++++--
+ apps/web/test/ui/components.test.tsx  | 437 +++++++++++++++++++++
+ 16 files changed, 1704 insertions(+), 69 deletions(-)
+
+## Diff
+diff --git a/README.md b/README.md
+index 26c7701..0ce34fc 100644
+--- a/README.md
++++ b/README.md
+@@ -1,58 +1,101 @@
+ <p align="center">
+   <img src="docs/brand/rune-icon.svg" width="140" alt="Logo de Rune : la rune Raidō dans un badge de rang hexagonal">
+ </p>
+ 
+ <h1 align="center">Rune</h1>
+ 
+ <p align="center"><em>Grave ta progression.</em></p>
+ 
+-Rune est une application web installable (PWA) de suivi de musculation, auto-hébergée, pour un cercle privé. Elle propose des programmes d'entraînement, un suivi des séances qui marche hors ligne, des fiches d'exercices pour débutants, un coach IA et des conseils nutrition.
++Rune est une application web installable (PWA) de suivi de musculation, auto-hébergée, pour un cercle privé. Elle proposera des programmes d'entraînement, un suivi des séances qui marche hors ligne, des fiches d'exercices pour débutants, un coach IA au choix et des repères nutrition.
+ 
+-> Rune portait un autre nom de code pendant le cadrage. Tout s'appelle désormais Rune : le dépôt, les paquets (`@rune/…`) et les fichiers techniques. Seuls `docs/superpowers/` et `docs/research/` gardent l'ancien nom, par historique : y lire « rune » partout où un identifiant porte l'ancien nom.
++> Rune portait un autre nom de code pendant le cadrage. Tout s'appelle désormais Rune : le dépôt, les paquets (`@rune/…`), le serveur et les scripts. Seuls `docs/superpowers/` et `docs/research/` gardent l'ancien nom, par historique : y lire « rune » partout où un identifiant porte l'ancien nom.
+ 
+-> **Statut : brique 1 (socle) en finition.** La spécification est versionnée dans [`docs/superpowers/specs/`](docs/superpowers/specs/2026-10-06-appsport-design.md). Le socle est codé et en revue finale avant d'être fusionné dans `main` : comptes sur invitation, onboarding, PWA hors ligne, synchronisation, administration, déploiement, sauvegardes et procédures. La refonte visuelle aux couleurs de Rune est prévue en fin de socle.
++> **Statut : brique 1 (socle) codée, refonte visuelle en cours.** Le socle est fait et relu : comptes sur invitation, onboarding, PWA hors ligne, synchronisation, administration, déploiement, sauvegardes et procédures. Il reçoit en ce moment sa refonte aux couleurs de Rune : thèmes, nouvelle navigation, choix du coach, onglet Progression. **Pas de mise en production avant la fin des cinq briques.** Les spécifications sont dans [`docs/superpowers/specs/`](docs/superpowers/specs/) : la [spec principale](docs/superpowers/specs/2026-10-06-appsport-design.md) et la [spec de la refonte](docs/superpowers/specs/2026-10-13-refonte-rune-design.md).
+ 
+ ## Ce que fera l'app
+ 
+ - **Profil selon le contexte** : à l'inscription, chacun indique où il s'entraîne : au poids du corps à la maison, en salle (et laquelle), ou en sport loisir.
++- **Un coach au choix**, dès la première étape de l'onboarding :
++  - **L'Ombre**, froid et exigeant ;
++  - **le Skald**, mentor qui raconte ta saga ;
++  - **le Scribe**, calme et précis.
++
++  Au début, il parle par des messages écrits à l'avance. La vraie conversation arrive avec la brique 4.
+ - **Programmes** adaptés au contexte et au niveau, et **suivi des séances** (séries, répétitions, charges, progression), utilisable hors ligne à la salle.
++- **Progression façon RPG** : des rangs de E à S, en pierres runiques, pour le profil et pour chaque groupe musculaire, des quêtes, et un écran LEVEL UP.
+ - **Bibliothèque d'exercices** pour débutants : visuels, consignes, muscles travaillés, matériel nécessaire.
+-- **Coach IA**, « le Skald », qui conseille sur l'entraînement et la nutrition à partir du profil et de l'historique.
+-- **Nutrition** : besoins caloriques, macronutriments et conseils.
++- **Nutrition** :
++  - des repères du jour ;
++  - des idées de repas par moment de la journée, avec des options sans gluten et végétariennes ;
++  - les pas saisis à la main ;
++  - un mode sans chiffres pour qui le préfère.
+ 
+ Public visé : un cercle privé (inscription sur invitation).
+ 
+ ## Identité
+ 
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="docs/brand/rune-wordmark.svg">
+   <img src="docs/brand/rune-wordmark-ink.svg" height="56" alt="RUNE">
+ </picture>
+ 
+ - **Le nom.** Une rune se grave, comme la progression qu'on note séance après séance.
+ - **Le logo, « Rang brisé ».** La rune Raidō ᚱ, qui est aussi un R et veut dire « le voyage », est placée dans un badge de rang hexagonal. Sa jambe traverse le cadre et en sort : la progression ne reste pas dans le rang qu'on t'a donné.
+-- **La palette.** Le noir de nuit `#05070D`, le bleu glace `#5ED8FF`, le violet d'éveil `#8C6BFF` (hauts rangs et récompenses) et le givre `#F2FDFF`. Sur les thèmes clairs, le symbole s'affiche en une seule couleur.
+-- **Pistes pour la suite** (à spécifier) : des thèmes au choix (carnet, salle de nuit, coach calme), plusieurs tempéraments de coach, une progression façon RPG avec des rangs de E à S par groupe musculaire, et une carte de fin de séance à partager.
++- **La palette.**
++  - Le noir de nuit `#05070D`.
++  - Le bleu glace `#5ED8FF`.
++  - Le violet d'éveil `#8C6BFF`, pour les hauts rangs et les récompenses.
++  - Le givre `#F2FDFF`.
++
++  Sur les thèmes clairs, le symbole s'affiche en une seule couleur.
++- **Les thèmes.** Par défaut, l'appli passe en clair ou en sombre comme le téléphone. On peut aussi forcer Clair ou Sombre, ou choisir l'un des deux thèmes bonus : Carnet (papier crème et encre) ou Salle de nuit (néon et cadres HUD).
++- **La typographie.** Chakra Petch pour les titres, les chiffres et les rangs, Barlow pour le texte.
+ 
+ Les fichiers du logo sont dans [`docs/brand/`](docs/brand/).
+ 
+ ## Feuille de route
+ 
+ | # | Brique | Contenu |
+ |---|--------|---------|
+ | 0 | Vision et architecture | Choix techniques, hébergement, modèle de données |
+-| 1 | Socle | Comptes sur invitation, onboarding, PWA, déploiement |
++| 1 | Socle | Comptes sur invitation, onboarding, PWA, déploiement, puis la refonte Rune : thèmes, navigation, choix du coach, Progression en avant-goût |
+ | 2 | Exercices | Fiches débutant rédigées en français (brouillon IA, relecture humaine), illustrations, recherche par matériel |
+-| 3 | Programmes et suivi | Modèles de programmes, séance en cours, historique, progression |
+-| 4 | Coach IA | Conseils personnalisés, ajustement des programmes |
+-| 5 | Nutrition | Objectifs caloriques et macros, conseils |
++| 3 | Programmes et séances | Modèles de programmes, séance en cours, historique, records, progression RPG |
++| 4 | Coach IA | Conversation avec le coach choisi, conseils personnalisés, ajustement des programmes |
++| 5 | Nutrition | Repères du jour, idées de repas, sans gluten et végétarien, pas du jour |
++
++Chaque brique suit le même cycle : spécification, plan d'implémentation, puis code relu. La mise en production vient après la brique 5.
++
++## Lancer Rune en local (sans Docker)
++
++Il faut Node 24 et pnpm 10. Les commandes ci-dessous sont pour PowerShell, sous Windows ; les données vont dans un dossier hors du dépôt.
++
++```powershell
++pnpm install
++pnpm --filter @rune/web build
++
++$Data = "$HOME\rune-data"
++New-Item -ItemType Directory -Force $Data | Out-Null
++New-Item -ItemType File -Force "$Data\.rune-volume" | Out-Null
++$env:APP_ORIGIN = 'http://localhost:3100'; $env:PORT = '3100'; $env:HOST = '127.0.0.1'
++$env:RUNE_DATA_DIR = $Data
++$env:RUNE_PUBLIC_DIR = "$PWD\apps\web\dist"
++$env:RUNE_CONTENT_DIR = "$PWD\data"
++
++cd apps\server
++node --import tsx src/main.ts init                                       # une seule fois : crée la base
++node --import tsx src/main.ts admin:bootstrap --birth-date 1990-01-01    # une seule fois : lien d'invitation du premier admin
++node --import tsx src/main.ts                                            # démarre Rune sur http://localhost:3100
++```
++
++Ensuite, ouvrir le lien d'invitation affiché pour créer le compte admin. Sur téléphone, l'appli installée a besoin du HTTPS : ce sera pour le serveur, derrière Tailscale.
+ 
+-Chaque brique suit le même cycle : spécification, plan d'implémentation, puis code.
++Pour les tests : `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm --filter @rune/web test:e2e` (Chromium et WebKit), et `pnpm test:infra` depuis Git Bash pour les scripts de l'hôte.
+ 
+ ## Hébergement
+ 
+-Serveur personnel (16 Go de RAM, 3 To de stockage), joignable par Tailscale. Le déploiement (conteneur Docker, HTTPS, sauvegardes restic, supervision) est décrit dans la section Exploitation de la spécification.
++Serveur personnel (16 Go de RAM, 3 To de stockage), joignable par Tailscale à l'adresse `https://rune.<tailnet>.ts.net`. Le déploiement (conteneur Docker, HTTPS, sauvegardes restic chiffrées en local et chez Backblaze B2, supervision) est décrit dans [`docs/exploitation/`](docs/exploitation/). Docker ne sert que sur le serveur, jamais pour développer.
+ 
+ ## Crédits
+ 
+ Les fiches d'exercices sont rédigées pour Rune. Illustrations prévues : [everkinetic/data](https://github.com/everkinetic/data) et [bryllim/workout-guide](https://github.com/bryllim/workout-guide) (CC BY-SA 4.0). Le détail des attributions sera tenu à jour dans l'app (page Crédits).
+diff --git a/apps/web/src/ui/Badge.tsx b/apps/web/src/ui/Badge.tsx
+new file mode 100644
+index 0000000..bec6f8f
+--- /dev/null
++++ b/apps/web/src/ui/Badge.tsx
+@@ -0,0 +1,26 @@
++import type { ReactNode } from 'react';
++import styles from './ui.module.css';
++
++const TONES = {
++  accent: styles.badgeAccent,
++  success: styles.badgeSuccess,
++  muted: styles.badgeMuted,
++  warning: styles.badgeWarning,
++  danger: styles.badgeDanger,
++} as const;
++
++/**
++ * Badge de rôle (accent, contour) ou de statut (teinte et point) : « Admin », « Actif », « Désactivé »,
++ * « En attente »… Le texte dit toujours l'état, la couleur ne fait que l'appuyer.
++ */
++export function Badge(p: {
++  tone: 'accent' | 'success' | 'muted' | 'warning' | 'danger';
++  children: ReactNode;
++}) {
++  return (
++    <span className={`${styles.badge} ${TONES[p.tone]}`}>
++      {p.tone === 'accent' ? null : <span className={styles.badgeDot} aria-hidden="true" />}
++      {p.children}
++    </span>
++  );
++}
+diff --git a/apps/web/src/ui/Banner.tsx b/apps/web/src/ui/Banner.tsx
+index 8fa932f..6ac2382 100644
+--- a/apps/web/src/ui/Banner.tsx
++++ b/apps/web/src/ui/Banner.tsx
+@@ -1,11 +1,55 @@
+ import type { ReactNode } from 'react';
+ import styles from './ui.module.css';
+ 
+-/** Bandeau : une erreur est annoncée tout de suite (`alert`), le reste poliment (`status`). */
++const TONES = { info: styles.bannerInfo, warning: styles.bannerWarning, error: styles.bannerError } as const;
++
++/** Icône du ton : i pour une info, triangle pour un avertissement, croix cerclée pour une erreur. */
++function ToneGlyph(p: { tone: 'info' | 'warning' | 'error' }) {
++  return (
++    <svg
++      aria-hidden="true"
++      width="20"
++      height="20"
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth="2"
++      strokeLinecap="round"
++      strokeLinejoin="round"
++    >
++      {p.tone === 'info' ? (
++        <>
++          <circle cx="12" cy="12" r="9" />
++          <path d="M12 16v-4" />
++          <path d="M12 8h.01" />
++        </>
++      ) : p.tone === 'warning' ? (
++        <>
++          <path d="M10.3 4.2 2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z" />
++          <path d="M12 9.5v4" />
++          <path d="M12 17h.01" />
++        </>
++      ) : (
++        <>
++          <circle cx="12" cy="12" r="9" />
++          <path d="m9 9 6 6M15 9l-6 6" />
++        </>
++      )}
++    </svg>
++  );
++}
++
++/**
++ * Bandeau info, avertissement ou erreur, icône et texte : une erreur est annoncée tout de suite
++ * (`alert`), le reste poliment (`status`).
++ */
+ export function Banner(p: { tone: 'info' | 'warning' | 'error'; children: ReactNode }) {
+   return (
+-    <div role={p.tone === 'error' ? 'alert' : 'status'} className={`${styles.banner} ${styles[p.tone]}`}>
+-      {p.children}
++    <div role={p.tone === 'error' ? 'alert' : 'status'} className={`${styles.banner} ${TONES[p.tone]}`}>
++      <span className={styles.bannerIcon} aria-hidden="true">
++        <ToneGlyph tone={p.tone} />
++      </span>
++      <div className={styles.bannerBody}>{p.children}</div>
+     </div>
+   );
+ }
+diff --git a/apps/web/src/ui/Button.tsx b/apps/web/src/ui/Button.tsx
+index f221365..26a3600 100644
+--- a/apps/web/src/ui/Button.tsx
++++ b/apps/web/src/ui/Button.tsx
+@@ -1,17 +1,27 @@
+ import type { ButtonHTMLAttributes } from 'react';
+ import styles from './ui.module.css';
+ 
++/**
++ * Bouton de 52 px : principal, secondaire (contour accent), discret ou danger (contour danger) ;
++ * `block` : pleine largeur. Une action dangereuse reste isolée en bas, jamais à côté d'un principal.
++ */
+ export function Button({
+   variant = 'primary',
++  block = false,
+   className,
+   type = 'button',
+   ...rest
+-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' }) {
++}: ButtonHTMLAttributes<HTMLButtonElement> & {
++  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
++  block?: boolean;
++}) {
+   return (
+     <button
+       type={type}
+-      className={[styles.button, styles[variant], className].filter(Boolean).join(' ')}
++      className={[styles.button, styles[variant], block ? styles.block : null, className]
++        .filter(Boolean)
++        .join(' ')}
+       {...rest}
+     />
+   );
+ }
+diff --git a/apps/web/src/ui/Chips.tsx b/apps/web/src/ui/Chips.tsx
+new file mode 100644
+index 0000000..79f1c1a
+--- /dev/null
++++ b/apps/web/src/ui/Chips.tsx
+@@ -0,0 +1,43 @@
++import { CheckGlyph } from './ChoiceCard';
++import styles from './ui.module.css';
++
++/**
++ * Pastilles pour les choix courts (2 / 3 / 4 séances, 45 min…) : des boutons radio sous une légende,
++ * chacun dans son `<label>`, cibles de 44 px. La pastille choisie prend l'accent et porte une coche.
++ */
++export function Chips(p: {
++  name: string;
++  options: readonly { value: string; label: string }[];
++  value: string | null;
++  onChange(v: string): void;
++  legend: string;
++}) {
++  return (
++    <fieldset className={styles.choiceGroup}>
++      <legend className={styles.legend}>{p.legend}</legend>
++      <div className={styles.chipList}>
++        {p.options.map((o) => {
++          const checked = p.value === o.value;
++          return (
++            <label key={o.value} className={styles.chip}>
++              <input
++                type="radio"
++                name={p.name}
++                value={o.value}
++                checked={checked}
++                onChange={() => p.onChange(o.value)}
++                className={styles.overlayInput}
++              />
++              {o.label}
++              {checked ? (
++                <span className={styles.chipCheck} aria-hidden="true">
++                  <CheckGlyph />
++                </span>
++              ) : null}
++            </label>
++          );
++        })}
++      </div>
++    </fieldset>
++  );
++}
+diff --git a/apps/web/src/ui/ChoiceCard.tsx b/apps/web/src/ui/ChoiceCard.tsx
+new file mode 100644
+index 0000000..6ce0880
+--- /dev/null
++++ b/apps/web/src/ui/ChoiceCard.tsx
+@@ -0,0 +1,90 @@
++import { type ReactNode, useId } from 'react';
++import styles from './ui.module.css';
++
++/** Coche des choix faits (carte, pastille) : la sélection ne passe jamais par la seule couleur. */
++export function CheckGlyph() {
++  return (
++    <svg
++      data-check=""
++      aria-hidden="true"
++      className={styles.checkGlyph}
++      width="14"
++      height="14"
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth="3"
++      strokeLinecap="round"
++      strokeLinejoin="round"
++    >
++      <path d="m5 12 4.5 4.5L19 7" />
++    </svg>
++  );
++}
++
++/**
++ * Carte de choix unique (radio) ou multiple (case à cocher) : un `<label>` qui contient le vrai
++ * `<input>`, transparent et posé sur toute la carte. Nommée par son titre, décrite par sa description
++ * (et par `describedBy`, l'id d'un texte qui l'explique, par exemple la raison d'un choix désactivé).
++ * Cochée : bord accent, teinte et coche.
++ */
++export function ChoiceCard(p: {
++  type: 'radio' | 'checkbox';
++  name: string;
++  value: string;
++  checked: boolean;
++  onChange(): void;
++  title: string;
++  description?: string;
++  icon?: ReactNode;
++  disabled?: boolean;
++  describedBy?: string;
++}) {
++  const id = useId();
++  const titleId = `${id}-title`;
++  const descriptionId = `${id}-description`;
++  const describedBy = [p.description ? descriptionId : null, p.describedBy ?? null].filter(Boolean).join(' ');
++  return (
++    <label className={styles.choiceCard}>
++      <input
++        type={p.type}
++        name={p.name}
++        value={p.value}
++        checked={p.checked}
++        disabled={p.disabled}
++        onChange={() => p.onChange()}
++        aria-labelledby={titleId}
++        aria-describedby={describedBy || undefined}
++        className={styles.overlayInput}
++      />
++      {p.icon ? (
++        <span className={styles.choiceIcon} aria-hidden="true">
++          {p.icon}
++        </span>
++      ) : null}
++      <span className={styles.choiceText}>
++        <span id={titleId} className={styles.choiceTitle}>
++          {p.title}
++        </span>
++        {p.description ? (
++          <span id={descriptionId} className={styles.choiceDescription}>
++            {p.description}
++          </span>
++        ) : null}
++      </span>
++      <span className={styles.choiceMark} data-type={p.type} aria-hidden="true">
++        {p.checked ? <CheckGlyph /> : null}
++      </span>
++    </label>
++  );
++}
++
++/** Groupe de cartes de choix sous une légende (`<fieldset>`). */
++export function ChoiceGroup(p: { legend: string; children: ReactNode }) {
++  return (
++    <fieldset className={styles.choiceGroup}>
++      <legend className={styles.legend}>{p.legend}</legend>
++      <div className={styles.choiceStack}>{p.children}</div>
++    </fieldset>
++  );
++}
+diff --git a/apps/web/src/ui/ChoiceList.tsx b/apps/web/src/ui/ChoiceList.tsx
+index 7ae9495..3e08e7a 100644
+--- a/apps/web/src/ui/ChoiceList.tsx
++++ b/apps/web/src/ui/ChoiceList.tsx
+@@ -1,33 +1,31 @@
+-import styles from './ui.module.css';
++import { ChoiceCard, ChoiceGroup } from './ChoiceCard';
+ 
+ /**
+- * Groupe de boutons radio sous une légende. `describedBy` d'une option : id du texte qui l'explique
+- * (par exemple la raison d'une option désactivée), lu avec elle.
++ * Groupe de boutons radio sous une légende, en cartes de choix. `describedBy` d'une option : id du
++ * texte qui l'explique (par exemple la raison d'une option désactivée), lu avec elle.
+  */
+ export function ChoiceList<T extends string | number>(p: {
+   name: string;
+   legend: string;
+   value: T | null;
+   onChange(v: T): void;
+   options: readonly { value: T; label: string; disabled?: boolean; describedBy?: string }[];
+ }) {
+   return (
+-    <fieldset className={styles.choices}>
+-      <legend>{p.legend}</legend>
++    <ChoiceGroup legend={p.legend}>
+       {p.options.map((o) => (
+-        <label key={String(o.value)} className={styles.choice}>
+-          <input
+-            type="radio"
+-            name={p.name}
+-            value={String(o.value)}
+-            checked={p.value === o.value}
+-            disabled={o.disabled}
+-            aria-describedby={o.describedBy}
+-            onChange={() => p.onChange(o.value)}
+-          />
+-          {o.label}
+-        </label>
++        <ChoiceCard
++          key={String(o.value)}
++          type="radio"
++          name={p.name}
++          value={String(o.value)}
++          checked={p.value === o.value}
++          disabled={o.disabled}
++          describedBy={o.describedBy}
++          onChange={() => p.onChange(o.value)}
++          title={o.label}
++        />
+       ))}
+-    </fieldset>
++    </ChoiceGroup>
+   );
+ }
+diff --git a/apps/web/src/ui/EmptyState.tsx b/apps/web/src/ui/EmptyState.tsx
+new file mode 100644
+index 0000000..808468c
+--- /dev/null
++++ b/apps/web/src/ui/EmptyState.tsx
+@@ -0,0 +1,16 @@
++import type { ReactNode } from 'react';
++import styles from './ui.module.css';
++
++/** État vide : icône dans un cercle teinté d'accent, titre, une phrase et l'action quand il y en a une. */
++export function EmptyState(p: { icon: ReactNode; title: string; text: string; action?: ReactNode }) {
++  return (
++    <div className={styles.empty}>
++      <span className={styles.emptyIcon} aria-hidden="true">
++        {p.icon}
++      </span>
++      <p className={styles.emptyTitle}>{p.title}</p>
++      <p className={styles.emptyText}>{p.text}</p>
++      {p.action ? <div className={styles.emptyAction}>{p.action}</div> : null}
++    </div>
++  );
++}
+diff --git a/apps/web/src/ui/Field.tsx b/apps/web/src/ui/Field.tsx
+index 5d82e65..894d3b0 100644
+--- a/apps/web/src/ui/Field.tsx
++++ b/apps/web/src/ui/Field.tsx
+@@ -1,35 +1,67 @@
+ import { cloneElement, type ReactElement, useId } from 'react';
+ import styles from './ui.module.css';
+ 
+ type ControlProps = { id?: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean };
+ 
+-/** Champ libellé : le contrôle enfant reçoit l'`id` du libellé, l'aide et l'erreur en description. */
+-export function Field(p: { label: string; hint?: string; error?: string | null; children: ReactElement }) {
++function AlertGlyph() {
++  return (
++    <svg
++      aria-hidden="true"
++      width="16"
++      height="16"
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth="2"
++      strokeLinecap="round"
++      strokeLinejoin="round"
++    >
++      <circle cx="12" cy="12" r="9" />
++      <path d="M12 7.5v5.5" />
++      <path d="M12 16.5v.01" />
++    </svg>
++  );
++}
++
++/**
++ * Champ libellé : libellé au-dessus, puis le contrôle enfant, qui reçoit l'`id` du libellé ; dessous,
++ * l'erreur (avec une icône) puis l'aide, toutes deux en description du contrôle. `hint` : ancien nom de
++ * `help`, gardé pour les écrans qui l'emploient.
++ */
++export function Field(p: {
++  label: string;
++  help?: string;
++  hint?: string;
++  error?: string | null;
++  children: ReactElement;
++}) {
+   const id = useId();
+-  const hintId = `${id}-hint`;
++  const helpId = `${id}-help`;
+   const errorId = `${id}-error`;
+-  const describedBy = [p.hint ? hintId : null, p.error ? errorId : null].filter(Boolean).join(' ');
++  const help = p.help ?? p.hint;
++  const describedBy = [p.error ? errorId : null, help ? helpId : null].filter(Boolean).join(' ');
+   const control = cloneElement(p.children as ReactElement<ControlProps>, {
+     id,
+     'aria-describedby': describedBy || undefined,
+     'aria-invalid': p.error ? true : undefined,
+   });
+   return (
+     <div className={styles.field}>
+       <label className={styles.label} htmlFor={id}>
+         {p.label}
+       </label>
+       {control}
+-      {p.hint ? (
+-        <span id={hintId} className={styles.hint}>
+-          {p.hint}
+-        </span>
+-      ) : null}
+       {p.error ? (
+         <span id={errorId} className={styles.fieldError}>
++          <AlertGlyph />
+           {p.error}
+         </span>
+       ) : null}
++      {help ? (
++        <span id={helpId} className={styles.hint}>
++          {help}
++        </span>
++      ) : null}
+     </div>
+   );
+ }
+diff --git a/apps/web/src/ui/ListRow.tsx b/apps/web/src/ui/ListRow.tsx
+new file mode 100644
+index 0000000..53a5321
+--- /dev/null
++++ b/apps/web/src/ui/ListRow.tsx
+@@ -0,0 +1,112 @@
++import { type ReactNode, useId } from 'react';
++import { Link } from 'wouter';
++import styles from './ui.module.css';
++
++/**
++ * Lignes regroupées dans une carte, séparées d'un trait ; `title` : petit titre de groupe au-dessus
++ * (la section est alors nommée par lui).
++ */
++export function ListGroup(p: { title?: string; children: ReactNode }) {
++  const titleId = useId();
++  const list = <ul className={styles.listGroup}>{p.children}</ul>;
++  if (!p.title) return list;
++  return (
++    <section aria-labelledby={titleId} className={styles.listSection}>
++      <h2 id={titleId} className={styles.listTitle}>
++        {p.title}
++      </h2>
++      {list}
++    </section>
++  );
++}
++
++function Chevron() {
++  return (
++    <svg
++      className={styles.rowChevron}
++      aria-hidden="true"
++      width="20"
++      height="20"
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth="2"
++      strokeLinecap="round"
++      strokeLinejoin="round"
++    >
++      <path d="m9 6 6 6-6 6" />
++    </svg>
++  );
++}
++
++/**
++ * Ligne de liste de 56 px : icône, libellé, valeur, badge. Avec `href`, un lien ; avec `onClick`, un
++ * bouton (chevron dans les deux cas, sauf l'action dangereuse, isolée sans chevron comme « Se
++ * déconnecter ») ; sans l'un ni l'autre, une ligne d'information. Le lien ou le bouton est nommé par le
++ * libellé seul et décrit par la valeur et le badge.
++ */
++export function ListRow(p: {
++  icon?: ReactNode;
++  label: string;
++  value?: ReactNode;
++  href?: string;
++  onClick?(): void;
++  badge?: ReactNode;
++  tone?: 'danger';
++}) {
++  const id = useId();
++  const labelId = `${id}-label`;
++  const valueId = `${id}-value`;
++  const badgeId = `${id}-badge`;
++  const interactive = p.href !== undefined || p.onClick !== undefined;
++  const content = (
++    <>
++      {p.icon ? (
++        <span className={styles.rowIcon} aria-hidden="true">
++          {p.icon}
++        </span>
++      ) : null}
++      <span className={styles.rowText}>
++        <span id={labelId} className={styles.rowLabel}>
++          {p.label}
++        </span>
++        {p.value !== undefined ? (
++          <span id={valueId} className={styles.rowValue}>
++            {p.value}
++          </span>
++        ) : null}
++      </span>
++      {p.badge ? (
++        <span id={badgeId} className={styles.rowBadge}>
++          {p.badge}
++        </span>
++      ) : null}
++      {interactive && p.tone !== 'danger' ? <Chevron /> : null}
++    </>
++  );
++  const named = {
++    className: styles.row,
++    'data-tone': p.tone,
++    'aria-labelledby': labelId,
++    'aria-describedby':
++      [p.value !== undefined ? valueId : null, p.badge ? badgeId : null].filter(Boolean).join(' ') ||
++      undefined,
++  };
++  return (
++    <li className={styles.listItem}>
++      {p.href !== undefined ? (
++        <Link href={p.href} {...named}>
++          {content}
++        </Link>
++      ) : p.onClick !== undefined ? (
++        <button type="button" onClick={p.onClick} {...named}>
++          {content}
++        </button>
++      ) : (
++        <div className={styles.row} data-tone={p.tone}>
++          {content}
++        </div>
++      )}
++    </li>
++  );
++}
+diff --git a/apps/web/src/ui/PageHeader.tsx b/apps/web/src/ui/PageHeader.tsx
+new file mode 100644
+index 0000000..668543c
+--- /dev/null
++++ b/apps/web/src/ui/PageHeader.tsx
+@@ -0,0 +1,42 @@
++import { Link } from 'wouter';
++import styles from './ui.module.css';
++
++function ChevronLeft() {
++  return (
++    <svg
++      aria-hidden="true"
++      width="22"
++      height="22"
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth="2"
++      strokeLinecap="round"
++      strokeLinejoin="round"
++    >
++      <path d="m15 6-6 6 6 6" />
++    </svg>
++  );
++}
++
++/**
++ * En-tête d'une page interne : bouton « Retour » de 44 × 44 (un lien vers `back`, ou un bouton qui
++ * appelle `back`), puis le titre de niveau 1. Les onglets de premier niveau n'ont pas de Retour.
++ */
++export function PageHeader(p: { title: string; back?: string | (() => void) }) {
++  const { back } = p;
++  return (
++    <header className={styles.pageHeader}>
++      {typeof back === 'string' ? (
++        <Link href={back} aria-label="Retour" className={styles.backButton}>
++          <ChevronLeft />
++        </Link>
++      ) : back ? (
++        <button type="button" aria-label="Retour" onClick={() => back()} className={styles.backButton}>
++          <ChevronLeft />
++        </button>
++      ) : null}
++      <h1 className={styles.pageTitle}>{p.title}</h1>
++    </header>
++  );
++}
+diff --git a/apps/web/src/ui/SegmentedProgress.tsx b/apps/web/src/ui/SegmentedProgress.tsx
+new file mode 100644
+index 0000000..2c01dcd
+--- /dev/null
++++ b/apps/web/src/ui/SegmentedProgress.tsx
+@@ -0,0 +1,29 @@
++import type { CSSProperties } from 'react';
++import styles from './ui.module.css';
++
++/**
++ * Barre de progression segmentée de l'onboarding : `total` segments, les `step` premiers faits, dans
++ * le dégradé d'accent qui court sur toute la barre ; « Étape n sur total » dit la même chose en texte.
++ */
++export function SegmentedProgress(p: { step: number; total: number }) {
++  const done = Math.min(Math.max(p.step, 0), p.total);
++  return (
++    <div className={styles.progress}>
++      <div className={styles.segments} aria-hidden="true">
++        {Array.from({ length: p.total }, (_, i) => (
++          <span
++            // biome-ignore lint/suspicious/noArrayIndexKey: segments sans identité propre, toujours dans le même ordre
++            key={i}
++            data-segment=""
++            data-done={i < done ? '' : undefined}
++            className={styles.segment}
++            style={{ '--segment-index': i, '--segment-last': Math.max(p.total - 1, 1) } as CSSProperties}
++          />
++        ))}
++      </div>
++      <p className={styles.progressText}>
++        Étape {p.step} sur {p.total}
++      </p>
++    </div>
++  );
++}
+diff --git a/apps/web/src/ui/Switch.tsx b/apps/web/src/ui/Switch.tsx
+new file mode 100644
+index 0000000..c76f813
+--- /dev/null
++++ b/apps/web/src/ui/Switch.tsx
+@@ -0,0 +1,46 @@
++import { useId } from 'react';
++import styles from './ui.module.css';
++
++/**
++ * Interrupteur : un vrai `<button role="switch">` (Espace et Entrée l'actionnent), `aria-checked`
++ * suit l'état, le libellé le nomme et le toucher aussi, l'aide le décrit. `id` : celui du bouton.
++ */
++export function Switch(p: {
++  id: string;
++  label: string;
++  checked: boolean;
++  onChange(v: boolean): void;
++  help?: string;
++}) {
++  const own = useId();
++  const labelId = `${own}-label`;
++  const helpId = `${own}-help`;
++  return (
++    <div className={styles.switchRow}>
++      <span className={styles.switchText}>
++        <label id={labelId} htmlFor={p.id} className={styles.switchLabel}>
++          {p.label}
++        </label>
++        {p.help ? (
++          <span id={helpId} className={styles.hint}>
++            {p.help}
++          </span>
++        ) : null}
++      </span>
++      <button
++        id={p.id}
++        type="button"
++        role="switch"
++        aria-checked={p.checked}
++        aria-labelledby={labelId}
++        aria-describedby={p.help ? helpId : undefined}
++        className={styles.switch}
++        onClick={() => p.onChange(!p.checked)}
++      >
++        <span className={styles.switchTrack} aria-hidden="true">
++          <span className={styles.switchThumb} />
++        </span>
++      </button>
++    </div>
++  );
++}
+diff --git a/apps/web/src/ui/index.ts b/apps/web/src/ui/index.ts
+index d0acbdc..a89808c 100644
+--- a/apps/web/src/ui/index.ts
++++ b/apps/web/src/ui/index.ts
+@@ -1,13 +1,21 @@
+ export * from './AppShell';
++export * from './Badge';
+ export * from './Banner';
+ export * from './Button';
++export * from './Chips';
++export * from './ChoiceCard';
+ export * from './ChoiceList';
+ export * from './CopyButton';
+ export * from './Dialog';
+ export * from './download';
++export * from './EmptyState';
+ export * from './errors';
+ export * from './Field';
+ export * from './format';
+ export * from './HealthWarning';
++export * from './ListRow';
+ export * from './Page';
++export * from './PageHeader';
++export * from './SegmentedProgress';
++export * from './Switch';
+ export * from './use-action';
+diff --git a/apps/web/src/ui/ui.module.css b/apps/web/src/ui/ui.module.css
+index 798ea65..a8b4bef 100644
+--- a/apps/web/src/ui/ui.module.css
++++ b/apps/web/src/ui/ui.module.css
+@@ -100,106 +100,201 @@
+ .page h1 {
+   margin: 0;
+   font-size: 1.5rem;
+   line-height: 1.25;
+ }
+ 
+ .back {
+   font-size: 0.875rem;
+ }
+ 
++/*
++ * Boutons (GUIDE, Primary/Secondary/Danger button) : 52 px, rayon 14, Barlow 600 17. Retour du geste en
++ * 150 ms sur la courbe unique ; sous mouvement réduit, aucun déplacement (voir en bas de la feuille).
++ */
+ .button {
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+-  min-height: 44px;
+-  padding: var(--space-2) var(--space-4);
++  gap: var(--space-2);
++  min-height: 52px;
++  padding: var(--space-2) 20px;
+   border-radius: var(--radius-control);
+-  border: 1px solid var(--field-border);
++  border: 1.5px solid transparent;
++  background: transparent;
+   font: inherit;
++  font-size: 1.0625rem;
+   font-weight: 600;
++  line-height: 1.25;
++  text-align: center;
+   cursor: pointer;
++  transition:
++    transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1),
++    background-color 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
++}
++
++.button:active:not(:disabled) {
++  transform: scale(0.98);
+ }
+ 
+ .button:disabled {
+-  opacity: 0.6;
++  opacity: 0.45;
+   cursor: not-allowed;
+ }
+ 
+ .primary {
+   background: var(--accent);
+   border-color: var(--accent);
+   color: var(--accent-text);
+ }
+ 
+ .secondary {
+-  background: var(--surface);
+-  color: var(--text);
++  border-color: var(--accent);
++  color: var(--accent);
++}
++
++.ghost {
++  color: var(--accent);
+ }
+ 
+ .danger {
+-  background: var(--surface);
+   border-color: var(--danger);
+   color: var(--danger);
+ }
+ 
++/* Pleine largeur (sur téléphone, la largeur de l'écran moins les marges). */
++.block {
++  width: 100%;
++}
++
++@media (hover: hover) {
++  .primary:hover:not(:disabled) {
++    background: color-mix(in srgb, var(--accent) 88%, var(--text));
++  }
++
++  .secondary:hover:not(:disabled),
++  .ghost:hover:not(:disabled) {
++    background: color-mix(in srgb, var(--accent) 8%, transparent);
++  }
++
++  .danger:hover:not(:disabled) {
++    background: color-mix(in srgb, var(--danger) 8%, transparent);
++  }
++}
++
++/* Champ (GUIDE, Field) : libellé 14/600 au-dessus, contrôle de 52 px en 16 px (pas de zoom sur iOS). */
+ .field {
+   display: flex;
+   flex-direction: column;
+-  gap: var(--space-1);
++  gap: var(--space-2);
+ }
+ 
+ .field input,
+ .field select,
+ .field textarea {
+-  min-height: 44px;
+-  padding: var(--space-2) var(--space-3);
++  min-height: 52px;
++  padding: 13px var(--space-4);
+   border: 1px solid var(--field-border);
+   border-radius: var(--radius-control);
+   background: var(--field-bg);
+   color: var(--text);
+   font: inherit;
++  font-size: 16px;
++}
++
++/* Valeur qu'on ne modifie pas ici (date de naissance) : contour pointillé, texte secondaire. */
++.field input:read-only {
++  border-style: dashed;
++  background: transparent;
++  color: var(--text-muted);
++}
++
++/* Erreur : le contour passe au danger et s'épaissit d'un demi-pixel (1,5 px). */
++.field [aria-invalid="true"] {
++  border-color: var(--danger);
++  box-shadow: inset 0 0 0 0.5px var(--danger);
+ }
+ 
+ .label {
++  font-size: 0.875rem;
+   font-weight: 600;
+ }
+ 
+ .hint {
+-  font-size: 0.875rem;
++  font-size: 0.8125rem;
++  line-height: 1.4;
+   color: var(--text-muted);
+ }
+ 
+ .fieldError {
+-  font-size: 0.875rem;
++  display: flex;
++  align-items: flex-start;
++  gap: 6px;
++  font-size: 0.84375rem;
++  font-weight: 500;
++  line-height: 1.35;
+   color: var(--danger);
+ }
+ 
++.fieldError svg {
++  flex: none;
++  margin-top: 1px;
++}
++
++/* Bandeau (GUIDE, Banner) : rayon 14, icône du ton puis le texte. */
+ .banner {
+-  padding: var(--space-3) var(--space-4);
++  display: flex;
++  align-items: flex-start;
++  gap: var(--space-3);
++  padding: 14px var(--space-4);
+   border-radius: var(--radius-control);
+   border: 1px solid var(--border);
+ }
+ 
+-.info {
+-  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
++.bannerIcon {
++  flex: none;
++  display: flex;
++  margin-top: 2px;
++}
++
++.bannerBody {
++  flex: 1;
++  min-width: 0;
++}
++
++.bannerInfo {
++  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
++  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
++}
++
++.bannerInfo .bannerIcon {
++  color: var(--accent);
+ }
+ 
+-.warning {
++.bannerWarning {
+   background: var(--warning-bg);
++  border-color: color-mix(in srgb, var(--warning-text) 30%, transparent);
+ }
+ 
+-.error {
+-  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
++.bannerWarning .bannerIcon {
++  color: var(--warning-text);
++}
++
++.bannerError {
++  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+   border-color: var(--danger);
+ }
+ 
++.bannerError .bannerIcon {
++  color: var(--danger);
++}
++
+ .backdrop {
+   position: fixed;
+   inset: 0;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   padding: var(--space-4);
+   background: var(--backdrop);
+ }
+ 
+@@ -236,39 +331,603 @@
+ 
+ /* Actions d'un dialogue : jamais réduites, toujours visibles sous le contenu qui défile. */
+ .actions {
+   flex: none;
+   display: flex;
+   flex-wrap: wrap;
+   justify-content: flex-end;
+   gap: var(--space-2);
+ }
+ 
+-.choices {
++/* Légende d'un groupe de choix : comme un libellé de champ. */
++.choiceGroup {
++  min-width: 0;
+   border: 0;
+   margin: 0;
+   padding: 0;
++}
++
++.legend {
++  padding: 0;
++  margin-bottom: var(--space-3);
++  font-size: 0.875rem;
++  font-weight: 600;
++}
++
++.choiceStack {
++  display: flex;
++  flex-direction: column;
++  gap: 10px;
++}
++
++/*
++ * Vrai contrôle (radio, case) transparent posé sur toute sa carte ou sa pastille, dans son `<label>` :
++ * le doigt, la souris et le clavier le visent directement ; l'étiquette montre son état (`:has`).
++ */
++.overlayInput {
++  appearance: none;
++  position: absolute;
++  inset: 0;
++  z-index: 1;
++  width: 100%;
++  height: 100%;
++  margin: 0;
++  border-radius: inherit;
++  opacity: 0;
++  cursor: pointer;
++}
++
++.overlayInput:disabled {
++  cursor: not-allowed;
++}
++
++/*
++ * Carte de choix (GUIDE, Choice card) : rayon 16 en clair et en sombre (celui des cartes du thème moins 2,
++ * donc presque droit dans le Carnet), icône à gauche, titre 600, coche à droite.
++ */
++.choiceCard {
++  position: relative;
++  display: flex;
++  align-items: center;
++  gap: 14px;
++  min-height: 64px;
++  padding: 10px 14px 10px 10px;
++  border-radius: calc(var(--radius-card) - 2px);
++  border: 2px solid var(--border);
++  background: var(--surface);
++  transition:
++    border-color 200ms cubic-bezier(0.2, 0.8, 0.2, 1),
++    background-color 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
++}
++
++.choiceIcon {
++  flex: none;
++  display: grid;
++  place-items: center;
++  width: 40px;
++  height: 40px;
++  border-radius: 12px;
++  background: color-mix(in srgb, var(--text-muted) 12%, var(--surface));
++  color: var(--text-muted);
++}
++
++.choiceIcon svg {
++  width: 22px;
++  height: 22px;
++}
++
++.choiceText {
++  flex: 1;
++  min-width: 0;
+   display: flex;
+   flex-direction: column;
++  gap: 2px;
++}
++
++.choiceTitle {
++  font-weight: 600;
++  line-height: 1.3;
++}
++
++.choiceDescription {
++  font-size: 0.875rem;
++  line-height: 1.35;
++  color: var(--text-muted);
++}
++
++/* Rond (choix unique) ou carré arrondi (choix multiple), plein d'accent et coché quand le choix est fait. */
++.choiceMark {
++  flex: none;
++  display: grid;
++  place-items: center;
++  width: 24px;
++  height: 24px;
++  border-radius: 50%;
++  border: 2px solid color-mix(in srgb, var(--text-muted) 70%, var(--surface));
++}
++
++.choiceMark[data-type="checkbox"] {
++  border-radius: 7px;
++}
++
++/* Pastilles (GUIDE, Chips) : 44 px, rayon 999 ; largeurs égales tant que les libellés tiennent. */
++.chipList {
++  display: flex;
++  flex-wrap: wrap;
+   gap: var(--space-2);
+ }
+ 
+-.choices legend {
++.chip {
++  position: relative;
++  flex: 1 1 0;
++  min-width: max-content;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  min-height: 44px;
++  padding: 0 6px;
++  border-radius: 999px;
++  border: 1px solid var(--field-border);
++  background: var(--field-bg);
++  color: var(--text);
++  font-size: 0.96875rem;
++  font-weight: 500;
++  white-space: nowrap;
++  transition:
++    background-color 200ms cubic-bezier(0.2, 0.8, 0.2, 1),
++    border-color 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
++}
++
++.choiceCard:has(.overlayInput:checked) {
++  border-color: var(--accent);
++  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
++}
++
++.choiceCard:has(.overlayInput:checked) .choiceIcon {
++  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
++  color: var(--accent);
++}
++
++.choiceCard:has(.overlayInput:checked) .choiceMark {
++  border-color: var(--accent);
++  background: var(--accent);
++  color: var(--accent-text);
++}
++
++.chip:has(.overlayInput:checked) {
++  border-color: var(--accent);
++  background: var(--accent);
++  color: var(--accent-text);
++  font-weight: 600;
++}
++
++.choiceCard:has(.overlayInput:focus-visible),
++.chip:has(.overlayInput:focus-visible) {
++  outline: 2px solid var(--focus);
++  outline-offset: 2px;
++}
++
++.choiceCard:has(.overlayInput:disabled),
++.chip:has(.overlayInput:disabled) {
++  opacity: 0.45;
++}
++
++@media (hover: hover) {
++  .choiceCard:has(.overlayInput:hover:not(:disabled, :checked)) {
++    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
++  }
++
++  .chip:has(.overlayInput:hover:not(:disabled, :checked)) {
++    border-color: var(--accent);
++  }
++}
++
++/* Petit ressort de la coche à l'apparition (220 ms) ; sous mouvement réduit, un simple fondu. */
++.checkGlyph {
++  animation: check-pop 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
++}
++
++@keyframes check-pop {
++  from {
++    opacity: 0;
++    transform: scale(0.4);
++  }
++
++  60% {
++    opacity: 1;
++    transform: scale(1.18);
++  }
++
++  to {
++    transform: scale(1);
++  }
++}
++
++@keyframes check-fade {
++  from {
++    opacity: 0;
++  }
++}
++
++/* Coche de la pastille choisie, en pastillon sur son coin : elle ne prend pas de place au libellé. */
++.chipCheck {
++  position: absolute;
++  top: -6px;
++  right: -4px;
++  display: grid;
++  place-items: center;
++  width: 20px;
++  height: 20px;
++  border-radius: 50%;
++  background: var(--accent-text);
++  color: var(--accent);
++  box-shadow: 0 0 0 2px var(--accent);
++}
++
++.chipCheck svg {
++  width: 12px;
++  height: 12px;
++}
++
++/* Interrupteur (maquettes Profil et Salle) : piste 50 × 30 dans une cible de 52 × 44. */
++.switchRow {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 14px;
++  min-height: 44px;
++}
++
++.switchText {
++  min-width: 0;
++  display: flex;
++  flex-direction: column;
++  gap: 3px;
++}
++
++.switchLabel {
+   font-weight: 600;
++  line-height: 1.3;
++  cursor: pointer;
++}
++
++.switch {
++  flex: none;
++  display: grid;
++  place-items: center;
++  min-width: 52px;
++  min-height: 44px;
++  padding: 0;
++  border: 0;
++  border-radius: 999px;
++  background: transparent;
++  cursor: pointer;
++}
++
++.switchTrack {
++  display: flex;
++  align-items: center;
++  width: 50px;
++  height: 30px;
++  padding: 3px;
++  border-radius: 999px;
++  background: var(--field-border);
++  transition: background-color 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
++}
++
++.switchThumb {
++  width: 24px;
++  height: 24px;
++  border-radius: 50%;
++  background: var(--text-muted);
++  transition:
++    transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1),
++    background-color 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
++}
++
++.switch[aria-checked="true"] .switchTrack {
++  background: var(--accent);
++}
++
++.switch[aria-checked="true"] .switchThumb {
++  transform: translateX(20px);
++  background: var(--accent-text);
++}
++
++/* Progression de l'onboarding : segments de 6 px, dégradé d'accent étalé sur toute la barre. */
++.progress {
++  display: flex;
++  align-items: center;
++  gap: var(--space-3);
++}
++
++.segments {
++  flex: 1;
++  display: grid;
++  grid-auto-columns: minmax(0, 1fr);
++  grid-auto-flow: column;
++  gap: var(--space-1);
++}
++
++.segment {
++  height: 6px;
++  border-radius: 3px;
++  background-color: color-mix(in srgb, var(--text-muted) 18%, var(--surface));
++}
++
++/* Chaque segment fait montre sa tranche du dégradé, comme si la barre entière en était peinte. */
++.segment[data-done] {
++  background-image: linear-gradient(90deg, var(--accent), var(--accent-2));
++  background-size: calc(var(--segment-last) * 100% + 100%) 100%;
++  background-position: calc(var(--segment-index) / var(--segment-last) * 100%) 0;
++  transition: background-color 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
++}
++
++.progressText {
++  margin: 0;
++  font-size: 0.8125rem;
++  color: var(--text-muted);
++  white-space: nowrap;
++}
++
++/* Badges (GUIDE, Badges) : rôle en contour accent, statut en teinte avec un point. */
++.badge {
++  display: inline-flex;
++  align-items: center;
++  gap: 5px;
++  min-height: 24px;
++  padding: 0 9px;
++  border-radius: 999px;
++  font-size: 0.78125rem;
++  font-weight: 600;
++  line-height: 1.2;
++  white-space: nowrap;
++}
++
++.badgeDot {
++  width: 6px;
++  height: 6px;
++  border-radius: 50%;
++  background: currentColor;
++}
++
++.badgeAccent {
++  border: 1px solid var(--accent);
++  color: var(--accent);
++}
++
++/* Vert assombri vers le texte : 4,5:1 sur sa teinte dans chaque thème (le vert seul n'y suffit pas en clair). */
++.badgeSuccess {
++  background: color-mix(in srgb, var(--success) 12%, var(--surface));
++  color: color-mix(in srgb, var(--success) 70%, var(--text));
++}
++
++.badgeMuted {
++  background: color-mix(in srgb, var(--text-muted) 12%, var(--surface));
++  color: var(--text-muted);
++}
++
++.badgeWarning {
++  background: var(--warning-bg);
++  color: var(--warning-text);
++}
++
++.badgeDanger {
++  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
++  color: var(--danger);
++}
++
++/* Listes (GUIDE, List row) : lignes de 56 px regroupées dans une carte, séparées d'un trait. */
++.listSection {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-2);
++}
++
++.listTitle {
++  margin: 0 0 0 var(--space-1);
++  font-family: var(--font-display);
++  font-size: 0.75rem;
++  font-weight: 600;
++  letter-spacing: 0.18em;
++  text-transform: uppercase;
++  color: var(--text-muted);
++}
++
++.listGroup {
++  margin: 0;
++  padding: 0;
++  list-style: none;
++  border-radius: var(--radius-card);
++  overflow: hidden;
++  background: var(--surface);
++  border: 1px solid var(--border);
++}
++
++.listItem + .listItem {
++  border-top: 1px solid var(--border);
++}
++
++.row {
++  display: flex;
++  align-items: center;
++  gap: var(--space-3);
++  width: 100%;
++  min-height: 56px;
++  margin: 0;
++  padding: var(--space-2) 14px var(--space-2) var(--space-3);
++  border: 0;
++  background: transparent;
++  color: var(--text);
++  font: inherit;
++  text-align: start;
++  text-decoration: none;
++}
++
++a.row,
++button.row {
++  cursor: pointer;
++  transition: background-color 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
++}
++
++a.row:focus-visible,
++button.row:focus-visible {
++  outline-offset: -2px;
++}
++
++@media (hover: hover) {
++  a.row:hover,
++  button.row:hover {
++    background: color-mix(in srgb, var(--accent) 6%, var(--surface));
++  }
++}
++
++.rowIcon {
++  flex: none;
++  display: grid;
++  place-items: center;
++  width: 36px;
++  height: 36px;
++  border-radius: 11px;
++  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
++  color: var(--accent);
++}
++
++.rowIcon svg {
++  width: 20px;
++  height: 20px;
++}
++
++.rowText {
++  flex: 1;
++  min-width: 0;
++  display: flex;
++  flex-direction: column;
++  gap: 1px;
++}
++
++.rowLabel {
++  font-weight: 600;
++  line-height: 1.25;
++}
++
++.rowValue {
++  overflow: hidden;
++  font-size: 0.8125rem;
++  line-height: 1.3;
++  color: var(--text-muted);
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.rowBadge {
++  flex: none;
++  display: flex;
++}
++
++.rowChevron {
++  flex: none;
++  color: var(--text-muted);
++}
++
++.row[data-tone="danger"] {
++  color: var(--danger);
++}
++
++.row[data-tone="danger"] .rowIcon {
++  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
++  color: var(--danger);
++}
++
++/* État vide (GUIDE, Empty state) : icône de 48 px dans un cercle teinté d'accent, titre, phrase, action. */
++.empty {
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  gap: var(--space-2);
++  padding: var(--space-6) var(--space-4);
++  text-align: center;
++}
++
++.emptyIcon {
++  display: grid;
++  place-items: center;
++  width: 80px;
++  height: 80px;
+   margin-bottom: var(--space-2);
++  border-radius: 50%;
++  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
++  color: var(--accent);
++}
++
++.emptyIcon svg {
++  width: 48px;
++  height: 48px;
+ }
+ 
+-.choice {
++.emptyTitle {
++  margin: 0;
++  font-family: var(--font-title);
++  font-size: 1.0625rem;
++  font-weight: 700;
++}
++
++.emptyText {
++  margin: 0;
++  max-width: 32ch;
++  color: var(--text-muted);
++}
++
++.emptyAction {
++  width: 100%;
++  margin-top: var(--space-2);
++}
++
++/* En-tête de page interne (GUIDE, Inner page header) : Retour 44 × 44, titre 24/700. */
++.pageHeader {
+   display: flex;
+   align-items: center;
+   gap: var(--space-3);
+-  min-height: 44px;
+-  padding: var(--space-2) var(--space-3);
+-  border: 1px solid var(--field-border);
++}
++
++.backButton {
++  flex: none;
++  display: grid;
++  place-items: center;
++  width: 44px;
++  height: 44px;
++  padding: 0;
+   border-radius: var(--radius-control);
++  border: 1px solid var(--border);
+   background: var(--surface);
++  color: var(--text);
++  cursor: pointer;
++}
++
++.pageTitle {
++  margin: 0;
++  min-width: 0;
++  font-size: 1.5rem;
++  font-weight: 700;
++  line-height: 1.2;
+ }
+ 
+ .healthWarning {
+   font-size: 0.875rem;
+   color: var(--text-muted);
+ }
++
++/* Mouvement réduit (spec refonte §7) : ni déplacement ni ressort, des fondus simples. */
++@media (prefers-reduced-motion: reduce) {
++  .button,
++  .switchThumb {
++    transition-property: background-color;
++  }
++
++  .button:active:not(:disabled) {
++    transform: none;
++  }
++
++  .checkGlyph {
++    animation-name: check-fade;
++  }
++}
+diff --git a/apps/web/test/ui/components.test.tsx b/apps/web/test/ui/components.test.tsx
+new file mode 100644
+index 0000000..fec344b
+--- /dev/null
++++ b/apps/web/test/ui/components.test.tsx
+@@ -0,0 +1,437 @@
++import { readFileSync } from 'node:fs';
++import { resolve } from 'node:path';
++import { fireEvent, render, screen, within } from '@testing-library/react';
++import { useState } from 'react';
++import { describe, expect, it, vi } from 'vitest';
++import {
++  Badge,
++  Banner,
++  Button,
++  Chips,
++  ChoiceCard,
++  ChoiceGroup,
++  ChoiceList,
++  EmptyState,
++  Field,
++  ListGroup,
++  ListRow,
++  PageHeader,
++  SegmentedProgress,
++  Switch,
++} from '../../src/ui';
++import styles from '../../src/ui/ui.module.css';
++import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
++
++/** Règle de la feuille de base pour une classe du module (la taille d'une cible ne se lit que là). */
++const css = parseCssBlocks(readFileSync(resolve(import.meta.dirname, '../../src/ui/ui.module.css'), 'utf8'));
++const rule = (selector: string) => declarationsOf(css, selector);
++const px = (value: string | undefined) => Number.parseFloat(value ?? '');
++/** Classe générée pour `.name` du module ; son absence est une erreur, jamais un « undefined » qui passerait. */
++const cls = (name: string): string => {
++  const generated = styles[name];
++  if (!generated) throw new Error(`classe .${name} absente de ui.module.css`);
++  return generated;
++};
++
++const icon = (
++  <svg aria-hidden="true" viewBox="0 0 24 24">
++    <path d="M6 7v10" />
++  </svg>
++);
++
++describe('Button', () => {
++  it('bouton de type button par défaut, désactivable, 52 px de haut', () => {
++    render(
++      <>
++        <Button>Continuer</Button>
++        <Button variant="ghost">Plus tard</Button>
++        <Button variant="danger" disabled>
++          Supprimer
++        </Button>
++      </>,
++    );
++    expect(screen.getByRole('button', { name: 'Continuer' }).getAttribute('type')).toBe('button');
++    expect(screen.getByRole('button', { name: 'Plus tard' })).toBeTruthy();
++    expect((screen.getByRole('button', { name: 'Supprimer' }) as HTMLButtonElement).disabled).toBe(true);
++    expect(px(rule('.button')?.get('min-height'))).toBe(52);
++  });
++
++  it('block : pleine largeur', () => {
++    render(<Button block>Continuer</Button>);
++    expect(screen.getByRole('button', { name: 'Continuer' }).classList.contains(cls('block'))).toBe(true);
++    expect(rule('.block')?.get('width')).toBe('100%');
++  });
++});
++
++describe('Field', () => {
++  it('erreur reliée au champ par aria-describedby, avec l’aide, et champ marqué invalide', () => {
++    render(
++      <Field label="Mot de passe" help="Une phrase de 4 mots ou plus." error="12 caractères au moins.">
++        <input type="password" />
++      </Field>,
++    );
++    const input = screen.getByLabelText('Mot de passe');
++    expect(input.getAttribute('aria-invalid')).toBe('true');
++    const described = (input.getAttribute('aria-describedby') ?? '').split(' ');
++    const texts = described.map((id) => document.getElementById(id)?.textContent);
++    expect(texts).toEqual(['12 caractères au moins.', 'Une phrase de 4 mots ou plus.']);
++  });
++
++  it('l’icône d’erreur est décorative : le texte annoncé reste la phrase seule', () => {
++    render(
++      <Field label="Pseudo" error="Trop court">
++        <input type="text" />
++      </Field>,
++    );
++    const input = screen.getByRole('textbox', { name: 'Pseudo', description: 'Trop court' });
++    const errorId = input.getAttribute('aria-describedby') as string;
++    const svg = document.getElementById(errorId)?.querySelector('svg');
++    expect(svg?.closest('[aria-hidden="true"]')).toBeTruthy();
++  });
++
++  it('sans erreur : ni aria-invalid ni description d’erreur ; texte des champs en 16 px', () => {
++    render(
++      <Field label="Ville">
++        <input type="text" />
++      </Field>,
++    );
++    const input = screen.getByRole('textbox', { name: 'Ville' });
++    expect(input.hasAttribute('aria-invalid')).toBe(false);
++    expect(input.hasAttribute('aria-describedby')).toBe(false);
++    expect(rule('.field input, .field select, .field textarea')?.get('font-size')).toBe('16px');
++  });
++});
++
++describe('ChoiceCard et ChoiceGroup', () => {
++  it('carte cochée : un vrai bouton radio nommé par son titre, sous la légende du groupe', () => {
++    render(
++      <ChoiceGroup legend="Quel est ton objectif principal ?">
++        <ChoiceCard
++          type="radio"
++          name="goal"
++          value="muscle"
++          checked
++          onChange={() => {}}
++          title="Prendre du muscle"
++          icon={icon}
++        />
++        <ChoiceCard
++          type="radio"
++          name="goal"
++          value="strength"
++          checked={false}
++          onChange={() => {}}
++          title="Gagner en force"
++        />
++      </ChoiceGroup>,
++    );
++    const group = screen.getByRole('group', { name: 'Quel est ton objectif principal ?' });
++    const radio = within(group).getByRole('radio', { name: 'Prendre du muscle', checked: true });
++    expect(radio.tagName).toBe('INPUT');
++    expect(within(group).getByRole('radio', { name: 'Gagner en force', checked: false })).toBeTruthy();
++  });
++
++  it('la description décrit le choix sans allonger son nom', () => {
++    render(
++      <ChoiceCard
++        type="radio"
++        name="gym"
++        value="g-1"
++        checked={false}
++        onChange={() => {}}
++        title="Salle du centre"
++        description="Lyon · 2 membres visibles"
++      />,
++    );
++    expect(
++      screen.getByRole('radio', { name: 'Salle du centre', description: 'Lyon · 2 membres visibles' }),
++    ).toBeTruthy();
++  });
++
++  it('choix multiple : case à cocher ; onChange au clic, sur la case comme sur la carte', () => {
++    const onChange = vi.fn();
++    render(
++      <ChoiceCard type="checkbox" name="eq" value="bench" checked={false} onChange={onChange} title="Banc" />,
++    );
++    fireEvent.click(screen.getByRole('checkbox', { name: 'Banc', checked: false }));
++    fireEvent.click(screen.getByText('Banc'));
++    expect(onChange).toHaveBeenCalledTimes(2);
++  });
++
++  it('sélection jamais par la couleur seule : la carte cochée porte une coche, pas les autres', () => {
++    render(
++      <>
++        <ChoiceCard type="radio" name="k" value="a" checked onChange={() => {}} title="À la salle" />
++        <ChoiceCard type="radio" name="k" value="b" checked={false} onChange={() => {}} title="À la maison" />
++      </>,
++    );
++    const card = (name: string) => screen.getByText(name).closest('label') as HTMLElement;
++    const mark = card('À la salle').querySelector('[data-check]');
++    expect(mark?.closest('[aria-hidden="true"]')).toBeTruthy();
++    expect(card('À la maison').querySelector('[data-check]')).toBeNull();
++  });
++});
++
++describe('ChoiceList (adaptateur vers ChoiceCard, signature inchangée)', () => {
++  it('garde le groupe nommé par sa légende, les radios nommés par leur libellé, désactivé et explication', () => {
++    const onChange = vi.fn();
++    render(
++      <>
++        <p id="pourquoi">Ton objectif demande un sport.</p>
++        <ChoiceList<'no' | 'yes'>
++          name="practice"
++          legend="Pratiques-tu un autre sport régulièrement ?"
++          value="yes"
++          onChange={onChange}
++          options={[
++            { value: 'no', label: 'Non', disabled: true, describedBy: 'pourquoi' },
++            { value: 'yes', label: 'Oui' },
++          ]}
++        />
++      </>,
++    );
++    const group = screen.getByRole('group', { name: 'Pratiques-tu un autre sport régulièrement ?' });
++    const no = within(group).getByRole('radio', {
++      name: 'Non',
++      description: 'Ton objectif demande un sport.',
++    });
++    expect((no as HTMLInputElement).disabled).toBe(true);
++    expect(within(group).getByRole('radio', { name: 'Oui', checked: true })).toBeTruthy();
++    expect(screen.getByLabelText('Oui')).toBe(within(group).getByRole('radio', { name: 'Oui' }));
++  });
++
++  it('rend la valeur d’origine (nombre compris) à onChange', () => {
++    const onChange = vi.fn();
++    render(
++      <ChoiceList<number>
++        name="days"
++        legend="Séances par semaine"
++        value={null}
++        onChange={onChange}
++        options={[2, 3, 4].map((n) => ({ value: n, label: String(n) }))}
++      />,
++    );
++    fireEvent.click(screen.getByRole('radio', { name: '3' }));
++    expect(onChange).toHaveBeenCalledWith(3);
++  });
++});
++
++describe('Chips', () => {
++  function Rhythm() {
++    const [value, setValue] = useState<string | null>('60');
++    return (
++      <Chips
++        name="minutes"
++        legend="Durée d'une séance"
++        value={value}
++        onChange={setValue}
++        options={['45', '60', '75'].map((v) => ({ value: v, label: `${v} min` }))}
++      />
++    );
++  }
++
++  it('radios sous une légende ; un clic change la valeur', () => {
++    render(<Rhythm />);
++    const group = screen.getByRole('group', { name: "Durée d'une séance" });
++    expect(within(group).getByRole('radio', { name: '60 min', checked: true })).toBeTruthy();
++    fireEvent.click(within(group).getByRole('radio', { name: '45 min' }));
++    expect(within(group).getByRole('radio', { name: '45 min', checked: true })).toBeTruthy();
++    expect(within(group).getByRole('radio', { name: '60 min', checked: false })).toBeTruthy();
++  });
++
++  it('chaque pastille est une cible d’au moins 44 px ; la pastille choisie porte une coche', () => {
++    render(<Rhythm />);
++    const labels = ['45 min', '60 min', '75 min'].map(
++      (t) => screen.getByText(t).closest('label') as HTMLElement,
++    );
++    for (const label of labels) expect(label.classList.contains(cls('chip'))).toBe(true);
++    expect(px(rule('.chip')?.get('min-height'))).toBeGreaterThanOrEqual(44);
++    const checked = labels.filter((l) => l.querySelector('[data-check]'));
++    expect(checked.map((l) => l.textContent)).toEqual(['60 min']);
++  });
++});
++
++describe('Switch', () => {
++  function Prudent() {
++    const [on, setOn] = useState(false);
++    return (
++      <Switch
++        id="prudent"
++        label="Je préfère une progression plus prudente"
++        help="Réglage d'entraînement, pas une donnée de santé."
++        checked={on}
++        onChange={setOn}
++      />
++    );
++  }
++
++  it('role switch, nommé par son libellé, décrit par son aide, aria-checked suit l’état', () => {
++    render(<Prudent />);
++    const sw = screen.getByRole('switch', {
++      name: 'Je préfère une progression plus prudente',
++      description: "Réglage d'entraînement, pas une donnée de santé.",
++    });
++    expect(sw.id).toBe('prudent');
++    expect(sw.getAttribute('aria-checked')).toBe('false');
++    fireEvent.click(sw);
++    expect(sw.getAttribute('aria-checked')).toBe('true');
++    fireEvent.click(screen.getByText('Je préfère une progression plus prudente'));
++    expect(sw.getAttribute('aria-checked')).toBe('false');
++  });
++
++  it('vrai bouton : Espace et Entrée l’actionnent nativement ; cible d’au moins 44 px', () => {
++    const onChange = vi.fn();
++    render(<Switch id="v" label="Visible" checked onChange={onChange} />);
++    const sw = screen.getByRole('switch', { name: 'Visible', checked: true });
++    expect(sw.tagName).toBe('BUTTON');
++    expect(sw.getAttribute('type')).toBe('button');
++    fireEvent.click(sw);
++    expect(onChange).toHaveBeenCalledWith(false);
++    expect(sw.classList.contains(cls('switch'))).toBe(true);
++    expect(px(rule('.switch')?.get('min-height'))).toBeGreaterThanOrEqual(44);
++    expect(px(rule('.switch')?.get('min-width'))).toBeGreaterThanOrEqual(44);
++  });
++});
++
++describe('SegmentedProgress', () => {
++  it('« Étape 3 sur 9 », 9 segments dont 3 faits', () => {
++    const { container } = render(<SegmentedProgress step={3} total={9} />);
++    expect(screen.getByText('Étape 3 sur 9')).toBeTruthy();
++    expect(container.querySelectorAll('[data-segment]')).toHaveLength(9);
++    expect(container.querySelectorAll('[data-segment][data-done]')).toHaveLength(3);
++    for (const segment of container.querySelectorAll('[data-segment]')) {
++      expect(segment.closest('[aria-hidden="true"]')).not.toBeNull();
++    }
++  });
++});
++
++describe('Badge', () => {
++  it('affiche son texte, quel que soit le ton', () => {
++    render(
++      <>
++        <Badge tone="accent">Admin</Badge>
++        <Badge tone="success">Actif</Badge>
++        <Badge tone="muted">Désactivé</Badge>
++        <Badge tone="warning">En attente</Badge>
++        <Badge tone="danger">Refusé</Badge>
++      </>,
++    );
++    for (const text of ['Admin', 'Actif', 'Désactivé', 'En attente', 'Refusé']) {
++      expect(screen.getByText(text)).toBeTruthy();
++    }
++  });
++});
++
++describe('ListGroup et ListRow', () => {
++  it('ligne lien : nommée par son libellé, décrite par sa valeur et son badge, chevron décoratif', () => {
++    render(
++      <ListGroup title="Compte et appli">
++        <ListRow
++          icon={icon}
++          label="Réglages"
++          value="Apparence, synchronisation"
++          href="/settings"
++          badge={<Badge tone="warning">1 refusé</Badge>}
++        />
++      </ListGroup>,
++    );
++    const region = screen.getByRole('region', { name: 'Compte et appli' });
++    expect(within(region).getByRole('list')).toBeTruthy();
++    const link = within(region).getByRole('link', {
++      name: 'Réglages',
++      description: 'Apparence, synchronisation 1 refusé',
++    });
++    expect(link.getAttribute('href')).toBe('/settings');
++    expect(link.querySelectorAll('svg').length).toBeGreaterThan(0);
++    for (const svg of link.querySelectorAll('svg'))
++      expect(svg.closest('[aria-hidden="true"]')).not.toBeNull();
++    expect(link.classList.contains(cls('row'))).toBe(true);
++    expect(px(rule('.row')?.get('min-height'))).toBe(56);
++  });
++
++  it('ligne bouton (onClick) avec chevron, ligne danger sans chevron, ligne d’information sans action', () => {
++    const onClick = vi.fn();
++    render(
++      <ListGroup>
++        <ListRow label="Mot de passe" onClick={onClick} />
++        <ListRow label="Se déconnecter" tone="danger" onClick={onClick} />
++        <ListRow label="Connexion" value="En ligne" />
++      </ListGroup>,
++    );
++    const password = screen.getByRole('button', { name: 'Mot de passe' });
++    const logout = screen.getByRole('button', { name: 'Se déconnecter' });
++    fireEvent.click(password);
++    fireEvent.click(logout);
++    expect(onClick).toHaveBeenCalledTimes(2);
++    // Maquettes : une ligne qui mène ailleurs a son chevron ; l'action dangereuse isolée (C01) n'en a pas.
++    expect(password.querySelector('svg')).not.toBeNull();
++    expect(logout.querySelector('svg')).toBeNull();
++    expect(screen.getAllByRole('listitem')).toHaveLength(3);
++    expect(screen.queryByRole('link')).toBeNull();
++    expect(screen.queryByRole('button', { name: /Connexion/ })).toBeNull();
++    expect(screen.getByText('En ligne')).toBeTruthy();
++  });
++});
++
++describe('EmptyState', () => {
++  it('titre, phrase et action ; l’icône est décorative', () => {
++    render(
++      <EmptyState
++        icon={icon}
++        title="Aucune salle"
++        text="Ajoute ta salle pour la retrouver ici."
++        action={<Button>Ajouter une salle</Button>}
++      />,
++    );
++    expect(screen.getByText('Aucune salle')).toBeTruthy();
++    expect(screen.getByText('Ajoute ta salle pour la retrouver ici.')).toBeTruthy();
++    expect(screen.getByRole('button', { name: 'Ajouter une salle' })).toBeTruthy();
++    expect(
++      screen.getByText('Aucune salle').parentElement?.querySelector('svg')?.closest('[aria-hidden="true"]'),
++    ).toBeTruthy();
++  });
++});
++
++describe('PageHeader', () => {
++  it('back="/profile" : lien « Retour » vers /profile, puis le titre de niveau 1', () => {
++    render(<PageHeader title="Réglages" back="/profile" />);
++    const back = screen.getByRole('link', { name: 'Retour' });
++    expect(back.getAttribute('href')).toBe('/profile');
++    expect(screen.getByRole('heading', { level: 1, name: 'Réglages' })).toBeTruthy();
++    expect(back.classList.contains(cls('backButton'))).toBe(true);
++    expect(px(rule('.backButton')?.get('width'))).toBe(44);
++    expect(px(rule('.backButton')?.get('height'))).toBe(44);
++  });
++
++  it('back fonction : bouton « Retour » qui l’appelle ; sans back, pas de Retour', () => {
++    const back = vi.fn();
++    const { rerender } = render(<PageHeader title="Mon coach" back={back} />);
++    fireEvent.click(screen.getByRole('button', { name: 'Retour' }));
++    expect(back).toHaveBeenCalledTimes(1);
++    rerender(<PageHeader title="Profil" />);
++    expect(screen.queryByRole('button', { name: 'Retour' })).toBeNull();
++    expect(screen.queryByRole('link', { name: 'Retour' })).toBeNull();
++  });
++});
++
++describe('Banner', () => {
++  it('erreur annoncée tout de suite (alert), le reste poliment (status) ; icône décorative', () => {
++    render(
++      <>
++        <Banner tone="error">Connexion impossible.</Banner>
++        <Banner tone="warning">Nécessite le réseau.</Banner>
++        <Banner tone="info">Nouvelle version disponible</Banner>
++      </>,
++    );
++    const alert = screen.getByRole('alert');
++    expect(alert.textContent).toBe('Connexion impossible.');
++    expect(screen.getAllByRole('status').map((s) => s.textContent)).toEqual([
++      'Nécessite le réseau.',
++      'Nouvelle version disponible',
++    ]);
++    for (const banner of [alert, ...screen.getAllByRole('status')]) {
++      const svg = banner.querySelector('svg');
++      expect(svg?.closest('[aria-hidden="true"]')).toBeTruthy();
++    }
++  });
++});

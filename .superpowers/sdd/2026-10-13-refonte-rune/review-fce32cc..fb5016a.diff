@@ -1,0 +1,2248 @@
+# Review package: fce32cc..HEAD
+
+## Commits
+fb5016a test(web): tests de la barre de l'onboarding accordés après l'intégration du tour 1
+c5ae1dd fix(web): barre de l'onboarding à sa vraie hauteur, ordre et ombre de « Éveil terminé »
+c12091d fix(web): « Éveil terminé » annonce « Prêt hors ligne », rend le focus à « Commencer », coach à 3/3
+1c08422 test(web): textes de l'écran Santé épinglés en entier, aucun champ de santé avant l'accord
+fe1b301 test(web): focus au clavier au-dessus de la barre collée de l'onboarding (WCAG 2.4.11)
+c547a71 fix(web): salle de l'onboarding selon B04, carte « Créer une salle » et « Continuer » dans la barre
+6c4249d test(web): quêtes d'éveil, fenêtre du Système et premier rendu vraiment vérifiés
+8fbfe04 docs(readme): onboarding, Profil et administration codés, en relecture
+
+## Files changed
+ README.md                                          |   2 +-
+ apps/web/e2e/onboarding-bar.spec.ts                | 122 +++++++++++
+ apps/web/e2e/onboarding-focus.spec.ts              | 108 ++++++++++
+ apps/web/e2e/support/flows.ts                      |   3 +-
+ apps/web/src/features/onboarding/PlaceStep.tsx     |  18 +-
+ apps/web/src/features/onboarding/ReadyStep.tsx     |  36 +++-
+ apps/web/src/features/onboarding/StepActions.tsx   |  45 +++-
+ .../src/features/onboarding/onboarding.module.css  |  65 ++++--
+ apps/web/src/features/places/CreateGymCard.tsx     |  59 ++++++
+ apps/web/src/features/places/GymPicker.tsx         |  58 +++--
+ apps/web/src/features/places/places.module.css     |  69 ++++++
+ apps/web/src/ui/Button.tsx                         |   5 +-
+ apps/web/src/ui/TabBar.tsx                         |   3 +-
+ apps/web/test/onboarding/celebration.test.tsx      | 234 ++++++++++++++++++++-
+ apps/web/test/onboarding/flow.test.tsx             | 122 ++++++++++-
+ apps/web/test/onboarding/health-step.test.tsx      |  42 +++-
+ apps/web/test/onboarding/ready-step.test.tsx       |  54 ++++-
+ apps/web/test/onboarding/steps.test.tsx            |  53 ++++-
+ apps/web/test/ui/components.test.tsx               |  33 +++
+ 19 files changed, 1056 insertions(+), 75 deletions(-)
+
+## Diff
+diff --git a/README.md b/README.md
+index 7c15a89..c9d760e 100644
+--- a/README.md
++++ b/README.md
+@@ -7,21 +7,21 @@
+ <p align="center"><em>Grave ta progression.</em></p>
+ 
+ Rune est une application web installable (PWA) de suivi de musculation, auto-hébergée, pour un cercle privé. Elle proposera des programmes d'entraînement, un suivi des séances qui marche hors ligne, des fiches d'exercices pour débutants, un coach IA au choix et des repères nutrition.
+ 
+ > Rune portait un autre nom de code pendant le cadrage. Tout s'appelle désormais Rune : le dépôt, les paquets (`@rune/…`), le serveur et les scripts. Seuls `docs/superpowers/` et `docs/research/` gardent l'ancien nom, par historique : y lire « rune » partout où un identifiant porte l'ancien nom.
+ 
+ > **Statut au 15 octobre 2026 : brique 1 (socle) codée, refonte visuelle en cours sur les écrans, brique 2 prête à démarrer.** Le socle est fait et relu : comptes sur invitation, onboarding, PWA hors ligne, synchronisation, administration, déploiement, sauvegardes et procédures.
+ >
+ > - **Refonte aux couleurs de Rune** : renommage complet, thèmes et polices, logo et icônes, boîte à outils, feuilles du bas, avatars des coachs, rangs en pierre, coquille avec la barre d'onglets, coach côté serveur, décisions de confidentialité et commande `pnpm dev` sont codés, relus et fusionnés.
+ >   - Écrans codés et relus : le choix du coach avec sa présentation, puis Salles et lieux.
+->   - En cours : l'onboarding rhabillé, l'espace Profil et l'administration.
++>   - Codés, en cours de relecture : l'onboarding rhabillé avec l'écran « Éveil terminé », l'espace Profil (Mon coach, apparence, santé, confidentialité, déconnexion) et l'administration en cartes.
+ >   - Restent : l'accueil et Progression, les pages d'accès, la seconde fusion, les points reportés, la vérification avec captures et la relecture finale.
+ > - **Brique 2 (exercices)** : la [spec](docs/superpowers/specs/2026-10-14-brique-2-exercices-design.md) et le [plan d'implémentation](docs/superpowers/plans/2026-10-14-brique-2-exercices.md) sont validés, puis vérifiés par quatre relecteurs. 27 règles complètent le plan, par exemple :
+ >   - une fiche sensible n'est jamais publiée sans feu vert santé à jour ;
+ >   - le catalogue exporté ne contient aucun identifiant de compte ;
+ >   - les relecteurs sont majeurs ;
+ >   - le pilote est d'abord relu par le propriétaire seul.
+ >
+ >   Les tâches sont suivies dans le jalon GitHub « Brique 2 · Exercices » (tickets #69 à #86). Le code démarre dès que la refonte est fusionnée.
+ >
+ > **Pas de mise en production avant la fin des cinq briques.** Les spécifications sont dans [`docs/superpowers/specs/`](docs/superpowers/specs/) : la [spec principale](docs/superpowers/specs/2026-10-06-appsport-design.md), la [spec de la refonte](docs/superpowers/specs/2026-10-13-refonte-rune-design.md) et la [spec de la brique 2](docs/superpowers/specs/2026-10-14-brique-2-exercices-design.md).
+diff --git a/apps/web/e2e/onboarding-bar.spec.ts b/apps/web/e2e/onboarding-bar.spec.ts
+new file mode 100644
+index 0000000..c08b16d
+--- /dev/null
++++ b/apps/web/e2e/onboarding-bar.spec.ts
+@@ -0,0 +1,122 @@
++import type { Page } from '@playwright/test';
++import { EXPERIENCE_LABELS, GOAL_LABELS, HEALTH_CONSENT_TEXT } from '@rune/contracts';
++import { expect, test } from './support/fixtures';
++import { createAccountViaUi } from './support/flows';
++import { emulateStandalone } from './support/pwa';
++import { bootstrapAdmin } from './support/server';
++
++// Barre « Retour » / « Continuer » collée en bas de l'onboarding (maquettes B01–B08) : elle porte aussi l'erreur
++// de l'écran et grandit avec elle (deux lignes à 390 px). Un champ atteint par Tab ou par focus() finit au-dessus
++// d'elle, jamais dessous (WCAG 2.2, 2.4.11), dans Chromium comme dans WebKit, qui ignore scroll-padding pour
++// focus(). Le service worker n'y joue aucun rôle.
++
++const DRAFT_INCOMPLETE = 'Termine ou efface la limitation en cours avant de continuer.';
++
++/** Fin des animations (entrée d'écran, cascade des cartes) : les boîtes sont à leur place. */
++const settle = (page: Page) =>
++  page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'));
++
++test('onboarding, erreur dans la barre collée : le champ atteint par Tab ou focus() finit au-dessus d’elle', async ({
++  server,
++  context,
++  page,
++}) => {
++  await emulateStandalone(context);
++  const { link } = await bootstrapAdmin(server);
++  await page.goto(link);
++  await createAccountViaUi(page, 'noa');
++
++  const current = page.getByTestId('onboarding-step');
++  const button = (name: string) => page.getByRole('button', { name, exact: true });
++  const at = (step: string) => expect(current).toHaveAttribute('data-step', step);
++  const choose = (name: string) => current.getByRole('radio', { name, exact: true }).check();
++
++  await test.step('jusqu’à « Santé et prudence »', async () => {
++    await at('coach');
++    await choose('Le Skald');
++    await button('Continuer').click();
++    await button("C'est parti").click();
++    await at('goal');
++    await choose(GOAL_LABELS.muscle);
++    await button('Continuer').click();
++    await at('sport');
++    await choose('Non');
++    await button('Continuer').click();
++    await at('place_kind');
++    await choose('À la maison');
++    await button('Continuer').click();
++    await at('place');
++    await button('Continuer').click();
++    await at('experience');
++    await choose(EXPERIENCE_LABELS.none);
++    await button('Continuer').click();
++    await at('availability');
++    await choose('3');
++    await choose('45 min');
++    await button('Continuer').click();
++    await at('health');
++  });
++
++  // La barre : le bloc de l'écran qui porte l'erreur et les boutons.
++  const bar = page.getByRole('alert').locator('xpath=..');
++  await test.step('limitation commencée (la zone seule) : l’erreur de deux lignes s’affiche dans la barre', async () => {
++    await current.getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text, exact: true }).check();
++    await button("J'accepte et je renseigne").click();
++    await current.getByLabel('Zone', { exact: true }).selectOption({ index: 1 });
++    await button('Continuer').click();
++    await expect(page.getByRole('alert')).toHaveText(DRAFT_INCOMPLETE);
++    await expect(bar.getByRole('button', { name: 'Continuer', exact: true })).toBeVisible();
++    await settle(page);
++  });
++
++  const note = current.getByLabel('Note', { exact: true });
++  const previous = current.getByRole('group', { name: 'Gêne', exact: true }).getByRole('radio').last();
++
++  /** « Note » centrée sur la barre (entièrement dessous), focus sur le contrôle d'avant sans défiler. */
++  const placeUnderBar = async () => {
++    const placed = await bar.evaluate(
++      (b, [field, before]) => {
++        const r = (field as HTMLElement).getBoundingClientRect();
++        const box = b.getBoundingClientRect();
++        window.scrollTo(0, window.scrollY + r.top + r.height / 2 - (box.top + box.height / 2));
++        (before as HTMLElement).focus({ preventScroll: true });
++        const f = (field as HTMLElement).getBoundingClientRect();
++        const now = b.getBoundingClientRect();
++        return { covered: f.top >= now.top && f.bottom <= now.bottom, barHeight: now.height };
++      },
++      [await note.elementHandle(), await previous.elementHandle()] as const,
++    );
++    expect(placed.covered, '« Note » peut passer entièrement sous la barre').toBe(true);
++    // Erreur de deux lignes : la barre dépasse l'ancienne marge fixe de 6,5 rem (104 px).
++    expect(placed.barHeight).toBeGreaterThan(104);
++  };
++
++  /** « Note » a le focus et finit au-dessus de la barre (haut de la barre − bas du champ ≥ 0). */
++  const noteAboveBar = async () => {
++    await expect(note).toBeFocused();
++    const field = await note.elementHandle();
++    await expect
++      .poll(
++        () =>
++          bar.evaluate(
++            (b, f) =>
++              Math.round(b.getBoundingClientRect().top - (f as HTMLElement).getBoundingClientRect().bottom),
++            field,
++          ),
++        { message: 'haut de la barre − bas de « Note » (≥ 0 : au-dessus)' },
++      )
++      .toBeGreaterThanOrEqual(0);
++  };
++
++  await test.step('Tab vers « Note », posée sous la barre : elle finit au-dessus', async () => {
++    await placeUnderBar();
++    await page.keyboard.press('Tab');
++    await noteAboveBar();
++  });
++
++  await test.step('focus() de « Note », posée sous la barre : elle finit au-dessus', async () => {
++    await placeUnderBar();
++    await note.evaluate((field) => (field as HTMLElement).focus());
++    await noteAboveBar();
++  });
++});
+diff --git a/apps/web/e2e/onboarding-focus.spec.ts b/apps/web/e2e/onboarding-focus.spec.ts
+new file mode 100644
+index 0000000..7f9ae36
+--- /dev/null
++++ b/apps/web/e2e/onboarding-focus.spec.ts
+@@ -0,0 +1,108 @@
++import type { Page } from '@playwright/test';
++import { GOAL_LABELS } from '@rune/contracts';
++import { expect, test } from './support/fixtures';
++import { createAccountViaUi } from './support/flows';
++import { emulateStandalone } from './support/pwa';
++import { bootstrapAdmin } from './support/server';
++
++// WCAG 2.2 2.4.11 (focus jamais caché) et 1.4.10, spec refonte §12 : la barre « Retour » / « Continuer » de
++// l'onboarding reste collée en bas de l'écran (maquettes B01–B08), sauf sur un écran bas (téléphone couché,
++// clavier ouvert, zoom à 400 %) : là elle reprend sa place à la fin de l'écran (onboarding.module.css,
++// max-height: 30rem) et ne peut plus rien recouvrir. Un champ atteint au clavier finit alors à l'écran, à
++// découvert (WebKit ne défile que jusqu'à la ligne de saisie : le bas du cadre peut rester sous le bord).
++// La tabulation de WebKit ne passe que par les champs de saisie : la création d'une salle (nom, puis ville) s'y
++// prête. Barre collée (écran haut) : e2e/onboarding-bar.spec.ts, par Tab et par focus() ; sur cet écran, la
++// ville est trop haut dans la page pour passer sous une barre collée.
++
++/** Écran bas (téléphone couché, clavier ouvert), sous les 30 rem où la barre se décolle. */
++const SHORT_HEIGHT = 320;
++
++/** Fin des animations (entrée d'écran, cascade) : les boîtes sont à leur place. */
++const settle = (page: Page) =>
++  page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'));
++
++/**
++ * Boîte du champ `fieldId` en px de la fenêtre, si un ancêtre de « Retour » est collé ou fixé (la barre), et si
++ * le centre du champ est à découvert (rien posé dessus).
++ */
++const boxes = (page: Page, fieldId: string) =>
++  page.evaluate((id) => {
++    const back = [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Retour');
++    let pinned = false;
++    for (let el = back?.parentElement ?? null; el; el = el.parentElement) {
++      if (['sticky', 'fixed'].includes(getComputedStyle(el).position)) pinned = true;
++    }
++    const field = document.getElementById(id);
++    const box = field?.getBoundingClientRect();
++    const hit = box ? document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2) : null;
++    return {
++      pinned,
++      uncovered: hit !== null && field?.contains(hit) === true,
++      top: Math.round(box?.top ?? Number.NaN),
++      centre: Math.round(box ? box.top + box.height / 2 : Number.NaN),
++    };
++  }, fieldId);
++
++test('onboarding, écran bas : la barre ne colle plus, le champ atteint par Tab finit à l’écran, à découvert (WCAG 2.4.11)', async ({
++  server,
++  context,
++  page,
++}) => {
++  await emulateStandalone(context);
++  const { link } = await bootstrapAdmin(server);
++  await page.goto(link);
++  await createAccountViaUi(page, 'noa');
++
++  const current = page.getByTestId('onboarding-step');
++  const button = (name: string) => page.getByRole('button', { name, exact: true });
++  const choose = (name: string) => current.getByRole('radio', { name, exact: true }).check();
++  const at = (step: string) => expect(current).toHaveAttribute('data-step', step);
++
++  await test.step('jusqu’à la création d’une salle (maquette B04)', async () => {
++    await at('coach');
++    await choose('Le Skald');
++    await button('Continuer').click();
++    await button("C'est parti").click();
++    await at('goal');
++    await choose(GOAL_LABELS.muscle);
++    await button('Continuer').click();
++    await at('sport');
++    await choose('Non');
++    await button('Continuer').click();
++    await at('place_kind');
++    await choose('À la salle');
++    await button('Continuer').click();
++    await at('place');
++    await button('Créer une salle').click();
++    await expect(page.getByLabel('Ville', { exact: true })).toBeVisible();
++  });
++
++  await test.step('Tab du nom vers la ville, sous le bas de l’écran : la ville finit à l’écran, à découvert', async () => {
++    const width = page.viewportSize()?.width ?? 390;
++    await page.setViewportSize({ width, height: SHORT_HEIGHT });
++    await settle(page);
++    const nameId = await page.getByLabel('Nom de la salle', { exact: true }).evaluate((el) => el.id);
++    const cityId = await page.getByLabel('Ville', { exact: true }).evaluate((el) => el.id);
++    // Haut de la page, focus sur le nom sans défiler : la ville est sous le bas de la fenêtre.
++    await page.evaluate((id) => {
++      window.scrollTo(0, 0);
++      document.getElementById(id)?.focus({ preventScroll: true });
++    }, nameId);
++    const before = await boxes(page, cityId);
++    expect(before.pinned, 'écran bas : la barre n’est plus collée').toBe(false);
++    expect(before.top, 'avant : la ville est sous le bas de la fenêtre').toBeGreaterThanOrEqual(SHORT_HEIGHT);
++
++    await page.keyboard.press('Tab');
++    await expect(page.getByLabel('Ville', { exact: true })).toBeFocused();
++    await expect
++      .poll(
++        async () => {
++          const after = await boxes(page, cityId);
++          return after.top >= 0 && after.centre < SHORT_HEIGHT && after.uncovered;
++        },
++        { message: 'la ville est dans la fenêtre (haut et centre) et rien ne recouvre son centre' },
++      )
++      .toBe(true);
++    expect((await boxes(page, cityId)).pinned, 'la barre reste décollée').toBe(false);
++  });
++});
+diff --git a/apps/web/e2e/support/flows.ts b/apps/web/e2e/support/flows.ts
+index 8873b12..15efd36 100644
+--- a/apps/web/e2e/support/flows.ts
++++ b/apps/web/e2e/support/flows.ts
+@@ -46,21 +46,22 @@ export async function completeOnboardingViaUi(
+   await choose(GOAL_LABELS.muscle);
+   await next();
+   await at('sport');
+   await choose('Non');
+   await next();
+   await at('place_kind');
+   await choose(o.place.kind === 'gym' ? 'À la salle' : 'À la maison');
+   await next();
+   await at('place');
+   if (o.place.kind === 'gym') {
+-    await button(page, "Ma salle n'est pas dans la liste").click();
++    // Carte « Créer une salle » sous la liste (maquette B04).
++    await button(page, 'Créer une salle').click();
+     await page.getByLabel('Nom de la salle', { exact: true }).fill(o.place.name);
+     await page.getByLabel('Ville', { exact: true }).fill(o.place.city);
+     await button(page, 'Continuer').click();
+     await choose(PRESETS.gym_small.label);
+     // La salle créée valide l'écran : pas de « Continuer » de l'écran.
+     await button(page, 'Créer la salle').click();
+   } else {
+     // « Nom du lieu » prérempli.
+     await next();
+   }
+diff --git a/apps/web/src/features/onboarding/PlaceStep.tsx b/apps/web/src/features/onboarding/PlaceStep.tsx
+index d83d81f..838c7d0 100644
+--- a/apps/web/src/features/onboarding/PlaceStep.tsx
++++ b/apps/web/src/features/onboarding/PlaceStep.tsx
+@@ -17,22 +17,23 @@ import { GymPicker } from '../places/GymPicker';
+ import styles from './onboarding.module.css';
+ import { PLACES_LATER_NOTE } from './PlaceKindStep';
+ import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
+ import { InfoGlyph } from './StepIcons';
+ import { StepTitle } from './StepTitle';
+ 
+ const HOME_PRESETS = PRESET_IDS.filter((id) => PRESETS[id].kind === 'home');
+ 
+ /**
+  * E4 Ma salle ou Ma maison : l'onboarding crée un seul lieu, principal (02 §8, E3/E4). La salle se cherche ou se
+- * crée dans le sélecteur des salles (maquette B04) ; la maison, son nom et son matériel. Un lieu principal déjà
+- * là (retour arrière) est affiché sans rien recréer ; les autres lieux se gèrent dans Profil › Mes lieux.
++ * crée dans le sélecteur des salles (maquette B04 : carte « Créer une salle », et la salle choisie validée par le
++ * « Continuer » de la barre de l'écran) ; la maison, son nom et son matériel. Un lieu principal déjà là (retour
++ * arrière) est affiché sans rien recréer ; les autres lieux se gèrent dans Profil › Mes lieux.
+  */
+ export function PlaceStep(p: StepProps & { kind: PlaceKind }) {
+   const repos = useRepos();
+   const me = useMe();
+   const places = useLive(() => repos.places.list(), [repos]);
+   // Lieu créé par cet écran : un nouvel essai n'envoie plus que l'étape.
+   const [created, setCreated] = useState(false);
+   const [name, setName] = useState(HOME_PLACE_DEFAULT_NAME);
+   const [nameError, setNameError] = useState<string | null>(null);
+   const [preset, setPreset] = useState<PresetId>(HOME_DEFAULT_PRESET);
+@@ -76,22 +77,33 @@ export function PlaceStep(p: StepProps & { kind: PlaceKind }) {
+       <>
+         {title}
+         <p className={styles.lead}>Cherche ta salle ou crée-la.</p>
+         <GymPicker
+           isPrimary
+           defaultVisible={me.ageBand !== 'minor'}
+           onDone={() => {
+             setCreated(true);
+             void save.run();
+           }}
++          actions={(s) => (
++            <StepActions
++              onBack={p.onBack}
++              pending={s.pending || save.pending}
++              error={s.error ?? save.error}
++              primary={
++                s.submit
++                  ? { label: saveLabel(p.mode), disabled: s.submit.disabled, onClick: s.submit.run }
++                  : undefined
++              }
++            />
++          )}
+         />
+-        <StepActions onBack={p.onBack} pending={save.pending} error={save.error} />
+       </>
+     );
+   }
+ 
+   function choosePreset(id: PresetId) {
+     setPreset(id);
+     setEquipment(sortEquipment(PRESETS[id].equipment));
+   }
+ 
+   function submitHome() {
+diff --git a/apps/web/src/features/onboarding/ReadyStep.tsx b/apps/web/src/features/onboarding/ReadyStep.tsx
+index b38eb22..722968a 100644
+--- a/apps/web/src/features/onboarding/ReadyStep.tsx
++++ b/apps/web/src/features/onboarding/ReadyStep.tsx
+@@ -1,12 +1,12 @@
+ import { EXPERIENCE_LABELS, GOAL_LABELS, OnboardingStep, SPORTS } from '@rune/contracts';
+-import { type CSSProperties, useId, useState } from 'react';
++import { type CSSProperties, useId, useLayoutEffect, useRef, useState } from 'react';
+ import { useLocation } from 'wouter';
+ import { ApiError } from '../../api/client';
+ import { ONBOARDING_COMPLETED_EVENT } from '../../app-events';
+ import { useLive, useMe } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { Button, CoachBubble, plural, RankBadge, SystemPanel, useAction } from '../../ui';
+ import { coachText } from '../coach/coach-lines';
+ import { OfflineReadyIndicator } from '../status/OfflineReadyIndicator';
+ import { useReadiness } from '../status/use-readiness';
+ import { AwakeningQuests, awakeningQuests } from './AwakeningQuests';
+@@ -26,57 +26,77 @@ const SPARKS = [
+   { angle: 235, distance: 62 },
+ ];
+ 
+ /**
+  * E8 C'est prêt, en célébration « Éveil terminé » (spec refonte §7, maquette B08, prototype) : la fenêtre du
+  * Système s'ouvre, le rang E se grave avec quelques étincelles, les 3 quêtes d'éveil se cochent une à une
+  * (vrais états), le coach choisi dit son mot de la fin, puis « Commencer » apparaît ; le récapitulatif suit.
+  * Tout est dans la page dès le premier rendu : l'animation (CSS, 600 à 1 200 ms) ne fait que rejouer
+  * l'arrivée, et sous mouvement réduit tout arrive en fondu court, sans retard ni étincelles.
+  *
++ * Le coach ne parle qu'une fois les 3 quêtes remplies : il ne valide pas un éveil encore en cours.
++ *
+  * « Commencer » termine l'onboarding une fois le voyant « Prêt hors ligne » au vert (R-SYN-33), émet
+  * ONBOARDING_COMPLETED_EVENT puis mène à l'accueil ; sinon le voyant dit ce qui manque, avec « Réessayer ».
++ * Quand il passe au vert (« Réessayer » réussi ou voyant recalculé en fond), le voyant et « Réessayer » s'en
++ * vont : une région polie, là dès le premier rendu, annonce « Prêt hors ligne », et si le focus est retombé
++ * sur la page (il était sur « Réessayer »), il passe à « Commencer ».
+  * Un écran encore incomplet pour le serveur (409) est rendu à `onIncomplete`, avec l'étape qu'il indique (null
+  * si illisible).
+  */
+ export function ReadyStep(p: { onBack(): void; onIncomplete(step: OnboardingStep | null): void }) {
+   const repos = useRepos();
+   const me = useMe();
+   const [, navigate] = useLocation();
+   const { readiness, loaded, retry } = useReadiness();
+   const profile = useLive(() => repos.profile.get(), [repos]);
+   const places = useLive(() => repos.places.list(), [repos]);
+   const [retrying, setRetrying] = useState(false);
+   const recapId = useId();
++  const startButton = useRef<HTMLButtonElement>(null);
++  const offlineReady = loaded && readiness.ready;
++  const waiting = loaded && !readiness.ready;
++  const wasWaiting = useRef(false);
+   const start = useAction(async () => {
+     try {
+       await repos.profile.completeOnboarding();
+     } catch (error) {
+       if (!(error instanceof ApiError) || error.code !== 'onboarding_incomplete') throw error;
+       const step = OnboardingStep.safeParse(error.body.step);
+       p.onIncomplete(step.success ? step.data : null);
+       return;
+     }
+     window.dispatchEvent(new CustomEvent(ONBOARDING_COMPLETED_EVENT));
+     navigate('/');
+   });
+ 
+   const onRetry = () => {
+     setRetrying(true);
+     void retry().finally(() => setRetrying(false));
+   };
+ 
++  // Voyant passé au vert : « Réessayer » vient de disparaître ; le focus qui y était retombe sur la page, il va
++  // alors à « Commencer », désormais actif, dans le même rendu (avant l'affichage). Un focus posé ailleurs
++  // (titre, récapitulatif) ne bouge pas.
++  useLayoutEffect(() => {
++    if (wasWaiting.current && offlineReady) {
++      const active = document.activeElement;
++      if (active === null || active === document.body) startButton.current?.focus();
++    }
++    wasWaiting.current = waiting;
++  }, [waiting, offlineReady]);
++
+   const primary = places?.find((pl) => pl.isPrimary);
+   const quests = awakeningQuests({
+     profile,
+     hasPrimaryPlace: primary !== undefined,
+-    offlineReady: loaded && readiness.ready,
++    offlineReady,
+   });
+   const allDone = quests.every((q) => q.done);
+   const coach = profile?.coach ?? null;
+   const sport = profile?.sportCode
+     ? profile.sportCode === 'other'
+       ? profile.sportOtherLabel
+       : SPORTS.find((s) => s.code === profile.sportCode)?.label
+     : null;
+ 
+   return (
+@@ -107,35 +127,38 @@ export function ReadyStep(p: { onBack(): void; onIncomplete(step: OnboardingStep
+             </span>
+             <p className={styles.awakeningText}>
+               {allDone
+                 ? "Quêtes d'éveil remplies. Ta progression commence au rang E."
+                 : "Quêtes d'éveil en cours. Ta progression commencera au rang E."}
+             </p>
+           </div>
+           <AwakeningQuests quests={quests} />
+         </SystemPanel>
+       </div>
+-      {coach && me ? (
++      {coach && me && allDone ? (
+         <div className={styles.coachLine}>
+           <CoachBubble coach={coach} label="Message d'accueil">
+             <p>{coachText(coach, 'ready', me.username)}</p>
+           </CoachBubble>
+         </div>
+       ) : null}
+-      {loaded && !readiness.ready ? (
++      {waiting ? (
+         <div className={styles.notReady}>
+           <OfflineReadyIndicator readiness={readiness} />
+-          <Button variant="secondary" onClick={onRetry} disabled={retrying}>
++          <Button variant="secondary" block onClick={onRetry} disabled={retrying}>
+             Réessayer
+           </Button>
+         </div>
+       ) : null}
++      <p className={styles.srOnly} role="status">
++        {offlineReady ? 'Prêt hors ligne' : ''}
++      </p>
+       {profile ? (
+         <section aria-labelledby={recapId} className={styles.recap}>
+           <h3 id={recapId}>Récapitulatif</h3>
+           <dl className={styles.summary}>
+             {profile.goal ? (
+               <div>
+                 <dt>Objectif</dt>
+                 <dd>{GOAL_LABELS[profile.goal]}</dd>
+               </div>
+             ) : null}
+@@ -167,17 +190,18 @@ export function ReadyStep(p: { onBack(): void; onIncomplete(step: OnboardingStep
+         </section>
+       ) : null}
+       <StepActions
+         className={styles.revealActions}
+         onBack={p.onBack}
+         pending={start.pending}
+         error={start.error}
+         primary={{
+           label: 'Commencer',
+           className: styles.glow,
+-          disabled: !loaded || !readiness.ready,
++          ref: startButton,
++          disabled: !offlineReady,
+           onClick: () => void start.run(),
+         }}
+       />
+     </>
+   );
+ }
+diff --git a/apps/web/src/features/onboarding/StepActions.tsx b/apps/web/src/features/onboarding/StepActions.tsx
+index 683bf0b..23ee206 100644
+--- a/apps/web/src/features/onboarding/StepActions.tsx
++++ b/apps/web/src/features/onboarding/StepActions.tsx
+@@ -1,13 +1,15 @@
+ import type { OnboardingStep, TrainingProfilePatch } from '@rune/contracts';
++import { type Ref, type RefObject, useEffect, useRef } from 'react';
+ import { type Repos, useRepos } from '../../repos';
+ import { Banner, Button, useAction } from '../../ui';
++import { useFocusAboveBar } from '../../ui/TabBar';
+ import styles from './onboarding.module.css';
+ 
+ /** Écran partagé par l'onboarding et le Profil (R-ONB-3). */
+ export interface StepProps {
+   mode: 'onboarding' | 'edit';
+   onNext(): void;
+   onBack?: () => void;
+ }
+ 
+ /** Bouton d'avancée de l'onboarding (spec refonte §10.1), aussi celui d'un écran qui en ouvre un autre. */
+@@ -31,45 +33,80 @@ export async function saveStep(
+   if (Object.keys(body).length > 0) await repos.profile.update(body);
+   p.onNext();
+ }
+ 
+ /** `saveStep` en action d'écran (en cours, erreur traduite). */
+ export function useSaveStep(p: StepProps, step: OnboardingStep) {
+   const repos = useRepos();
+   return useAction((patch: TrainingProfilePatch = {}) => saveStep(repos, p, step, patch));
+ }
+ 
++/**
++ * Hauteur réelle de la barre collée de l'onboarding, erreur et zone de geste comprises (84 px environ sans
++ * erreur, le double avec une erreur de deux lignes), en `--onb-bar` sur la page : scroll-padding-bottom la lit
++ * (onboarding.module.css), et un champ qui prend le focus s'arrête au-dessus de la barre (WCAG 2.2, 2.4.11).
++ * Écrite par le CSSOM, que la CSP laisse passer, et retirée au démontage. Hors de l'onboarding (Profil), la
++ * barre n'est pas collée : rien n'est mesuré.
++ */
++function useStickyBarHeight(bar: RefObject<HTMLElement | null>) {
++  useEffect(() => {
++    const el = bar.current;
++    if (!el?.closest(`.${styles.flow}`) || typeof ResizeObserver === 'undefined') return;
++    const root = document.documentElement;
++    const observer = new ResizeObserver(() => {
++      root.style.setProperty('--onb-bar', `${Math.ceil(el.getBoundingClientRect().height)}px`);
++    });
++    observer.observe(el);
++    return () => {
++      observer.disconnect();
++      root.style.removeProperty('--onb-bar');
++    };
++  }, [bar]);
++}
++
+ /**
+  * Barre d'actions des maquettes B01–B08 : l'erreur de l'écran, puis « Retour » (118 px, contour) à gauche du
+  * bouton principal, qui prend le reste de la largeur ; seul, le principal prend toute la largeur. Dans
+- * l'onboarding, la barre reste collée en bas de l'écran, erreur comprise (onboarding.module.css).
++ * l'onboarding, la barre reste collée en bas de l'écran, erreur comprise (onboarding.module.css), et le focus ne
++ * finit jamais dessous : marge de défilement à sa hauteur réelle, et défilement au plus près quand WebKit ignore
++ * cette marge pour focus() (`useFocusAboveBar`, comme la barre d'onglets).
+  * `className` : décor de la barre (apparition de « Commencer » sur « Éveil terminé »), `primary.className` :
+- * celui du bouton principal.
++ * celui du bouton principal, `primary.ref` : le bouton principal lui-même (pour y rendre le focus).
+  */
+ export function StepActions(p: {
+   onBack?: () => void;
+-  primary?: { label: string; disabled?: boolean; onClick(): void; className?: string };
++  primary?: {
++    label: string;
++    disabled?: boolean;
++    onClick(): void;
++    className?: string;
++    ref?: Ref<HTMLButtonElement>;
++  };
+   pending?: boolean;
+   error?: string | null;
+   className?: string;
+ }) {
++  const bar = useRef<HTMLDivElement>(null);
++  useStickyBarHeight(bar);
++  useFocusAboveBar(bar);
+   return (
+-    <div className={[styles.bar, p.className].filter(Boolean).join(' ')}>
++    <div ref={bar} className={[styles.bar, p.className].filter(Boolean).join(' ')}>
+       {p.error ? <Banner tone="error">{p.error}</Banner> : null}
+       <div className={styles.actions}>
+         {p.onBack ? (
+           <Button variant="secondary" className={styles.back} onClick={p.onBack} disabled={p.pending}>
+             Retour
+           </Button>
+         ) : null}
+         {p.primary ? (
+           <Button
++            ref={p.primary.ref}
+             className={[styles.primary, p.primary.className].filter(Boolean).join(' ')}
+             onClick={p.primary.onClick}
+             disabled={p.primary.disabled || p.pending}
+           >
+             {p.primary.label}
+           </Button>
+         ) : null}
+       </div>
+     </div>
+   );
+diff --git a/apps/web/src/features/onboarding/onboarding.module.css b/apps/web/src/features/onboarding/onboarding.module.css
+index a1e4d1c..1da4bd0 100644
+--- a/apps/web/src/features/onboarding/onboarding.module.css
++++ b/apps/web/src/features/onboarding/onboarding.module.css
+@@ -146,35 +146,76 @@
+  */
+ .flow .bar {
+   position: sticky;
+   bottom: 0;
+   z-index: 1;
+   margin-top: calc(-1 * var(--space-2));
+   padding-block: var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+   background: linear-gradient(180deg, transparent 0, var(--bg) var(--space-4));
+ }
+ 
+-/* Un champ qui prend le focus défile au-dessus de la barre (sa hauteur et la zone de geste), jamais dessous. */
++/*
++ * Carnet : une bande de papier opaque sous un filet d'encre, au lieu du fondu qui effaçait les lignes du cahier
++ * dans le seul rectangle de la colonne. L'image de bordure la peint jusqu'aux bords de l'écran (son débord ne
++ * fait pas défiler la page) ; le fond et le filet restent si elle n'est pas peinte.
++ */
++:global(:root[data-theme="carnet"]) .flow .bar {
++  background: var(--bg);
++  border-top: 1.5px solid var(--text);
++  border-image: linear-gradient(var(--text) 0 1.5px, var(--bg) 0) fill 0 / 0 / 0 100vw;
++}
++
++/*
++ * Un champ qui prend le focus défile au-dessus de la barre, jamais dessous (WCAG 2.2, 2.4.11) : --onb-bar est sa
++ * hauteur réelle, erreur et zone de geste comprises, mesurée par StepActions ; avant la mesure, celle d'une barre
++ * sans erreur. 8 px de plus pour l'anneau de focus.
++ */
+ :global(html):has(.flow) {
+-  scroll-padding-bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px));
++  scroll-padding-bottom: calc(var(--onb-bar, 6.5rem + env(safe-area-inset-bottom, 0px)) + var(--space-2));
++}
++
++/*
++ * Écran bas (téléphone couché, zoom à 400 %) : collée, la barre et son erreur prendraient du tiers aux deux
++ * tiers de la hauteur pendant tout l'onboarding (WCAG 1.4.10, 2.4.11) ; elle reprend sa place à la fin de l'écran.
++ */
++@media (max-height: 30rem) {
++  .flow .bar {
++    position: static;
++    background: none;
++  }
++
++  :global(:root[data-theme="carnet"]) .flow .bar {
++    background: none;
++    border-top: 0;
++    border-image: none;
++  }
++
++  :global(html):has(.flow) {
++    scroll-padding-bottom: 0;
++  }
+ }
+ 
+ /* Boutons (maquettes) : « Retour » de 118 px à gauche, le bouton principal prend le reste ; seul, tout. */
+ .actions {
+   display: flex;
+   gap: var(--space-3);
+ }
+ 
+ .back {
+   flex: 0 0 118px;
+ }
+ 
++/* Sans bouton principal (création d'une salle, maquette B04), « Retour » prend toute la barre. */
++.back:only-child {
++  flex: 1 1 auto;
++}
++
+ .primary {
+   flex: 1 1 auto;
+ }
+ 
+ .panel > button {
+   align-self: flex-start;
+ }
+ 
+ .panel p {
+   margin: 0;
+@@ -636,32 +677,32 @@
+   height: 16px;
+   border-radius: 5px;
+   border: 1.5px solid color-mix(in srgb, var(--text-muted) 70%, var(--surface));
+   color: var(--accent);
+ }
+ 
+ .quest[aria-checked="true"] .questBox {
+   border-color: transparent;
+ }
+ 
+-/* Les quêtes se cochent une à une. */
++/* Les quêtes se cochent une à une, après le rang et avant le mot du coach (prototype). */
+ .questCheck {
+   display: grid;
+-  animation: quest-check 600ms var(--ease) 300ms backwards;
++  animation: quest-check 600ms var(--ease) 250ms backwards;
+ }
+ 
+ .questList > :nth-child(2) .questCheck {
+-  animation-delay: 450ms;
++  animation-delay: 350ms;
+ }
+ 
+ .questList > :nth-child(3) .questCheck {
+-  animation-delay: 600ms;
++  animation-delay: 450ms;
+ }
+ 
+ /* Le coach dit son mot, puis « Commencer » apparaît. */
+ .coachLine {
+   animation: rise 600ms var(--ease) 500ms backwards;
+ }
+ 
+ .revealActions {
+   animation: rise 600ms var(--ease) 600ms backwards;
+ }
+@@ -674,24 +715,20 @@
+ .notReady {
+   display: flex;
+   flex-direction: column;
+   gap: var(--space-3);
+   padding: 14px 16px;
+   border-radius: var(--radius-card);
+   border: 1px solid var(--border);
+   background: var(--surface);
+ }
+ 
+-.notReady > button {
+-  align-self: flex-start;
+-}
+-
+ /* Récapitulatif (maquette B08) : une carte, une ligne par réponse. */
+ .recap {
+   display: flex;
+   flex-direction: column;
+   gap: 10px;
+ }
+ 
+ .recap h3 {
+   margin: 0;
+   font-size: 1.0625rem;
+@@ -748,34 +785,38 @@
+     transform: translateY(12px);
+   }
+ }
+ 
+ @keyframes fade {
+   from {
+     opacity: 0;
+   }
+ }
+ 
++/*
++ * Le découpage passe autour de l'ombre du panneau du Système (0 6px 18px en clair : 12 px au-dessus, 18 px sur
++ * les côtés, 24 px dessous ; 4px 4px 0 en Carnet) : elle s'ouvre avec la fenêtre, au lieu de surgir à la fin.
++ */
+ @keyframes window-open {
+   0% {
+     opacity: 0;
+     clip-path: inset(46% 8% round var(--radius-card));
+   }
+ 
+   35% {
+     opacity: 1;
+-    clip-path: inset(46% 0 round var(--radius-card));
++    clip-path: inset(46% -18px round var(--radius-card));
+   }
+ 
+   100% {
+     opacity: 1;
+-    clip-path: inset(0 round var(--radius-card));
++    clip-path: inset(-12px -18px -24px round var(--radius-card));
+   }
+ }
+ 
+ @keyframes rank-engrave {
+   0% {
+     opacity: 0;
+     transform: scale(0.6);
+     filter: brightness(1.8);
+   }
+ 
+diff --git a/apps/web/src/features/places/CreateGymCard.tsx b/apps/web/src/features/places/CreateGymCard.tsx
+new file mode 100644
+index 0000000..5105996
+--- /dev/null
++++ b/apps/web/src/features/places/CreateGymCard.tsx
+@@ -0,0 +1,59 @@
++import { useId } from 'react';
++import styles from './places.module.css';
++
++/**
++ * Carte en pointillés « Créer une salle » sous la liste des salles (maquette B04, onboarding) : un bouton
++ * nommé par son titre et décrit par sa phrase ; l'icône « + » et le chevron sont décoratifs.
++ */
++export function CreateGymCard(p: { onClick(): void }) {
++  const id = useId();
++  const titleId = `${id}-title`;
++  const descriptionId = `${id}-description`;
++  return (
++    <button
++      type="button"
++      className={styles.createCard}
++      aria-labelledby={titleId}
++      aria-describedby={descriptionId}
++      onClick={p.onClick}
++    >
++      <span className={styles.createIcon}>
++        <svg
++          aria-hidden="true"
++          width="22"
++          height="22"
++          viewBox="0 0 24 24"
++          fill="none"
++          stroke="currentColor"
++          strokeWidth="2"
++          strokeLinecap="round"
++          strokeLinejoin="round"
++        >
++          <path d="M12 5v14M5 12h14" />
++        </svg>
++      </span>
++      <span className={styles.createText}>
++        <span id={titleId} className={styles.createTitle}>
++          Créer une salle
++        </span>
++        <span id={descriptionId} className={styles.createDescription}>
++          Ma salle n'est pas dans la liste
++        </span>
++      </span>
++      <svg
++        className={styles.createChevron}
++        aria-hidden="true"
++        width="20"
++        height="20"
++        viewBox="0 0 24 24"
++        fill="none"
++        stroke="currentColor"
++        strokeWidth="2"
++        strokeLinecap="round"
++        strokeLinejoin="round"
++      >
++        <path d="m9 6 6 6-6 6" />
++      </svg>
++    </button>
++  );
++}
+diff --git a/apps/web/src/features/places/GymPicker.tsx b/apps/web/src/features/places/GymPicker.tsx
+index 4661667..8e34ae5 100644
+--- a/apps/web/src/features/places/GymPicker.tsx
++++ b/apps/web/src/features/places/GymPicker.tsx
+@@ -1,14 +1,15 @@
+ import type { GymSummary } from '@rune/contracts';
+-import { useEffect, useId, useState } from 'react';
++import { type ReactNode, useEffect, useId, useState } from 'react';
+ import { useRepos } from '../../repos';
+ import { Banner, Button, ChoiceList, errorMessage, Field, plural, useAction } from '../../ui';
++import { CreateGymCard } from './CreateGymCard';
+ import { GymCreate, gymLabel } from './GymCreate';
+ import styles from './places.module.css';
+ 
+ export const VISIBILITY_LABEL = 'Apparaître dans « Qui va à cette salle »';
+ export const MINOR_VISIBILITY_HINT = 'Désactivé par défaut pour les moins de 18 ans.';
+ 
+ /**
+  * Salles du serveur pour `query` ; la dernière recherche lancée l'emporte. Changer `reload` relance
+  * la même recherche (« Réessayer » après un échec).
+  */
+@@ -29,26 +30,42 @@ function useGymSearch(query: string, reload: number): { gyms: GymSummary[] | nul
+         if (current) setState((s) => ({ gyms: s.gyms, error: errorMessage(error) }));
+       },
+     );
+     return () => {
+       current = false;
+     };
+   }, [repos, query, reload]);
+   return state;
+ }
+ 
++/** Ce que la barre d'actions de l'écran reçoit du sélecteur (`actions` de GymPicker). */
++export interface GymPickerActions {
++  /** Valider la salle choisie (désactivé sans choix) ; null pendant la création, qui a ses propres boutons. */
++  submit: { run(): void; disabled: boolean } | null;
++  pending: boolean;
++  error: string | null;
++}
++
+ /**
+  * « Ta salle » (R-SAL-1) : choisir une salle existante ou en créer une, et régler sa visibilité
+  * dans « Qui va à cette salle » (R-VIS-3 ; désactivée par défaut pour un mineur, P-MIN-6). Le lieu
+  * est créé ici, puis `onDone`.
++ * `actions` (onboarding, maquette B04) : la barre de l'écran remplace « Valider » (son bouton principal
++ * valide la salle choisie, son erreur est celle du choix), et « Créer une salle » devient une carte sous la
++ * liste.
+  */
+-export function GymPicker(p: { isPrimary: boolean; defaultVisible: boolean; onDone(): void }) {
++export function GymPicker(p: {
++  isPrimary: boolean;
++  defaultVisible: boolean;
++  onDone(): void;
++  actions?(s: GymPickerActions): ReactNode;
++}) {
+   const repos = useRepos();
+   const hintId = useId();
+   const [query, setQuery] = useState('');
+   const [selected, setSelected] = useState<string | null>(null);
+   const [visible, setVisible] = useState(p.defaultVisible);
+   const [creating, setCreating] = useState(false);
+   const [reload, setReload] = useState(0);
+   const { gyms, error } = useGymSearch(query, reload);
+   // Une salle choisie puis écartée par la recherche n'est plus validable.
+   const chosen = gyms?.some((g) => g.id === selected) ? selected : null;
+@@ -84,24 +101,32 @@ export function GymPicker(p: { isPrimary: boolean; defaultVisible: boolean; onDo
+           isPrimary={p.isPrimary}
+           visibleAtGym={visible}
+           visibility={visibility}
+           onDone={p.onDone}
+           onPickExisting={(gymId) => void pick.run(gymId)}
+         />
+         {pick.error ? <Banner tone="error">{pick.error}</Banner> : null}
+         <Button variant="secondary" onClick={() => setCreating(false)}>
+           Revenir à la liste
+         </Button>
++        {p.actions?.({ submit: null, pending: pick.pending, error: null })}
+       </div>
+     );
+   }
+ 
++  const submit = {
++    run: () => {
++      if (chosen !== null) void pick.run(chosen);
++    },
++    disabled: chosen === null || pick.pending,
++  };
++
+   return (
+     <div className={styles.picker}>
+       <Field label="Rechercher une salle">
+         <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} />
+       </Field>
+       {error ? (
+         <>
+           <Banner tone="error">{error}</Banner>
+           <Button variant="secondary" onClick={() => setReload((n) => n + 1)}>
+             Réessayer
+@@ -117,26 +142,31 @@ export function GymPicker(p: { isPrimary: boolean; defaultVisible: boolean; onDo
+       ) : null}
+       {gyms !== null && gyms.length > 0 ? (
+         <ChoiceList<string>
+           name="gym"
+           legend="Salles"
+           value={chosen}
+           onChange={setSelected}
+           options={gyms.map((g) => ({ value: g.id, label: gymLabel(g) }))}
+         />
+       ) : null}
+-      <Button variant="secondary" onClick={() => setCreating(true)}>
+-        Ma salle n'est pas dans la liste
+-      </Button>
++      {p.actions ? (
++        <CreateGymCard onClick={() => setCreating(true)} />
++      ) : (
++        <Button variant="secondary" onClick={() => setCreating(true)}>
++          Ma salle n'est pas dans la liste
++        </Button>
++      )}
+       {visibility}
+-      {pick.error ? <Banner tone="error">{pick.error}</Banner> : null}
+-      <Button
+-        onClick={() => {
+-          if (chosen !== null) void pick.run(chosen);
+-        }}
+-        disabled={chosen === null || pick.pending}
+-      >
+-        Valider
+-      </Button>
++      {p.actions ? (
++        p.actions({ submit, pending: pick.pending, error: pick.error })
++      ) : (
++        <>
++          {pick.error ? <Banner tone="error">{pick.error}</Banner> : null}
++          <Button onClick={submit.run} disabled={submit.disabled}>
++            Valider
++          </Button>
++        </>
++      )}
+     </div>
+   );
+ }
+diff --git a/apps/web/src/features/places/places.module.css b/apps/web/src/features/places/places.module.css
+index 15b66c4..ada12e7 100644
+--- a/apps/web/src/features/places/places.module.css
++++ b/apps/web/src/features/places/places.module.css
+@@ -171,10 +171,79 @@
+ }
+ 
+ .members,
+ .history {
+   margin: 0;
+   padding-left: var(--space-6);
+   display: flex;
+   flex-direction: column;
+   gap: var(--space-1);
+ }
++
++/*
++ * Carte en pointillés « Créer une salle » sous la liste (maquette B04, onboarding) : icône « + » sur fond
++ * d'accent, titre à l'accent, phrase atténuée, chevron. Couleurs prises dans les jetons (5 thèmes).
++ */
++.createCard {
++  display: flex;
++  align-items: center;
++  gap: 14px;
++  width: 100%;
++  min-height: 64px;
++  margin: 0;
++  padding: 10px 14px 10px 10px;
++  border-radius: calc(var(--radius-card) - 2px);
++  border: 1.5px dashed color-mix(in srgb, var(--accent) 40%, transparent);
++  background: color-mix(in srgb, var(--surface) 50%, transparent);
++  color: var(--text);
++  font: inherit;
++  text-align: start;
++  cursor: pointer;
++  transition: border-color var(--dur-fast) var(--ease);
++}
++
++.createCard:focus-visible {
++  outline: 2px solid var(--focus);
++  outline-offset: 2px;
++}
++
++@media (hover: hover) {
++  .createCard:hover {
++    border-color: var(--accent);
++  }
++}
++
++.createIcon {
++  flex: none;
++  display: grid;
++  place-items: center;
++  width: 40px;
++  height: 40px;
++  border-radius: 12px;
++  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
++  color: var(--accent);
++}
++
++.createText {
++  flex: 1;
++  min-width: 0;
++  display: flex;
++  flex-direction: column;
++  gap: 2px;
++}
++
++.createTitle {
++  font-weight: 600;
++  line-height: 1.3;
++  color: var(--accent);
++}
++
++.createDescription {
++  font-size: 0.875rem;
++  line-height: 1.35;
++  color: var(--text-muted);
++}
++
++.createChevron {
++  flex: none;
++  color: var(--text-muted);
++}
+diff --git a/apps/web/src/ui/Button.tsx b/apps/web/src/ui/Button.tsx
+index 26a3600..9bcbaf1 100644
+--- a/apps/web/src/ui/Button.tsx
++++ b/apps/web/src/ui/Button.tsx
+@@ -1,24 +1,25 @@
+-import type { ButtonHTMLAttributes } from 'react';
++import type { ComponentProps } from 'react';
+ import styles from './ui.module.css';
+ 
+ /**
+  * Bouton de 52 px : principal, secondaire (contour accent), discret ou danger (contour danger) ;
+  * `block` : pleine largeur. Une action dangereuse reste isolée en bas, jamais à côté d'un principal.
++ * `ref` va au bouton lui-même (React 19), pour lui rendre le focus.
+  */
+ export function Button({
+   variant = 'primary',
+   block = false,
+   className,
+   type = 'button',
+   ...rest
+-}: ButtonHTMLAttributes<HTMLButtonElement> & {
++}: ComponentProps<'button'> & {
+   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+   block?: boolean;
+ }) {
+   return (
+     <button
+       type={type}
+       className={[styles.button, styles[variant], block ? styles.block : null, className]
+         .filter(Boolean)
+         .join(' ')}
+       {...rest}
+diff --git a/apps/web/src/ui/TabBar.tsx b/apps/web/src/ui/TabBar.tsx
+index 9075bf2..9900cfa 100644
+--- a/apps/web/src/ui/TabBar.tsx
++++ b/apps/web/src/ui/TabBar.tsx
+@@ -109,22 +109,23 @@ export function TabBar() {
+       ))}
+     </nav>
+   );
+ }
+ 
+ /**
+  * Le focus ne finit jamais sous la barre (WCAG 2.2, 2.4.11). Tabulation et Chromium s'arrêtent déjà au-dessus
+  * grâce à scroll-padding-bottom (shell.module.css), mais WebKit l'ignore pour focus() (retour au bouton
+  * d'origine, champ en erreur) : quand la barre recouvre le centre du contrôle qui prend le focus, il défile au
+  * plus près, ce qui respecte la marge. Une feuille du bas posée par-dessus prend le point : rien ne bouge.
++ * Aussi pour la barre collée de l'onboarding (StepActions).
+  */
+-function useFocusAboveBar(bar: RefObject<HTMLElement | null>) {
++export function useFocusAboveBar(bar: RefObject<HTMLElement | null>) {
+   useEffect(() => {
+     const onFocus = (event: FocusEvent) => {
+       const nav = bar.current;
+       const target = event.target;
+       if (!nav || !(target instanceof Element) || nav.contains(target)) return;
+       const box = target.getBoundingClientRect();
+       const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+       if (hit && nav.contains(hit)) target.scrollIntoView({ block: 'nearest' });
+     };
+     document.addEventListener('focusin', onFocus);
+diff --git a/apps/web/test/onboarding/celebration.test.tsx b/apps/web/test/onboarding/celebration.test.tsx
+index 1f492b9..5c964a8 100644
+--- a/apps/web/test/onboarding/celebration.test.tsx
++++ b/apps/web/test/onboarding/celebration.test.tsx
+@@ -1,39 +1,44 @@
+ import { readFileSync } from 'node:fs';
+ import { resolve } from 'node:path';
+ import { COACH_IDS, type CoachId } from '@rune/contracts';
+-import { screen } from '@testing-library/react';
++import { fireEvent, screen, within } from '@testing-library/react';
+ import { afterEach, describe, expect, it, vi } from 'vitest';
+ import { coachText } from '../../src/features/coach/coach-lines';
++import { awakeningQuests } from '../../src/features/onboarding/AwakeningQuests';
+ import { ReadyStep } from '../../src/features/onboarding/ReadyStep';
+ import type { AppDb } from '../../src/local-db/db';
+ import { setMeta } from '../../src/local-db/meta';
++import type { TrainingProfileView } from '../../src/repos';
++import ui from '../../src/ui/ui.module.css';
++import { settle } from '../support/auth';
+ import { type CssBlock, normalizeSelector, parseCssBlocks } from '../support/css-blocks';
+ import { createFakeApi } from '../support/fake-api';
+ import { createTestLocalDb } from '../support/local-db';
+ import {
+   button,
+   currentStep,
+   newcomer,
+   seedPrimaryGym,
+   seedProfile,
+   serveProfile,
+ } from '../support/onboarding';
+ import { DEFAULT_NOW, renderApp, renderWithServices } from '../support/render';
+ import { until } from '../support/wait';
+ 
+ // Écran « C'est prêt » en célébration « Éveil terminé » (spec refonte §7 et §10.1, maquette B08, prototype).
+ 
+ const HOUR = 3_600_000;
+ const REDUCE = '(prefers-reduced-motion: reduce)';
+ const QUESTS = ['Profil complété', 'Lieu principal choisi', 'Prêt hors ligne'] as const;
+ const ONBOARDING_CSS = resolve(import.meta.dirname, '../../src/features/onboarding/onboarding.module.css');
++const VOICE_CSS = resolve(import.meta.dirname, '../../src/ui/voice.module.css');
+ 
+ afterEach(() => {
+   vi.unstubAllGlobals();
+ });
+ 
+ /** Téléphone réglé en mouvement réduit : seule cette media query répond vrai. */
+ function reducedMotion() {
+   vi.stubGlobal('matchMedia', (query: string) => ({
+     matches: query === REDUCE,
+     media: query,
+@@ -64,31 +69,41 @@ async function openReady(o: { coach?: CoachId; pullAgoMs?: number } = {}) {
+   await seedPrimaryGym(db);
+   await seedReadiness(db, o.pullAgoMs ?? HOUR);
+   serveProfile(api, db, me);
+   const rendered = await renderApp({ path: '/onboarding', me, db, api });
+   await until(() => currentStep() === 'ready');
+   return rendered;
+ }
+ 
+ const quest = (name: string) => screen.getByRole('checkbox', { name });
+ const isDone = (name: string) => quest(name).getAttribute('aria-checked') === 'true';
++const IN_PROGRESS = "Quêtes d'éveil en cours. Ta progression commencera au rang E.";
+ 
+ describe('« Éveil terminé » (spec refonte §7, §10.1)', () => {
+   it('fenêtre du Système « Éveil terminé. », quêtes 3/3 cochées en lecture seule, rang E', async () => {
+     await openReady();
+-    expect(await screen.findByRole('heading', { name: 'Éveil terminé.' })).toBeTruthy();
++    // La fenêtre du Système elle-même (groupe nommé par son titre), pas un titre seul : étiquette, rang et
++    // quêtes sont dedans.
++    const win = await screen.findByRole('group', { name: 'Éveil terminé.' });
++    expect(within(win).getByText('SYSTÈME')).toBeTruthy();
++    expect(within(win).getByRole('heading', { name: 'Éveil terminé.' })).toBeTruthy();
++    expect(within(win).getByRole('img', { name: 'Rang E' })).toBeTruthy();
++    expect(
++      within(win)
++        .getAllByRole('checkbox')
++        .map((c) => c.textContent),
++    ).toEqual([...QUESTS]);
+     await until(() => QUESTS.every(isDone));
+     for (const name of QUESTS) expect(quest(name).getAttribute('aria-readonly')).toBe('true');
+-    expect(screen.getByText("Quêtes d'éveil")).toBeTruthy();
+-    expect(screen.getByText('3/3')).toBeTruthy();
+-    expect(screen.getByText("Quêtes d'éveil remplies. Ta progression commence au rang E.")).toBeTruthy();
+-    expect(screen.getByRole('img', { name: 'Rang E' })).toBeTruthy();
++    expect(within(win).getByText("Quêtes d'éveil")).toBeTruthy();
++    expect(within(win).getByText('3/3')).toBeTruthy();
++    expect(within(win).getByText("Quêtes d'éveil remplies. Ta progression commence au rang E.")).toBeTruthy();
+     await until(() => !button('Commencer').disabled);
+   });
+ 
+   it.each(COACH_IDS)('bulle du coach choisi (%s) : son mot de la fin, pseudo remplacé', async (coach) => {
+     await openReady({ coach });
+     const line = coachText(coach, 'ready', 'lea');
+     const text = await screen.findByText(line);
+     const bubble = text.closest('[data-mode]');
+     expect(bubble).not.toBeNull();
+     expect(bubble?.textContent).toContain(
+@@ -103,49 +118,160 @@ describe('« Éveil terminé » (spec refonte §7, §10.1)', () => {
+     // « Réessayer » n'apparaît qu'une fois l'état calculé, et seulement s'il n'est pas prêt.
+     await screen.findByRole('button', { name: 'Réessayer' });
+     await until(() => isDone('Profil complété') && isDone('Lieu principal choisi'));
+     expect(isDone('Prêt hors ligne')).toBe(false);
+     expect(screen.getByText('2/3')).toBeTruthy();
+     expect(screen.queryByText('3/3')).toBeNull();
+     expect(screen.queryByText("Quêtes d'éveil remplies. Ta progression commence au rang E.")).toBeNull();
+     expect(button('Commencer').disabled).toBe(true);
+   });
+ 
+-  it('vrais états : sans lieu principal ni niveau, ces quêtes restent décochées', async () => {
++  it.each(COACH_IDS)(
++    'mot de la fin du coach (%s) seulement à 3/3 : absent à 2/3, il arrive avec la dernière quête',
++    async (coach) => {
++      const { db } = await openReady({ coach, pullAgoMs: 25 * HOUR });
++      const line = coachText(coach, 'ready', 'lea');
++      await screen.findByRole('button', { name: 'Réessayer' });
++      await until(() => isDone('Profil complété') && isDone('Lieu principal choisi'));
++      expect(screen.getByText('2/3')).toBeTruthy();
++      // Aucune fausse donnée : le coach ne valide pas un éveil encore en cours.
++      expect(screen.queryByText(line)).toBeNull();
++      expect(screen.queryByText("Message d'accueil")).toBeNull();
++      // La synchro de « Réessayer » rapporte un pull frais : la dernière quête se coche, le coach parle.
++      await setMeta(db, 'lastPullOkAt', new Date(DEFAULT_NOW - HOUR).toISOString());
++      fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
++      await until(() => isDone('Prêt hors ligne'));
++      expect(screen.getByText('3/3')).toBeTruthy();
++      const bubble = (await screen.findByText(line)).closest('[data-mode]');
++      expect(bubble?.textContent).toContain("Message d'accueil");
++    },
++  );
++
++  it('pas encore prêt hors ligne : « Réessayer » prend toute la largeur de la carte sur téléphone', async () => {
++    await openReady({ pullAgoMs: 25 * HOUR });
++    const retry = await screen.findByRole('button', { name: 'Réessayer' });
++    // Bouton pleine largeur de la boîte à outils sur téléphone (contraintes globales), borné au-delà de 600 px.
++    expect(ui.block).toBeTruthy();
++    expect(retry.classList.contains(ui.block as string)).toBe(true);
++  });
++
++  /** Écran « C'est prêt » seul, profil `fields`, prêt hors ligne, sans lieu principal. */
++  async function openReadyAlone(fields: Parameters<typeof seedProfile>[1]) {
+     const db = createTestLocalDb();
+     const me = newcomer({ onboardingStep: 'health' });
+-    await seedProfile(db, { goal: 'muscle', experience: null, daysPerWeek: 3, sessionMinutes: 45 });
++    await seedProfile(db, fields);
+     await seedReadiness(db, HOUR);
+     await renderWithServices(<ReadyStep onBack={() => {}} onIncomplete={() => {}} />, { me, db });
++    // Profil lu (le récapitulatif montre l'objectif), puis les autres lectures abouties : l'état vérifié est le
++    // vrai, pas celui d'avant les lectures (tout non atteint).
++    await screen.findByText('Prendre du muscle');
+     await until(() => isDone('Prêt hors ligne'));
++    await settle();
++  }
++
++  it('vrais états : sans lieu principal ni niveau, ces quêtes restent décochées', async () => {
++    await openReadyAlone({ goal: 'muscle', experience: null, daysPerWeek: 3, sessionMinutes: 45 });
+     expect(isDone('Profil complété')).toBe(false);
+     expect(isDone('Lieu principal choisi')).toBe(false);
+     expect(screen.getByText('1/3')).toBeTruthy();
++    expect(screen.getByText(IN_PROGRESS)).toBeTruthy();
++  });
++
++  it('vrais états, contre-épreuve : niveau donné, « Profil complété » cochée ; sans lieu principal, 2/3', async () => {
++    await openReadyAlone({ goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45 });
++    expect(isDone('Profil complété')).toBe(true);
++    expect(isDone('Lieu principal choisi')).toBe(false);
++    expect(screen.getByText('2/3')).toBeTruthy();
++    expect(screen.getByText(IN_PROGRESS)).toBeTruthy();
+   });
+ 
+   it('mouvement réduit : « Commencer », la fenêtre, le rang et les quêtes sont là dès le premier rendu', async () => {
++    // Aucun composant de l'écran ne lit la media query : ce réglage ne fait que planter le décor. Le mouvement
++    // réduit lui-même (fondus courts, sans retard ni étincelles) est vérifié sur la feuille de style plus bas
++    // (« mouvement de la célébration ») : happy-dom n'anime rien.
+     reducedMotion();
+     const me = newcomer({ onboardingStep: 'health' });
+     const db = createTestLocalDb();
+     await seedProfile(db, { goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45 });
+     await seedPrimaryGym(db);
+     await seedReadiness(db, HOUR);
+     await renderWithServices(<ReadyStep onBack={() => {}} onIncomplete={() => {}} />, { me, db });
+-    // Premier rendu : aucune lecture de la base n'a encore abouti, aucune minuterie n'a tourné.
+-    expect(button('Commencer')).toBeTruthy();
++    // Premier rendu, avec son témoin : aucune lecture de la base n'a encore abouti (0/3, quêtes en cours,
++    // « Commencer » pas encore actif), aucune minuterie n'a tourné. Tout est déjà là.
++    expect(screen.getByText('0/3')).toBeTruthy();
++    expect(screen.getByText(IN_PROGRESS)).toBeTruthy();
++    expect(button('Commencer').disabled).toBe(true);
+     expect(screen.getByRole('heading', { name: 'Éveil terminé.' })).toBeTruthy();
+     expect(screen.getByRole('img', { name: 'Rang E' })).toBeTruthy();
+     expect(screen.getAllByRole('checkbox').map((c) => c.textContent)).toEqual([...QUESTS]);
+     await until(() => QUESTS.every(isDone));
+   });
+ });
+ 
++describe('awakeningQuests : vrais états seulement (spec refonte §10.2)', () => {
++  /** Profil complet : coach, objectif, niveau et disponibilité donnés. */
++  const COMPLETE: TrainingProfileView = {
++    coach: 'skald',
++    goal: 'muscle',
++    experience: 'none',
++    daysPerWeek: 3,
++    sessionMinutes: 45,
++    sportCode: null,
++    sportOtherLabel: null,
++    cautiousMode: false,
++  };
++  const REQUIRED = ['coach', 'goal', 'experience', 'daysPerWeek', 'sessionMinutes'] as const;
++  const done = (s: Parameters<typeof awakeningQuests>[0]) =>
++    Object.fromEntries(awakeningQuests(s).map((q) => [q.label, q.done]));
++  const others = { hasPrimaryPlace: true, offlineReady: true };
++
++  it('trois quêtes, dans l’ordre de la maquette', () => {
++    expect(awakeningQuests({ profile: COMPLETE, ...others }).map((q) => q.label)).toEqual([...QUESTS]);
++  });
++
++  it.each<[string, TrainingProfileView | null | undefined]>([
++    ['profil pas encore lu', undefined],
++    ['aucun profil', null],
++    ...REQUIRED.map((field): [string, TrainingProfileView] => [
++      `${field} manquant`,
++      { ...COMPLETE, [field]: null },
++    ]),
++  ])('%s : « Profil complété » non cochée, les autres suivent leur état', (_, profile) => {
++    expect(done({ profile, ...others })).toEqual({
++      'Profil complété': false,
++      'Lieu principal choisi': true,
++      'Prêt hors ligne': true,
++    });
++  });
++
++  it('profil complet (sport et mode prudent facultatifs) : « Profil complété » cochée', () => {
++    expect(done({ profile: COMPLETE, hasPrimaryPlace: false, offlineReady: false })).toEqual({
++      'Profil complété': true,
++      'Lieu principal choisi': false,
++      'Prêt hors ligne': false,
++    });
++  });
++
++  it.each([
++    [false, false],
++    [true, false],
++    [false, true],
++    [true, true],
++  ])('lieu principal %s, prêt hors ligne %s : chaque case suit son état', (hasPrimaryPlace, offlineReady) => {
++    expect(done({ profile: COMPLETE, hasPrimaryPlace, offlineReady })).toEqual({
++      'Profil complété': true,
++      'Lieu principal choisi': hasPrimaryPlace,
++      'Prêt hors ligne': offlineReady,
++    });
++  });
++});
++
+ /** `a, b:not(c, d)` → [`a`, `b:not(c, d)`] : coupe aux virgules hors parenthèses. */
+ function selectorList(selector: string): string[] {
+   const out: string[] = [];
+   let depth = 0;
+   let start = 0;
+   for (let i = 0; i < selector.length; i++) {
+     const ch = selector[i];
+     if (ch === '(') depth++;
+     else if (ch === ')') depth--;
+     else if (ch === ',' && depth === 0) {
+@@ -190,21 +316,109 @@ const NTH_CHILD = /:nth-child\(\d+\)/g;
+  * Sélecteurs hors media query qui animent un élément de la célébration ou décalent son départ (une quête après
+  * l'autre), avec leurs déclarations.
+  */
+ const animatedRules = (all: readonly CssBlock[]) =>
+   all
+     .filter((b) => b.media === null && !b.selector.startsWith('@'))
+     .filter((b) => b.declarations.has('animation') || b.declarations.has('animation-delay'))
+     .flatMap((b) => selectorList(b.selector).map((selector) => ({ selector, d: b.declarations })))
+     .filter((r) => CELEBRATION.some((c) => r.selector.endsWith(c)));
+ 
++/** Longueur en px (`-12px`, `0`) ; autre chose (pourcentage, mot) → NaN. */
++const px = (token: string) => (/^-?\d*\.?\d+(px)?$/.test(token) ? Number.parseFloat(token) : Number.NaN);
++
++/** Débord en px d'une ombre `x y [flou [étalement]] couleur, …`, de chaque côté : [haut, droite, bas, gauche]. */
++function shadowReach(shadow: string): number[] {
++  const reach = [0, 0, 0, 0];
++  for (const layer of selectorList(shadow)) {
++    const lengths: number[] = [];
++    for (const token of layer.split(/\s+/)) {
++      if (Number.isNaN(px(token))) break;
++      lengths.push(px(token));
++    }
++    const [x = 0, y = 0, blur = 0, spread = 0] = lengths;
++    const out = [blur + spread - y, blur + spread + x, blur + spread + y, blur + spread - x];
++    out.forEach((v, i) => {
++      reach[i] = Math.max(reach[i] ?? 0, v);
++    });
++  }
++  return reach;
++}
++
++/** `inset(-12px -18px -24px round …)` → [haut, droite, bas, gauche] en px (NaN pour un pourcentage). */
++function insets(clip: string): number[] {
++  const inner = /^inset\((.*)\)$/.exec(clip.trim())?.[1] ?? '';
++  const [top = Number.NaN, right = top, bottom = top, left = right] = (inner.split(/\s+round\s+/)[0] ?? '')
++    .trim()
++    .split(/\s+/)
++    .map(px);
++  return [top, right, bottom, left];
++}
++
++/** Étapes (`0%`, `35%`, `100%`) d'un `@keyframes` de la feuille de l'onboarding, avec leurs déclarations. */
++function keyframes(name: string): Map<string, Map<string, string>> {
++  const css = readFileSync(ONBOARDING_CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
++  const at = css.indexOf(`@keyframes ${name} {`);
++  if (at < 0) throw new Error(`@keyframes ${name} absent`);
++  const open = css.indexOf('{', at);
++  let close = open;
++  for (let depth = 0; close < css.length; close++) {
++    if (css[close] === '{') depth++;
++    else if (css[close] === '}' && --depth === 0) break;
++  }
++  return new Map(parseCssBlocks(css.slice(open + 1, close)).map((b) => [b.selector, b.declarations]));
++}
++
+ describe('mouvement de la célébration (onboarding.module.css)', () => {
++  it('ordre du prototype : la fenêtre, le rang, les 3 quêtes une à une, le mot du coach, puis « Commencer »', () => {
++    const all = blocks();
++    /** Départ d'une animation : son `animation-delay`, sinon le second temps de son `animation`. */
++    const start = (selector: string) => {
++      const d = declarations(all, selector);
++      const delay = d.get('animation-delay');
++      return delay ? (times(delay)[0] ?? 0) : (times(d.get('animation') ?? '')[1] ?? 0);
++    };
++    const order = [
++      '.celebration',
++      '.rank',
++      '.questCheck',
++      '.questList > :nth-child(2) .questCheck',
++      '.questList > :nth-child(3) .questCheck',
++      '.coachLine',
++      '.revealActions',
++    ];
++    const starts = order.map(start);
++    for (let i = 1; i < order.length; i++) {
++      expect(starts[i], `${order[i]} part après ${order[i - 1]}`).toBeGreaterThan(starts[i - 1] ?? 0);
++    }
++  });
++
++  it('la fenêtre s’ouvre sans rogner l’ombre du panneau (clair, Carnet) : rien ne surgit à la fin', () => {
++    const shadows = parseCssBlocks(readFileSync(VOICE_CSS, 'utf8'))
++      .filter((b) => selectorList(b.selector).some((s) => s.endsWith('.panel')))
++      .map((b) => b.declarations.get('box-shadow'))
++      .filter((s): s is string => s !== undefined && s !== 'none');
++    // L'ombre douce du clair et l'ombre d'encre du Carnet.
++    expect(shadows).toHaveLength(2);
++    const reach = shadows.map(shadowReach).reduce((a, b) => a.map((v, i) => Math.max(v, b[i] ?? 0)));
++    const steps = keyframes('window-open');
++    // Fenêtre ouverte : le découpage passe autour de l'ombre, de chaque côté.
++    const open = insets(steps.get('100%')?.get('clip-path') ?? '');
++    ['haut', 'droite', 'bas', 'gauche'].forEach((side, i) => {
++      expect(-(open[i] ?? Number.NaN), `ouverte, ${side}`).toBeGreaterThanOrEqual(reach[i] ?? 0);
++    });
++    // Ligne déjà pleine largeur (35 %) : les côtés de l'ombre y sont aussi.
++    const line = insets(steps.get('35%')?.get('clip-path') ?? '');
++    expect(-(line[1] ?? Number.NaN), 'ligne, droite').toBeGreaterThanOrEqual(reach[1] ?? 0);
++    expect(-(line[3] ?? Number.NaN), 'ligne, gauche').toBeGreaterThanOrEqual(reach[3] ?? 0);
++  });
++
+   it('600 à 1 200 ms sur la courbe unique, finie à 1 200 ms', () => {
+     const all = blocks();
+     const durations = new Map<string, number>();
+     for (const selector of CELEBRATION) {
+       const animation = declarations(all, selector).get('animation') ?? '';
+       expect(animation, `${selector} : animation`).not.toBe('');
+       expect(animation, `${selector} : courbe`).toContain('var(--ease)');
+       const [duration = 0] = times(animation);
+       expect(duration, `${selector} : durée`).toBeGreaterThanOrEqual(600);
+       expect(duration, `${selector} : durée`).toBeLessThanOrEqual(1200);
+diff --git a/apps/web/test/onboarding/flow.test.tsx b/apps/web/test/onboarding/flow.test.tsx
+index 55c78f4..07339a3 100644
+--- a/apps/web/test/onboarding/flow.test.tsx
++++ b/apps/web/test/onboarding/flow.test.tsx
+@@ -1,14 +1,14 @@
+ import { readFileSync } from 'node:fs';
+ import { resolve } from 'node:path';
+ import { firstIncompleteStep } from '@rune/domain';
+-import { fireEvent, screen } from '@testing-library/react';
++import { act, cleanup, fireEvent, screen } from '@testing-library/react';
+ import { afterEach, describe, expect, it, vi } from 'vitest';
+ import { shownStep } from '../../src/features/onboarding/OnboardingFlow';
+ import { createRepos } from '../../src/repos';
+ import { settle } from '../support/auth';
+ import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
+ import { createFakeApi } from '../support/fake-api';
+ import { createTestLocalDb } from '../support/local-db';
+ import {
+   button,
+   choose,
+@@ -18,31 +18,81 @@ import {
+   radio,
+   seedPrimaryGym,
+   seedProfile,
+   serveProfile,
+   writes,
+ } from '../support/onboarding';
+ import { createTestServices, renderApp } from '../support/render';
+ import { until } from '../support/wait';
+ 
+ const ONBOARDING_CSS = resolve(import.meta.dirname, '../../src/features/onboarding/onboarding.module.css');
++const SHORT_SCREEN = '(max-height: 30rem)';
++const PAGE_PADDING = ':global(html):has(.flow)';
++const CARNET_BAR = ':global(:root[data-theme="carnet"]) .flow .bar';
+ 
+ /** Onboarding dans l'appli (garde comprise), base et faux serveur fournis par le test. */
+ async function openFlow(me = newcomer()) {
+   const db = createTestLocalDb();
+   const api = createFakeApi();
+   const server = serveProfile(api, db, me);
+   return { db, api, me, server, render: () => renderApp({ path: '/onboarding', me, db, api }) };
+ }
+ 
++/**
++ * ResizeObserver de test (happy-dom ne mesure rien) : la fonction rendue prévient les observateurs de cet
++ * élément, comme le ferait un changement de taille.
++ */
++function fakeResizeObserver() {
++  const watched = new Map<object, { callback: ResizeObserverCallback; targets: Set<Element> }>();
++  class FakeResizeObserver {
++    constructor(callback: ResizeObserverCallback) {
++      watched.set(this, { callback, targets: new Set() });
++    }
++    observe(target: Element) {
++      watched.get(this)?.targets.add(target);
++    }
++    unobserve(target: Element) {
++      watched.get(this)?.targets.delete(target);
++    }
++    disconnect() {
++      watched.delete(this);
++    }
++  }
++  vi.stubGlobal('ResizeObserver', FakeResizeObserver);
++  return (target: Element) => {
++    for (const [observer, { callback, targets }] of [...watched]) {
++      if (targets.has(target)) {
++        act(() => callback([{ target } as ResizeObserverEntry], observer as ResizeObserver));
++      }
++    }
++  };
++}
++
++/** Objectif repris, « Continuer » hors ligne : l'erreur de l'écran s'affiche ; rend la barre qui la porte. */
++async function goalWithError() {
++  const t = await openFlow();
++  await seedProfile(t.db);
++  await t.render();
++  await until(() => currentStep() === 'goal');
++  await screen.findByRole('radio', { name: 'Gagner en force' });
++  t.api.setOffline('reject');
++  choose('Gagner en force');
++  fireEvent.click(button('Continuer'));
++  const alert = await screen.findByRole('alert');
++  const bar = [...screen.getByTestId('onboarding-step').children].find((c) => c.contains(alert));
++  if (!bar) throw new Error("pas de barre qui porte l'erreur");
++  return { bar, alert };
++}
++
+ afterEach(() => {
+   vi.restoreAllMocks();
++  vi.unstubAllGlobals();
+ });
+ 
+ const progress = () => screen.getByText(/^Étape \d sur 9$/).textContent;
+ /** Le titre de l'écran, nommé avec l'indicateur d'étape, a le focus. */
+ const hasFocus = (name: string) =>
+   screen.queryByRole('heading', { level: 2, name }) === document.activeElement;
+ 
+ describe('OnboardingFlow (R-ONB-1, R-ONB-2)', () => {
+   it("départ 'coach', « Étape 1 sur 9 », hors de la coquille de l'appli", async () => {
+     const { render } = await openFlow();
+@@ -260,14 +310,80 @@ describe('OnboardingFlow (R-ONB-1, R-ONB-2)', () => {
+     fireEvent.click(button('Continuer'));
+     const alert = await screen.findByRole('alert');
+     // Le bloc de l'écran qui porte l'erreur porte aussi les deux boutons : collé en bas, il la garde à l'écran.
+     const bar = [...screen.getByTestId('onboarding-step').children].find((c) => c.contains(alert));
+     expect(bar?.contains(button('Continuer'))).toBe(true);
+     expect(bar?.contains(button('Retour'))).toBe(true);
+     const css = parseCssBlocks(readFileSync(ONBOARDING_CSS, 'utf8'));
+     const sticky = declarationsOf(css, '.flow .bar');
+     expect(sticky?.get('position')).toBe('sticky');
+     expect(sticky?.get('bottom')).toBe('0');
+-    // Un champ qui prend le focus défile au-dessus de la barre, jamais dessous (WCAG 2.4.11).
+-    expect(declarationsOf(css, ':global(html):has(.flow)')?.get('scroll-padding-bottom')).toBeTruthy();
++    // Un champ qui prend le focus défile au-dessus de la barre, jamais dessous (WCAG 2.4.11) : la marge de
++    // défilement est la hauteur mesurée de la barre (--onb-bar, test suivant) plus l'anneau de focus ; avant la
++    // mesure, sa valeur de repli couvre au moins la barre (16 px, bouton de 52 px, 16 px : 5,25rem) et la zone
++    // de geste. Dans le navigateur : e2e/onboarding-bar.spec.ts (barre collée) et e2e/onboarding-focus.spec.ts
++    // (écran bas, barre décollée).
++    const padding = declarationsOf(css, PAGE_PADDING)?.get('scroll-padding-bottom') ?? '';
++    const reserved =
++      /^calc\(var\(--onb-bar, (\d+(?:\.\d+)?)rem \+ env\(safe-area-inset-bottom, 0px\)\) \+ var\(--space-2\)\)$/.exec(
++        padding,
++      );
++    expect(reserved, `scroll-padding-bottom: ${padding}`).not.toBeNull();
++    expect(Number(reserved?.[1])).toBeGreaterThanOrEqual(5.25);
++  });
++
++  it('la barre grandit avec son erreur : la marge de défilement du focus suit sa hauteur réelle (2.4.11)', async () => {
++    const resize = fakeResizeObserver();
++    const { bar } = await goalWithError();
++    // Erreur de deux lignes à 390 px : la barre passe d'environ 84 à 172 px, au-delà des 6,5 rem d'avant.
++    vi.spyOn(bar, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 672, 390, 171.6));
++    resize(bar);
++    expect(document.documentElement.style.getPropertyValue('--onb-bar')).toBe('172px');
++    const css = parseCssBlocks(readFileSync(ONBOARDING_CSS, 'utf8'));
++    expect(declarationsOf(css, PAGE_PADDING)?.get('scroll-padding-bottom')).toMatch(/var\(--onb-bar\b/);
++    // Onboarding quitté : plus de hauteur mesurée sur la page.
++    cleanup();
++    expect(document.documentElement.style.getPropertyValue('--onb-bar')).toBe('');
++  });
++
++  it('focus() d’un contrôle que la barre recouvre (WebKit ignore la marge) : il défile au plus près', async () => {
++    const { alert } = await goalWithError();
++    const field = radio('Prendre du muscle');
++    const scroll = vi.fn();
++    field.scrollIntoView = scroll;
++    const pointHits = vi.spyOn(document, 'elementFromPoint');
++    // Le centre du contrôle est à découvert : rien ne bouge.
++    pointHits.mockReturnValue(field);
++    act(() => field.focus());
++    expect(scroll).not.toHaveBeenCalled();
++    act(() => field.blur());
++    // La barre (son erreur) recouvre son centre : il remonte au-dessus d'elle.
++    pointHits.mockReturnValue(alert);
++    act(() => field.focus());
++    expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: 'nearest' });
++  });
++
++  it('écran bas (téléphone couché, zoom à 400 %) : la barre n’est plus collée, ni marge de focus (1.4.10)', () => {
++    const css = parseCssBlocks(readFileSync(ONBOARDING_CSS, 'utf8'));
++    const bar = declarationsOf(css, '.flow .bar', SHORT_SCREEN);
++    expect(bar?.get('position')).toBe('static');
++    expect(bar?.get('background')).toBe('none');
++    expect(declarationsOf(css, PAGE_PADDING, SHORT_SCREEN)?.get('scroll-padding-bottom')).toBe('0');
++    // La bande du Carnet, plus forte que la règle générale, part avec elle.
++    const carnet = declarationsOf(css, CARNET_BAR, SHORT_SCREEN);
++    expect(carnet?.get('background')).toBe('none');
++    expect(carnet?.get('border-top')).toBe('0');
++    expect(carnet?.get('border-image')).toBe('none');
++  });
++
++  it('Carnet : la barre est une bande de papier pleine largeur sous un filet d’encre, sans fondu', () => {
++    const css = parseCssBlocks(readFileSync(ONBOARDING_CSS, 'utf8'));
++    const carnet = declarationsOf(css, CARNET_BAR);
++    // Papier opaque et filet d'encre de 1,5 px : plus de fondu qui effaçait les lignes dans un rectangle.
++    expect(carnet?.get('background')).toBe('var(--bg)');
++    expect(carnet?.get('border-top')).toBe('1.5px solid var(--text)');
++    // La même bande peinte jusqu'aux bords de l'écran par un débord d'image de bordure, qui ne fait pas défiler.
++    expect(carnet?.get('border-image')).toBe(
++      'linear-gradient(var(--text) 0 1.5px, var(--bg) 0) fill 0 / 0 / 0 100vw',
++    );
+   });
+ });
+diff --git a/apps/web/test/onboarding/health-step.test.tsx b/apps/web/test/onboarding/health-step.test.tsx
+index 2f7b72b..a78e6fa 100644
+--- a/apps/web/test/onboarding/health-step.test.tsx
++++ b/apps/web/test/onboarding/health-step.test.tsx
+@@ -9,20 +9,26 @@ import { button, newcomer, seedProfile, serveProfile, writes } from '../support/
+ import { renderWithServices } from '../support/render';
+ import { seedMirror } from '../support/seed';
+ import { until } from '../support/wait';
+ 
+ const CAUTIOUS = 'Je préfère une progression plus prudente';
+ const SELF_CHECK = "Si l'une de ces situations te concerne, demande l'avis d'un médecin avant de commencer";
+ const SEE_DOCTOR = 'Nous te recommandons de consulter un médecin avant de commencer.';
+ const SCREENING_INCOMPLETE = 'Réponds aux 4 questions ou efface tes réponses avant de continuer.';
+ const DRAFT_INCOMPLETE = 'Termine ou efface la limitation en cours avant de continuer.';
+ const NOT_HEALTH_DATA = "Réglage d'entraînement, pas une donnée de santé : enregistré même sans accord.";
++// Textes de l'écran Santé mot pour mot (02-comptes E7.1 et E7.3) : l'explication de l'accord et la mention des
++// limitations, en entier.
++const CONSENT_EXPLANATION =
++  "Tes réponses au questionnaire et tes limitations sont des données de santé. Elles servent seulement à adapter tes séances et restent sur le serveur du cercle. Elles ne vont au coach qu'avec son propre accord, en plus de celui-ci. Tu peux les supprimer à tout moment.";
++const LIMITATIONS_NOTE =
++  "Facultatif : une zone sensible ou une gêne à ménager ; aucun diagnostic n'est nécessaire.";
+ const SCREENING = 'PUT /api/me/health-screening';
+ const PATCH = 'PATCH /api/me/training-profile';
+ const consenting = (o: Partial<MeResponse> = {}) =>
+   newcomer({
+     consents: {
+       health: { active: true, textVersion: '1.0', at: '2026-10-06T10:00:00.000Z' },
+       aiCoach: { active: false, textVersion: null, at: null },
+     },
+     ...o,
+   });
+@@ -51,56 +57,72 @@ async function renderHealth(me: MeResponse = newcomer(), profile: Parameters<typ
+ const toggle = () => screen.getByRole('switch', { name: CAUTIOUS }) as HTMLInputElement;
+ const question = (i: number) =>
+   within(screen.getByRole('group', { name: HEALTH_QUESTIONNAIRE.questions[i] }));
+ const answer = (i: number, label: 'Oui' | 'Non') =>
+   fireEvent.click(question(i).getByRole('radio', { name: label }));
+ const describedBy = (el: HTMLElement) =>
+   (el.getAttribute('aria-describedby') ?? '')
+     .split(' ')
+     .map((id) => document.getElementById(id)?.textContent);
+ 
++/** Élément dont le texte est exactement `text`, sans espace en trop ni en moins (mot pour mot). */
++const verbatim = (scope: { getByText(text: string): HTMLElement }, text: string) => {
++  const el = scope.getByText(text);
++  expect(el.textContent).toBe(text);
++  return el;
++};
++
++/** Aucun champ de santé sur tout l'écran (P-CST-1) : ni zone, ni côté, ni gêne, ni note, ni réponse. */
++function expectNoHealthFields() {
++  expect(screen.queryAllByRole('combobox')).toEqual([]);
++  expect(screen.queryAllByRole('textbox')).toEqual([]);
++  expect(screen.queryAllByRole('radio')).toEqual([]);
++  expect(screen.queryByLabelText('Zone')).toBeNull();
++  expect(screen.queryByLabelText('Côté')).toBeNull();
++  expect(screen.queryByLabelText('Note')).toBeNull();
++}
++
+ describe('HealthStep sans accord santé (E7, P-CST-1, P-CST-2)', () => {
+   it('texte de l’accord, case décochée, « J’accepte et je renseigne » désactivé', async () => {
+     await renderHealth();
+     expect(screen.getByText(HEALTH_CONSENT_TEXT.text)).toBeTruthy();
+-    // L'explication vise le questionnaire et les limitations, pas le mode prudent (C1).
+-    expect(
+-      screen.getByText(/^Tes réponses au questionnaire et tes limitations sont des données de santé\./),
+-    ).toBeTruthy();
++    // L'explication, en entier, vise le questionnaire et les limitations, pas le mode prudent (C1).
++    verbatim(within(screen.getByRole('region', { name: 'Accord santé' })), CONSENT_EXPLANATION);
+     expect(screen.queryByText(/Les réponses de cet écran/)).toBeNull();
+     const box = screen.getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text }) as HTMLInputElement;
+     expect(box.checked).toBe(false);
+     expect(button("J'accepte et je renseigne").disabled).toBe(true);
+     fireEvent.click(box);
+     expect(button("J'accepte et je renseigne").disabled).toBe(false);
+   });
+ 
+-  it('carte « Accord santé » ; limitations annoncées « Après ton accord » ; aucune voix du Système', async () => {
++  it('carte « Accord santé » ; limitations annoncées « Après ton accord », aucun champ de santé ; aucune voix du Système', async () => {
+     await renderHealth();
+     const consent = screen.getByRole('region', { name: 'Accord santé' });
+     expect(within(consent).getByRole('heading', { level: 3, name: 'Accord santé' })).toBeTruthy();
+     expect(within(consent).getByText(HEALTH_CONSENT_TEXT.text)).toBeTruthy();
+     const locked = screen.getByRole('region', { name: 'Limitations' });
+     expect(within(locked).getByText('Après ton accord')).toBeTruthy();
+-    expect(within(locked).getByText(/aucun diagnostic n'est nécessaire/)).toBeTruthy();
+-    expect(within(locked).queryByRole('combobox')).toBeNull();
++    verbatim(within(locked), LIMITATIONS_NOTE);
++    // Aucun champ de santé avant l'accord, nulle part sur l'écran (pas seulement dans cette carte).
++    expectNoHealthFields();
+     // Textes légaux mot pour mot, en « vous » pour l'avertissement, hors de toute fenêtre du Système.
+     expect(screen.getByText(HEALTH_WARNING_TEXT)).toBeTruthy();
+     expect(screen.queryByText('SYSTÈME')).toBeNull();
+   });
+ 
+   it('« Passer » : les 4 questions en auto-vérification, aucune requête', async () => {
+     const { api } = await renderHealth();
+     fireEvent.click(button('Passer'));
+     await screen.findByText(new RegExp(SELF_CHECK));
+     for (const q of HEALTH_QUESTIONNAIRE.questions) expect(screen.getByText(q)).toBeTruthy();
+-    expect(screen.queryByRole('radio')).toBeNull();
++    expectNoHealthFields();
+     expect(screen.queryByRole('button', { name: 'Enregistrer mes réponses' })).toBeNull();
+     expect(api.calls).toEqual([]);
+   });
+ 
+   it('mode prudent : rien à la bascule, enregistré avec l’étape au clic sur « Continuer » (R-ONB-2)', async () => {
+     const t = await renderHealth();
+     expect(toggle().checked).toBe(false);
+     fireEvent.click(toggle());
+     expect(toggle().checked).toBe(true);
+     expect(t.api.calls).toEqual([]);
+@@ -237,21 +259,23 @@ describe('HealthStep avec accord santé', () => {
+           ownerId: 'u-1',
+           bodyArea: 'knee',
+           side: 'left',
+           severity: 'mild',
+           note: 'entorse ancienne',
+           active: true,
+         },
+       ]);
+       return { status: 201, body: { id: 'l-1' } };
+     });
+-    expect(screen.getByText(/aucun diagnostic n'est nécessaire/)).toBeTruthy();
++    const editor = screen.getByRole('heading', { level: 3, name: 'Limitations' }).closest('section');
++    expect(editor).not.toBeNull();
++    verbatim(within(editor as HTMLElement), LIMITATIONS_NOTE);
+     expect(screen.queryByText('Après ton accord')).toBeNull();
+     await screen.findByText('Aucune');
+     expect(button('Ajouter une limitation').disabled).toBe(true);
+     fireEvent.change(screen.getByLabelText('Zone'), { target: { value: 'knee' } });
+     fireEvent.change(screen.getByLabelText('Côté'), { target: { value: 'left' } });
+     fireEvent.click(screen.getByRole('radio', { name: 'Légère' }));
+     const note = screen.getByLabelText('Note') as HTMLInputElement;
+     expect(note.maxLength).toBe(200);
+     fireEvent.change(note, { target: { value: 'entorse ancienne' } });
+     fireEvent.click(button('Ajouter une limitation'));
+diff --git a/apps/web/test/onboarding/ready-step.test.tsx b/apps/web/test/onboarding/ready-step.test.tsx
+index c254e6f..a30043e 100644
+--- a/apps/web/test/onboarding/ready-step.test.tsx
++++ b/apps/web/test/onboarding/ready-step.test.tsx
+@@ -1,11 +1,11 @@
+-import { fireEvent, screen } from '@testing-library/react';
++import { fireEvent, screen, within } from '@testing-library/react';
+ import { afterEach, describe, expect, it } from 'vitest';
+ import { ONBOARDING_COMPLETED_EVENT } from '../../src/app-events';
+ import { setMeta } from '../../src/local-db/meta';
+ import { createFakeApi } from '../support/fake-api';
+ import { createTestLocalDb } from '../support/local-db';
+ import {
+   button,
+   currentStep,
+   newcomer,
+   seedPrimaryGym,
+@@ -37,23 +37,26 @@ async function openReady(pullAgoMs: number) {
+   await seedPrimaryGym(db);
+   await setMeta(db, 'catalogVersion', 'cat-1');
+   await setMeta(db, 'serverCatalogVersion', 'cat-1');
+   await setMeta(db, 'lastPullOkAt', new Date(DEFAULT_NOW - pullAgoMs).toISOString());
+   serveProfile(api, db, me);
+   const rendered = await renderApp({ path: '/onboarding', me, db, api });
+   await until(() => currentStep() === 'ready');
+   return { ...rendered, api };
+ }
+ 
++/** Quête d'éveil `name` cochée (sans lever si l'écran n'est pas affiché). */
++const questDone = (name: string) =>
++  screen.queryByRole('checkbox', { name })?.getAttribute('aria-checked') === 'true';
+ /** Quête « Prêt hors ligne » de la célébration : cochée quand le voyant est au vert (R-SYN-33). */
+-const offlineReady = () =>
+-  screen.queryByRole('checkbox', { name: 'Prêt hors ligne' })?.getAttribute('aria-checked') === 'true';
++const offlineReady = () => questDone('Prêt hors ligne');
++const IN_PROGRESS = "Quêtes d'éveil en cours. Ta progression commencera au rang E.";
+ 
+ describe('ReadyStep (E8, R-SYN-33)', () => {
+   it('récapitulatif, voyant vert, « Commencer » → fin de l’onboarding, événement, accueil', async () => {
+     const { api, location } = await openReady(HOUR);
+     api.on('POST', COMPLETE, { status: 200, body: makeMe() });
+     window.addEventListener(ONBOARDING_COMPLETED_EVENT, count);
+     for (const text of ['Prendre du muscle', '3 séances de 45 min', 'Basic Fit', 'Jamais']) {
+       await screen.findByText(text);
+     }
+     await until(offlineReady);
+@@ -69,20 +72,58 @@ describe('ReadyStep (E8, R-SYN-33)', () => {
+     const { sync, api } = await openReady(25 * HOUR);
+     // Pas prêt : le voyant explique ce qui manque, avec « Réessayer ».
+     await until(() => screen.queryByTestId('offline-ready')?.getAttribute('data-state') === 'not-ready');
+     expect(offlineReady()).toBe(false);
+     expect(button('Commencer').disabled).toBe(true);
+     fireEvent.click(button('Réessayer'));
+     await until(() => sync.triggers.includes('manual'));
+     expect(api.calls.some((c) => c.path === COMPLETE)).toBe(false);
+   });
+ 
++  it('« Réessayer » réussi : « Prêt hors ligne » annoncé par une région déjà en place, focus sur « Commencer »', async () => {
++    const { sync, db } = await openReady(25 * HOUR);
++    await until(() => screen.queryByTestId('offline-ready')?.getAttribute('data-state') === 'not-ready');
++    // Région polie montée avant le changement : un texte qui y arrive est annoncé, une région retirée ne l'est pas.
++    const status = within(screen.getByTestId('onboarding-step')).getByRole('status');
++    expect(status.textContent).toBe('');
++    // La synchro manuelle de « Réessayer » réussit : pull frais.
++    sync.syncNow = async (trigger) => {
++      sync.triggers.push(trigger);
++      await setMeta(db, 'lastPullOkAt', new Date(DEFAULT_NOW - HOUR).toISOString());
++    };
++    const retry = button('Réessayer');
++    retry.focus();
++    fireEvent.click(retry);
++    await until(offlineReady);
++    expect(status.isConnected).toBe(true);
++    expect(status.textContent).toBe('Prêt hors ligne');
++    // « Réessayer » a disparu avec le focus : il passe à « Commencer », désormais actif.
++    expect(screen.queryByRole('button', { name: 'Réessayer' })).toBeNull();
++    expect(button('Commencer').disabled).toBe(false);
++    await until(() => document.activeElement === button('Commencer'));
++  });
++
++  it('voyant au vert sans « Réessayer » (synchro en fond) : annoncé, le focus posé sur le titre ne bouge pas', async () => {
++    const { sync, db } = await openReady(25 * HOUR);
++    await until(() => screen.queryByTestId('offline-ready')?.getAttribute('data-state') === 'not-ready');
++    const status = within(screen.getByTestId('onboarding-step')).getByRole('status');
++    const title = screen.getByRole('heading', { level: 2, name: /C'est prêt$/ });
++    title.focus();
++    // Un pull réussi en fond : le voyant est recalculé à ce nouvel état de synchro.
++    const fresh = new Date(DEFAULT_NOW - HOUR).toISOString();
++    await setMeta(db, 'lastPullOkAt', fresh);
++    sync.set({ lastPullOkAt: fresh });
++    await until(offlineReady);
++    expect(status.textContent).toBe('Prêt hors ligne');
++    expect(document.activeElement).toBe(title);
++  });
++
+   it('409 onboarding_incomplete : retour au premier écran incomplet, avec la raison', async () => {
+     const { api, location } = await openReady(HOUR);
+     api.on('POST', COMPLETE, { status: 409, body: { error: 'onboarding_incomplete', step: 'availability' } });
+     window.addEventListener(ONBOARDING_COMPLETED_EVENT, count);
+     await until(offlineReady);
+     await until(() => !button('Commencer').disabled);
+     expect(screen.queryByText(INCOMPLETE)).toBeNull();
+     fireEvent.click(button('Commencer'));
+     await until(() => currentStep() === 'availability');
+     expect(screen.getByText(INCOMPLETE).closest('[role="status"]')).not.toBeNull();
+@@ -93,22 +134,27 @@ describe('ReadyStep (E8, R-SYN-33)', () => {
+     await until(() => currentStep() === 'experience');
+     expect(screen.queryByText(INCOMPLETE)).toBeNull();
+   });
+ 
+   it('409 sans étape lisible : écran recalculé depuis la base locale', async () => {
+     const { api, db, location } = await openReady(HOUR);
+     api.on('POST', COMPLETE, { status: 409, body: { error: 'onboarding_incomplete' } });
+     window.addEventListener(ONBOARDING_COMPLETED_EVENT, count);
+     await until(offlineReady);
+     await until(() => !button('Commencer').disabled);
+-    // Disponibilité effacée depuis un autre appareil, sans nouveau pull : l'écran reste « C'est prêt ».
++    await until(() => questDone('Profil complété'));
++    // Disponibilité effacée depuis un autre appareil, sans nouveau pull : l'écran reste « C'est prêt », et la
++    // quête « Profil complété » se décoche (vrais états).
+     await seedProfile(db, { goal: 'muscle', experience: 'none', daysPerWeek: null, sessionMinutes: 45 });
++    await until(() => !questDone('Profil complété'));
++    expect(screen.getByText(IN_PROGRESS)).toBeTruthy();
++    expect(screen.queryByText('3/3')).toBeNull();
+     fireEvent.click(button('Commencer'));
+     await until(() => currentStep() === 'availability');
+     expect(screen.getByText(INCOMPLETE)).toBeTruthy();
+     expect(location()).toBe('/onboarding');
+     expect(events).toBe(0);
+   });
+ 
+   it('« Retour » ramène à la santé', async () => {
+     await openReady(HOUR);
+     fireEvent.click(button('Retour'));
+diff --git a/apps/web/test/onboarding/steps.test.tsx b/apps/web/test/onboarding/steps.test.tsx
+index 629d8b8..36e6e8e 100644
+--- a/apps/web/test/onboarding/steps.test.tsx
++++ b/apps/web/test/onboarding/steps.test.tsx
+@@ -1,38 +1,43 @@
++import { readFileSync } from 'node:fs';
++import { resolve } from 'node:path';
+ import { EQUIPMENT, EQUIPMENT_LABELS, PRESETS, SPORTS } from '@rune/contracts';
+ import { fireEvent, screen, within } from '@testing-library/react';
+ import { type ReactElement, useState } from 'react';
+ import { describe, expect, it, vi } from 'vitest';
+ import { AvailabilityStep } from '../../src/features/onboarding/AvailabilityStep';
+ import { ExperienceStep } from '../../src/features/onboarding/ExperienceStep';
+ import { GoalStep } from '../../src/features/onboarding/GoalStep';
+ import { PlaceKindStep } from '../../src/features/onboarding/PlaceKindStep';
+ import { PlaceStep } from '../../src/features/onboarding/PlaceStep';
+ import { SportStep } from '../../src/features/onboarding/SportStep';
++import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
+ import { createFakeApi } from '../support/fake-api';
+ import { createTestLocalDb } from '../support/local-db';
+ import {
+   button,
+   checkbox,
+   choose,
+   currentStep,
+   isChecked,
+   newcomer,
+   radio,
+   seedPrimaryGym,
+   seedProfile,
+   serveProfile,
+   writes,
+ } from '../support/onboarding';
+ import { makeMe, renderApp, renderWithServices } from '../support/render';
+ import { until } from '../support/wait';
+ 
++const ONBOARDING_CSS = resolve(import.meta.dirname, '../../src/features/onboarding/onboarding.module.css');
++
+ const ADULT_GOALS = [
+   'Prendre du muscle',
+   'Gagner en force',
+   'Perdre du gras',
+   'Forme et santé',
+   'Me renforcer pour mon sport',
+ ];
+ 
+ /** Écran seul, avec un faux serveur du profil ; `profile` est écrit dans le miroir avant le rendu. */
+ async function renderStep(
+@@ -288,71 +293,109 @@ describe('PlaceStep (E4)', () => {
+     t.api.setOffline(false);
+     fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(writes(t.api)).toEqual([
+       'POST /api/places',
+       'PATCH /api/me/training-profile',
+       'PATCH /api/me/training-profile',
+     ]);
+   });
+ 
+-  it("salle : « Valider » du GymPicker → POST du lieu, PATCH de l'étape, puis le niveau", async () => {
++  it("salle (maquette B04) : « Continuer » de la barre, actif une fois la salle choisie → POST du lieu, PATCH de l'étape, puis le niveau", async () => {
+     const me = newcomer({ onboardingStep: 'place_kind' });
+     const db = createTestLocalDb();
+     const api = createFakeApi()
+       .on('GET', '/api/gyms', {
+         status: 200,
+         body: [{ id: 'g-1', name: 'Basic Fit', city: 'Lyon', visibleMemberCount: 2 }],
+       })
+       .on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
+     await seedProfile(db, { goal: 'muscle' });
+     const server = serveProfile(api, db, me);
+     await renderApp({ path: '/onboarding', me, db, api });
+     await until(() => currentStep() === 'place_kind');
+     choose('À la salle');
+     fireEvent.click(button('Continuer'));
+     await until(() => currentStep() === 'place');
+-    expect(screen.queryByRole('button', { name: 'Continuer' })).toBeNull();
+     await screen.findByText('Cherche ta salle ou crée-la.');
+     await screen.findByRole('radio', { name: 'Basic Fit · Lyon · 2 membres visibles' });
++    // Pas de « Valider » propre au sélecteur : l'écran avance par le « Continuer » de sa barre, à côté de
++    // « Retour », comme les 8 autres ; désactivé tant qu'aucune salle n'est choisie.
++    expect(screen.queryByRole('button', { name: 'Valider' })).toBeNull();
++    expect(screen.getAllByRole('button', { name: 'Continuer' })).toHaveLength(1);
++    expect(button('Retour').parentElement?.contains(button('Continuer'))).toBe(true);
++    expect(button('Continuer').disabled).toBe(true);
+     choose('Basic Fit · Lyon · 2 membres visibles');
+-    fireEvent.click(button('Valider'));
++    expect(button('Continuer').disabled).toBe(false);
++    fireEvent.click(button('Continuer'));
+     await until(() => currentStep() === 'experience');
+     expect(server.patches).toEqual([{ onboardingStep: 'place_kind' }, { onboardingStep: 'place' }]);
+     expect(api.calls.find((c) => c.path === '/api/places')?.body).toEqual({
+       kind: 'gym',
+       gymId: 'g-1',
+       isPrimary: true,
+       visibleAtGym: true,
+     });
+   });
+ 
+-  it('salle, mineur : case de visibilité décochée avec la raison ; « Valider » → visibleAtGym: false (P-MIN-6)', async () => {
++  it("salle (maquette B04) : la carte « Créer une salle » (ma salle n'est pas dans la liste) ouvre la création ; « Retour » seul prend la barre", async () => {
++    const me = newcomer({ onboardingStep: 'place_kind' });
++    const db = createTestLocalDb();
++    const api = createFakeApi().on('GET', '/api/gyms', { status: 200, body: [] });
++    await seedProfile(db, { goal: 'muscle' });
++    serveProfile(api, db, me);
++    await renderApp({ path: '/onboarding', me, db, api });
++    await until(() => currentStep() === 'place_kind');
++    choose('À la salle');
++    fireEvent.click(button('Continuer'));
++    await until(() => currentStep() === 'place');
++    // Nommée par son titre, décrite par sa phrase (maquette B04) ; plus de bouton « Ma salle n'est pas dans la liste ».
++    const create = await screen.findByRole('button', {
++      name: 'Créer une salle',
++      description: "Ma salle n'est pas dans la liste",
++    });
++    expect(screen.queryByRole('button', { name: "Ma salle n'est pas dans la liste" })).toBeNull();
++    // Après la liste et avant la case de visibilité, comme sur la maquette.
++    const visibility = checkbox('Apparaître dans « Qui va à cette salle »');
++    expect(create.compareDocumentPosition(visibility) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
++    fireEvent.click(create);
++    await screen.findByLabelText('Nom de la salle');
++    // La création a ses propres boutons : un seul « Continuer » (le sien) ; la barre ne garde que « Retour »,
++    // qui en prend toute la largeur.
++    expect(screen.getAllByRole('button', { name: 'Continuer' })).toHaveLength(1);
++    expect(button('Retour').parentElement?.children).toHaveLength(1);
++    const css = parseCssBlocks(readFileSync(ONBOARDING_CSS, 'utf8'));
++    expect(declarationsOf(css, '.back:only-child')?.get('flex')).toBe('1 1 auto');
++    fireEvent.click(button('Revenir à la liste'));
++    await screen.findByRole('button', { name: 'Créer une salle' });
++  });
++
++  it('salle, mineur : case de visibilité décochée avec la raison ; « Continuer » → visibleAtGym: false (P-MIN-6)', async () => {
+     const me = newcomer({ ageBand: 'minor', onboardingStep: 'place_kind' });
+     const db = createTestLocalDb();
+     const api = createFakeApi()
+       .on('GET', '/api/gyms', {
+         status: 200,
+         body: [{ id: 'g-1', name: 'Basic Fit', city: 'Lyon', visibleMemberCount: 2 }],
+       })
+       .on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
+     await seedProfile(db, { goal: 'muscle' });
+     serveProfile(api, db, me);
+     await renderApp({ path: '/onboarding', me, db, api });
+     await until(() => currentStep() === 'place_kind');
+     choose('À la salle');
+     fireEvent.click(button('Continuer'));
+     await screen.findByRole('radio', { name: 'Basic Fit · Lyon · 2 membres visibles' });
+     expect(checkbox('Apparaître dans « Qui va à cette salle »').checked).toBe(false);
+     expect(screen.getByText('Désactivé par défaut pour les moins de 18 ans.')).toBeTruthy();
+     choose('Basic Fit · Lyon · 2 membres visibles');
+-    fireEvent.click(button('Valider'));
++    fireEvent.click(button('Continuer'));
+     await until(() => currentStep() === 'experience');
+     expect(api.calls.find((c) => c.path === '/api/places')?.body).toEqual({
+       kind: 'gym',
+       gymId: 'g-1',
+       isPrimary: true,
+       visibleAtGym: false,
+     });
+   });
+ 
+   it('lieu principal existant : « Ton lieu principal : Basic Fit », aucun POST', async () => {
+diff --git a/apps/web/test/ui/components.test.tsx b/apps/web/test/ui/components.test.tsx
+index 406962b..489a63e 100644
+--- a/apps/web/test/ui/components.test.tsx
++++ b/apps/web/test/ui/components.test.tsx
+@@ -299,20 +299,53 @@ describe('Chips', () => {
+ 
+   it('chaque pastille est une cible d’au moins 44 px ; la pastille choisie porte une coche', () => {
+     render(<Rhythm />);
+     const labels = ['45 min', '60 min', '75 min'].map(
+       (t) => screen.getByText(t).closest('label') as HTMLElement,
+     );
+     for (const label of labels) expect(label.classList.contains(cls('chip'))).toBe(true);
+     expect(px(rule('.chip')?.get('min-height'))).toBeGreaterThanOrEqual(44);
+     expect(checkedLabels()).toEqual(['60 min']);
+   });
++
++  it('option désactivée et expliquée (comme ChoiceList) : radio désactivé, décrit par son explication, atténué', () => {
++    render(
++      <>
++        <p id="pourquoi-non">Ton objectif demande un sport.</p>
++        <Chips
++          name="practice"
++          legend="Pratiques-tu un autre sport régulièrement ?"
++          value="yes"
++          onChange={() => {}}
++          options={[
++            { value: 'no', label: 'Non', disabled: true, describedBy: 'pourquoi-non' },
++            { value: 'yes', label: 'Oui' },
++          ]}
++        />
++      </>,
++    );
++    const group = screen.getByRole('group', { name: 'Pratiques-tu un autre sport régulièrement ?' });
++    const no = within(group).getByRole('radio', {
++      name: 'Non',
++      description: 'Ton objectif demande un sport.',
++    }) as HTMLInputElement;
++    expect(no.disabled).toBe(true);
++    // Les autres options restent libres et sans description.
++    const yes = within(group).getByRole('radio', { name: 'Oui', checked: true }) as HTMLInputElement;
++    expect(yes.disabled).toBe(false);
++    expect(yes.hasAttribute('aria-describedby')).toBe(false);
++    // Atténuée à l'écran aussi, pas seulement pour les lecteurs d'écran.
++    const dimmed = css.filter(
++      (b) => b.media === null && b.selector.split(', ').includes('.chip:has(.overlayInput:disabled)'),
++    );
++    expect(dimmed.some((b) => b.declarations.has('opacity'))).toBe(true);
++  });
+ });
+ 
+ describe('Switch', () => {
+   function Prudent() {
+     const [on, setOn] = useState(false);
+     return (
+       <Switch
+         id="prudent"
+         label="Je préfère une progression plus prudente"
+         help="Réglage d'entraînement, pas une donnée de santé."

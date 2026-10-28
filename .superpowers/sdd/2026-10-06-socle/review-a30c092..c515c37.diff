@@ -1,0 +1,1235 @@
+# Review package: a30c092..HEAD
+
+## Commits
+c515c37 feat(privacy): consentement santé, questionnaire, limitations et retrait
+
+## Files changed
+ apps/server/src/privacy/consent-routes.ts        | 208 +++++++++++++++
+ apps/server/src/privacy/consent.ts               | 176 +++++++++++++
+ apps/server/src/routes.ts                        |   2 +
+ apps/server/test/privacy/admin-isolation.test.ts |   4 +-
+ apps/server/test/privacy/consent.test.ts         | 214 ++++++++++++++++
+ apps/server/test/privacy/replay-withdraw.test.ts | 113 +++++++++
+ apps/server/test/privacy/withdraw.test.ts        | 309 +++++++++++++++++++++++
+ packages/contracts/src/api/consent.ts            |  88 +++++++
+ packages/contracts/src/index.ts                  |   1 +
+ 9 files changed, 1113 insertions(+), 2 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/privacy/consent-routes.ts b/apps/server/src/privacy/consent-routes.ts
+new file mode 100644
+index 0000000..ac3042d
+--- /dev/null
++++ b/apps/server/src/privacy/consent-routes.ts
+@@ -0,0 +1,208 @@
++import {
++  CODE_CHECKS_PER_HOUR,
++  GrantConsentRequest,
++  HEALTH_CONSENT_TEXT,
++  HEALTH_QUESTIONNAIRE,
++  HealthScreeningRequest,
++  LimitationInput,
++  LimitationPatch,
++  LOGIN_LIMITS,
++  ReplayWithdrawRequest,
++  WithdrawConsentRequest,
++} from '@appsport/contracts';
++import { type Context, Hono } from 'hono';
++import type { AppEnv, SessionUser } from '../app-env';
++import { createIpLimiter, type IpLimiter } from '../auth/limiter';
++import { buildMe, verifyUserPassword } from '../auth/me';
++import { requireUser } from '../auth/session';
++import { writeStamp } from '../db/rev';
++import type { DbExecutor } from '../db/schema';
++import { getServerMeta } from '../db/server-meta';
++import type { AppDeps } from '../deps';
++import { validClientIp } from '../http/client-ip';
++import { httpError } from '../http/errors';
++import { parseJson } from '../http/validate';
++import { grantConsent, latestGrant, withdrawHealthConsent } from './consent';
++import { isHealthConsentActive } from './consent-state';
++
++/** Limiteur propre au renvoi du retrait (20 par heure et par IP), un par jeu de dépendances. */
++const replayLimiters = new WeakMap<AppDeps, IpLimiter>();
++function replayLimiter(deps: AppDeps): IpLimiter {
++  let limiter = replayLimiters.get(deps);
++  if (!limiter) {
++    limiter = createIpLimiter(deps.clock, { limit: CODE_CHECKS_PER_HOUR, windowMs: LOGIN_LIMITS.windowMs });
++    replayLimiters.set(deps, limiter);
++  }
++  return limiter;
++}
++
++const userOf = (c: Context<AppEnv>): SessionUser => {
++  const user = c.get('user');
++  if (!user) throw httpError('unauthenticated');
++  return user;
++};
++
++/** Garde C2 (R-CST-4, P-CST-2). */
++async function requireHealthConsent(db: DbExecutor, userId: string): Promise<void> {
++  if (!(await isHealthConsentActive(db, userId))) throw httpError('health_consent_required');
++}
++
++/** Limitation vivante de l'utilisateur ; sinon 404 (absente, supprimée ou à un autre, P-ADM-2). */
++async function loadOwnLimitation(db: DbExecutor, userId: string, id: string): Promise<void> {
++  const row = await db
++    .selectFrom('limitation')
++    .select(['id', 'ownerId'])
++    .where('id', '=', id)
++    .where('deletedAt', 'is', null)
++    .executeTakeFirst();
++  if (!row || row.ownerId !== userId) throw httpError('not_found');
++}
++
++export function consentRoutes(deps: AppDeps): Hono<AppEnv> {
++  const routes = new Hono<AppEnv>();
++  const me = (user: SessionUser) =>
++    buildMe(deps.db, deps, user.id, { mustChangePassword: user.mustChangePassword });
++
++  routes.post('/consents', requireUser, async (c) => {
++    const user = userOf(c);
++    const body = await parseJson(c, GrantConsentRequest);
++    if (body.textVersion !== HEALTH_CONSENT_TEXT.version)
++      throw httpError('validation', { field: 'textVersion' });
++    const ip = validClientIp(c);
++    await deps.db
++      .transaction()
++      .execute((trx) => grantConsent(trx, deps, user.id, body.type, body.textVersion, ip));
++    return c.json(await me(user));
++  });
++
++  routes.post('/consents/withdraw', requireUser, async (c) => {
++    const user = userOf(c);
++    const body = await parseJson(c, WithdrawConsentRequest);
++    const ip = validClientIp(c);
++    await verifyUserPassword(deps.db, deps, user, body.password, ip);
++    await deps.db
++      .transaction()
++      .execute((trx) => withdrawHealthConsent(trx, deps, user.id, { actorId: user.id, ip }));
++    return c.json(await me(user));
++  });
++
++  // R-SYN-28 : renvoi d'un retrait perdu par une restauration, sans mot de passe (exception à P-AUT-5).
++  routes.post('/consents/health/replay-withdraw', requireUser, async (c) => {
++    const user = userOf(c);
++    const ip = validClientIp(c);
++    const verdict = replayLimiter(deps).hit(ip);
++    if (!verdict.allowed) throw httpError('rate_limited', { retryAfterS: verdict.retryAfterS });
++    const body = await parseJson(c, ReplayWithdrawRequest);
++    const withdrawnAt = new Date(body.withdrawnAt).getTime();
++    await deps.db.transaction().execute(async (trx) => {
++      const grant = await latestGrant(trx, user.id, 'health');
++      const { epochStartedAt } = await getServerMeta(trx);
++      const accepted =
++        grant !== undefined &&
++        (await isHealthConsentActive(trx, user.id)) &&
++        withdrawnAt > new Date(grant.createdAt).getTime() &&
++        withdrawnAt < new Date(epochStartedAt).getTime();
++      if (!accepted) throw httpError('conflict');
++      await withdrawHealthConsent(trx, deps, user.id, { actorId: user.id, ip }, { replay: true });
++    });
++    return c.json(await me(user));
++  });
++
++  routes.put('/health-screening', requireUser, async (c) => {
++    const user = userOf(c);
++    await requireHealthConsent(deps.db, user.id);
++    const body = await parseJson(c, HealthScreeningRequest);
++    if (body.questionnaireVersion !== HEALTH_QUESTIONNAIRE.version) {
++      throw httpError('validation', { field: 'questionnaireVersion' });
++    }
++    // Seul le résultat est gardé : les réponses ne sont jamais stockées (02 §12 E7).
++    const caution = body.answers.some(Boolean);
++    await deps.db.transaction().execute(async (trx) => {
++      const stamp = await writeStamp(trx, deps, user.id);
++      const content = {
++        caution: caution ? 1 : 0,
++        questionnaireVersion: body.questionnaireVersion,
++        answeredAt: stamp.updatedAt,
++        deletedAt: null,
++        ...stamp,
++      };
++      await trx
++        .insertInto('healthScreening')
++        .values({ id: user.id, ownerId: user.id, createdAt: stamp.updatedAt, ...content })
++        .onConflict((oc) => oc.column('id').doUpdateSet(content))
++        .execute();
++    });
++    return c.json({ caution });
++  });
++
++  routes.post('/limitations', requireUser, async (c) => {
++    const user = userOf(c);
++    await requireHealthConsent(deps.db, user.id);
++    const body = await parseJson(c, LimitationInput);
++    const id = deps.ids.uuidv7();
++    await deps.db.transaction().execute(async (trx) => {
++      const stamp = await writeStamp(trx, deps, user.id);
++      await trx
++        .insertInto('limitation')
++        .values({
++          id,
++          ownerId: user.id,
++          createdAt: stamp.updatedAt,
++          bodyArea: body.bodyArea,
++          side: body.side,
++          severity: body.severity,
++          note: body.note ?? null,
++          active: body.active === false ? 0 : 1,
++          ...stamp,
++        })
++        .execute();
++    });
++    return c.json({ id }, 201);
++  });
++
++  routes.patch('/limitations/:id', requireUser, async (c) => {
++    const user = userOf(c);
++    const id = c.req.param('id');
++    await loadOwnLimitation(deps.db, user.id, id);
++    await requireHealthConsent(deps.db, user.id);
++    const body = await parseJson(c, LimitationPatch);
++    const { active, ...rest } = body;
++    await deps.db.transaction().execute(async (trx) => {
++      const stamp = await writeStamp(trx, deps, user.id);
++      await trx
++        .updateTable('limitation')
++        .set({ ...rest, ...(active === undefined ? {} : { active: active ? 1 : 0 }), ...stamp })
++        .where('id', '=', id)
++        .where('deletedAt', 'is', null)
++        .execute();
++    });
++    return c.body(null, 204);
++  });
++
++  routes.delete('/limitations/:id', requireUser, async (c) => {
++    const user = userOf(c);
++    const id = c.req.param('id');
++    await loadOwnLimitation(deps.db, user.id, id);
++    await requireHealthConsent(deps.db, user.id);
++    await deps.db.transaction().execute(async (trx) => {
++      const stamp = await writeStamp(trx, deps, user.id);
++      await trx
++        .updateTable('limitation')
++        .set({
++          bodyArea: null,
++          side: null,
++          severity: null,
++          note: null,
++          active: null,
++          deletedAt: stamp.updatedAt,
++          ...stamp,
++        })
++        .where('id', '=', id)
++        .where('deletedAt', 'is', null)
++        .execute();
++    });
++    return c.body(null, 204);
++  });
++
++  return routes;
++}
+diff --git a/apps/server/src/privacy/consent.ts b/apps/server/src/privacy/consent.ts
+new file mode 100644
+index 0000000..857a7d0
+--- /dev/null
++++ b/apps/server/src/privacy/consent.ts
+@@ -0,0 +1,176 @@
++import { type EntityRule, SYNC_COLUMNS } from '@appsport/contracts';
++import { type RawBuilder, sql, type Transaction } from 'kysely';
++import { logSecurityEvent } from '../auth/security-log';
++import { writeStamp } from '../db/rev';
++import type { Database, DbExecutor } from '../db/schema';
++import type { AppDeps } from '../deps';
++import { type ConsentType, getConsentState, isHealthConsentActive } from './consent-state';
++
++export type HealthWithdrawHook = (trx: Transaction<Database>, deps: AppDeps, userId: string) => Promise<void>;
++export type HealthWithdrawHooks = Readonly<Record<string /* table SQL */, HealthWithdrawHook>>;
++
++/** Vide au socle ; une entrée remplace la règle générique du retrait pour sa table (briques 3 et 5, 09 §8). */
++export const HEALTH_WITHDRAW_HOOKS: HealthWithdrawHooks = {};
++
++const SYNC: readonly string[] = SYNC_COLUMNS;
++
++/** Dernier accord du type (created_at, puis rev), ou undefined. */
++export async function latestGrant(
++  db: DbExecutor,
++  userId: string,
++  type: ConsentType,
++): Promise<{ textVersion: string; createdAt: string } | undefined> {
++  return db
++    .selectFrom('consentEvent')
++    .select(['textVersion', 'createdAt'])
++    .where('ownerId', '=', userId)
++    .where('type', '=', type)
++    .where('action', '=', 'grant')
++    .orderBy('createdAt', 'desc')
++    .orderBy('rev', 'desc')
++    .limit(1)
++    .executeTakeFirst();
++}
++
++async function insertConsentEvent(
++  trx: DbExecutor,
++  deps: AppDeps,
++  userId: string,
++  type: ConsentType,
++  action: 'grant' | 'withdraw',
++  textVersion: string,
++): Promise<void> {
++  const stamp = await writeStamp(trx, deps, userId);
++  await trx
++    .insertInto('consentEvent')
++    .values({
++      id: deps.ids.uuidv7(),
++      ownerId: userId,
++      type,
++      action,
++      textVersion,
++      createdAt: stamp.updatedAt,
++      ...stamp,
++    })
++    .execute();
++}
++
++/** R-CST-1 : un accord identique à l'accord actif n'écrit rien. La version est validée par l'appelant. */
++export async function grantConsent(
++  trx: DbExecutor,
++  deps: AppDeps,
++  userId: string,
++  type: ConsentType,
++  textVersion: string,
++  ip: string | null,
++): Promise<void> {
++  const current = (await getConsentState(trx, userId))[type === 'health' ? 'health' : 'aiCoach'];
++  if (current.active && current.textVersion === textVersion) return;
++  await insertConsentEvent(trx, deps, userId, type, 'grant', textVersion);
++  await logSecurityEvent(trx, deps, {
++    type: 'consent_granted',
++    actorId: userId,
++    targetId: userId,
++    ip,
++    outcome: 'success',
++    details: { consentType: type },
++  });
++}
++
++type Row = { rid: number };
++
++async function stampRows(
++  trx: Transaction<Database>,
++  deps: AppDeps,
++  table: string,
++  actorId: string | null,
++  rows: Row[],
++  set: (stamp: { rev: number; updatedAt: string; updatedBy: string | null }) => RawBuilder<unknown>,
++): Promise<void> {
++  for (const { rid } of rows) {
++    const stamp = await writeStamp(trx, deps, actorId);
++    await sql`update ${sql.table(table)} set ${set(stamp)}, rev = ${stamp.rev}, updated_at = ${stamp.updatedAt}, updated_by = ${stamp.updatedBy} where rowid = ${rid}`.execute(
++      trx,
++    );
++  }
++}
++
++/**
++ * Règle générique du retrait pour une table liée au propriétaire :
++ * C2 → contenu à NULL et tombstone ; sinon `c2Columns` à NULL et valeurs `c2Values` effacées.
++ */
++async function clearTable(
++  trx: Transaction<Database>,
++  deps: AppDeps,
++  table: string,
++  rule: EntityRule,
++  userId: string,
++  actorId: string | null,
++): Promise<void> {
++  if (rule.ownerColumn === null) return;
++  const owner = sql`${sql.ref(rule.ownerColumn)} = ${userId}`;
++  const isNull = (cols: readonly string[]) => cols.map((c) => sql`${sql.ref(c)} = null`);
++
++  if (rule.category === 'C2') {
++    const content = rule.columns.filter((c) => c !== 'id' && !SYNC.includes(c));
++    const full = content.map((c) => sql`${sql.ref(c)} is not null`);
++    const rows =
++      await sql<Row>`select rowid as rid from ${sql.table(table)} where ${owner} and (deleted_at is null${
++        full.length > 0 ? sql` or ${sql.join(full, sql` or `)}` : sql``
++      })`.execute(trx);
++    await stampRows(trx, deps, table, actorId, rows.rows, (stamp) =>
++      sql.join([...isNull(content), sql`deleted_at = coalesce(deleted_at, ${stamp.updatedAt})`]),
++    );
++    return;
++  }
++
++  const values = Object.entries(rule.c2Values ?? {});
++  if (rule.c2Columns.length === 0 && values.length === 0) return;
++  const concerned = [
++    ...rule.c2Columns.map((c) => sql`${sql.ref(c)} is not null`),
++    ...values.map(([c, listed]) => sql`${sql.ref(c)} in (${sql.join([...listed])})`),
++  ];
++  const rows = await sql<Row>`select rowid as rid from ${sql.table(table)} where ${owner} and (${sql.join(
++    concerned,
++    sql` or `,
++  )})`.execute(trx);
++  await stampRows(trx, deps, table, actorId, rows.rows, () =>
++    sql.join([
++      ...isNull(rule.c2Columns),
++      ...values.map(
++        ([c, listed]) =>
++          sql`${sql.ref(c)} = case when ${sql.ref(c)} in (${sql.join([...listed])}) then null else ${sql.ref(c)} end`,
++      ),
++    ]),
++  );
++}
++
++/**
++ * Retrait du consentement santé (R-CST-5, P-CST-3, 09 §8) : n'agit que si l'accord est actif.
++ * Efface les données C2 de l'utilisateur, garde `cautious_mode`, n'écrit aucune valeur de contenu au journal.
++ */
++export async function withdrawHealthConsent(
++  trx: Transaction<Database>,
++  deps: AppDeps,
++  userId: string,
++  actor: { actorId: string | null; ip: string | null },
++  opts: { replay?: boolean; hooks?: HealthWithdrawHooks } = {},
++): Promise<void> {
++  if (!(await isHealthConsentActive(trx, userId))) return;
++  const hooks = opts.hooks ?? HEALTH_WITHDRAW_HOOKS;
++  for (const hook of Object.values(hooks)) await hook(trx, deps, userId);
++  for (const [table, rule] of Object.entries(deps.entityRules)) {
++    if (table in hooks) continue;
++    await clearTable(trx, deps, table, rule, userId, actor.actorId);
++  }
++  const grant = await latestGrant(trx, userId, 'health');
++  await insertConsentEvent(trx, deps, userId, 'health', 'withdraw', grant?.textVersion ?? '');
++  await logSecurityEvent(trx, deps, {
++    type: 'consent_revoked',
++    actorId: actor.actorId,
++    targetId: userId,
++    ip: actor.ip,
++    outcome: 'success',
++    details: { consentType: 'health', ...(opts.replay ? { replay: true } : {}) },
++  });
++}
+diff --git a/apps/server/src/routes.ts b/apps/server/src/routes.ts
+index aaaf3af..fba4bd2 100644
+--- a/apps/server/src/routes.ts
++++ b/apps/server/src/routes.ts
+@@ -1,24 +1,26 @@
+ import type { Hono } from 'hono';
+ import { adminRoutes } from './admin/routes';
+ import type { AppEnv } from './app-env';
+ import { adminInvitationRoutes, invitationRoutes } from './auth/invitation-routes';
+ import { meRoutes } from './auth/me-routes';
+ import { authRoutes } from './auth/routes';
+ import type { AppDeps } from './deps';
+ import { healthRoutes } from './health/routes';
+ import { gymRoutes } from './places/gym-routes';
+ import { placeRoutes } from './places/place-routes';
++import { consentRoutes } from './privacy/consent-routes';
+ import { profileRoutes } from './profile/routes';
+ 
+ /** Un routeur par ligne ; les routeurs des tâches suivantes s'ajoutent ici. */
+ export function mountRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
+   app.route('/', healthRoutes(deps));
+   app.route('/api/auth', authRoutes(deps));
+   app.route('/api/me', meRoutes(deps));
+   app.route('/api/me', profileRoutes(deps));
++  app.route('/api/me', consentRoutes(deps));
+   app.route('/api/gyms', gymRoutes(deps));
+   app.route('/api/places', placeRoutes(deps));
+   app.route('/api/invitations', invitationRoutes(deps));
+   app.route('/api/admin/invitations', adminInvitationRoutes(deps));
+   app.route('/api/admin', adminRoutes(deps));
+ }
+diff --git a/apps/server/test/privacy/admin-isolation.test.ts b/apps/server/test/privacy/admin-isolation.test.ts
+index 1ccf480..0a6eb98 100644
+--- a/apps/server/test/privacy/admin-isolation.test.ts
++++ b/apps/server/test/privacy/admin-isolation.test.ts
+@@ -1,17 +1,17 @@
+ import { entityRules } from '@appsport/contracts';
+ import { afterEach, describe, expect, it } from 'vitest';
+ import { createTestContext, createUser, insertFixtureRow, login, type TestContext } from '../support';
+ 
+-// Planchers du nombre de routes énumérées : T18 a monté MIN_ID_ROUTES à 4, T19 le monte à 6.
++// Planchers du nombre de routes énumérées : T19 a monté MIN_ID_ROUTES à 6 (PATCH, DELETE /api/me/limitations/:id).
+ const MIN_ADMIN_ROUTES = 10;
+-const MIN_ID_ROUTES = 4;
++const MIN_ID_ROUTES = 6;
+ 
+ let ctx: TestContext;
+ afterEach(() => ctx?.close());
+ 
+ const WITNESSES = ['TEMOIN_TP', 'TEMOIN_HS', 'TEMOIN_LIM'];
+ 
+ interface Route {
+   method: string;
+   path: string;
+ }
+diff --git a/apps/server/test/privacy/consent.test.ts b/apps/server/test/privacy/consent.test.ts
+new file mode 100644
+index 0000000..e12ba19
+--- /dev/null
++++ b/apps/server/test/privacy/consent.test.ts
+@@ -0,0 +1,214 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import {
++  createTestContext,
++  createUser,
++  createUserAndLogin,
++  insertFixtureRow,
++  login,
++  type TestContext,
++} from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx?.close());
++
++type Member = Awaited<ReturnType<typeof createUserAndLogin>>;
++
++const call = (u: { cookie: string }, path: string, method = 'GET', json?: unknown) =>
++  ctx.request(path, { method, cookie: u.cookie, ...(json !== undefined ? { json } : {}) });
++const grant = (u: Member, json: unknown = { type: 'health', textVersion: '1.0' }) =>
++  call(u, '/api/me/consents', 'POST', json);
++const screening = (u: Member, answers: unknown, questionnaireVersion = '1.0') =>
++  call(u, '/api/me/health-screening', 'PUT', { answers, questionnaireVersion });
++const createLimitation = (u: Member, json: unknown) => call(u, '/api/me/limitations', 'POST', json);
++const consentEvents = (userId: string) =>
++  ctx.deps.db.selectFrom('consentEvent').selectAll().where('ownerId', '=', userId).execute();
++const securityEvents = (type: string) =>
++  ctx.deps.db.selectFrom('securityEvent').selectAll().where('type', '=', type).execute();
++const limitation = (id: string) =>
++  ctx.deps.db.selectFrom('limitation').selectAll().where('id', '=', id).executeTakeFirst();
++const KNEE = { bodyArea: 'knee', side: 'left', severity: 'mild', note: 'gêne en descente' };
++
++async function setup() {
++  ctx = await createTestContext();
++  return createUserAndLogin(ctx);
++}
++
++describe('POST /api/me/consents (R-CST-1)', () => {
++  it('enregistre le consentement santé et le journalise', async () => {
++    const u = await setup();
++    const res = await grant(u);
++    expect(res.status).toBe(200);
++    const me = (await res.json()) as { consents: { health: unknown } };
++    expect(me.consents.health).toEqual({ active: true, textVersion: '1.0', at: '2026-10-06T10:00:00.000Z' });
++    const events = await consentEvents(u.id);
++    expect(events).toHaveLength(1);
++    expect(events[0]).toMatchObject({ type: 'health', action: 'grant', textVersion: '1.0', updatedBy: u.id });
++    const logged = await securityEvents('consent_granted');
++    expect(logged).toHaveLength(1);
++    expect(logged[0]).toMatchObject({ actorId: u.id, targetId: u.id, outcome: 'success' });
++    expect(JSON.parse(logged[0]?.details ?? 'null')).toEqual({ consentType: 'health' });
++  });
++
++  it('refuse une autre version du texte ou un autre type', async () => {
++    const u = await setup();
++    expect((await grant(u, { type: 'health', textVersion: '0.9' })).status).toBe(400);
++    expect((await grant(u, { type: 'ai_coach', textVersion: '1.0' })).status).toBe(400);
++    expect(await consentEvents(u.id)).toHaveLength(0);
++  });
++
++  it('un accord identique répété ne crée qu’un seul événement', async () => {
++    const u = await setup();
++    expect((await grant(u)).status).toBe(200);
++    ctx.clock.advance(1000);
++    expect((await grant(u)).status).toBe(200);
++    expect(await consentEvents(u.id)).toHaveLength(1);
++    expect(await securityEvents('consent_granted')).toHaveLength(1);
++  });
++});
++
++describe('garde C2 sans consentement (R-CST-4, P-CST-2)', () => {
++  it('refuse le questionnaire et la création de limitation, même avec un corps vide', async () => {
++    const u = await setup();
++    for (const json of [{}, { answers: [false, false, false, false], questionnaireVersion: '1.0' }]) {
++      const res = await call(u, '/api/me/health-screening', 'PUT', json);
++      expect(res.status).toBe(403);
++      expect(await res.json()).toEqual({ error: 'health_consent_required' });
++    }
++    for (const json of [{}, KNEE]) {
++      const res = await createLimitation(u, json);
++      expect(res.status).toBe(403);
++      expect(await res.json()).toEqual({ error: 'health_consent_required' });
++    }
++    expect(await ctx.deps.db.selectFrom('healthScreening').selectAll().execute()).toHaveLength(0);
++    expect(await ctx.deps.db.selectFrom('limitation').selectAll().execute()).toHaveLength(0);
++  });
++
++  it('refuse la modification et la suppression d’une limitation existante', async () => {
++    const u = await setup();
++    const row = await insertFixtureRow(ctx.deps.db, 'limitation', { ownerId: u.id });
++    const id = row.id as string;
++    const patch = await call(u, `/api/me/limitations/${id}`, 'PATCH', { severity: 'severe' });
++    expect(patch.status).toBe(403);
++    expect(await patch.json()).toEqual({ error: 'health_consent_required' });
++    const del = await call(u, `/api/me/limitations/${id}`, 'DELETE', {});
++    expect(del.status).toBe(403);
++    expect(await limitation(id)).toEqual(row);
++  });
++});
++
++describe('PUT /api/me/health-screening (02 §12 E7)', () => {
++  it('calcule caution sans stocker les réponses', async () => {
++    const u = await setup();
++    await grant(u);
++    const none = await screening(u, [false, false, false, false]);
++    expect(none.status).toBe(200);
++    expect(await none.json()).toEqual({ caution: false });
++    const one = await screening(u, [false, false, true, false]);
++    expect(await one.json()).toEqual({ caution: true });
++    const rows = await ctx.deps.db.selectFrom('healthScreening').selectAll().execute();
++    expect(rows).toHaveLength(1);
++    const row = rows[0] as Record<string, unknown>;
++    expect(Object.keys(row).sort()).toEqual([
++      'answeredAt',
++      'caution',
++      'createdAt',
++      'deletedAt',
++      'id',
++      'ownerId',
++      'questionnaireVersion',
++      'rev',
++      'updatedAt',
++      'updatedBy',
++    ]);
++    expect(row).toMatchObject({
++      id: u.id,
++      ownerId: u.id,
++      caution: 1,
++      questionnaireVersion: '1.0',
++      answeredAt: '2026-10-06T10:00:00.000Z',
++      deletedAt: null,
++    });
++    const me = (await (await call(u, '/api/me')).json()) as { cautious: boolean };
++    expect(me.cautious).toBe(true);
++  });
++
++  it('refuse une autre version du questionnaire ou trois réponses', async () => {
++    const u = await setup();
++    await grant(u);
++    expect((await screening(u, [false, false, false, false], '0.1')).status).toBe(400);
++    expect((await screening(u, [false, false, false])).status).toBe(400);
++    expect(await ctx.deps.db.selectFrom('healthScreening').selectAll().execute()).toHaveLength(0);
++  });
++});
++
++describe('/api/me/limitations', () => {
++  it('crée, modifie puis supprime une limitation (tombstone sans contenu)', async () => {
++    const u = await setup();
++    await grant(u);
++    const created = await createLimitation(u, KNEE);
++    expect(created.status).toBe(201);
++    const { id } = (await created.json()) as { id: string };
++    expect(await limitation(id)).toMatchObject({
++      ownerId: u.id,
++      bodyArea: 'knee',
++      side: 'left',
++      severity: 'mild',
++      note: 'gêne en descente',
++      active: 1,
++      updatedBy: u.id,
++      deletedAt: null,
++    });
++
++    const before = (await limitation(id))?.rev as number;
++    const patched = await call(u, `/api/me/limitations/${id}`, 'PATCH', {
++      severity: 'severe',
++      active: false,
++    });
++    expect(patched.status).toBe(204);
++    const afterPatch = await limitation(id);
++    expect(afterPatch).toMatchObject({ severity: 'severe', active: 0, note: 'gêne en descente' });
++    expect(afterPatch?.rev).toBeGreaterThan(before);
++
++    const deleted = await call(u, `/api/me/limitations/${id}`, 'DELETE');
++    expect(deleted.status).toBe(204);
++    expect(await limitation(id)).toMatchObject({
++      bodyArea: null,
++      side: null,
++      severity: null,
++      note: null,
++      active: null,
++      deletedAt: '2026-10-06T10:00:00.000Z',
++    });
++    expect((await call(u, `/api/me/limitations/${id}`, 'PATCH', { severity: 'mild' })).status).toBe(404);
++    expect((await call(u, `/api/me/limitations/${id}`, 'DELETE')).status).toBe(404);
++  });
++
++  it('refuse une note de 201 caractères ou une zone inconnue', async () => {
++    const u = await setup();
++    await grant(u);
++    expect((await createLimitation(u, { ...KNEE, note: 'x'.repeat(201) })).status).toBe(400);
++    expect((await createLimitation(u, { ...KNEE, bodyArea: 'tail' })).status).toBe(400);
++    const { id } = (await (await createLimitation(u, KNEE)).json()) as { id: string };
++    expect((await call(u, `/api/me/limitations/${id}`, 'PATCH', { note: 'x'.repeat(201) })).status).toBe(400);
++    expect((await call(u, `/api/me/limitations/${id}`, 'PATCH', {})).status).toBe(400);
++  });
++
++  it("répond 404 à l'admin pour la limitation d'un membre, avec ou sans accord", async () => {
++    ctx = await createTestContext();
++    const owner = await createUser(ctx, { username: 'brigitte' });
++    const admin = await createUser(ctx, { username: 'porteur', role: 'admin', password: 'quatorze carac' });
++    const cookie = await login(ctx, 'porteur', admin.password);
++    const row = await insertFixtureRow(ctx.deps.db, 'limitation', { ownerId: owner.id });
++    const path = `/api/me/limitations/${row.id as string}`;
++    for (const withConsent of [false, true]) {
++      if (withConsent)
++        await call({ cookie }, '/api/me/consents', 'POST', { type: 'health', textVersion: '1.0' });
++      for (const method of ['PATCH', 'DELETE']) {
++        const res = await call({ cookie }, path, method, {});
++        expect(res.status, `${method} accord=${withConsent}`).toBe(404);
++        expect(await res.json()).toEqual({ error: 'not_found' });
++      }
++    }
++    expect(await limitation(row.id as string)).toEqual(row);
++  });
++});
+diff --git a/apps/server/test/privacy/replay-withdraw.test.ts b/apps/server/test/privacy/replay-withdraw.test.ts
+new file mode 100644
+index 0000000..ddbac26
+--- /dev/null
++++ b/apps/server/test/privacy/replay-withdraw.test.ts
+@@ -0,0 +1,113 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { createTestContext, createUserAndLogin, type TestContext } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx?.close());
++
++type Member = Awaited<ReturnType<typeof createUserAndLogin>>;
++
++const IP = '100.64.0.7';
++const call = (u: Member, path: string, method = 'GET', json?: unknown) =>
++  ctx.request(path, { method, cookie: u.cookie, ip: IP, ...(json !== undefined ? { json } : {}) });
++const replay = (u: Member, withdrawnAt: unknown) =>
++  call(u, '/api/me/consents/health/replay-withdraw', 'POST', { withdrawnAt });
++const revoked = () =>
++  ctx.deps.db.selectFrom('securityEvent').selectAll().where('type', '=', 'consent_revoked').execute();
++const state = async (userId: string) => ({
++  counter: (await ctx.deps.db.selectFrom('serverMeta').select('syncCounter').executeTakeFirstOrThrow())
++    .syncCounter,
++  screening: await ctx.deps.db
++    .selectFrom('healthScreening')
++    .selectAll()
++    .where('ownerId', '=', userId)
++    .execute(),
++  limitations: await ctx.deps.db.selectFrom('limitation').selectAll().where('ownerId', '=', userId).execute(),
++  consents: await ctx.deps.db.selectFrom('consentEvent').selectAll().where('ownerId', '=', userId).execute(),
++  security: await ctx.deps.db.selectFrom('securityEvent').selectAll().execute(),
++});
++
++/** Accord à 10:00, questionnaire et une limitation ; époque commencée à 12:00 ; appels à 12:30. */
++async function setup(): Promise<Member> {
++  ctx = await createTestContext();
++  const u = await createUserAndLogin(ctx);
++  expect((await call(u, '/api/me/consents', 'POST', { type: 'health', textVersion: '1.0' })).status).toBe(
++    200,
++  );
++  const answers = [true, false, false, false];
++  expect(
++    (await call(u, '/api/me/health-screening', 'PUT', { answers, questionnaireVersion: '1.0' })).status,
++  ).toBe(200);
++  const limitation = { bodyArea: 'knee', side: 'left', severity: 'mild' };
++  expect((await call(u, '/api/me/limitations', 'POST', limitation)).status).toBe(201);
++  await ctx.deps.db
++    .updateTable('serverMeta')
++    .set({ epochStartedAt: '2026-10-06T12:00:00.000Z' })
++    .where('id', '=', 1)
++    .execute();
++  ctx.clock.set('2026-10-06T12:30:00.000Z');
++  return u;
++}
++
++describe('POST /api/me/consents/health/replay-withdraw (R-SYN-28)', () => {
++  it('rejoue un retrait fait avant le début de l’époque, sans mot de passe', async () => {
++    const u = await setup();
++    const res = await replay(u, '2026-10-06T11:00:00.000Z');
++    expect(res.status).toBe(200);
++    const me = (await res.json()) as { consents: { health: { active: boolean } } };
++    expect(me.consents.health.active).toBe(false);
++    const after = await state(u.id);
++    expect(after.screening).toEqual([
++      expect.objectContaining({ caution: null, deletedAt: '2026-10-06T12:30:00.000Z' }),
++    ]);
++    expect(after.limitations).toEqual([
++      expect.objectContaining({ bodyArea: null, note: null, deletedAt: '2026-10-06T12:30:00.000Z' }),
++    ]);
++    expect(after.consents.map((e) => [e.action, e.textVersion])).toEqual([
++      ['grant', '1.0'],
++      ['withdraw', '1.0'],
++    ]);
++    const events = await revoked();
++    expect(events).toHaveLength(1);
++    expect(JSON.parse(events[0]?.details ?? 'null')).toEqual({ consentType: 'health', replay: true });
++  });
++
++  it.each([
++    ['égal au dernier accord', '2026-10-06T10:00:00.000Z'],
++    ["égal au début de l'époque", '2026-10-06T12:00:00.000Z'],
++  ])('refuse un retrait %s (409, rien ne change)', async (_label, withdrawnAt) => {
++    const u = await setup();
++    const before = await state(u.id);
++    const res = await replay(u, withdrawnAt);
++    expect(res.status).toBe(409);
++    expect(await res.json()).toEqual({ error: 'conflict' });
++    expect(await state(u.id)).toEqual(before);
++  });
++
++  it('refuse quand l’accord est déjà retiré', async () => {
++    const u = await setup();
++    const withdraw = await call(u, '/api/me/consents/withdraw', 'POST', {
++      type: 'health',
++      password: u.password,
++    });
++    expect(withdraw.status).toBe(200);
++    const before = await state(u.id);
++    const res = await replay(u, '2026-10-06T11:00:00.000Z');
++    expect(res.status).toBe(409);
++    expect(await res.json()).toEqual({ error: 'conflict' });
++    expect(await state(u.id)).toEqual(before);
++  });
++
++  it('refuse une date illisible', async () => {
++    const u = await setup();
++    expect((await replay(u, 'hier')).status).toBe(400);
++  });
++
++  it('limite à 20 appels par heure et par IP', async () => {
++    const u = await setup();
++    for (let i = 0; i < 20; i += 1) expect((await replay(u, 'hier')).status).toBe(400);
++    const res = await replay(u, '2026-10-06T11:00:00.000Z');
++    expect(res.status).toBe(429);
++    expect(await res.json()).toMatchObject({ error: 'rate_limited' });
++    expect((await state(u.id)).consents).toHaveLength(1);
++  });
++});
+diff --git a/apps/server/test/privacy/withdraw.test.ts b/apps/server/test/privacy/withdraw.test.ts
+new file mode 100644
+index 0000000..78f4bb0
+--- /dev/null
++++ b/apps/server/test/privacy/withdraw.test.ts
+@@ -0,0 +1,309 @@
++import { type EntityRulesMap, entityRules, SYNC_COLUMNS } from '@appsport/contracts';
++import { sql } from 'kysely';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import type { Migration } from '../../src/db/migrations/index';
++import { createLogger } from '../../src/logger';
++import { HEALTH_WITHDRAW_HOOKS, withdrawHealthConsent } from '../../src/privacy/consent';
++import { createTestContext, createUserAndLogin, type TestContext } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx?.close());
++
++const WITNESS = 'TEMOIN-C2-5a1f';
++const SYNC_DDL =
++  'owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT, deleted_at TEXT';
++
++const fixtureMigration: Migration = {
++  id: '0002_fixture_t19',
++  breaking: false,
++  up: async (db) => {
++    await sql
++      .raw(
++        `CREATE TABLE t19_note (id TEXT PRIMARY KEY, ${SYNC_DDL}, label TEXT NOT NULL, pain_note TEXT, reason TEXT) STRICT`,
++      )
++      .execute(db);
++    await sql
++      .raw(`CREATE TABLE t19_c2_log (id TEXT PRIMARY KEY, ${SYNC_DDL}, value TEXT) STRICT`)
++      .execute(db);
++  },
++};
++
++const rules: EntityRulesMap = {
++  ...entityRules,
++  t19_note: {
++    category: 'C1',
++    syncClass: 'J',
++    ownerColumn: 'owner_id',
++    columns: ['id', ...SYNC_COLUMNS, 'label', 'pain_note', 'reason'],
++    clientWritable: ['label', 'pain_note', 'reason'],
++    c2Columns: ['pain_note'],
++    secretColumns: [],
++    exported: true,
++    onUserDelete: 'cascade',
++    c2Values: { reason: ['pain'] },
++  },
++  t19_c2_log: {
++    category: 'C2',
++    syncClass: 'J',
++    ownerColumn: 'owner_id',
++    columns: ['id', ...SYNC_COLUMNS, 'value'],
++    clientWritable: ['value'],
++    c2Columns: [],
++    secretColumns: [],
++    exported: true,
++    onUserDelete: 'cascade',
++  },
++};
++
++type Member = Awaited<ReturnType<typeof createUserAndLogin>>;
++type Row = Record<string, unknown>;
++
++const call = (u: Member, path: string, method = 'GET', json?: unknown) =>
++  ctx.request(path, { method, cookie: u.cookie, ...(json !== undefined ? { json } : {}) });
++const withdraw = (u: Member, password = u.password) =>
++  call(u, '/api/me/consents/withdraw', 'POST', { type: 'health', password });
++const rowsOf = async (table: string, ownerId: string): Promise<Row[]> =>
++  (
++    await sql<Row>`select * from ${sql.table(table)} where owner_id = ${ownerId} order by id`.execute(
++      ctx.deps.db,
++    )
++  ).rows;
++const syncCounter = async () =>
++  (await ctx.deps.db.selectFrom('serverMeta').select('syncCounter').executeTakeFirstOrThrow()).syncCounter;
++const me = async (u: Member) =>
++  (await (await call(u, '/api/me')).json()) as {
++    cautious: boolean;
++    consents: { health: { active: boolean } };
++  };
++
++let seq = 0;
++async function insertRaw(table: string, ownerId: string, values: Row): Promise<void> {
++  seq += 1;
++  const row: Row = {
++    id: `${table}-${seq}`,
++    owner_id: ownerId,
++    rev: 1,
++    created_at: '2026-10-06T09:00:00.000Z',
++    updated_at: '2026-10-06T09:00:00.000Z',
++    ...values,
++  };
++  const cols = Object.keys(row);
++  await sql`insert into ${sql.table(table)} (${sql.join(cols.map((c) => sql.ref(c)))}) values (${sql.join(
++    Object.values(row),
++  )})`.execute(ctx.deps.db);
++}
++
++async function equip(u: Member, opts: { cautiousMode?: boolean } = {}): Promise<void> {
++  expect((await call(u, '/api/me/consents', 'POST', { type: 'health', textVersion: '1.0' })).status).toBe(
++    200,
++  );
++  const mode = await call(u, '/api/me/training-profile', 'PATCH', {
++    cautiousMode: opts.cautiousMode ?? true,
++  });
++  expect(mode.status).toBe(200);
++  const answers = [true, false, false, false];
++  expect(
++    (await call(u, '/api/me/health-screening', 'PUT', { answers, questionnaireVersion: '1.0' })).status,
++  ).toBe(200);
++  for (const json of [
++    { bodyArea: 'knee', side: 'left', severity: 'mild', note: WITNESS },
++    { bodyArea: 'lower_back', side: 'not_applicable', severity: 'severe' },
++  ]) {
++    expect((await call(u, '/api/me/limitations', 'POST', json)).status).toBe(201);
++  }
++  await insertRaw('t19_note', u.id, { label: 'séance', pain_note: WITNESS, reason: 'pain' });
++  await insertRaw('t19_note', u.id, { label: 'repos', pain_note: null, reason: 'tired' });
++  await insertRaw('t19_c2_log', u.id, { value: WITNESS });
++}
++
++async function setup(opts: { cautiousMode?: boolean; lines?: string[] } = {}) {
++  ctx = await createTestContext({
++    entityRules: rules,
++    extraMigrations: [fixtureMigration],
++    ...(opts.lines ? { deps: { logger: createLogger((l) => opts.lines?.push(l)) } } : {}),
++  });
++  const u = await createUserAndLogin(ctx, { username: 'lea' });
++  const other = await createUserAndLogin(ctx, { username: 'tom' });
++  await equip(u, opts);
++  await equip(other);
++  ctx.clock.advance(1000);
++  return { u, other };
++}
++
++const snapshot = async (userId: string) => ({
++  screening: await rowsOf('health_screening', userId),
++  limitations: await rowsOf('limitation', userId),
++  notes: await rowsOf('t19_note', userId),
++  logs: await rowsOf('t19_c2_log', userId),
++  consents: await rowsOf('consent_event', userId),
++});
++
++describe('POST /api/me/consents/withdraw : mot de passe (P-AUT-5)', () => {
++  it('refuse un mot de passe faux et garde le consentement', async () => {
++    const { u } = await setup();
++    const res = await withdraw(u, 'faux faux faux faux');
++    expect(res.status).toBe(401);
++    expect(await res.json()).toEqual({ error: 'invalid_credentials' });
++    expect((await me(u)).consents.health.active).toBe(true);
++  });
++
++  it('bloque après cinq échecs, même avec le bon mot de passe', async () => {
++    const { u } = await setup();
++    for (let i = 0; i < 5; i += 1) expect((await withdraw(u, 'faux faux faux faux')).status).toBe(401);
++    const res = await withdraw(u);
++    expect(res.status).toBe(429);
++    expect(await res.json()).toMatchObject({ error: 'rate_limited' });
++    expect((await me(u)).consents.health.active).toBe(true);
++  });
++});
++
++describe('retrait du consentement santé (R-CST-5, P-CST-3, 09 §8)', () => {
++  it('efface les données C2 et garde le mode prudent', async () => {
++    const { u, other } = await setup();
++    const otherBefore = await snapshot(other.id);
++    const limitationsBefore = await rowsOf('limitation', u.id);
++
++    const res = await withdraw(u);
++    expect(res.status).toBe(200);
++    const body = (await res.json()) as { cautious: boolean; consents: { health: { active: boolean } } };
++    expect(body.consents.health.active).toBe(false);
++    expect(body.cautious).toBe(true);
++    const profile = await ctx.deps.db
++      .selectFrom('trainingProfile')
++      .select('cautiousMode')
++      .where('id', '=', u.id)
++      .executeTakeFirstOrThrow();
++    expect(profile.cautiousMode).toBe(1);
++
++    expect(await rowsOf('health_screening', u.id)).toEqual([
++      expect.objectContaining({
++        caution: null,
++        questionnaireVersion: null,
++        answeredAt: null,
++        deletedAt: '2026-10-06T10:00:01.000Z',
++        updatedBy: u.id,
++      }),
++    ]);
++    const limitations = await rowsOf('limitation', u.id);
++    expect(limitations).toHaveLength(2);
++    limitations.forEach((l, i) => {
++      expect(l).toMatchObject({
++        bodyArea: null,
++        side: null,
++        severity: null,
++        note: null,
++        active: null,
++        deletedAt: '2026-10-06T10:00:01.000Z',
++      });
++      expect(l.rev as number).toBeGreaterThan(limitationsBefore[i]?.rev as number);
++    });
++
++    const [pain, tired] = await rowsOf('t19_note', u.id);
++    expect(pain).toMatchObject({ label: 'séance', painNote: null, reason: null, deletedAt: null });
++    expect(pain?.rev as number).toBeGreaterThan(1);
++    expect(tired).toMatchObject({ label: 'repos', painNote: null, reason: 'tired', deletedAt: null, rev: 1 });
++    expect(await rowsOf('t19_c2_log', u.id)).toEqual([
++      expect.objectContaining({ value: null, deletedAt: '2026-10-06T10:00:01.000Z' }),
++    ]);
++
++    const consents = await rowsOf('consent_event', u.id);
++    expect(consents.map((e) => [e.action, e.textVersion])).toEqual([
++      ['grant', '1.0'],
++      ['withdraw', '1.0'],
++    ]);
++    const revoked = await ctx.deps.db
++      .selectFrom('securityEvent')
++      .selectAll()
++      .where('type', '=', 'consent_revoked')
++      .execute();
++    expect(revoked).toHaveLength(1);
++    expect(revoked[0]).toMatchObject({ actorId: u.id, targetId: u.id, outcome: 'success' });
++    expect(JSON.parse(revoked[0]?.details ?? 'null')).toEqual({ consentType: 'health' });
++
++    expect(await snapshot(other.id)).toEqual(otherBefore);
++  });
++
++  it('un second retrait n’écrit rien', async () => {
++    const { u } = await setup();
++    expect((await withdraw(u)).status).toBe(200);
++    const counter = await syncCounter();
++    const security = await ctx.deps.db.selectFrom('securityEvent').selectAll().execute();
++    const second = await withdraw(u);
++    expect(second.status).toBe(200);
++    expect(await syncCounter()).toBe(counter);
++    expect(await ctx.deps.db.selectFrom('securityEvent').selectAll().execute()).toEqual(security);
++    expect(await rowsOf('consent_event', u.id)).toHaveLength(2);
++  });
++
++  it('sans mode prudent choisi, le retrait lève la prudence venue du questionnaire', async () => {
++    const { u } = await setup({ cautiousMode: false });
++    expect((await me(u)).cautious).toBe(true);
++    const res = await withdraw(u);
++    expect(((await res.json()) as { cautious: boolean }).cautious).toBe(false);
++  });
++
++  it('un nouveau consentement puis le questionnaire réactivent la même ligne', async () => {
++    const { u } = await setup();
++    await withdraw(u);
++    expect((await call(u, '/api/me/consents', 'POST', { type: 'health', textVersion: '1.0' })).status).toBe(
++      200,
++    );
++    const answers = [false, false, false, false];
++    const res = await call(u, '/api/me/health-screening', 'PUT', { answers, questionnaireVersion: '1.0' });
++    expect(await res.json()).toEqual({ caution: false });
++    expect(await rowsOf('health_screening', u.id)).toEqual([
++      expect.objectContaining({ id: u.id, caution: 0, questionnaireVersion: '1.0', deletedAt: null }),
++    ]);
++  });
++});
++
++describe('HEALTH_WITHDRAW_HOOKS', () => {
++  it('est vide au socle', () => {
++    expect(HEALTH_WITHDRAW_HOOKS).toEqual({});
++  });
++
++  it('un hook remplace la règle générique pour sa table', async () => {
++    const { u } = await setup();
++    const spy = vi.fn(async () => {});
++    await ctx.deps.db.transaction().execute(async (trx) => {
++      await withdrawHealthConsent(
++        trx,
++        ctx.deps,
++        u.id,
++        { actorId: u.id, ip: null },
++        { hooks: { t19_c2_log: spy } },
++      );
++      expect(spy).toHaveBeenCalledTimes(1);
++      expect(spy).toHaveBeenCalledWith(trx, ctx.deps, u.id);
++    });
++    expect(await rowsOf('t19_c2_log', u.id)).toEqual([
++      expect.objectContaining({ value: WITNESS, deletedAt: null }),
++    ]);
++    expect(await rowsOf('t19_note', u.id)).toEqual([
++      expect.objectContaining({ painNote: null }),
++      expect.objectContaining({ painNote: null }),
++    ]);
++  });
++});
++
++describe('Review Focus 3 : aucune trace C2 après retrait', () => {
++  it('le témoin n’apparaît ni en base ni dans le journal', async () => {
++    const lines: string[] = [];
++    const { u, other } = await setup({ lines });
++    expect((await withdraw(u)).status).toBe(200);
++    expect((await withdraw(other)).status).toBe(200);
++    const { sqlite } = ctx.deps;
++    const tables = sqlite
++      .prepare("select name from sqlite_schema where type = 'table' and name not like 'sqlite_%'")
++      .all() as { name: string }[];
++    expect(tables.map((t) => t.name)).toEqual(
++      expect.arrayContaining(['t19_note', 't19_c2_log', 'limitation']),
++    );
++    for (const { name } of tables) {
++      const dump = JSON.stringify(sqlite.prepare(`select * from "${name}"`).all());
++      expect(dump, name).not.toContain(WITNESS);
++    }
++    expect(lines.length).toBeGreaterThan(0);
++    expect(lines.join('\n')).not.toContain(WITNESS);
++  });
++});
+diff --git a/packages/contracts/src/api/consent.ts b/packages/contracts/src/api/consent.ts
+new file mode 100644
+index 0000000..285699d
+--- /dev/null
++++ b/packages/contracts/src/api/consent.ts
+@@ -0,0 +1,88 @@
++import { z } from 'zod';
++
++export const BODY_AREAS = [
++  'shoulder',
++  'elbow',
++  'wrist_hand',
++  'neck',
++  'upper_back',
++  'lower_back',
++  'hip',
++  'knee',
++  'ankle_foot',
++  'other',
++] as const;
++export const BodyArea = z.enum(BODY_AREAS);
++export type BodyArea = z.infer<typeof BodyArea>;
++
++export const LIMITATION_SIDES = ['left', 'right', 'both', 'not_applicable'] as const;
++export const LimitationSide = z.enum(LIMITATION_SIDES);
++export type LimitationSide = z.infer<typeof LimitationSide>;
++
++export const LIMITATION_SEVERITIES = ['mild', 'severe'] as const;
++export const LimitationSeverity = z.enum(LIMITATION_SEVERITIES);
++export type LimitationSeverity = z.infer<typeof LimitationSeverity>;
++
++export const BODY_AREA_LABELS: Record<BodyArea, string> = {
++  shoulder: 'Épaule',
++  elbow: 'Coude',
++  wrist_hand: 'Poignet ou main',
++  neck: 'Cou',
++  upper_back: 'Haut du dos',
++  lower_back: 'Bas du dos',
++  hip: 'Hanche',
++  knee: 'Genou',
++  ankle_foot: 'Cheville ou pied',
++  other: 'Autre',
++};
++
++export const LIMITATION_SIDE_LABELS: Record<LimitationSide, string> = {
++  left: 'Gauche',
++  right: 'Droite',
++  both: 'Les deux',
++  not_applicable: 'Sans objet',
++};
++
++export const LIMITATION_SEVERITY_LABELS: Record<LimitationSeverity, string> = {
++  mild: 'Légère',
++  severe: "Forte : m'empêche certains mouvements",
++};
++
++export const LIMITATION_NOTE_MAX = 200;
++
++export const GrantConsentRequest = z.strictObject({ type: z.literal('health'), textVersion: z.string() });
++export type GrantConsentRequest = z.infer<typeof GrantConsentRequest>;
++
++export const WithdrawConsentRequest = z.strictObject({
++  type: z.literal('health'),
++  password: z.string().min(1).max(1024),
++});
++export type WithdrawConsentRequest = z.infer<typeof WithdrawConsentRequest>;
++
++/** Renvoi d'un retrait fait avant une restauration (R-SYN-28), sans mot de passe. */
++export const ReplayWithdrawRequest = z.strictObject({ withdrawnAt: z.iso.datetime() });
++export type ReplayWithdrawRequest = z.infer<typeof ReplayWithdrawRequest>;
++
++export const HealthScreeningRequest = z.strictObject({
++  answers: z.tuple([z.boolean(), z.boolean(), z.boolean(), z.boolean()]),
++  questionnaireVersion: z.string(),
++});
++export type HealthScreeningRequest = z.infer<typeof HealthScreeningRequest>;
++
++export const HealthScreeningResponse = z.object({ caution: z.boolean() });
++export type HealthScreeningResponse = z.infer<typeof HealthScreeningResponse>;
++
++export const LimitationInput = z.strictObject({
++  bodyArea: BodyArea,
++  side: LimitationSide,
++  severity: LimitationSeverity,
++  note: z.string().trim().max(LIMITATION_NOTE_MAX).nullable().optional(),
++  active: z.boolean().optional(),
++});
++export type LimitationInput = z.infer<typeof LimitationInput>;
++
++export const LimitationPatch = LimitationInput.partial().refine((v) => Object.keys(v).length > 0);
++export type LimitationPatch = z.infer<typeof LimitationPatch>;
++
++export const CreateLimitationResponse = z.object({ id: z.string() });
++export type CreateLimitationResponse = z.infer<typeof CreateLimitationResponse>;
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index a57e424..4d7d46a 100644
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -1,12 +1,13 @@
+ export * from './api/admin';
+ export * from './api/auth';
++export * from './api/consent';
+ export * from './api/errors';
+ export * from './api/export';
+ export * from './api/health';
+ export * from './api/places';
+ export * from './api/profile';
+ export * from './auth-constants';
+ export * from './case';
+ export * from './constants';
+ export * from './entity-rules';
+ export * from './load-settings';

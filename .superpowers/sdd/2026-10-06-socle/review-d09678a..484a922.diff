@@ -1,0 +1,843 @@
+# Review package: d09678a..HEAD
+
+## Commits
+484a922 feat(db): registre entityRules des 18 tables, conversion de casse et fabriques de lignes de test
+
+## Files changed
+ apps/server/src/db/schema.ts                 |   3 +-
+ apps/server/test/db/entity-rules.test.ts     |  65 ++++++
+ apps/server/test/support/factories.ts        | 235 +++++++++++++++++++++
+ apps/server/test/support/index.ts            |   1 +
+ packages/contracts/src/case.ts               |  14 ++
+ packages/contracts/src/entity-rules.ts       | 299 +++++++++++++++++++++++++++
+ packages/contracts/src/index.ts              |   2 +
+ packages/contracts/test/case.test.ts         |  20 ++
+ packages/contracts/test/entity-rules.test.ts | 110 ++++++++++
+ 9 files changed, 748 insertions(+), 1 deletion(-)
+
+## Diff
+diff --git a/apps/server/src/db/schema.ts b/apps/server/src/db/schema.ts
+index f4c1de1..e62b62b 100644
+--- a/apps/server/src/db/schema.ts
++++ b/apps/server/src/db/schema.ts
+@@ -1,10 +1,11 @@
++import { snakeToCamel } from '@appsport/contracts';
+ import type { Generated, Kysely, Transaction } from 'kysely';
+ 
+ /** Gabarit +SYNC des tables à propriétaire (09 §0). */
+ interface SyncColumns {
+   ownerId: string;
+   rev: number;
+   createdAt: string;
+   updatedAt: string;
+   updatedBy: string | null;
+ }
+@@ -247,12 +248,12 @@ export interface Database {
+   gymEquipment: GymEquipmentTable;
+   gymHistory: GymHistoryTable;
+   place: PlaceTable;
+   homeEquipment: HomeEquipmentTable;
+ }
+ 
+ export type DbExecutor = Kysely<Database> | Transaction<Database>;
+ 
+ /** Nom de table SQL (snake_case) vers clé de `Database` (camelCase) : 'training_profile' → 'trainingProfile'. */
+ export function tableKey(sqlTable: string): keyof Database {
+-  return sqlTable.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase()) as keyof Database;
++  return snakeToCamel(sqlTable) as keyof Database;
+ }
+diff --git a/apps/server/test/db/entity-rules.test.ts b/apps/server/test/db/entity-rules.test.ts
+new file mode 100644
+index 0000000..7185523
+--- /dev/null
++++ b/apps/server/test/db/entity-rules.test.ts
+@@ -0,0 +1,65 @@
++import { entityRules, snakeToCamel } from '@appsport/contracts';
++import { afterEach, beforeEach, describe, expect, it } from 'vitest';
++import { migrate } from '../../src/db/migrate';
++import { MIGRATIONS } from '../../src/db/migrations/index';
++import { openDatabase } from '../../src/db/open';
++import { FakeClock, insertFixtureRow } from '../support';
++
++describe('entityRules contre la base migrée', () => {
++  let h: ReturnType<typeof openDatabase>;
++
++  beforeEach(async () => {
++    h = openDatabase(':memory:');
++    await migrate(h.db, MIGRATIONS, new FakeClock());
++  });
++  afterEach(() => h.sqlite.close());
++
++  it('chaque table et chaque colonne de sqlite_schema est déclarée, et inversement', () => {
++    const names = (sql: string, ...args: string[]) =>
++      (h.sqlite.prepare(sql).all(...args) as { name: string }[]).map((r) => r.name).sort();
++    const tables = names("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
++    expect(Object.keys(entityRules).sort()).toEqual(tables);
++    for (const t of tables) {
++      expect([...(entityRules[t]?.columns ?? [])].sort(), t).toEqual(
++        names('SELECT name FROM pragma_table_info(?)', t),
++      );
++    }
++  });
++
++  it('toute table C1–C3 liée à un utilisateur est exportée et supprimée', () => {
++    for (const [t, r] of Object.entries(entityRules)) {
++      if (!['C1', 'C2', 'C3'].includes(r.category) || r.ownerColumn === null) continue;
++      expect(['cascade', 'anonymize'], t).toContain(r.onUserDelete);
++      // session : anonymisée et non exportée (02 R-EXP-2)
++      expect(r.exported, t).toBe(t !== 'session');
++    }
++  });
++
++  it('secretColumns = toutes les colonnes *_hash', () => {
++    const declared = Object.entries(entityRules)
++      .flatMap(([t, r]) => r.secretColumns.map((c) => `${t}.${c}`))
++      .sort();
++    expect(declared).toEqual([
++      'invitation.code_hash',
++      'password_reset.code_hash',
++      'session.token_hash',
++      'user.password_hash',
++    ]);
++    const hashes = Object.entries(entityRules)
++      .flatMap(([t, r]) => r.columns.filter((c) => c.endsWith('_hash')).map((c) => `${t}.${c}`))
++      .sort();
++    expect(declared).toEqual(hashes);
++  });
++
++  it.each(Object.keys(entityRules))('insertFixtureRow(%s) insère une ligne valide', async (table) => {
++    const row = await insertFixtureRow(h.db, table);
++    expect(Object.keys(row).sort()).toEqual((entityRules[table]?.columns ?? []).map(snakeToCamel).sort());
++    expect(h.sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
++  });
++
++  it('insertFixtureRow applique les valeurs fournies', async () => {
++    const user = await insertFixtureRow(h.db, 'user');
++    const place = await insertFixtureRow(h.db, 'place', { ownerId: user.id, kind: 'home', name: 'Maison' });
++    expect(place).toMatchObject({ ownerId: user.id, kind: 'home', name: 'Maison' });
++  });
++});
+diff --git a/apps/server/test/support/factories.ts b/apps/server/test/support/factories.ts
+new file mode 100644
+index 0000000..28d6754
+--- /dev/null
++++ b/apps/server/test/support/factories.ts
+@@ -0,0 +1,235 @@
++import { camelToSnake, entityRules, rowToCamel, snakeToCamel } from '@appsport/contracts';
++import type { Kysely } from 'kysely';
++import { sql } from 'kysely';
++import type { Database } from '../../src/db/schema';
++import { seqIds } from './ids';
++
++const NOW = '2026-10-06T10:00:00.000Z';
++type Values = Record<string, unknown>;
++type Factory = (db: Kysely<Database>, v: Values) => Promise<Values>;
++
++/** Un générateur par base : les ids restent uniques et déterministes au fil des insertions. */
++const generators = new WeakMap<object, ReturnType<typeof seqIds>>();
++const ids = (db: Kysely<Database>) => {
++  const existing = generators.get(db);
++  if (existing) return existing;
++  const created = seqIds(999);
++  generators.set(db, created);
++  return created;
++};
++const counters = new WeakMap<object, number>();
++const next = (db: Kysely<Database>) => {
++  const n = (counters.get(db) ?? 0) + 1;
++  counters.set(db, n);
++  return n;
++};
++
++const SYNC = { rev: 1, createdAt: NOW, updatedAt: NOW };
++
++/** Insère la ligne puis la relit (camelCase). */
++async function insert(db: Kysely<Database>, table: string, row: Values, keyColumn = 'id'): Promise<Values> {
++  const cols = Object.keys(row).map(camelToSnake);
++  const query = sql`insert into ${sql.table(table)} (${sql.join(cols.map((c) => sql.ref(c)))}) values (${sql.join(
++    Object.values(row),
++  )})`;
++  await query.execute(db);
++  const key = row[snakeToCamel(keyColumn)];
++  const read =
++    await sql<Values>`select * from ${sql.table(table)} where ${sql.ref(keyColumn)} = ${key}`.execute(db);
++  const found = read.rows[0];
++  if (!found) throw new Error(`Ligne introuvable dans ${table}`);
++  return rowToCamel(found);
++}
++
++/** Valeur fournie, sinon parent créé par récursion. */
++async function parentId(
++  db: Kysely<Database>,
++  v: Values,
++  key: string,
++  table: string,
++  extra?: Values,
++): Promise<string> {
++  return (v[key] as string | undefined) ?? ((await insertFixtureRow(db, table, extra)).id as string);
++}
++
++const plain =
++  (table: string, defaults: (db: Kysely<Database>) => Values): Factory =>
++  (db, v) =>
++    insert(db, table, { ...defaults(db), ...v });
++
++const owned =
++  (
++    table: string,
++    defaults: (db: Kysely<Database>, ownerId: string) => Values,
++    keyedByOwner = false,
++  ): Factory =>
++  async (db, v) => {
++    const ownerId = await parentId(db, v, 'ownerId', 'user');
++    const id = keyedByOwner ? ownerId : ids(db).uuidv7();
++    return insert(db, table, { id, ownerId, ...SYNC, ...defaults(db, ownerId), ...v });
++  };
++
++const FACTORIES: Record<string, Factory> = {
++  server_meta: plain('server_meta', (db) => ({
++    id: 1,
++    serverEpoch: ids(db).uuidv7(),
++    epochStartedAt: NOW,
++  })),
++  schema_migrations: plain('schema_migrations', (db) => ({
++    id: `fixture_${ids(db).uuidv7()}`,
++    breaking: 0,
++    appliedAt: NOW,
++  })),
++  applied_op: async (db, v) =>
++    insert(
++      db,
++      'applied_op',
++      {
++        opId: ids(db).uuidv7(),
++        userId: await parentId(db, v, 'userId', 'user'),
++        entity: 'place',
++        rowId: ids(db).uuidv7(),
++        status: 'applied',
++        assignedRev: 1,
++        appliedAt: NOW,
++        ...v,
++      },
++      'op_id',
++    ),
++  sync_rejection: owned('sync_rejection', (db) => ({
++    opId: ids(db).uuidv7(),
++    entity: 'place',
++    rowId: ids(db).uuidv7(),
++    code: 'validation',
++  })),
++  user: plain('user', (db) => {
++    const n = next(db);
++    return {
++      id: ids(db).uuidv7(),
++      username: `user${n}`,
++      usernameKey: `user${n}`,
++      passwordHash: '$argon2id$fixture',
++      role: 'member',
++      birthDate: '1990-01-01',
++      ...SYNC,
++    };
++  }),
++  invitation: plain('invitation', (db) => ({
++    id: ids(db).uuidv7(),
++    codeHash: `hash-${ids(db).uuidv7()}`,
++    createdAt: NOW,
++    expiresAt: '2026-10-13T10:00:00.000Z',
++  })),
++  password_reset: async (db, v) =>
++    insert(db, 'password_reset', {
++      id: ids(db).uuidv7(),
++      userId: await parentId(db, v, 'userId', 'user'),
++      codeHash: `hash-${ids(db).uuidv7()}`,
++      createdAt: NOW,
++      expiresAt: '2026-10-07T10:00:00.000Z',
++      ...v,
++    }),
++  session: async (db, v) =>
++    insert(db, 'session', {
++      id: ids(db).uuidv7(),
++      tokenHash: `hash-${ids(db).uuidv7()}`,
++      userId: await parentId(db, v, 'userId', 'user'),
++      createdAt: NOW,
++      lastSeenAt: NOW,
++      expiresAt: '2026-11-05T10:00:00.000Z',
++      ...v,
++    }),
++  consent_event: owned('consent_event', () => ({ type: 'health', action: 'grant', textVersion: '1.0' })),
++  security_event: plain('security_event', (db) => ({
++    id: ids(db).uuidv7(),
++    at: NOW,
++    type: 'fixture',
++    outcome: 'success',
++  })),
++  training_profile: owned('training_profile', () => ({}), true),
++  health_screening: owned(
++    'health_screening',
++    () => ({ caution: 0, questionnaireVersion: '1.0', answeredAt: NOW }),
++    true,
++  ),
++  limitation: owned('limitation', () => ({ bodyArea: 'knee', side: 'left', severity: 'mild', active: 1 })),
++  gym: plain('gym', (db) => {
++    const n = next(db);
++    return {
++      id: ids(db).uuidv7(),
++      name: `Salle ${n}`,
++      nameKey: `salle ${n}`,
++      city: 'Lyon',
++      cityKey: 'lyon',
++      loadSettings: '{}',
++      ...SYNC,
++    };
++  }),
++  gym_equipment: async (db, v) => {
++    const gymId = await parentId(db, v, 'gymId', 'gym');
++    return insert(db, 'gym_equipment', {
++      id: `${gymId}:dumbbells`,
++      gymId,
++      equipmentCode: 'dumbbells',
++      ...SYNC,
++      ...v,
++    });
++  },
++  gym_history: async (db, v) =>
++    insert(db, 'gym_history', {
++      id: ids(db).uuidv7(),
++      gymId: await parentId(db, v, 'gymId', 'gym'),
++      at: NOW,
++      action: 'create',
++      detail: '{}',
++      ...v,
++    }),
++  place: async (db, v) => {
++    const ownerId = await parentId(db, v, 'ownerId', 'user');
++    return insert(db, 'place', {
++      id: ids(db).uuidv7(),
++      ownerId,
++      ...SYNC,
++      kind: 'home',
++      name: 'Maison',
++      loadSettings: '{}',
++      ...v,
++    });
++  },
++  home_equipment: async (db, v) => {
++    const placeId =
++      (v.placeId as string | undefined) ?? ((await insertFixtureRow(db, 'place', ownerOf(v))).id as string);
++    const ownerId = (v.ownerId as string | undefined) ?? (await ownerOfPlace(db, placeId));
++    return insert(db, 'home_equipment', {
++      id: `${placeId}:chair`,
++      placeId,
++      equipmentCode: 'chair',
++      ownerId,
++      ...SYNC,
++      ...v,
++    });
++  },
++};
++
++const ownerOf = (v: Values): Values => (v.ownerId ? { ownerId: v.ownerId } : {});
++
++async function ownerOfPlace(db: Kysely<Database>, placeId: string): Promise<string> {
++  const r = await sql<{ ownerId: string }>`select owner_id from place where id = ${placeId}`.execute(db);
++  const place = r.rows[0];
++  if (!place) throw new Error(`Lieu introuvable : ${placeId}`);
++  return place.ownerId;
++}
++
++/**
++ * Insère une ligne valide dans `table` (parents créés au besoin) et la renvoie relue, en camelCase.
++ * `values` (camelCase) prend le pas sur les défauts.
++ */
++export async function insertFixtureRow(
++  db: Kysely<Database>,
++  table: string,
++  values: Record<string, unknown> = {},
++): Promise<Record<string, unknown>> {
++  const factory = FACTORIES[table];
++  if (!factory || !entityRules[table]) throw new Error(`Pas de fabrique pour la table « ${table} »`);
++  return factory(db, values);
++}
+diff --git a/apps/server/test/support/index.ts b/apps/server/test/support/index.ts
+index 99f13f1..cf2b825 100644
+--- a/apps/server/test/support/index.ts
++++ b/apps/server/test/support/index.ts
+@@ -1,2 +1,3 @@
+ export { FakeClock } from './clock';
++export { insertFixtureRow } from './factories';
+ export { seqIds } from './ids';
+diff --git a/packages/contracts/src/case.ts b/packages/contracts/src/case.ts
+new file mode 100644
+index 0000000..fcefacb
+--- /dev/null
++++ b/packages/contracts/src/case.ts
+@@ -0,0 +1,14 @@
++/** 'training_profile' → 'trainingProfile'. */
++export function snakeToCamel(key: string): string {
++  return key.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
++}
++
++/** 'usernameKey' → 'username_key'. */
++export function camelToSnake(key: string): string {
++  return key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
++}
++
++/** Convertit les clés d'une ligne SQL (snake_case) en camelCase. */
++export function rowToCamel<T = Record<string, unknown>>(row: Record<string, unknown>): T {
++  return Object.fromEntries(Object.entries(row).map(([k, v]) => [snakeToCamel(k), v])) as T;
++}
+diff --git a/packages/contracts/src/entity-rules.ts b/packages/contracts/src/entity-rules.ts
+new file mode 100644
+index 0000000..cb63e90
+--- /dev/null
++++ b/packages/contracts/src/entity-rules.ts
+@@ -0,0 +1,299 @@
++export type DataCategory = 'C0' | 'C1' | 'C2' | 'C3';
++export type SyncClass = 'J' | 'D' | 'E' | 'C' | 'H';
++export type OnUserDelete = 'cascade' | 'set_null' | 'anonymize' | 'keep' | 'not_linked';
++
++export interface EntityRule {
++  category: DataCategory;
++  syncClass: SyncClass;
++  ownerColumn: 'owner_id' | 'user_id' | 'id' | null;
++  columns: readonly string[];
++  clientWritable: readonly string[];
++  c2Columns: readonly string[];
++  secretColumns: readonly string[];
++  exported: boolean;
++  onUserDelete: OnUserDelete;
++  /** Parent d'une table J (rejet `parent_rejected`, renvoi `restore_upsert` trié parents d'abord). */
++  parent?: { entity: string; column: string };
++  /** Colonne C1 → valeurs C2 (ex. `swap_reason: ['pain']`) ; clés ⊂ columns \ c2Columns. */
++  c2Values?: Record<string, readonly string[]>;
++}
++
++export type EntityRulesMap = Readonly<Record<string, EntityRule>>;
++
++export const SYNC_COLUMNS = [
++  'owner_id',
++  'rev',
++  'created_at',
++  'updated_at',
++  'updated_by',
++  'deleted_at',
++] as const;
++
++type Spec = Pick<
++  EntityRule,
++  'category' | 'syncClass' | 'ownerColumn' | 'columns' | 'exported' | 'onUserDelete'
++> &
++  Partial<Pick<EntityRule, 'clientWritable' | 'secretColumns'>>;
++
++const rule = (spec: Spec): EntityRule => ({ clientWritable: [], c2Columns: [], secretColumns: [], ...spec });
++
++export const entityRules: EntityRulesMap = {
++  server_meta: rule({
++    category: 'C0',
++    syncClass: 'H',
++    ownerColumn: null,
++    columns: [
++      'id',
++      'server_epoch',
++      'epoch_started_at',
++      'epoch_base_rev',
++      'sync_counter',
++      'tombstone_purge_rev',
++      'catalog_version',
++      'catalog_updated_at',
++    ],
++    exported: false,
++    onUserDelete: 'not_linked',
++  }),
++  schema_migrations: rule({
++    category: 'C0',
++    syncClass: 'H',
++    ownerColumn: null,
++    columns: ['id', 'breaking', 'applied_at'],
++    exported: false,
++    onUserDelete: 'not_linked',
++  }),
++  applied_op: rule({
++    category: 'C0',
++    syncClass: 'H',
++    ownerColumn: 'user_id',
++    columns: ['op_id', 'user_id', 'entity', 'row_id', 'status', 'assigned_rev', 'applied_at'],
++    exported: false,
++    onUserDelete: 'cascade',
++  }),
++  sync_rejection: rule({
++    category: 'C1',
++    syncClass: 'J',
++    ownerColumn: 'owner_id',
++    columns: ['id', ...SYNC_COLUMNS, 'op_id', 'entity', 'row_id', 'code', 'detail_json', 'dismissed_at'],
++    clientWritable: ['dismissed_at'],
++    exported: true,
++    onUserDelete: 'cascade',
++  }),
++  user: rule({
++    category: 'C0',
++    syncClass: 'E',
++    ownerColumn: 'id',
++    columns: [
++      'id',
++      'username',
++      'username_key',
++      'password_hash',
++      'role',
++      'status',
++      'birth_date',
++      'terms_version',
++      'terms_accepted_at',
++      'last_login_at',
++      'password_changed_at',
++      'onboarding_step',
++      'onboarding_completed_at',
++      'invitation_id',
++      'rev',
++      'created_at',
++      'updated_at',
++      'updated_by',
++    ],
++    secretColumns: ['password_hash'],
++    exported: true,
++    onUserDelete: 'cascade',
++  }),
++  invitation: rule({
++    category: 'C0',
++    syncClass: 'H',
++    ownerColumn: null,
++    columns: [
++      'id',
++      'code_hash',
++      'note',
++      'birth_date',
++      'is_admin_bootstrap',
++      'created_by',
++      'created_at',
++      'expires_at',
++      'used_at',
++      'used_by',
++      'revoked_at',
++    ],
++    secretColumns: ['code_hash'],
++    exported: false,
++    onUserDelete: 'set_null',
++  }),
++  password_reset: rule({
++    category: 'C0',
++    syncClass: 'H',
++    ownerColumn: 'user_id',
++    columns: [
++      'id',
++      'user_id',
++      'code_hash',
++      'created_by',
++      'created_at',
++      'expires_at',
++      'used_at',
++      'cancelled_at',
++    ],
++    secretColumns: ['code_hash'],
++    exported: false,
++    onUserDelete: 'cascade',
++  }),
++  session: rule({
++    category: 'C1',
++    syncClass: 'H',
++    ownerColumn: 'user_id',
++    columns: [
++      'id',
++      'token_hash',
++      'user_id',
++      'created_at',
++      'last_seen_at',
++      'expires_at',
++      'must_change_password',
++      'revoked_at',
++      'revoked_reason',
++    ],
++    secretColumns: ['token_hash'],
++    exported: false, // anonymisée à la suppression, non exportée (02 R-EXP-2)
++    onUserDelete: 'anonymize',
++  }),
++  consent_event: rule({
++    category: 'C1',
++    syncClass: 'E',
++    ownerColumn: 'owner_id',
++    columns: [
++      'id',
++      'owner_id',
++      'type',
++      'action',
++      'text_version',
++      'rev',
++      'created_at',
++      'updated_at',
++      'updated_by',
++    ],
++    exported: true,
++    onUserDelete: 'cascade',
++  }),
++  security_event: rule({
++    category: 'C0',
++    syncClass: 'H',
++    ownerColumn: null,
++    columns: ['id', 'at', 'type', 'actor_id', 'target_id', 'tailnet_ip', 'outcome', 'details'],
++    exported: false,
++    onUserDelete: 'keep',
++  }),
++  training_profile: rule({
++    category: 'C1',
++    syncClass: 'E',
++    ownerColumn: 'owner_id',
++    columns: [
++      'id',
++      ...SYNC_COLUMNS,
++      'goal',
++      'experience',
++      'days_per_week',
++      'session_minutes',
++      'sport_code',
++      'sport_other_label',
++      'cautious_mode',
++    ],
++    exported: true,
++    onUserDelete: 'cascade',
++  }),
++  health_screening: rule({
++    category: 'C2',
++    syncClass: 'E',
++    ownerColumn: 'owner_id',
++    columns: ['id', ...SYNC_COLUMNS, 'caution', 'questionnaire_version', 'answered_at'],
++    exported: true,
++    onUserDelete: 'cascade',
++  }),
++  limitation: rule({
++    category: 'C2',
++    syncClass: 'E',
++    ownerColumn: 'owner_id',
++    columns: ['id', ...SYNC_COLUMNS, 'body_area', 'side', 'severity', 'note', 'active'],
++    exported: true,
++    onUserDelete: 'cascade',
++  }),
++  gym: rule({
++    category: 'C0',
++    syncClass: 'E',
++    ownerColumn: null,
++    columns: [
++      'id',
++      'name',
++      'name_key',
++      'city',
++      'city_key',
++      'load_settings',
++      'created_by',
++      'updated_by',
++      'rev',
++      'created_at',
++      'updated_at',
++      'deleted_at',
++    ],
++    exported: false,
++    onUserDelete: 'set_null',
++  }),
++  gym_equipment: rule({
++    category: 'C0',
++    syncClass: 'E',
++    ownerColumn: null,
++    columns: ['id', 'gym_id', 'equipment_code', 'added_by', 'rev', 'created_at', 'updated_at', 'deleted_at'],
++    exported: false,
++    onUserDelete: 'set_null',
++  }),
++  gym_history: rule({
++    category: 'C0',
++    syncClass: 'H',
++    ownerColumn: null,
++    columns: ['id', 'gym_id', 'author_id', 'at', 'action', 'detail'],
++    exported: false,
++    onUserDelete: 'set_null',
++  }),
++  place: rule({
++    category: 'C1',
++    syncClass: 'E',
++    ownerColumn: 'owner_id',
++    columns: [
++      'id',
++      ...SYNC_COLUMNS,
++      'kind',
++      'gym_id',
++      'name',
++      'is_primary',
++      'visible_at_gym',
++      'load_settings',
++    ],
++    exported: true,
++    onUserDelete: 'cascade',
++  }),
++  home_equipment: rule({
++    category: 'C1',
++    syncClass: 'E',
++    ownerColumn: 'owner_id',
++    columns: ['id', 'place_id', 'equipment_code', ...SYNC_COLUMNS],
++    exported: true,
++    onUserDelete: 'cascade',
++  }),
++};
++
++/** Tables miroir côté client (classes J, D, E), triées. */
++export function mirroredTables(rules: EntityRulesMap = entityRules): string[] {
++  return Object.entries(rules)
++    .filter(([, r]) => r.syncClass === 'J' || r.syncClass === 'D' || r.syncClass === 'E')
++    .map(([t]) => t)
++    .sort();
++}
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index c94f80f..534443f 100644
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -1 +1,3 @@
++export * from './case';
+ export * from './constants';
++export * from './entity-rules';
+diff --git a/packages/contracts/test/case.test.ts b/packages/contracts/test/case.test.ts
+new file mode 100644
+index 0000000..9b747b2
+--- /dev/null
++++ b/packages/contracts/test/case.test.ts
+@@ -0,0 +1,20 @@
++import { describe, expect, it } from 'vitest';
++import { camelToSnake, rowToCamel, snakeToCamel } from '../src/case';
++import { entityRules } from '../src/entity-rules';
++
++describe('conversion de casse', () => {
++  it('convertit snake_case et camelCase', () => {
++    expect(snakeToCamel('training_profile')).toBe('trainingProfile');
++    expect(camelToSnake('usernameKey')).toBe('username_key');
++  });
++
++  it("convertit les clés d'une ligne", () => {
++    expect(rowToCamel({ owner_id: 'u', deleted_at: null })).toEqual({ ownerId: 'u', deletedAt: null });
++  });
++
++  it('est réversible pour toutes les tables et colonnes déclarées', () => {
++    for (const [t, r] of Object.entries(entityRules)) {
++      for (const c of [t, ...r.columns]) expect(camelToSnake(snakeToCamel(c))).toBe(c);
++    }
++  });
++});
+diff --git a/packages/contracts/test/entity-rules.test.ts b/packages/contracts/test/entity-rules.test.ts
+new file mode 100644
+index 0000000..7186c59
+--- /dev/null
++++ b/packages/contracts/test/entity-rules.test.ts
+@@ -0,0 +1,110 @@
++import { describe, expect, it } from 'vitest';
++import { entityRules, mirroredTables, SYNC_COLUMNS } from '../src/entity-rules';
++
++const EXPECTED: Record<string, string> = {
++  applied_op: 'C0/H/user_id/false/cascade',
++  consent_event: 'C1/E/owner_id/true/cascade',
++  gym: 'C0/E//false/set_null',
++  gym_equipment: 'C0/E//false/set_null',
++  gym_history: 'C0/H//false/set_null',
++  health_screening: 'C2/E/owner_id/true/cascade',
++  home_equipment: 'C1/E/owner_id/true/cascade',
++  invitation: 'C0/H//false/set_null',
++  limitation: 'C2/E/owner_id/true/cascade',
++  password_reset: 'C0/H/user_id/false/cascade',
++  place: 'C1/E/owner_id/true/cascade',
++  schema_migrations: 'C0/H//false/not_linked',
++  security_event: 'C0/H//false/keep',
++  server_meta: 'C0/H//false/not_linked',
++  session: 'C1/H/user_id/false/anonymize',
++  sync_rejection: 'C1/J/owner_id/true/cascade',
++  training_profile: 'C1/E/owner_id/true/cascade',
++  user: 'C0/E/id/true/cascade',
++};
++
++const ruleOf = (t: string) => {
++  const r = entityRules[t];
++  if (!r) throw new Error(t);
++  return r;
++};
++
++const pick = (t: string) => {
++  const r = ruleOf(t);
++  return [r.category, r.syncClass, r.ownerColumn ?? '', r.exported, r.onUserDelete].join('/');
++};
++
++describe('entityRules', () => {
++  it('déclare les 18 tables du socle avec leurs valeurs', () => {
++    expect(Object.keys(entityRules).sort()).toEqual(Object.keys(EXPECTED));
++    for (const t of Object.keys(EXPECTED)) expect(pick(t)).toBe(EXPECTED[t]);
++  });
++
++  it('porte les colonnes écrivables par le client et les secrets', () => {
++    expect(ruleOf('sync_rejection').clientWritable).toEqual(['dismissed_at']);
++    expect(ruleOf('user').secretColumns).toEqual(['password_hash']);
++  });
++
++  it('liste les tables miroir en ordre alphabétique', () => {
++    expect(mirroredTables()).toEqual([
++      'consent_event',
++      'gym',
++      'gym_equipment',
++      'health_screening',
++      'home_equipment',
++      'limitation',
++      'place',
++      'sync_rejection',
++      'training_profile',
++      'user',
++    ]);
++  });
++
++  describe('invariants', () => {
++    const all = Object.entries(entityRules);
++
++    it('clientWritable est vide hors classe J', () => {
++      for (const [, r] of all) if (r.syncClass !== 'J') expect(r.clientWritable).toEqual([]);
++    });
++
++    it('clientWritable, c2Columns, secretColumns et ownerColumn sont des colonnes déclarées', () => {
++      for (const [, r] of all) {
++        for (const c of [...r.clientWritable, ...r.c2Columns, ...r.secretColumns])
++          expect(r.columns).toContain(c);
++        if (r.ownerColumn) expect(r.columns).toContain(r.ownerColumn);
++      }
++    });
++
++    it('les tables à owner_id portent les colonnes de synchro (consent_event sans deleted_at)', () => {
++      for (const [t, r] of all) {
++        if (r.ownerColumn !== 'owner_id') continue;
++        const expected =
++          t === 'consent_event' ? SYNC_COLUMNS.filter((c) => c !== 'deleted_at') : SYNC_COLUMNS;
++        for (const c of expected) expect(r.columns, t).toContain(c);
++      }
++    });
++
++    it('les tables J, D et E portent rev', () => {
++      for (const [, r] of all) if (['J', 'D', 'E'].includes(r.syncClass)) expect(r.columns).toContain('rev');
++    });
++
++    it("les points d'extension, quand ils existent, sont cohérents", () => {
++      for (const [, r] of all) {
++        if (r.parent) {
++          expect(Object.keys(entityRules)).toContain(r.parent.entity);
++          expect(r.columns).toContain(r.parent.column);
++        }
++        for (const c of Object.keys(r.c2Values ?? {})) {
++          expect(r.columns).toContain(c);
++          expect(r.c2Columns).not.toContain(c);
++        }
++      }
++    });
++
++    it("aucune table du socle n'a de parent ni de c2Values", () => {
++      for (const [, r] of all) {
++        expect(r.parent).toBeUndefined();
++        expect(r.c2Values).toBeUndefined();
++      }
++    });
++  });
++});

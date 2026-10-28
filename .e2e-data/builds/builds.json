@@ -1,0 +1,12 @@
+{
+  "a": {
+    "label": "A",
+    "dir": "C:\\Users\\eliott.colin\\appsport\\.e2e-data\\builds\\A",
+    "buildHash": "67ad267bb8be"
+  },
+  "b": {
+    "label": "B",
+    "dir": "C:\\Users\\eliott.colin\\appsport\\.e2e-data\\builds\\B",
+    "buildHash": "531291e2364e"
+  }
+}

@@ -1,0 +1,1434 @@
+# Review package: 1ff183d..HEAD
+
+## Commits
+dc19662 feat(admin): liens de réinitialisation, gestion des membres et état du serveur
+
+## Files changed
+ apps/server/src/admin/members.ts             | 180 ++++++++++++++++++++++
+ apps/server/src/admin/ops-status.ts          |  21 +++
+ apps/server/src/admin/routes.ts              |  70 +++++++++
+ apps/server/src/auth/limiter.ts              |  17 ++-
+ apps/server/src/auth/password-reset.ts       | 149 ++++++++++++++++++
+ apps/server/src/auth/routes.ts               |  30 +++-
+ apps/server/src/cli.ts                       |  34 +++++
+ apps/server/src/routes.ts                    |   2 +
+ apps/server/test/admin/members.test.ts       | 217 +++++++++++++++++++++++++++
+ apps/server/test/admin/ops-status.test.ts    |  57 +++++++
+ apps/server/test/auth/limiter.test.ts        |  16 +-
+ apps/server/test/auth/password-reset.test.ts | 214 ++++++++++++++++++++++++++
+ packages/contracts/src/api/admin.ts          |  33 +++-
+ packages/contracts/src/api/auth.ts           |  10 ++
+ packages/contracts/src/index.ts              |   1 +
+ packages/contracts/src/ops.ts                |  19 +++
+ 16 files changed, 1061 insertions(+), 9 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/admin/members.ts b/apps/server/src/admin/members.ts
+new file mode 100644
+index 0000000..c373161
+--- /dev/null
++++ b/apps/server/src/admin/members.ts
+@@ -0,0 +1,180 @@
++import {
++  type MemberSummary,
++  MIN_AGE,
++  type Role,
++  SESSION_IDLE_DAYS,
++  type UserStatus,
++} from '@appsport/contracts';
++import { ageBandOn, ageOn, parisDate } from '@appsport/domain';
++import { logSecurityEvent } from '../auth/security-log';
++import { revokeSessions } from '../auth/session';
++import { writeStamp } from '../db/rev';
++import type { DbExecutor } from '../db/schema';
++import type { AppDeps } from '../deps';
++import { httpError } from '../http/errors';
++import { getConsentState } from '../privacy/consent-state';
++
++type AdminActor = { actorId: string; ip: string | null };
++
++const DAY_MS = 86_400_000;
++
++/**
++ * Liste des membres (R-ADM-1) : aucune table C1 à C3, sauf `consent_event` (état des accords)
++ * et `session` (comptage seul : non révoquées, non expirées, vues depuis moins de 90 jours).
++ */
++export async function listMembers(db: DbExecutor, deps: AppDeps): Promise<MemberSummary[]> {
++  const now = deps.clock.now();
++  const users = await db
++    .selectFrom('user')
++    .select(['id', 'username', 'role', 'status', 'birthDate', 'lastLoginAt', 'onboardingCompletedAt'])
++    .orderBy('usernameKey')
++    .execute();
++  const counts = await db
++    .selectFrom('session')
++    .select(['userId', (eb) => eb.fn.countAll<number>().as('n')])
++    .where('revokedAt', 'is', null)
++    .where('expiresAt', '>', now.toISOString())
++    .where('lastSeenAt', '>', new Date(now.getTime() - SESSION_IDLE_DAYS * DAY_MS).toISOString())
++    .groupBy('userId')
++    .execute();
++  const active = new Map(counts.map((c) => [c.userId, Number(c.n)]));
++  const today = parisDate(now);
++  const members: MemberSummary[] = [];
++  for (const u of users) {
++    const consents = await getConsentState(db, u.id);
++    members.push({
++      id: u.id,
++      username: u.username,
++      role: u.role,
++      status: u.status,
++      isMinor: ageBandOn(u.birthDate, today) === 'minor',
++      lastLoginAt: u.lastLoginAt,
++      onboardingCompleted: u.onboardingCompletedAt !== null,
++      consents: { health: consents.health.active, aiCoach: consents.aiCoach.active },
++      activeSessions: active.get(u.id) ?? 0,
++    });
++  }
++  return members;
++}
++
++async function assertExists(db: DbExecutor, id: string): Promise<void> {
++  const row = await db.selectFrom('user').select('id').where('id', '=', id).executeTakeFirst();
++  if (!row) throw httpError('not_found');
++}
++
++/**
++ * Refuse de retirer le dernier administrateur actif (R-ROLE-2). À appeler dans la transaction
++ * qui écrit : la lecture et l'écriture sont alors sérialisées.
++ */
++export async function assertNotLastAdmin(db: DbExecutor, targetId: string): Promise<void> {
++  const target = await db
++    .selectFrom('user')
++    .select(['role', 'status'])
++    .where('id', '=', targetId)
++    .executeTakeFirst();
++  if (!target) throw httpError('not_found');
++  if (target.role !== 'admin' || target.status !== 'active') return;
++  const other = await db
++    .selectFrom('user')
++    .select('id')
++    .where('role', '=', 'admin')
++    .where('status', '=', 'active')
++    .where('id', '!=', targetId)
++    .executeTakeFirst();
++  if (!other) throw httpError('last_admin');
++}
++
++async function updateUser(
++  trx: DbExecutor,
++  deps: AppDeps,
++  actorId: string,
++  targetId: string,
++  values: { role: Role } | { status: UserStatus } | { birthDate: string },
++): Promise<void> {
++  const stamp = await writeStamp(trx, deps, actorId);
++  await trx
++    .updateTable('user')
++    .set({ ...values, ...stamp })
++    .where('id', '=', targetId)
++    .execute();
++}
++
++/** La vérification du mot de passe de l'admin (P-AUT-5) se fait avant, hors transaction (la route). */
++export async function setRole(
++  trx: DbExecutor,
++  deps: AppDeps,
++  actor: AdminActor,
++  targetId: string,
++  role: Role,
++): Promise<void> {
++  if (role === 'member') await assertNotLastAdmin(trx, targetId);
++  else await assertExists(trx, targetId);
++  await updateUser(trx, deps, actor.actorId, targetId, { role });
++  await logSecurityEvent(trx, deps, {
++    type: 'role_changed',
++    actorId: actor.actorId,
++    targetId,
++    ip: actor.ip,
++    outcome: 'success',
++    details: { role },
++  });
++}
++
++export async function setStatus(
++  trx: DbExecutor,
++  deps: AppDeps,
++  actor: AdminActor,
++  targetId: string,
++  status: UserStatus,
++): Promise<void> {
++  if (status === 'disabled') await assertNotLastAdmin(trx, targetId);
++  else await assertExists(trx, targetId);
++  await updateUser(trx, deps, actor.actorId, targetId, { status });
++  if (status === 'disabled') await revokeSessions(trx, deps, targetId, 'admin');
++  await logSecurityEvent(trx, deps, {
++    type: 'status_changed',
++    actorId: actor.actorId,
++    targetId,
++    ip: actor.ip,
++    outcome: 'success',
++    details: { status },
++  });
++}
++
++export async function setBirthDate(
++  trx: DbExecutor,
++  deps: AppDeps,
++  actor: AdminActor,
++  targetId: string,
++  birthDate: string,
++): Promise<void> {
++  await assertExists(trx, targetId);
++  if (ageOn(birthDate, parisDate(deps.clock.now())) < MIN_AGE) throw httpError('under_min_age');
++  await updateUser(trx, deps, actor.actorId, targetId, { birthDate });
++  await logSecurityEvent(trx, deps, {
++    type: 'birth_date_corrected',
++    actorId: actor.actorId,
++    targetId,
++    ip: actor.ip,
++    outcome: 'success',
++  });
++}
++
++export async function revokeMemberSessions(
++  trx: DbExecutor,
++  deps: AppDeps,
++  actor: AdminActor,
++  targetId: string,
++): Promise<number> {
++  await assertExists(trx, targetId);
++  const count = await revokeSessions(trx, deps, targetId, 'admin');
++  await logSecurityEvent(trx, deps, {
++    type: 'sessions_revoked',
++    actorId: actor.actorId,
++    targetId,
++    ip: actor.ip,
++    outcome: 'success',
++    details: { count },
++  });
++  return count;
++}
+diff --git a/apps/server/src/admin/ops-status.ts b/apps/server/src/admin/ops-status.ts
+new file mode 100644
+index 0000000..c11130b
+--- /dev/null
++++ b/apps/server/src/admin/ops-status.ts
+@@ -0,0 +1,21 @@
++import { readFile } from 'node:fs/promises';
++import { join } from 'node:path';
++import { OpsStatus } from '@appsport/contracts';
++
++/** Contenu validé de `<dataDir>/ops/status.json` ; null si le fichier est absent, illisible ou invalide. */
++export async function readOpsStatus(dataDir: string): Promise<OpsStatus | null> {
++  let raw: string;
++  try {
++    raw = await readFile(join(dataDir, 'ops', 'status.json'), 'utf8');
++  } catch {
++    return null;
++  }
++  let json: unknown;
++  try {
++    json = JSON.parse(raw);
++  } catch {
++    return null;
++  }
++  const parsed = OpsStatus.safeParse(json);
++  return parsed.success ? parsed.data : null;
++}
+diff --git a/apps/server/src/admin/routes.ts b/apps/server/src/admin/routes.ts
+new file mode 100644
+index 0000000..6a558f8
+--- /dev/null
++++ b/apps/server/src/admin/routes.ts
+@@ -0,0 +1,70 @@
++import { SetBirthDateRequest, SetRoleRequest, SetStatusRequest } from '@appsport/contracts';
++import { Hono } from 'hono';
++import type { AppEnv } from '../app-env';
++import { verifyUserPassword } from '../auth/me';
++import { createPasswordReset } from '../auth/password-reset';
++import { requireAdmin } from '../auth/session';
++import type { AppDeps } from '../deps';
++import { validClientIp } from '../http/client-ip';
++import { httpError } from '../http/errors';
++import { parseJson } from '../http/validate';
++import { listMembers, revokeMemberSessions, setBirthDate, setRole, setStatus } from './members';
++import { readOpsStatus } from './ops-status';
++
++export function adminRoutes(deps: AppDeps): Hono<AppEnv> {
++  const routes = new Hono<AppEnv>();
++  routes.use('*', requireAdmin);
++
++  routes.get('/members', async (c) => c.json(await listMembers(deps.db, deps)));
++
++  routes.get('/ops-status', async (c) =>
++    c.json({ version: deps.config.version, opsStatus: await readOpsStatus(deps.config.dataDir) }),
++  );
++
++  const actorOf = (c: Parameters<typeof validClientIp>[0]) => {
++    const admin = c.get('user');
++    if (!admin) throw httpError('unauthenticated');
++    return { admin, actor: { actorId: admin.id, ip: validClientIp(c) } };
++  };
++
++  routes.post('/members/:id/reset-link', async (c) => {
++    const { actor } = actorOf(c);
++    const id = c.req.param('id');
++    const created = await deps.db.transaction().execute((trx) => createPasswordReset(trx, deps, id, actor));
++    return c.json(created);
++  });
++
++  routes.post('/members/:id/revoke-sessions', async (c) => {
++    const { actor } = actorOf(c);
++    const id = c.req.param('id');
++    await deps.db.transaction().execute((trx) => revokeMemberSessions(trx, deps, actor, id));
++    return c.body(null, 204);
++  });
++
++  routes.post('/members/:id/status', async (c) => {
++    const { actor } = actorOf(c);
++    const body = await parseJson(c, SetStatusRequest);
++    const id = c.req.param('id');
++    await deps.db.transaction().execute((trx) => setStatus(trx, deps, actor, id, body.status));
++    return c.body(null, 204);
++  });
++
++  routes.post('/members/:id/role', async (c) => {
++    const { admin, actor } = actorOf(c);
++    const body = await parseJson(c, SetRoleRequest);
++    const id = c.req.param('id');
++    await verifyUserPassword(deps.db, deps, admin, body.password, actor.ip);
++    await deps.db.transaction().execute((trx) => setRole(trx, deps, actor, id, body.role));
++    return c.body(null, 204);
++  });
++
++  routes.post('/members/:id/birth-date', async (c) => {
++    const { actor } = actorOf(c);
++    const body = await parseJson(c, SetBirthDateRequest);
++    const id = c.req.param('id');
++    await deps.db.transaction().execute((trx) => setBirthDate(trx, deps, actor, id, body.birthDate));
++    return c.body(null, 204);
++  });
++
++  return routes;
++}
+diff --git a/apps/server/src/auth/limiter.ts b/apps/server/src/auth/limiter.ts
+index 161546b..8dde6ae 100644
+--- a/apps/server/src/auth/limiter.ts
++++ b/apps/server/src/auth/limiter.ts
+@@ -14,20 +14,24 @@ export interface IpLimiter {
+   hit(ip: string | null): { allowed: boolean; retryAfterS: number };
+ }
+ 
+ interface UserState {
+   consecutive: number;
+   lastFailureAt: number;
+   failures: number[];
+   lockedUntil: number;
+ }
+ 
++/** Une IP inconnue partage un seul seau : elle ne contourne pas les limites par IP. */
++const UNKNOWN_IP = 'unknown';
++const ipKey = (ip: string | null): string => ip ?? UNKNOWN_IP;
++
+ const seconds = (ms: number): number => Math.ceil(ms / 1000);
+ 
+ /** Limiteur en mémoire (R-AUTH-2, R-AUTH-3) : repart de zéro au redémarrage. */
+ export function createLoginLimiter(clock: Clock): LoginLimiter {
+   const L = LOGIN_LIMITS;
+   const users = new Map<string, UserState>();
+   const ips = new Map<string, number[]>();
+   const recent = (times: number[], now: number): number[] => times.filter((t) => now - t < L.windowMs);
+ 
+   return {
+@@ -38,67 +42,68 @@ export function createLoginLimiter(clock: Clock): LoginLimiter {
+       if (state) {
+         if (state.lockedUntil > now) waits.push(state.lockedUntil - now);
+         if (state.consecutive >= L.consecutiveThreshold) {
+           const delay = Math.min(
+             L.firstDelayMs * 2 ** (state.consecutive - L.consecutiveThreshold),
+             L.maxDelayMs,
+           );
+           waits.push(state.lastFailureAt + delay - now);
+         }
+       }
+-      const ipFailures = ip === null ? [] : recent(ips.get(ip) ?? [], now);
++      const ipFailures = recent(ips.get(ipKey(ip)) ?? [], now);
+       const oldest = ipFailures[0];
+       if (ipFailures.length >= L.ipMaxFailuresPerHour && oldest !== undefined) {
+         waits.push(oldest + L.windowMs - now);
+       }
+       const wait = Math.max(...waits);
+       return wait > 0 ? { allowed: false, retryAfterS: seconds(wait) } : { allowed: true };
+     },
+     recordFailure(usernameKey, ip) {
+       const now = clock.now().getTime();
+       const state = users.get(usernameKey) ?? {
+         consecutive: 0,
+         lastFailureAt: 0,
+         failures: [],
+         lockedUntil: 0,
+       };
+       state.consecutive += 1;
+       state.lastFailureAt = now;
+       state.failures = [...recent(state.failures, now), now];
+       if (state.failures.length >= L.hourlyMaxFailures) state.lockedUntil = now + L.lockMs;
+       users.set(usernameKey, state);
+-      if (ip !== null) ips.set(ip, [...recent(ips.get(ip) ?? [], now), now]);
++      const bucket = ipKey(ip);
++      ips.set(bucket, [...recent(ips.get(bucket) ?? [], now), now]);
+     },
+     recordSuccess(usernameKey) {
+       const state = users.get(usernameKey);
+       if (state) state.consecutive = 0;
+     },
+     unlock(usernameKey) {
+       users.delete(usernameKey);
+     },
+   };
+ }
+ 
+ /** Compte seulement les essais acceptés ; un essai refusé ne prolonge pas le blocage. */
+ export function createIpLimiter(clock: Clock, opts: { limit: number; windowMs: number }): IpLimiter {
+   const hits = new Map<string, number[]>();
+   return {
+     hit(ip) {
+-      if (ip === null) return { allowed: true, retryAfterS: 0 };
++      const bucket = ipKey(ip);
+       const now = clock.now().getTime();
+-      const inWindow = (hits.get(ip) ?? []).filter((t) => now - t < opts.windowMs);
++      const inWindow = (hits.get(bucket) ?? []).filter((t) => now - t < opts.windowMs);
+       const oldest = inWindow[0];
+       if (inWindow.length >= opts.limit && oldest !== undefined) {
+-        hits.set(ip, inWindow);
++        hits.set(bucket, inWindow);
+         return { allowed: false, retryAfterS: seconds(oldest + opts.windowMs - now) };
+       }
+-      hits.set(ip, [...inWindow, now]);
++      hits.set(bucket, [...inWindow, now]);
+       return { allowed: true, retryAfterS: 0 };
+     },
+   };
+ }
+ 
+ export interface AuthLimiters {
+   login: LoginLimiter;
+   invitationCheck: IpLimiter;
+   resetCheck: IpLimiter;
+ }
+diff --git a/apps/server/src/auth/password-reset.ts b/apps/server/src/auth/password-reset.ts
+new file mode 100644
+index 0000000..1680c18
+--- /dev/null
++++ b/apps/server/src/auth/password-reset.ts
+@@ -0,0 +1,149 @@
++import {
++  RESET_TTL_HOURS,
++  type ResetCheckResponse,
++  type ResetLinkResponse,
++  type ResetPasswordRequest,
++} from '@appsport/contracts';
++import { parseSecretCode, validatePassword } from '@appsport/domain';
++import type { DbExecutor } from '../db/schema';
++import type { AppDeps } from '../deps';
++import { httpError } from '../http/errors';
++import { COMMON_PASSWORDS } from './common-passwords';
++import { authLimiters } from './limiter';
++import { storeNewPassword } from './me';
++import { hashPassword } from './password-hash';
++import { createSecretCode, hashSecret } from './secret';
++import { logSecurityEvent } from './security-log';
++import { createSession, revokeSessions } from './session';
++
++const HOUR_MS = 3_600_000;
++
++/**
++ * Crée un lien de réinitialisation valable 24 h et annule les liens en attente de la cible (R-RST-1).
++ * Un administrateur ne peut pas en créer pour lui-même (R-RST-4) ; la CLI passe `actorId: null`.
++ */
++export async function createPasswordReset(
++  trx: DbExecutor,
++  deps: AppDeps,
++  targetUserId: string,
++  actor: { actorId: string | null; ip: string | null },
++): Promise<ResetLinkResponse> {
++  if (actor.actorId !== null && actor.actorId === targetUserId) throw httpError('reset_self_forbidden');
++  const target = await trx.selectFrom('user').select('id').where('id', '=', targetUserId).executeTakeFirst();
++  if (!target) throw httpError('not_found');
++  const now = deps.clock.now();
++  await trx
++    .updateTable('passwordReset')
++    .set({ cancelledAt: now.toISOString() })
++    .where('userId', '=', targetUserId)
++    .where('usedAt', 'is', null)
++    .where('cancelledAt', 'is', null)
++    .execute();
++  const secret = createSecretCode(deps.ids);
++  const expiresAt = new Date(now.getTime() + RESET_TTL_HOURS * HOUR_MS).toISOString();
++  await trx
++    .insertInto('passwordReset')
++    .values({
++      id: deps.ids.uuidv7(),
++      userId: targetUserId,
++      codeHash: secret.hash,
++      createdBy: actor.actorId,
++      createdAt: now.toISOString(),
++      expiresAt,
++    })
++    .execute();
++  await logSecurityEvent(trx, deps, {
++    type: 'password_reset_created',
++    actorId: actor.actorId,
++    targetId: targetUserId,
++    ip: actor.ip,
++    outcome: 'success',
++  });
++  return { code: secret.formatted, link: `${deps.config.appOrigin}/reset#${secret.formatted}`, expiresAt };
++}
++
++/** Lien en attente (ni utilisé, ni annulé, ni expiré) et sa cible, sinon `reset_invalid`. */
++async function loadValidReset(db: DbExecutor, deps: AppDeps, rawCode: string) {
++  const canonical = parseSecretCode(rawCode);
++  if (canonical === null) throw httpError('reset_invalid');
++  const row = await db
++    .selectFrom('passwordReset')
++    .innerJoin('user', 'user.id', 'passwordReset.userId')
++    .select([
++      'passwordReset.id as resetId',
++      'passwordReset.usedAt',
++      'passwordReset.cancelledAt',
++      'passwordReset.expiresAt',
++      'user.id as userId',
++      'user.username',
++      'user.usernameKey',
++      'user.role',
++      'user.status',
++    ])
++    .where('passwordReset.codeHash', '=', hashSecret(canonical))
++    .executeTakeFirst();
++  if (
++    !row ||
++    row.usedAt !== null ||
++    row.cancelledAt !== null ||
++    new Date(row.expiresAt).getTime() <= deps.clock.now().getTime()
++  ) {
++    throw httpError('reset_invalid');
++  }
++  return row;
++}
++
++export async function checkPasswordReset(
++  db: DbExecutor,
++  deps: AppDeps,
++  rawCode: string,
++): Promise<ResetCheckResponse> {
++  const row = await loadValidReset(db, deps, rawCode);
++  return { username: row.username, role: row.role };
++}
++
++/**
++ * Consomme le lien (R-RST-3). Contrôles et hachage Argon2 avant la transaction : un refus ne consomme
++ * pas le lien. Dans la transaction, l'UPDATE conditionnel garantit un seul usage.
++ */
++export async function consumePasswordReset(
++  deps: AppDeps,
++  input: ResetPasswordRequest,
++  ip: string | null,
++): Promise<{ userId: string; token: string }> {
++  const row = await loadValidReset(deps.db, deps, input.code);
++  if (row.status === 'disabled') throw httpError('account_disabled');
++  const check = validatePassword(input.newPassword, {
++    username: row.username,
++    role: row.role,
++    commonPasswords: COMMON_PASSWORDS,
++  });
++  if (!check.ok) throw httpError('password_rejected', { reason: check.reason });
++  const passwordHash = await hashPassword(input.newPassword, deps.config.argon2, deps.ids);
++
++  const session = await deps.db.transaction().execute(async (trx) => {
++    const now = deps.clock.now().toISOString();
++    const used = await trx
++      .updateTable('passwordReset')
++      .set({ usedAt: now })
++      .where('id', '=', row.resetId)
++      .where('usedAt', 'is', null)
++      .where('cancelledAt', 'is', null)
++      .where('expiresAt', '>', now)
++      .executeTakeFirst();
++    if (used.numUpdatedRows !== 1n) throw httpError('reset_invalid');
++    await storeNewPassword(trx, deps, row.userId, passwordHash);
++    await revokeSessions(trx, deps, row.userId, 'password_reset');
++    const created = await createSession(trx, deps, row.userId);
++    await logSecurityEvent(trx, deps, {
++      type: 'password_reset_used',
++      actorId: row.userId,
++      targetId: row.userId,
++      ip,
++      outcome: 'success',
++    });
++    return created;
++  });
++  authLimiters(deps).login.unlock(row.usernameKey);
++  return { userId: row.userId, token: session.token };
++}
+diff --git a/apps/server/src/auth/routes.ts b/apps/server/src/auth/routes.ts
+index 107d2ed..3364ed2 100644
+--- a/apps/server/src/auth/routes.ts
++++ b/apps/server/src/auth/routes.ts
+@@ -1,33 +1,46 @@
+-import { ChangePasswordRequest, LoginRequest, PASSWORD_MIN_ADMIN } from '@appsport/contracts';
++import {
++  ChangePasswordRequest,
++  CodeRequest,
++  LoginRequest,
++  PASSWORD_MIN_ADMIN,
++  ResetPasswordRequest,
++} from '@appsport/contracts';
+ import { passwordLength, usernameKey, validatePassword } from '@appsport/domain';
+ import { Hono } from 'hono';
+ import type { AppEnv } from '../app-env';
+ import { writeStamp } from '../db/rev';
+ import type { AppDeps } from '../deps';
+ import { validClientIp } from '../http/client-ip';
+ import { httpError } from '../http/errors';
+ import { parseJson } from '../http/validate';
+ import { COMMON_PASSWORDS } from './common-passwords';
+ import { authLimiters } from './limiter';
+ import { buildMe, storeNewPassword, verifyUserPassword } from './me';
+ import { hashPassword, needsRehash, verifyPassword } from './password-hash';
++import { checkPasswordReset, consumePasswordReset } from './password-reset';
+ import { logSecurityEvent } from './security-log';
+ import {
+   clearSessionCookie,
+   createSession,
+   requireUser,
+   revokeSession,
+   revokeSessions,
+   setSessionCookie,
+ } from './session';
+ 
++/** Vérifications de code et réinitialisations partagent le même compteur par IP (P-AUT-2). */
++function limitResetAttempts(deps: AppDeps, ip: string | null): void {
++  const verdict = authLimiters(deps).resetCheck.hit(ip);
++  if (!verdict.allowed) throw httpError('rate_limited', { retryAfterS: verdict.retryAfterS });
++}
++
+ /** Empreinte factice, calculée une fois par `deps` : égalise le temps d'un pseudo inconnu. */
+ const dummyHashes = new WeakMap<AppDeps, Promise<string>>();
+ function dummyHash(deps: AppDeps): Promise<string> {
+   let hash = dummyHashes.get(deps);
+   if (!hash) {
+     hash = hashPassword('mot de passe factice', deps.config.argon2, deps.ids);
+     dummyHashes.set(deps, hash);
+   }
+   return hash;
+ }
+@@ -169,12 +182,27 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
+         type: 'password_changed',
+         actorId: user.id,
+         targetId: user.id,
+         ip,
+         outcome: 'success',
+       });
+     });
+     return c.body(null, 204);
+   });
+ 
++  routes.post('/reset/check', async (c) => {
++    limitResetAttempts(deps, validClientIp(c));
++    const body = await parseJson(c, CodeRequest);
++    return c.json(await checkPasswordReset(deps.db, deps, body.code));
++  });
++
++  routes.post('/reset', async (c) => {
++    const ip = validClientIp(c);
++    limitResetAttempts(deps, ip);
++    const body = await parseJson(c, ResetPasswordRequest);
++    const { userId, token } = await consumePasswordReset(deps, body, ip);
++    setSessionCookie(c, deps, token);
++    return c.json(await buildMe(deps.db, deps, userId));
++  });
++
+   return routes;
+ }
+diff --git a/apps/server/src/cli.ts b/apps/server/src/cli.ts
+index f7703d4..a0f2fca 100644
+--- a/apps/server/src/cli.ts
++++ b/apps/server/src/cli.ts
+@@ -1,13 +1,15 @@
+ import { existsSync, renameSync, rmSync } from 'node:fs';
+ import { CivilDate } from '@appsport/contracts';
++import { usernameKey } from '@appsport/domain';
+ import { bootstrapAdminInvitation } from './auth/bootstrap';
++import { createPasswordReset } from './auth/password-reset';
+ import { type AppConfig, loadConfig } from './config';
+ import { migrate } from './db/migrate';
+ import { MIGRATIONS, type Migration } from './db/migrations/index';
+ import { openDatabase } from './db/open';
+ import { initServerMeta } from './db/server-meta';
+ import { type AppDeps, createAppDeps, cryptoIds, systemClock } from './deps';
+ import { HttpError } from './http/errors';
+ import { createLogger } from './logger';
+ import { openMigrated } from './startup';
+ import { assertStartupPreconditions } from './startup-guard';
+@@ -105,26 +107,58 @@ async function runAdminBootstrap(args: string[], ctx: CliContext): Promise<numbe
+       return 1;
+     }
+     if (error instanceof HttpError && error.code === 'conflict') {
+       ctx.err('Un administrateur existe déjà : utilise admin:reset <pseudo>.');
+       return 1;
+     }
+     throw error;
+   }
+ }
+ 
++async function runAdminReset(args: string[], ctx: CliContext): Promise<number> {
++  const username = parseFlags(args).positional[0];
++  if (!username) {
++    ctx.err('Pseudo manquant : utilise admin:reset <pseudo>.');
++    return 1;
++  }
++  const created = await withAppDeps(ctx, async (deps) => {
++    const user = await deps.db
++      .selectFrom('user')
++      .select(['id', 'username'])
++      .where('usernameKey', '=', usernameKey(username))
++      .executeTakeFirst();
++    if (!user) return null;
++    const link = await deps.db
++      .transaction()
++      .execute((trx) => createPasswordReset(trx, deps, user.id, { actorId: null, ip: null }));
++    return { ...link, username: user.username };
++  });
++  if (!created) {
++    ctx.err(`Pseudo inconnu : ${username}`);
++    return 1;
++  }
++  ctx.out(`Lien de réinitialisation pour ${created.username} (valable 24 h)`);
++  ctx.out(`Lien : ${created.link}`);
++  ctx.out(`Code : ${created.code}`);
++  return 0;
++}
++
+ export const COMMANDS: Record<string, CliCommand> = {
+   'admin:bootstrap': {
+     usage:
+       "admin:bootstrap --birth-date AAAA-MM-JJ : crée l'invitation du premier administrateur (valable 24 h)",
+     run: runAdminBootstrap,
+   },
++  'admin:reset': {
++    usage: 'admin:reset <pseudo> : crée un lien de réinitialisation du mot de passe (valable 24 h)',
++    run: runAdminReset,
++  },
+   init: {
+     usage: "init : crée la base d'un volume neuf (sentinelle requise) et fixe l'époque du serveur",
+     run: (_args, ctx) => runInit(loadConfig(ctx.env), ctx),
+   },
+   'db:check': {
+     usage: "db:check : vérifie l'intégrité de la base (integrity_check et foreign_key_check)",
+     run: (_args, ctx) =>
+       withAppDeps(ctx, async ({ sqlite }) => {
+         const integrity = sqlite.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
+         const foreign = sqlite.prepare('PRAGMA foreign_key_check').all();
+diff --git a/apps/server/src/routes.ts b/apps/server/src/routes.ts
+index f2052f3..31e1b01 100644
+--- a/apps/server/src/routes.ts
++++ b/apps/server/src/routes.ts
+@@ -1,16 +1,18 @@
+ import type { Hono } from 'hono';
++import { adminRoutes } from './admin/routes';
+ import type { AppEnv } from './app-env';
+ import { adminInvitationRoutes, invitationRoutes } from './auth/invitation-routes';
+ import { meRoutes } from './auth/me-routes';
+ import { authRoutes } from './auth/routes';
+ import type { AppDeps } from './deps';
+ import { healthRoutes } from './health/routes';
+ 
+ /** Un routeur par ligne ; les routeurs des tâches suivantes s'ajoutent ici. */
+ export function mountRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
+   app.route('/', healthRoutes(deps));
+   app.route('/api/auth', authRoutes(deps));
+   app.route('/api/me', meRoutes(deps));
+   app.route('/api/invitations', invitationRoutes(deps));
+   app.route('/api/admin/invitations', adminInvitationRoutes(deps));
++  app.route('/api/admin', adminRoutes(deps));
+ }
+diff --git a/apps/server/test/admin/members.test.ts b/apps/server/test/admin/members.test.ts
+new file mode 100644
+index 0000000..c91fc87
+--- /dev/null
++++ b/apps/server/test/admin/members.test.ts
+@@ -0,0 +1,217 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { listMembers } from '../../src/admin/members';
++import { createTestContext, createUser, insertFixtureRow, login, type TestContext } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx?.close());
++
++const WRONG = 'faux faux faux faux';
++const post = (path: string, cookie: string, json: unknown = {}, ip = '100.64.0.1') =>
++  ctx.request(path, { method: 'POST', cookie, json, ip });
++const events = (type: string) =>
++  ctx.deps.db.selectFrom('securityEvent').selectAll().where('type', '=', type).execute();
++const sessionCount = async (name: string): Promise<number | undefined> =>
++  (await listMembers(ctx.deps.db, ctx.deps)).find((x) => x.username === name)?.activeSessions;
++
++async function setup() {
++  ctx = await createTestContext();
++  const admin = await createUser(ctx, { username: 'porteur', role: 'admin', password: 'quatorze carac' });
++  const adminCookie = await login(ctx, 'porteur', admin.password);
++  return { admin, adminCookie };
++}
++
++describe('GET /api/admin/members', () => {
++  it('liste triée, sans donnée C1 à C3 (R-ADM-1)', async () => {
++    const { adminCookie } = await setup();
++    const m = await createUser(ctx, { username: 'lea', birthDate: '2010-01-01', onboarded: true });
++    await login(ctx, 'lea', m.password);
++    await login(ctx, 'lea', m.password);
++    await insertFixtureRow(ctx.deps.db, 'consent_event', {
++      ownerId: m.id,
++      type: 'health',
++      action: 'grant',
++      textVersion: '1.0',
++      rev: 5,
++      createdAt: '2026-10-06T10:00:00.000Z',
++    });
++    const res = await ctx.request('/api/admin/members', { cookie: adminCookie });
++    expect(res.status).toBe(200);
++    const list = (await res.json()) as { username: string }[];
++    expect(list[0]).toEqual({
++      id: m.id,
++      username: 'lea',
++      role: 'member',
++      status: 'active',
++      isMinor: true,
++      lastLoginAt: '2026-10-06T10:00:00.000Z',
++      onboardingCompleted: true,
++      consents: { health: true, aiCoach: false },
++      activeSessions: 2,
++    });
++    expect(list.map((x) => x.username)).toEqual(['lea', 'porteur']);
++  });
++
++  it('ne compte pas les sessions révoquées ni inactives depuis 90 jours', async () => {
++    await setup();
++    const m = await createUser(ctx, { username: 'lea' });
++    await login(ctx, 'lea', m.password);
++    await login(ctx, 'lea', m.password);
++    const first = await ctx.deps.db
++      .selectFrom('session')
++      .select('id')
++      .where('userId', '=', m.id)
++      .executeTakeFirstOrThrow();
++    await ctx.deps.db
++      .updateTable('session')
++      .set({ revokedAt: '2026-10-06T10:00:00.000Z', revokedReason: 'logout' })
++      .where('id', '=', first.id)
++      .execute();
++    expect(await sessionCount('lea')).toBe(1);
++    ctx.clock.advance(90 * 86_400_000 - 1);
++    expect(await sessionCount('lea')).toBe(1);
++    ctx.clock.advance(1);
++    expect(await sessionCount('lea')).toBe(0);
++  });
++
++  it('refuse un membre (R-ROLE-4)', async () => {
++    await setup();
++    const m = await createUser(ctx, { username: 'lea' });
++    const cookie = await login(ctx, 'lea', m.password);
++    for (const path of ['/api/admin/members', '/api/admin/ops-status']) {
++      const res = await ctx.request(path, { cookie });
++      expect(res.status).toBe(403);
++      expect(await res.json()).toEqual({ error: 'forbidden' });
++    }
++    const denied = await post(`/api/admin/members/${m.id}/status`, cookie, { status: 'disabled' });
++    expect(denied.status).toBe(403);
++  });
++});
++
++describe('dernier administrateur (R-ROLE-2)', () => {
++  it('refuse de rétrograder ou désactiver le dernier admin actif', async () => {
++    const { admin, adminCookie } = await setup();
++    const role = await post(`/api/admin/members/${admin.id}/role`, adminCookie, {
++      role: 'member',
++      password: admin.password,
++    });
++    expect(role.status).toBe(409);
++    expect(await role.json()).toEqual({ error: 'last_admin' });
++    const status = await post(`/api/admin/members/${admin.id}/status`, adminCookie, { status: 'disabled' });
++    expect(await status.json()).toEqual({ error: 'last_admin' });
++  });
++
++  it('un autre admin désactivé ne compte pas ; un autre admin actif autorise', async () => {
++    const { admin, adminCookie } = await setup();
++    const other = await createUser(ctx, { username: 'second', role: 'admin', status: 'disabled' });
++    const res = await post(`/api/admin/members/${admin.id}/status`, adminCookie, { status: 'disabled' });
++    expect(res.status).toBe(409);
++    await ctx.deps.db.updateTable('user').set({ status: 'active' }).where('id', '=', other.id).execute();
++    const ok = await post(`/api/admin/members/${admin.id}/role`, adminCookie, {
++      role: 'member',
++      password: admin.password,
++    });
++    expect(ok.status).toBe(204);
++  });
++
++  it('deux admins qui se rétrogradent en même temps : un seul réussit', async () => {
++    const { admin, adminCookie } = await setup();
++    const b = await createUser(ctx, { username: 'second', role: 'admin', password: 'quatorze carac' });
++    const bCookie = await login(ctx, 'second', b.password, '100.64.0.2');
++    const [r1, r2] = await Promise.all([
++      post(`/api/admin/members/${b.id}/role`, adminCookie, { role: 'member', password: admin.password }),
++      post(
++        `/api/admin/members/${admin.id}/role`,
++        bCookie,
++        { role: 'member', password: b.password },
++        '100.64.0.2',
++      ),
++    ]);
++    expect([r1.status, r2.status].sort()).toEqual([204, 409]);
++    const loser = r1.status === 409 ? r1 : r2;
++    expect(await loser.json()).toEqual({ error: 'last_admin' });
++    const active = await ctx.deps.db
++      .selectFrom('user')
++      .select('id')
++      .where('role', '=', 'admin')
++      .where('status', '=', 'active')
++      .execute();
++    expect(active).toHaveLength(1);
++  });
++});
++
++describe('rôle, statut, date de naissance, sessions', () => {
++  it('rôle : mot de passe admin faux → 401, bon → 204 et journal (P-AUT-5)', async () => {
++    const { admin, adminCookie } = await setup();
++    const m = await createUser(ctx, { username: 'lea' });
++    const bad = await post(`/api/admin/members/${m.id}/role`, adminCookie, {
++      role: 'admin',
++      password: WRONG,
++    });
++    expect(bad.status).toBe(401);
++    expect(await bad.json()).toEqual({ error: 'invalid_credentials' });
++    const ok = await post(`/api/admin/members/${m.id}/role`, adminCookie, {
++      role: 'admin',
++      password: admin.password,
++    });
++    expect(ok.status).toBe(204);
++    const row = await ctx.deps.db
++      .selectFrom('user')
++      .selectAll()
++      .where('id', '=', m.id)
++      .executeTakeFirstOrThrow();
++    expect(row).toMatchObject({ role: 'admin', updatedBy: admin.id });
++    const logged = await events('role_changed');
++    expect(logged).toHaveLength(1);
++    expect(logged[0]).toMatchObject({ actorId: admin.id, targetId: m.id, details: '{"role":"admin"}' });
++  });
++
++  it('désactivation : sessions révoquées, connexion refusée ; réactivation (R-ADM-1)', async () => {
++    const { adminCookie } = await setup();
++    const m = await createUser(ctx, { username: 'lea' });
++    const cookie = await login(ctx, 'lea', m.password);
++    const off = await post(`/api/admin/members/${m.id}/status`, adminCookie, { status: 'disabled' });
++    expect(off.status).toBe(204);
++    expect((await ctx.request('/api/me', { cookie })).status).toBe(401);
++    const denied = await ctx.request('/api/auth/login', {
++      method: 'POST',
++      json: { username: 'lea', password: m.password },
++    });
++    expect(await denied.json()).toEqual({ error: 'account_disabled' });
++    const on = await post(`/api/admin/members/${m.id}/status`, adminCookie, { status: 'active' });
++    expect(on.status).toBe(204);
++    await login(ctx, 'lea', m.password);
++    expect(await events('status_changed')).toHaveLength(2);
++  });
++
++  it('date de naissance : sous 16 ans refusé, correction journalisée sans détail (R-AGE-4)', async () => {
++    const { adminCookie } = await setup();
++    const m = await createUser(ctx, { username: 'lea' });
++    const bad = await post(`/api/admin/members/${m.id}/birth-date`, adminCookie, { birthDate: '2010-10-07' });
++    expect(await bad.json()).toEqual({ error: 'under_min_age' });
++    const ok = await post(`/api/admin/members/${m.id}/birth-date`, adminCookie, { birthDate: '2009-01-01' });
++    expect(ok.status).toBe(204);
++    const row = await ctx.deps.db
++      .selectFrom('user')
++      .select('birthDate')
++      .where('id', '=', m.id)
++      .executeTakeFirstOrThrow();
++    expect(row.birthDate).toBe('2009-01-01');
++    const logged = await events('birth_date_corrected');
++    expect(logged).toHaveLength(1);
++    expect(logged[0]?.details).toBeNull();
++  });
++
++  it('révocation des sessions (R-AUTH-7) ; membre inconnu → not_found', async () => {
++    const { adminCookie } = await setup();
++    const m = await createUser(ctx, { username: 'lea' });
++    const cookie = await login(ctx, 'lea', m.password);
++    expect((await post(`/api/admin/members/${m.id}/revoke-sessions`, adminCookie)).status).toBe(204);
++    expect((await ctx.request('/api/me', { cookie })).status).toBe(401);
++    const logged = await events('sessions_revoked');
++    expect(logged).toHaveLength(1);
++    expect(logged[0]?.details).toBe('{"count":1}');
++    const unknown = await post('/api/admin/members/inconnu/revoke-sessions', adminCookie);
++    expect(unknown.status).toBe(404);
++    expect(await unknown.json()).toEqual({ error: 'not_found' });
++  });
++});
+diff --git a/apps/server/test/admin/ops-status.test.ts b/apps/server/test/admin/ops-status.test.ts
+new file mode 100644
+index 0000000..1370d85
+--- /dev/null
++++ b/apps/server/test/admin/ops-status.test.ts
+@@ -0,0 +1,57 @@
++import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { afterEach, describe, expect, it } from 'vitest';
++import { readOpsStatus } from '../../src/admin/ops-status';
++import { createTestContext, createUser, login, type TestContext } from '../support';
++
++let dir: string;
++let ctx: TestContext | undefined;
++afterEach(() => {
++  ctx?.close();
++  ctx = undefined;
++  rmSync(dir, { recursive: true, force: true });
++});
++
++const write = (content: string): void => {
++  mkdirSync(join(dir, 'ops'), { recursive: true });
++  writeFileSync(join(dir, 'ops', 'status.json'), content);
++};
++
++describe('readOpsStatus (08 §9)', () => {
++  it('renvoie null si le fichier est absent, illisible ou invalide', async () => {
++    dir = mkdtempSync(join(tmpdir(), 'appsport-ops-'));
++    expect(await readOpsStatus(dir)).toBeNull();
++    write('{pas du json');
++    expect(await readOpsStatus(dir)).toBeNull();
++    write(JSON.stringify({ backup: { at: 'x', ok: 'oui' } }));
++    expect(await readOpsStatus(dir)).toBeNull();
++  });
++
++  it('renvoie le contenu validé', async () => {
++    dir = mkdtempSync(join(tmpdir(), 'appsport-ops-'));
++    const status = {
++      backup: { at: '2026-10-06T01:30:00Z', ok: true },
++      deploy: { at: '2026-10-05T09:00:00Z', version: 'v1.2.3', previousVersion: null, ok: true },
++    };
++    write(JSON.stringify(status));
++    expect(await readOpsStatus(dir)).toEqual(status);
++  });
++});
++
++describe('GET /api/admin/ops-status', () => {
++  it('renvoie la version et un état nul sans fichier ; refuse un membre', async () => {
++    dir = mkdtempSync(join(tmpdir(), 'appsport-ops-'));
++    ctx = await createTestContext({ config: { dataDir: dir, version: 'v1.2.3' } });
++    const admin = await createUser(ctx, { role: 'admin' });
++    const member = await createUser(ctx);
++    const res = await ctx.request('/api/admin/ops-status', {
++      cookie: await login(ctx, admin.username, admin.password),
++    });
++    expect(await res.json()).toEqual({ version: 'v1.2.3', opsStatus: null });
++    const denied = await ctx.request('/api/admin/ops-status', {
++      cookie: await login(ctx, member.username, member.password),
++    });
++    expect(denied.status).toBe(403);
++  });
++});
+diff --git a/apps/server/test/auth/limiter.test.ts b/apps/server/test/auth/limiter.test.ts
+index 91db7c6..c3178b4 100644
+--- a/apps/server/test/auth/limiter.test.ts
++++ b/apps/server/test/auth/limiter.test.ts
+@@ -67,28 +67,42 @@ describe('limiteur de connexion par pseudo (R-AUTH-2)', () => {
+     expect(limiter.check('lea', null)).toEqual({ allowed: true });
+   });
+ });
+ 
+ describe('limiteur de connexion par IP (R-AUTH-3)', () => {
+   it('30 échecs d une IP bloquent tous les pseudos pour cette IP seulement', () => {
+     const { limiter } = setup();
+     for (let i = 0; i < 30; i += 1) limiter.recordFailure(`pseudo${i}`, IP);
+     expect(limiter.check('lea', IP)).toEqual({ allowed: false, retryAfterS: 3600 });
+     expect(limiter.check('lea', '100.64.0.10')).toEqual({ allowed: true });
+-    expect(limiter.check('lea', null)).toEqual({ allowed: true });
+     limiter.unlock('lea');
+     expect(limiter.check('lea', IP)).toEqual({ allowed: false, retryAfterS: 3600 });
+   });
++
++  it('une IP nulle partage le seau unknown : elle ne contourne pas la limite par IP', () => {
++    const { limiter } = setup();
++    for (let i = 0; i < 30; i += 1) limiter.recordFailure(`pseudo${i}`, null);
++    expect(limiter.check('lea', null)).toEqual({ allowed: false, retryAfterS: 3600 });
++    expect(limiter.check('lea', IP)).toEqual({ allowed: true });
++  });
+ });
+ 
+ describe('limiteur d IP (codes)', () => {
+   it('accepte 20 essais par heure et par IP', () => {
+     const clock = new FakeClock();
+     const limiter = createIpLimiter(clock, { limit: 20, windowMs: 3_600_000 });
+     for (let i = 0; i < 20; i += 1) expect(limiter.hit(IP).allowed).toBe(true);
+     expect(limiter.hit(IP)).toEqual({ allowed: false, retryAfterS: 3600 });
+     expect(limiter.hit(IP)).toEqual({ allowed: false, retryAfterS: 3600 });
+     expect(limiter.hit('100.64.0.10').allowed).toBe(true);
+     clock.advance(3_600_000);
+     expect(limiter.hit(IP).allowed).toBe(true);
+   });
++
++  it('une IP nulle partage un seau unknown : 20 essais par heure en tout', () => {
++    const clock = new FakeClock();
++    const limiter = createIpLimiter(clock, { limit: 20, windowMs: 3_600_000 });
++    for (let i = 0; i < 20; i += 1) expect(limiter.hit(null).allowed).toBe(true);
++    expect(limiter.hit(null)).toEqual({ allowed: false, retryAfterS: 3600 });
++    expect(limiter.hit(IP).allowed).toBe(true);
++  });
+ });
+diff --git a/apps/server/test/auth/password-reset.test.ts b/apps/server/test/auth/password-reset.test.ts
+new file mode 100644
+index 0000000..8919759
+--- /dev/null
++++ b/apps/server/test/auth/password-reset.test.ts
+@@ -0,0 +1,214 @@
++import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { afterEach, describe, expect, it } from 'vitest';
++import { acceptInvitation } from '../../src/auth/invitations';
++import { checkPasswordReset } from '../../src/auth/password-reset';
++import { runCli } from '../../src/cli';
++import { createTestContext, createUser, login, type TestContext, type TestUser } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx?.close());
++
++const NEW = 'une phrase de passe neuve';
++const IP = '100.64.0.7';
++const BAD_CODE = '0000-0000-0000-0000';
++
++async function setup(): Promise<{ admin: TestUser; lea: TestUser; adminCookie: string }> {
++  ctx = await createTestContext();
++  const admin = await createUser(ctx, { username: 'porteur', role: 'admin', password: 'quatorze carac' });
++  const lea = await createUser(ctx, { username: 'lea', password: 'ancien mot de passe' });
++  return { admin, lea, adminCookie: await login(ctx, 'porteur', admin.password) };
++}
++
++const link = async (adminCookie: string, id: string) => {
++  const res = await ctx.request(`/api/admin/members/${id}/reset-link`, {
++    method: 'POST',
++    cookie: adminCookie,
++    json: {},
++  });
++  return { res, body: (await res.json()) as { code: string; link: string; expiresAt: string } };
++};
++const check = (code: string, ip = IP) =>
++  ctx.request('/api/auth/reset/check', { method: 'POST', json: { code }, ip });
++const reset = (code: string, newPassword: string, ip = IP) =>
++  ctx.request('/api/auth/reset', { method: 'POST', json: { code, newPassword }, ip });
++const events = (type: string) =>
++  ctx.deps.db.selectFrom('securityEvent').selectAll().where('type', '=', type).execute();
++
++describe('liens de réinitialisation (R-RST-1 à R-RST-4)', () => {
++  it('crée le lien, le vérifie, le consomme une fois et révoque les sessions', async () => {
++    const { lea, adminCookie } = await setup();
++    const old = await login(ctx, 'lea', lea.password);
++    const { body: r } = await link(adminCookie, lea.id);
++    expect(r.link).toBe(`https://appsport.test.ts.net/reset#${r.code}`);
++    expect(r.expiresAt).toBe('2026-10-07T10:00:00.000Z');
++
++    const checked = await check(r.code.toLowerCase());
++    expect(await checked.json()).toEqual({ username: 'lea', role: 'member' });
++
++    const done = await reset(r.code, NEW);
++    expect(done.status).toBe(200);
++    expect(await done.json()).toMatchObject({ id: lea.id, username: 'lea', role: 'member' });
++    expect(done.headers.get('set-cookie')).toContain('session=');
++    const fresh = done.headers.get('set-cookie')?.split(';')[0] as string;
++    expect((await ctx.request('/api/me', { cookie: fresh })).status).toBe(200);
++    expect((await ctx.request('/api/me', { cookie: old })).status).toBe(401);
++
++    const again = await reset(r.code, NEW);
++    expect(again.status).toBe(400);
++    expect(await again.json()).toEqual({ error: 'reset_invalid' });
++    expect(await events('password_reset_created')).toHaveLength(1);
++    expect(await events('password_reset_used')).toHaveLength(1);
++    await login(ctx, 'lea', NEW);
++  });
++
++  it('expire au bout de 24 h', async () => {
++    const { lea, adminCookie } = await setup();
++    const { body: r } = await link(adminCookie, lea.id);
++    ctx.clock.advance(24 * 3_600_000);
++    expect(await (await check(r.code)).json()).toEqual({ error: 'reset_invalid' });
++    expect(await (await reset(r.code, NEW)).json()).toEqual({ error: 'reset_invalid' });
++  });
++
++  it('un nouveau lien annule le précédent', async () => {
++    const { lea, adminCookie } = await setup();
++    const { body: first } = await link(adminCookie, lea.id);
++    const { body: second } = await link(adminCookie, lea.id);
++    expect((await check(first.code)).status).toBe(400);
++    expect((await check(second.code)).status).toBe(200);
++  });
++
++  it('un changement de mot de passe annule le lien (R-RST-2)', async () => {
++    const { lea, adminCookie } = await setup();
++    const { body: r } = await link(adminCookie, lea.id);
++    const cookie = await login(ctx, 'lea', lea.password);
++    const changed = await ctx.request('/api/auth/password', {
++      method: 'POST',
++      cookie,
++      json: { currentPassword: lea.password, newPassword: NEW },
++    });
++    expect(changed.status).toBe(204);
++    expect((await check(r.code)).status).toBe(400);
++  });
++
++  it('débloque la connexion après 10 échecs', async () => {
++    const { lea, adminCookie } = await setup();
++    for (let i = 0; i < 10; i += 1) {
++      await ctx.request('/api/auth/login', {
++        method: 'POST',
++        json: { username: 'lea', password: 'faux faux faux faux' },
++        ip: '100.64.0.50',
++      });
++    }
++    const blocked = await ctx.request('/api/auth/login', {
++      method: 'POST',
++      json: { username: 'lea', password: lea.password },
++      ip: '100.64.0.50',
++    });
++    expect(blocked.status).toBe(429);
++    const { body: r } = await link(adminCookie, lea.id);
++    expect((await reset(r.code, NEW)).status).toBe(200);
++    const res = await ctx.request('/api/auth/login', {
++      method: 'POST',
++      json: { username: 'lea', password: NEW },
++      ip: '100.64.0.50',
++    });
++    expect(res.status).toBe(200);
++  });
++
++  it('refuse un mot de passe rejeté sans consommer le lien', async () => {
++    const { lea, adminCookie } = await setup();
++    const { body: r } = await link(adminCookie, lea.id);
++    const res = await reset(r.code, 'lea lea lea lea');
++    expect(res.status).toBe(400);
++    expect(await res.json()).toEqual({ error: 'password_rejected', reason: 'contains_username' });
++    expect((await check(r.code)).status).toBe(200);
++  });
++
++  it('un compte désactivé ne peut pas réinitialiser', async () => {
++    const { lea, adminCookie } = await setup();
++    const { body: r } = await link(adminCookie, lea.id);
++    await ctx.deps.db.updateTable('user').set({ status: 'disabled' }).where('id', '=', lea.id).execute();
++    const res = await reset(r.code, NEW);
++    expect(await res.json()).toEqual({ error: 'account_disabled' });
++  });
++
++  it('un administrateur doit choisir 14 caractères', async () => {
++    const { adminCookie } = await setup();
++    const other = await createUser(ctx, { username: 'second', role: 'admin' });
++    const { body: r } = await link(adminCookie, other.id);
++    expect(await (await check(r.code)).json()).toEqual({ username: 'second', role: 'admin' });
++    const short = await reset(r.code, 'treize carac');
++    expect(await short.json()).toEqual({ error: 'password_rejected', reason: 'too_short' });
++  });
++
++  it('refuse un lien pour soi-même (R-RST-4)', async () => {
++    const { admin, adminCookie } = await setup();
++    const { res, body } = await link(adminCookie, admin.id);
++    expect(res.status).toBe(403);
++    expect(body).toEqual({ error: 'reset_self_forbidden' });
++  });
++
++  it('limite à 20 essais par heure et par IP, partagés entre check et reset (P-AUT-2)', async () => {
++    await setup();
++    for (let i = 0; i < 19; i += 1) expect((await check(BAD_CODE)).status).toBe(400);
++    expect((await reset(BAD_CODE, NEW)).status).toBe(400);
++    const blocked = await check(BAD_CODE);
++    expect(blocked.status).toBe(429);
++    expect(await blocked.json()).toMatchObject({ error: 'rate_limited' });
++    expect((await check(BAD_CODE, '100.64.0.8')).status).toBe(400);
++    ctx.clock.advance(3_600_000);
++    expect((await check(BAD_CODE)).status).toBe(400);
++  });
++});
++
++describe('admin:reset (CLI)', () => {
++  let dir: string;
++  afterEach(() => rmSync(dir, { recursive: true, force: true }));
++
++  it('affiche trois lignes pour un pseudo normalisé, refuse un inconnu', async () => {
++    dir = mkdtempSync(join(tmpdir(), 'appsport-reset-'));
++    writeFileSync(join(dir, '.appsport-volume'), '');
++    const env = { APP_ORIGIN: 'https://appsport.test.ts.net', APPSPORT_DATA_DIR: dir };
++    const out: string[] = [];
++    const err: string[] = [];
++    const o = (l: string): void => {
++      out.push(l);
++    };
++    const e = (l: string): void => {
++      err.push(l);
++    };
++    expect(await runCli(['init'], env, o, e)).toBe(0);
++    out.length = 0;
++    expect(await runCli(['admin:reset', 'inconnu'], env, o, e)).toBe(1);
++    expect(out).toEqual([]);
++    expect(err.at(-1)).toBe('Pseudo inconnu : inconnu');
++
++    expect(await runCli(['admin:bootstrap', '--birth-date', '1985-03-02'], env, o, e)).toBe(0);
++    const code = (out[2] as string).slice('Code : '.length);
++    out.length = 0;
++    const c = await createTestContext({ dbPath: join(dir, 'appsport.db') });
++    try {
++      await acceptInvitation(
++        c.deps,
++        { code, username: 'porteur', password: 'quatorze carac', termsVersion: '1.0' },
++        null,
++      );
++      expect(await runCli(['admin:reset', 'PORTEUR'], env, o, e)).toBe(0);
++      expect(out).toHaveLength(3);
++      expect(out[0]).toBe('Lien de réinitialisation pour porteur (valable 24 h)');
++      expect(out[1]).toMatch(
++        /^Lien : https:\/\/appsport\.test\.ts\.net\/reset#[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$/,
++      );
++      const resetCode = (out[1] as string).split('#')[1] as string;
++      expect(out[2]).toBe(`Code : ${resetCode}`);
++      expect(await checkPasswordReset(c.deps.db, c.deps, resetCode)).toEqual({
++        username: 'porteur',
++        role: 'admin',
++      });
++    } finally {
++      c.close();
++    }
++  });
++});
+diff --git a/packages/contracts/src/api/admin.ts b/packages/contracts/src/api/admin.ts
+index a3ec799..bc72b1e 100644
+--- a/packages/contracts/src/api/admin.ts
++++ b/packages/contracts/src/api/admin.ts
+@@ -1,13 +1,14 @@
+ import { z } from 'zod';
+ import { INVITATION_NOTE_MAX } from '../auth-constants';
+-import { CivilDate } from './auth';
++import { OpsStatus } from '../ops';
++import { CivilDate, RoleSchema, UserStatusSchema } from './auth';
+ 
+ export const InvitationState = z.enum(['pending', 'used', 'revoked', 'expired']);
+ export type InvitationState = z.infer<typeof InvitationState>;
+ 
+ export const InvitationSummary = z.object({
+   id: z.string(),
+   note: z.string().nullable(),
+   createdAt: z.string(),
+   expiresAt: z.string(),
+   state: InvitationState,
+@@ -20,10 +21,40 @@ export const CreateInvitationRequest = z.object({
+   note: z.string().max(INVITATION_NOTE_MAX).optional(),
+ });
+ export type CreateInvitationRequest = z.infer<typeof CreateInvitationRequest>;
+ 
+ export const CreateInvitationResponse = z.object({
+   invitation: InvitationSummary,
+   code: z.string(),
+   link: z.string(),
+ });
+ export type CreateInvitationResponse = z.infer<typeof CreateInvitationResponse>;
++
++export const MemberSummary = z
++  .object({
++    id: z.string(),
++    username: z.string(),
++    role: RoleSchema,
++    status: UserStatusSchema,
++    isMinor: z.boolean(),
++    lastLoginAt: z.string().nullable(),
++    onboardingCompleted: z.boolean(),
++    consents: z.object({ health: z.boolean(), aiCoach: z.boolean() }),
++    activeSessions: z.number().int(),
++  })
++  .strict();
++export type MemberSummary = z.infer<typeof MemberSummary>;
++
++export const ResetLinkResponse = z.object({ code: z.string(), link: z.string(), expiresAt: z.string() });
++export type ResetLinkResponse = z.infer<typeof ResetLinkResponse>;
++
++export const SetStatusRequest = z.object({ status: UserStatusSchema });
++export type SetStatusRequest = z.infer<typeof SetStatusRequest>;
++
++export const SetRoleRequest = z.object({ role: RoleSchema, password: z.string().min(1).max(1024) });
++export type SetRoleRequest = z.infer<typeof SetRoleRequest>;
++
++export const SetBirthDateRequest = z.object({ birthDate: CivilDate });
++export type SetBirthDateRequest = z.infer<typeof SetBirthDateRequest>;
++
++export const OpsStatusResponse = z.object({ version: z.string(), opsStatus: OpsStatus.nullable() });
++export type OpsStatusResponse = z.infer<typeof OpsStatusResponse>;
+diff --git a/packages/contracts/src/api/auth.ts b/packages/contracts/src/api/auth.ts
+index 10a3971..ca9d24d 100644
+--- a/packages/contracts/src/api/auth.ts
++++ b/packages/contracts/src/api/auth.ts
+@@ -71,10 +71,20 @@ export type CodeRequest = z.infer<typeof CodeRequest>;
+ export const InvitationCheckResponse = z.object({ birthDate: CivilDate, role: RoleSchema });
+ export type InvitationCheckResponse = z.infer<typeof InvitationCheckResponse>;
+ 
+ export const AcceptInvitationRequest = z.object({
+   code: z.string().min(1).max(300),
+   username: z.string().min(1).max(100),
+   password: z.string().min(1).max(1024),
+   termsVersion: z.string(),
+ });
+ export type AcceptInvitationRequest = z.infer<typeof AcceptInvitationRequest>;
++
++/** `role` : rôle de la cible, qui fixe le minimum de mot de passe côté client (14 caractères pour un admin). */
++export const ResetCheckResponse = z.object({ username: z.string(), role: RoleSchema });
++export type ResetCheckResponse = z.infer<typeof ResetCheckResponse>;
++
++export const ResetPasswordRequest = z.object({
++  code: z.string().min(1).max(300),
++  newPassword: z.string().min(1).max(1024),
++});
++export type ResetPasswordRequest = z.infer<typeof ResetPasswordRequest>;
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index 89d2ef1..1d6a744 100644
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -1,8 +1,9 @@
+ export * from './api/admin';
+ export * from './api/auth';
+ export * from './api/errors';
+ export * from './api/health';
+ export * from './auth-constants';
+ export * from './case';
+ export * from './constants';
+ export * from './entity-rules';
++export * from './ops';
+diff --git a/packages/contracts/src/ops.ts b/packages/contracts/src/ops.ts
+new file mode 100644
+index 0000000..6f5317f
+--- /dev/null
++++ b/packages/contracts/src/ops.ts
+@@ -0,0 +1,19 @@
++import { z } from 'zod';
++
++/** Format de /data/ops/status.json, écrit par les scripts hôte. */
++export const OpsCheck = z.object({ at: z.string(), ok: z.boolean(), detail: z.string().optional() });
++export type OpsCheck = z.infer<typeof OpsCheck>;
++
++export const OpsStatus = z.object({
++  backup: OpsCheck.optional(),
++  restoreTest: OpsCheck.optional(),
++  host: OpsCheck.extend({
++    disks: z.array(z.object({ mount: z.string(), usedPct: z.number() })),
++    smartOk: z.boolean(),
++    rebootRequired: z.boolean(),
++  }).optional(),
++  deploy: z
++    .object({ at: z.string(), version: z.string(), previousVersion: z.string().nullable(), ok: z.boolean() })
++    .optional(),
++});
++export type OpsStatus = z.infer<typeof OpsStatus>;

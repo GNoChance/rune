@@ -1,0 +1,1296 @@
+# Review package: 665dd3d..HEAD
+
+## Commits
+95b04f0 feat(synchro): base locale Dexie, outbox transactionnelle et jeu figé v1
+
+## Files changed
+ apps/web/package.json                          |   5 +-
+ apps/web/src/local-db/consent.ts               |  12 ++
+ apps/web/src/local-db/db.ts                    |  92 +++++++++++
+ apps/web/src/local-db/meta.ts                  |  42 +++++
+ apps/web/src/local-db/wipe.ts                  | 107 +++++++++++++
+ apps/web/src/sync/outbox.ts                    |  83 ++++++++++
+ apps/web/src/sync/protocol-converters.ts       |  17 ++
+ apps/web/test/fixtures/local-db/v1/dump.json   |  94 ++++++++++++
+ apps/web/test/local-db/db.test.ts              |  97 ++++++++++++
+ apps/web/test/local-db/frozen-v1.test.ts       |  26 ++++
+ apps/web/test/local-db/wipe.test.ts            | 164 ++++++++++++++++++++
+ apps/web/test/support/local-db.ts              |  76 +++++++++
+ apps/web/test/sync/outbox.test.ts              | 205 +++++++++++++++++++++++++
+ apps/web/test/sync/protocol-converters.test.ts |  22 +++
+ pnpm-lock.yaml                                 |  20 +++
+ 15 files changed, 1061 insertions(+), 1 deletion(-)
+
+## Diff
+diff --git a/apps/web/package.json b/apps/web/package.json
+index f030a9b..bf7c420 100644
+--- a/apps/web/package.json
++++ b/apps/web/package.json
+@@ -2,17 +2,20 @@
+   "name": "@appsport/web",
+   "version": "0.0.0",
+   "private": true,
+   "type": "module",
+   "scripts": {
+     "typecheck": "tsc --noEmit -p tsconfig.json",
+     "test": "vitest run --root ../.. --project web"
+   },
+   "dependencies": {
+     "@appsport/contracts": "workspace:*",
+-    "@appsport/domain": "workspace:*"
++    "@appsport/domain": "workspace:*",
++    "dexie": "^4.4.6",
++    "zod": "^4.6.5"
+   },
+   "devDependencies": {
+     "@appsport/server": "workspace:*",
++    "fake-indexeddb": "^6.2.5",
+     "happy-dom": "^20"
+   }
+ }
+diff --git a/apps/web/src/local-db/consent.ts b/apps/web/src/local-db/consent.ts
+new file mode 100644
+index 0000000..7c34d1d
+--- /dev/null
++++ b/apps/web/src/local-db/consent.ts
+@@ -0,0 +1,12 @@
++import Dexie from 'dexie';
++import type { AppDb } from './db';
++
++/** Accord santé actif d'après le miroir : dernier événement `health` (index `[type+createdAt]`) = grant. */
++export async function localHealthConsentActive(db: AppDb): Promise<boolean> {
++  const last = await db
++    .mirror('consent_event')
++    .where('[type+createdAt]')
++    .between(['health', Dexie.minKey], ['health', Dexie.maxKey])
++    .last();
++  return last?.action === 'grant';
++}
+diff --git a/apps/web/src/local-db/db.ts b/apps/web/src/local-db/db.ts
+new file mode 100644
+index 0000000..aaaabb5
+--- /dev/null
++++ b/apps/web/src/local-db/db.ts
+@@ -0,0 +1,92 @@
++import type { SyncOp } from '@appsport/contracts';
++import Dexie, { type Table } from 'dexie';
++
++export const LOCAL_DB_NAME = 'appsport';
++export const LOCAL_DB_VERSION = 1;
++
++export type OutboxOp = SyncOp;
++
++export interface DeadletterEntry {
++  opId: string;
++  userId: string;
++  entity: string;
++  id: string;
++  code: string;
++  detail: unknown;
++  receivedAt: string;
++}
++
++/** Ligne miroir : colonnes du registre en camelCase, valeurs décodées (booléens, objets), `null` gardé. */
++export type MirrorRow = Record<string, unknown> & {
++  id: string;
++  serverRevSeen: number | null;
++  deletedAt: string | null;
++};
++
++/**
++ * Schéma Dexie de LOCAL_DB_VERSION. Une version suivante ajoute son propre schéma et convertit
++ * l'outbox dans `.upgrade()` par `convertOutboxOp` (R-VER-4).
++ */
++export const STORE_SCHEMAS: Record<string, string> = {
++  meta: 'key',
++  outbox: 'opId, userId, [entity+id]',
++  deadletter: 'opId, userId',
++  user: 'id',
++  training_profile: 'id',
++  health_screening: 'id',
++  limitation: 'id',
++  consent_event: 'id, [type+createdAt]',
++  gym: 'id, nameKey',
++  gym_equipment: 'id, gymId',
++  place: 'id, gymId',
++  home_equipment: 'id, placeId',
++  sync_rejection: 'id, dismissedAt',
++  exercises: 'id',
++  illustrations: 'id',
++  programTemplates: 'id',
++  adviceSheets: 'id',
++};
++
++export const NON_MIRROR_STORES: readonly string[] = [
++  'meta',
++  'outbox',
++  'deadletter',
++  'exercises',
++  'illustrations',
++  'programTemplates',
++  'adviceSheets',
++];
++
++export class AppDb extends Dexie {
++  declare meta: Table<{ key: string; value: unknown }, string>;
++  declare outbox: Table<OutboxOp, string>;
++  declare deadletter: Table<DeadletterEntry, string>;
++  readonly mirrorNames: readonly string[];
++
++  constructor(name: string, extraMirrors: Record<string, string> = {}) {
++    super(name);
++    const stores = { ...STORE_SCHEMAS, ...extraMirrors };
++    this.version(LOCAL_DB_VERSION).stores(stores);
++    this.mirrorNames = Object.keys(stores)
++      .filter((s) => !NON_MIRROR_STORES.includes(s))
++      .sort();
++  }
++
++  /** Table miroir d'une entité ; lève pour une entité sans miroir. */
++  mirror(entity: string): Table<MirrorRow, string> {
++    if (!this.mirrorNames.includes(entity)) throw new Error(`unknown_mirror:${entity}`);
++    return this.table(entity);
++  }
++}
++
++export function createAppDb(
++  name: string = LOCAL_DB_NAME,
++  opts: { extraMirrors?: Record<string, string> } = {},
++): AppDb {
++  return new AppDb(name, opts.extraMirrors);
++}
++
++/** Magasins miroirs, triés. */
++export function mirrorStoreNames(db: AppDb): string[] {
++  return [...db.mirrorNames];
++}
+diff --git a/apps/web/src/local-db/meta.ts b/apps/web/src/local-db/meta.ts
+new file mode 100644
+index 0000000..005f088
+--- /dev/null
++++ b/apps/web/src/local-db/meta.ts
+@@ -0,0 +1,42 @@
++import type { MeResponse } from '@appsport/contracts';
++import type { AppDb } from './db';
++
++export interface MetaValues {
++  deviceId: string;
++  userId: string;
++  watermark: string;
++  serverEpoch: string;
++  protocol: number;
++  catalogVersion: string;
++  serverCatalogVersion: string;
++  activeSessionId: string | null;
++  lastPullOkAt: string;
++  persistGranted: boolean;
++  me: MeResponse;
++}
++
++/** Clés liées à l'utilisateur connecté, effacées par `wipeUserData`. */
++export const USER_META_KEYS: readonly (keyof MetaValues)[] = [
++  'userId',
++  'watermark',
++  'serverEpoch',
++  'lastPullOkAt',
++  'activeSessionId',
++  'me',
++];
++
++export async function getMeta<K extends keyof MetaValues>(
++  db: AppDb,
++  k: K,
++): Promise<MetaValues[K] | undefined> {
++  const entry = await db.meta.get(k);
++  return entry?.value as MetaValues[K] | undefined;
++}
++
++export async function setMeta<K extends keyof MetaValues>(db: AppDb, k: K, v: MetaValues[K]): Promise<void> {
++  await db.meta.put({ key: k, value: v });
++}
++
++export async function deleteMeta(db: AppDb, k: keyof MetaValues): Promise<void> {
++  await db.meta.delete(k);
++}
+diff --git a/apps/web/src/local-db/wipe.ts b/apps/web/src/local-db/wipe.ts
+new file mode 100644
+index 0000000..f88c00c
+--- /dev/null
++++ b/apps/web/src/local-db/wipe.ts
+@@ -0,0 +1,107 @@
++import { camelToSnake, type EntityRule, type EntityRulesMap, entityRules } from '@appsport/contracts';
++import { type AppDb, mirrorStoreNames } from './db';
++import { USER_META_KEYS } from './meta';
++
++/** Valeur de santé dans une table non C2 : colonne `c2Columns`, ou valeur `c2Values` (clé camelCase). */
++export function isC2Value(rule: EntityRule, key: string, value: unknown): boolean {
++  if (value === null || value === undefined) return false;
++  const column = camelToSnake(key);
++  if (rule.c2Columns.includes(column)) return true;
++  const values = rule.c2Values && Object.hasOwn(rule.c2Values, column) ? rule.c2Values[column] : undefined;
++  return typeof value === 'string' && values !== undefined && values.includes(value);
++}
++
++/** Champs sans leurs valeurs de santé ; `stripped` dit si une clé a été retirée. */
++export function stripC2Fields(
++  rule: EntityRule,
++  fields: Record<string, unknown>,
++): { fields: Record<string, unknown>; stripped: boolean } {
++  const kept = Object.fromEntries(Object.entries(fields).filter(([k, v]) => !isC2Value(rule, k, v)));
++  return { fields: kept, stripped: Object.keys(kept).length !== Object.keys(fields).length };
++}
++
++/** Efface les données de l'utilisateur ; l'appareil (deviceId) et le catalogue restent. */
++export async function wipeUserData(db: AppDb, opts: { keepOutbox: boolean }): Promise<void> {
++  await db.transaction('rw', db.tables, async () => {
++    for (const store of mirrorStoreNames(db)) await db.mirror(store).clear();
++    await db.meta.bulkDelete([...USER_META_KEYS]);
++    if (!opts.keepOutbox) {
++      await db.outbox.clear();
++      await db.deadletter.clear();
++    }
++  });
++}
++
++/** Vide les miroirs seuls (pull complet après `watermark_expired`). */
++export async function clearMirrors(db: AppDb): Promise<void> {
++  const stores = mirrorStoreNames(db);
++  await db.transaction(
++    'rw',
++    stores.map((s) => db.mirror(s)),
++    async () => {
++      for (const store of stores) await db.mirror(store).clear();
++    },
++  );
++}
++
++/**
++ * Retrait de l'accord santé (P-CST-3 étape 4), en une transaction : miroirs C2 vidés, valeurs C2
++ * mises à null ailleurs ; ops sur une table C2 supprimées, clés C2 retirées des autres (un patch
++ * vidé est supprimé) ; deadletter des tables C2 supprimée.
++ */
++export async function purgeHealthData(
++  db: AppDb,
++  rules: EntityRulesMap = entityRules,
++): Promise<{ rowsCleared: number; opsRemoved: number; opsStripped: number }> {
++  const ruleOf = (entity: string): EntityRule | undefined =>
++    Object.hasOwn(rules, entity) ? rules[entity] : undefined;
++  let rowsCleared = 0;
++  let opsRemoved = 0;
++  let opsStripped = 0;
++  await db.transaction('rw', db.tables, async () => {
++    for (const store of mirrorStoreNames(db)) {
++      const rule = ruleOf(store);
++      if (!rule) continue;
++      const table = db.mirror(store);
++      if (rule.category === 'C2') {
++        rowsCleared += await table.count();
++        await table.clear();
++        continue;
++      }
++      if (rule.c2Columns.length === 0 && !rule.c2Values) continue;
++      for (const row of await table.toArray()) {
++        const changes = Object.fromEntries(
++          Object.entries(row)
++            .filter(([k, v]) => isC2Value(rule, k, v))
++            .map(([k]) => [k, null]),
++        );
++        if (Object.keys(changes).length === 0) continue;
++        await table.put({ ...row, ...changes });
++        rowsCleared += 1;
++      }
++    }
++
++    for (const op of await db.outbox.toArray()) {
++      const rule = ruleOf(op.entity);
++      if (!rule) continue;
++      if (rule.category === 'C2') {
++        await db.outbox.delete(op.opId);
++        opsRemoved += 1;
++        continue;
++      }
++      const { fields, stripped } = stripC2Fields(rule, op.fields);
++      if (!stripped) continue;
++      if (op.kind === 'patch' && Object.keys(fields).length === 0) {
++        await db.outbox.delete(op.opId);
++        opsRemoved += 1;
++      } else {
++        await db.outbox.put({ ...op, fields });
++        opsStripped += 1;
++      }
++    }
++
++    const c2Entities = Object.keys(rules).filter((e) => ruleOf(e)?.category === 'C2');
++    await db.deadletter.filter((d) => c2Entities.includes(d.entity)).delete();
++  });
++  return { rowsCleared, opsRemoved, opsStripped };
++}
+diff --git a/apps/web/src/sync/outbox.ts b/apps/web/src/sync/outbox.ts
+new file mode 100644
+index 0000000..375a2af
+--- /dev/null
++++ b/apps/web/src/sync/outbox.ts
+@@ -0,0 +1,83 @@
++import { camelToSnake, type EntityRulesMap, entityRules, SYNC_PROTOCOL, SyncOp } from '@appsport/contracts';
++import type { AppDb, MirrorRow, OutboxOp } from '../local-db/db';
++import { stripC2Fields } from '../local-db/wipe';
++
++export interface LocalChange {
++  entity: string;
++  id: string;
++  kind: 'create' | 'patch' | 'delete';
++  fields: Record<string, unknown>;
++}
++
++export class HealthConsentRequiredError extends Error {
++  constructor() {
++    super('health_consent_required');
++    this.name = 'HealthConsentRequiredError';
++  }
++}
++
++/**
++ * Écriture locale d'une table J : ligne miroir et op d'outbox dans une seule transaction
++ * (R-SYN-11 à R-SYN-14). Sans accord santé, une table C2 est refusée et les valeurs C2 retirées.
++ */
++export async function writeLocal(
++  db: AppDb,
++  change: LocalChange,
++  ctx: {
++    userId: string;
++    now: () => string;
++    newOpId: () => string;
++    healthConsentActive: boolean;
++    rules?: EntityRulesMap;
++  },
++): Promise<OutboxOp> {
++  const rules = ctx.rules ?? entityRules;
++  const rule = Object.hasOwn(rules, change.entity) ? rules[change.entity] : undefined;
++  if (rule?.syncClass !== 'J') throw new Error('entity_not_journal');
++  for (const key of Object.keys(change.fields)) {
++    if (!rule.clientWritable.includes(camelToSnake(key))) throw new Error(`field_not_writable:${key}`);
++  }
++  if (!ctx.healthConsentActive && rule.category === 'C2') throw new HealthConsentRequiredError();
++  const fields = ctx.healthConsentActive ? { ...change.fields } : stripC2Fields(rule, change.fields).fields;
++
++  const now = ctx.now();
++  const op = SyncOp.parse({
++    opId: ctx.newOpId(),
++    userId: ctx.userId,
++    entity: change.entity,
++    id: change.id,
++    kind: change.kind,
++    fields,
++    clientTs: now,
++    protocol: SYNC_PROTOCOL,
++    attempts: 0,
++  });
++
++  const mirror = db.mirror(change.entity);
++  await db.transaction('rw', db.outbox, mirror, async () => {
++    if (change.kind === 'create') {
++      const row: MirrorRow = {
++        ...fields,
++        id: change.id,
++        ownerId: ctx.userId,
++        serverRevSeen: null,
++        deletedAt: null,
++        updatedAt: now,
++      };
++      await mirror.put(row);
++    } else {
++      const existing = await mirror.get(change.id);
++      if (!existing) throw new Error('row_missing');
++      const update =
++        change.kind === 'patch' ? { ...fields, updatedAt: now } : { deletedAt: now, updatedAt: now };
++      await mirror.put({ ...existing, ...update });
++    }
++    await db.outbox.add(op);
++  });
++  return op;
++}
++
++/** Ops en attente de l'utilisateur. */
++export async function pendingCount(db: AppDb, userId: string): Promise<number> {
++  return db.outbox.where('userId').equals(userId).count();
++}
+diff --git a/apps/web/src/sync/protocol-converters.ts b/apps/web/src/sync/protocol-converters.ts
+new file mode 100644
+index 0000000..3ac7c6d
+--- /dev/null
++++ b/apps/web/src/sync/protocol-converters.ts
+@@ -0,0 +1,17 @@
++import { SYNC_PROTOCOL } from '@appsport/contracts';
++import type { OutboxOp } from '../local-db/db';
++
++/** Maillon p → p + 1 d'une op restée dans l'outbox (R-VER-4) ; aucun en v1. */
++export const OUTBOX_CONVERTERS: Readonly<Record<number, (op: OutboxOp) => OutboxOp>> = {};
++
++/** Amène une op de l'outbox au protocole `target`, maillon par maillon. */
++export function convertOutboxOp(op: OutboxOp, target: number = SYNC_PROTOCOL): OutboxOp {
++  let current = op;
++  while (current.protocol < target) {
++    const from = current.protocol;
++    const convert = Object.hasOwn(OUTBOX_CONVERTERS, from) ? OUTBOX_CONVERTERS[from] : undefined;
++    if (!convert) throw new Error(`outbox converter missing: v${from} → v${from + 1}`);
++    current = { ...convert(current), protocol: from + 1 };
++  }
++  return current;
++}
+diff --git a/apps/web/test/fixtures/local-db/v1/dump.json b/apps/web/test/fixtures/local-db/v1/dump.json
+new file mode 100644
+index 0000000..175b6b0
+--- /dev/null
++++ b/apps/web/test/fixtures/local-db/v1/dump.json
+@@ -0,0 +1,94 @@
++{
++  "localDbVersion": 1,
++  "protocol": 1,
++  "stores": {
++    "meta": "key",
++    "outbox": "opId, userId, [entity+id]",
++    "deadletter": "opId, userId",
++    "user": "id",
++    "training_profile": "id",
++    "health_screening": "id",
++    "limitation": "id",
++    "consent_event": "id, [type+createdAt]",
++    "gym": "id, nameKey",
++    "gym_equipment": "id, gymId",
++    "place": "id, gymId",
++    "home_equipment": "id, placeId",
++    "sync_rejection": "id, dismissedAt",
++    "exercises": "id",
++    "illustrations": "id",
++    "programTemplates": "id",
++    "adviceSheets": "id"
++  },
++  "meta": {
++    "deviceId": "0199b9a0-0000-7000-8000-0000000000d1",
++    "userId": "0199b9a0-0000-7000-8000-0000000000aa",
++    "watermark": "0199b9a0-0000-7000-8000-0000000000e1:42",
++    "serverEpoch": "0199b9a0-0000-7000-8000-0000000000e1",
++    "protocol": 1
++  },
++  "outbox": [
++    {
++      "opId": "0199b9a0-0000-7000-8000-000000000001",
++      "userId": "0199b9a0-0000-7000-8000-0000000000aa",
++      "entity": "sync_rejection",
++      "id": "0199b9a0-0000-7000-8000-0000000000b1",
++      "kind": "patch",
++      "fields": { "dismissedAt": "2026-10-05T08:00:00.000Z" },
++      "clientTs": "2026-10-05T08:00:00.000Z",
++      "protocol": 1,
++      "attempts": 2
++    },
++    {
++      "opId": "0199b9a0-0000-7000-8000-000000000002",
++      "userId": "0199b9a0-0000-7000-8000-0000000000aa",
++      "entity": "sync_rejection",
++      "id": "0199b9a0-0000-7000-8000-0000000000b1",
++      "kind": "patch",
++      "fields": { "dismissedAt": "2026-10-05T09:30:00.000Z" },
++      "clientTs": "2026-10-05T09:30:00.000Z",
++      "protocol": 1,
++      "attempts": 0
++    }
++  ],
++  "deadletter": [],
++  "mirrors": {
++    "sync_rejection": [
++      {
++        "id": "0199b9a0-0000-7000-8000-0000000000b1",
++        "ownerId": "0199b9a0-0000-7000-8000-0000000000aa",
++        "rev": 41,
++        "createdAt": "2026-10-04T18:00:00.000Z",
++        "updatedAt": "2026-10-05T09:30:00.000Z",
++        "updatedBy": null,
++        "deletedAt": null,
++        "opId": "0199b9a0-0000-7000-8000-0000000000c1",
++        "entity": "sync_rejection",
++        "rowId": "0199b9a0-0000-7000-8000-0000000000b0",
++        "code": "validation",
++        "detailJson": { "reason": "dismissed_at" },
++        "dismissedAt": "2026-10-05T09:30:00.000Z",
++        "serverRevSeen": 41
++      }
++    ],
++    "training_profile": [
++      {
++        "id": "0199b9a0-0000-7000-8000-0000000000aa",
++        "ownerId": "0199b9a0-0000-7000-8000-0000000000aa",
++        "rev": 40,
++        "createdAt": "2026-10-01T12:00:00.000Z",
++        "updatedAt": "2026-10-01T12:05:00.000Z",
++        "updatedBy": "0199b9a0-0000-7000-8000-0000000000aa",
++        "deletedAt": null,
++        "goal": "muscle",
++        "experience": "none",
++        "daysPerWeek": 3,
++        "sessionMinutes": 45,
++        "sportCode": null,
++        "sportOtherLabel": null,
++        "cautiousMode": false,
++        "serverRevSeen": 40
++      }
++    ]
++  }
++}
+diff --git a/apps/web/test/local-db/db.test.ts b/apps/web/test/local-db/db.test.ts
+new file mode 100644
+index 0000000..c3024e9
+--- /dev/null
++++ b/apps/web/test/local-db/db.test.ts
+@@ -0,0 +1,97 @@
++import { entityRules, mirroredTables, snakeToCamel } from '@appsport/contracts';
++import { afterEach, describe, expect, it } from 'vitest';
++import {
++  type AppDb,
++  createAppDb,
++  LOCAL_DB_NAME,
++  LOCAL_DB_VERSION,
++  mirrorStoreNames,
++  NON_MIRROR_STORES,
++  STORE_SCHEMAS,
++} from '../../src/local-db/db';
++import { deleteMeta, getMeta, setMeta } from '../../src/local-db/meta';
++import { createTestLocalDb, FIXTURE_MIRRORS } from '../support/local-db';
++
++/** 'id, [type+createdAt]' → ['id', 'type', 'createdAt']. */
++const indexedFields = (schema: string): string[] =>
++  schema
++    .split(',')
++    .map((s) => s.trim().replace(/^[&*]|^\[|\]$/g, ''))
++    .flatMap((s) => s.split('+'));
++
++const opened: AppDb[] = [];
++afterEach(async () => {
++  for (const db of opened.splice(0)) await db.delete();
++});
++
++describe('STORE_SCHEMAS', () => {
++  it('a un magasin par table miroir du registre, plus les magasins internes', () => {
++    expect(
++      Object.keys(STORE_SCHEMAS)
++        .filter((s) => !NON_MIRROR_STORES.includes(s))
++        .sort(),
++    ).toEqual(mirroredTables(entityRules));
++    for (const s of NON_MIRROR_STORES) expect(STORE_SCHEMAS).toHaveProperty(s);
++  });
++
++  it("n'indexe que des colonnes du registre (camelCase) dans les miroirs", () => {
++    for (const store of mirroredTables(entityRules)) {
++      const rule = entityRules[store];
++      const columns = (rule?.columns ?? []).map(snakeToCamel);
++      for (const field of indexedFields(STORE_SCHEMAS[store] ?? '')) expect(columns, store).toContain(field);
++    }
++  });
++});
++
++describe('createAppDb', () => {
++  it("ouvre la base 'appsport' à LOCAL_DB_VERSION", async () => {
++    const db = createAppDb();
++    opened.push(db);
++    await db.open();
++    expect(db.name).toBe(LOCAL_DB_NAME);
++    expect(LOCAL_DB_NAME).toBe('appsport');
++    expect(db.verno).toBe(LOCAL_DB_VERSION);
++  });
++
++  it('ajoute les miroirs supplémentaires et les liste', async () => {
++    const db = createAppDb(`extra-${crypto.randomUUID()}`, { extraMirrors: FIXTURE_MIRRORS });
++    opened.push(db);
++    expect(mirrorStoreNames(db)).toEqual(
++      [...mirroredTables(entityRules), ...Object.keys(FIXTURE_MIRRORS)].sort(),
++    );
++    await db.mirror('fixture_note').put({ id: 'n1', serverRevSeen: null, deletedAt: null });
++    expect(await db.mirror('fixture_note').count()).toBe(1);
++  });
++
++  it('refuse un miroir inconnu', () => {
++    const db = createTestLocalDb();
++    opened.push(db);
++    expect(() => db.mirror('nope')).toThrow(/nope/);
++    expect(() => db.mirror('outbox')).toThrow(/outbox/);
++  });
++
++  it('expose les tables internes', async () => {
++    const db = createTestLocalDb();
++    opened.push(db);
++    await db.open();
++    expect(db.meta.name).toBe('meta');
++    expect(db.outbox.schema.primKey.name).toBe('opId');
++    expect(db.deadletter.schema.primKey.name).toBe('opId');
++  });
++});
++
++describe('meta', () => {
++  it('écrit, relit et supprime une valeur ; clé absente → undefined', async () => {
++    const db = createTestLocalDb();
++    opened.push(db);
++    expect(await getMeta(db, 'watermark')).toBeUndefined();
++    await setMeta(db, 'watermark', 'e1:42');
++    await setMeta(db, 'protocol', 1);
++    await setMeta(db, 'activeSessionId', null);
++    expect(await getMeta(db, 'watermark')).toBe('e1:42');
++    expect(await getMeta(db, 'protocol')).toBe(1);
++    expect(await getMeta(db, 'activeSessionId')).toBeNull();
++    await deleteMeta(db, 'watermark');
++    expect(await getMeta(db, 'watermark')).toBeUndefined();
++  });
++});
+diff --git a/apps/web/test/local-db/frozen-v1.test.ts b/apps/web/test/local-db/frozen-v1.test.ts
+new file mode 100644
+index 0000000..24fd65c
+--- /dev/null
++++ b/apps/web/test/local-db/frozen-v1.test.ts
+@@ -0,0 +1,26 @@
++import { afterEach, expect, it } from 'vitest';
++import { type AppDb, createAppDb, LOCAL_DB_VERSION } from '../../src/local-db/db';
++import { getMeta } from '../../src/local-db/meta';
++import { convertOutboxOp } from '../../src/sync/protocol-converters';
++import { loadFrozenLocalDb, readFrozenDump } from '../support/local-db';
++
++let db: AppDb | undefined;
++afterEach(async () => {
++  await db?.delete();
++});
++
++// R-VER-5 : une base locale v1 figée s'ouvre avec la version courante, sans perte.
++it('ouvre le jeu figé v1 avec la version courante', async () => {
++  const name = `frozen-v1-${crypto.randomUUID()}`;
++  await loadFrozenLocalDb(1, name);
++  const dump = await readFrozenDump(1);
++  db = createAppDb(name);
++  await db.open();
++  expect(db.verno).toBe(LOCAL_DB_VERSION);
++  expect(await db.outbox.toArray()).toEqual(dump.outbox.map((op) => convertOutboxOp(op)));
++  for (const [store, rows] of Object.entries(dump.mirrors)) {
++    expect(await db.mirror(store).toArray(), store).toEqual(rows);
++  }
++  expect(await getMeta(db, 'watermark')).toBe('0199b9a0-0000-7000-8000-0000000000e1:42');
++  expect(await getMeta(db, 'deviceId')).toBe(dump.meta.deviceId);
++});
+diff --git a/apps/web/test/local-db/wipe.test.ts b/apps/web/test/local-db/wipe.test.ts
+new file mode 100644
+index 0000000..946c7e5
+--- /dev/null
++++ b/apps/web/test/local-db/wipe.test.ts
+@@ -0,0 +1,164 @@
++import { makeOp, SYNC_FIXTURE_RULES } from '@appsport/server/testing';
++import { afterEach, beforeEach, describe, expect, it } from 'vitest';
++import { localHealthConsentActive } from '../../src/local-db/consent';
++import { type AppDb, type DeadletterEntry, mirrorStoreNames } from '../../src/local-db/db';
++import { getMeta, setMeta, USER_META_KEYS } from '../../src/local-db/meta';
++import { clearMirrors, purgeHealthData, wipeUserData } from '../../src/local-db/wipe';
++import { createFixtureLocalDb, createTestLocalDb, dumpLocalDb } from '../support/local-db';
++
++const W = 'TEMOIN_SANTE_7f3a';
++const row = (id: string, extra: Record<string, unknown> = {}) => ({
++  id,
++  ownerId: 'u1',
++  serverRevSeen: 1,
++  deletedAt: null,
++  ...extra,
++});
++const dead = (opId: string, entity: string, detail: unknown): DeadletterEntry => ({
++  opId,
++  userId: 'u1',
++  entity,
++  id: 'x',
++  code: 'validation',
++  detail,
++  receivedAt: '2026-10-06T10:00:00.000Z',
++});
++
++let db: AppDb;
++afterEach(async () => {
++  await db.delete();
++});
++
++async function mirrorCounts(): Promise<Record<string, number>> {
++  const out: Record<string, number> = {};
++  for (const s of mirrorStoreNames(db)) out[s] = await db.mirror(s).count();
++  return out;
++}
++
++describe('wipeUserData et clearMirrors', () => {
++  beforeEach(async () => {
++    db = createTestLocalDb();
++    await db.mirror('training_profile').put(row('u1', { goal: 'muscle', cautiousMode: false }));
++    await db.mirror('gym').put(row('g1', { name: 'Salle', nameKey: 'salle' }));
++    await db.mirror('sync_rejection').put(row('r1', { dismissedAt: null }));
++    await setMeta(db, 'deviceId', 'dev1');
++    await setMeta(db, 'catalogVersion', 'cat1');
++    await setMeta(db, 'userId', 'u1');
++    await setMeta(db, 'watermark', 'e1:4');
++    await setMeta(db, 'serverEpoch', 'e1');
++    await setMeta(db, 'lastPullOkAt', '2026-10-06T10:00:00.000Z');
++    await setMeta(db, 'activeSessionId', null);
++    await db.outbox.put(makeOp({ userId: 'u1', entity: 'sync_rejection', id: 'r1', kind: 'patch' }));
++    await db.deadletter.put(dead('0199b9a0-0000-7000-8000-000000000009', 'sync_rejection', {}));
++    await db.table('exercises').put({ id: 'squat' });
++  });
++
++  it('keepOutbox true : miroirs et clés utilisateur vidés ; outbox, deadletter, appareil et catalogue gardés', async () => {
++    await wipeUserData(db, { keepOutbox: true });
++    expect(Object.values(await mirrorCounts()).every((n) => n === 0)).toBe(true);
++    for (const k of USER_META_KEYS) expect(await getMeta(db, k), k).toBeUndefined();
++    expect(await db.outbox.count()).toBe(1);
++    expect(await db.deadletter.count()).toBe(1);
++    expect(await getMeta(db, 'deviceId')).toBe('dev1');
++    expect(await getMeta(db, 'catalogVersion')).toBe('cat1');
++    expect(await db.table('exercises').count()).toBe(1);
++  });
++
++  it('keepOutbox false : outbox et deadletter vidés aussi', async () => {
++    await wipeUserData(db, { keepOutbox: false });
++    expect(Object.values(await mirrorCounts()).every((n) => n === 0)).toBe(true);
++    expect(await db.outbox.count()).toBe(0);
++    expect(await db.deadletter.count()).toBe(0);
++    expect(await getMeta(db, 'deviceId')).toBe('dev1');
++    expect(await db.table('exercises').count()).toBe(1);
++  });
++
++  it('clearMirrors ne vide que les miroirs', async () => {
++    await clearMirrors(db);
++    expect(Object.values(await mirrorCounts()).every((n) => n === 0)).toBe(true);
++    expect(await getMeta(db, 'watermark')).toBe('e1:4');
++    expect(await db.outbox.count()).toBe(1);
++    expect(await db.deadletter.count()).toBe(1);
++  });
++});
++
++describe('localHealthConsentActive', () => {
++  beforeEach(() => {
++    db = createTestLocalDb();
++  });
++  const event = (id: string, type: string, action: string, createdAt: string) =>
++    row(id, { type, action, textVersion: '1.0', createdAt });
++
++  it('aucun → false ; grant → true ; grant puis withdraw → false', async () => {
++    expect(await localHealthConsentActive(db)).toBe(false);
++    await db.mirror('consent_event').put(event('e1', 'health', 'grant', '2026-10-01T10:00:00.000Z'));
++    await db.mirror('consent_event').put(event('e0', 'ai_coach', 'withdraw', '2026-10-03T10:00:00.000Z'));
++    expect(await localHealthConsentActive(db)).toBe(true);
++    await db.mirror('consent_event').put(event('e2', 'health', 'withdraw', '2026-10-02T10:00:00.000Z'));
++    expect(await localHealthConsentActive(db)).toBe(false);
++  });
++});
++
++describe('purgeHealthData', () => {
++  beforeEach(() => {
++    db = createFixtureLocalDb();
++  });
++
++  it('efface les données de santé des miroirs, de l’outbox et de la deadletter', async () => {
++    await db.mirror('health_screening').put(row('u1', { caution: true, questionnaireVersion: '1' }));
++    await db.mirror('limitation').put(row('l1', { bodyArea: 'knee', note: W, active: true }));
++    await db.mirror('fixture_c2_log').put(row('c1', { value: W }));
++    await db.mirror('fixture_note').put(row('n1', { title: 't' }));
++    await db
++      .mirror('fixture_note_item')
++      .bulkPut([
++        row('i1', { noteId: 'n1', label: 'x', painNote: W, reason: 'pain' }),
++        row('i2', { noteId: 'n1', label: 'y', painNote: null, reason: 'fatigue' }),
++      ]);
++    await db.outbox.bulkPut([
++      makeOp({ userId: 'u1', entity: 'fixture_c2_log', id: 'c1', kind: 'create', fields: { value: W } }),
++      makeOp({
++        userId: 'u1',
++        entity: 'fixture_note_item',
++        id: 'i1',
++        kind: 'patch',
++        fields: { painNote: W, label: 'x' },
++      }),
++      makeOp({ userId: 'u1', entity: 'fixture_note_item', id: 'i1', kind: 'patch', fields: { painNote: W } }),
++    ]);
++    await db.deadletter.bulkPut([
++      dead('0199b9a0-0000-7000-8000-000000000011', 'fixture_c2_log', { value: W }),
++      dead('0199b9a0-0000-7000-8000-000000000012', 'fixture_note', { reason: 'title' }),
++    ]);
++
++    expect(await purgeHealthData(db, SYNC_FIXTURE_RULES)).toEqual({
++      rowsCleared: 4,
++      opsRemoved: 2,
++      opsStripped: 1,
++    });
++
++    expect(await dumpLocalDb(db)).not.toContain(W);
++    expect((await db.outbox.toArray()).map((o) => o.fields)).toEqual([{ label: 'x' }]);
++    expect(await db.mirror('health_screening').count()).toBe(0);
++    expect(await db.mirror('limitation').count()).toBe(0);
++    expect(await db.mirror('fixture_c2_log').count()).toBe(0);
++    expect(await db.mirror('fixture_note_item').get('i1')).toMatchObject({
++      painNote: null,
++      reason: null,
++      label: 'x',
++    });
++    expect(await db.mirror('fixture_note_item').get('i2')).toMatchObject({ reason: 'fatigue' });
++    expect(await db.mirror('fixture_note').get('n1')).toMatchObject({ title: 't' });
++    expect((await db.deadletter.toArray()).map((d) => d.entity)).toEqual(['fixture_note']);
++  });
++
++  it('sans règle : registre du socle', async () => {
++    db.close();
++    await db.delete();
++    db = createTestLocalDb();
++    await db.mirror('limitation').put(row('l1', { note: W }));
++    await db.mirror('place').put(row('p1', { name: 'Maison' }));
++    expect(await purgeHealthData(db)).toEqual({ rowsCleared: 1, opsRemoved: 0, opsStripped: 0 });
++    expect(await db.mirror('place').count()).toBe(1);
++  });
++});
+diff --git a/apps/web/test/support/local-db.ts b/apps/web/test/support/local-db.ts
+new file mode 100644
+index 0000000..ba48027
+--- /dev/null
++++ b/apps/web/test/support/local-db.ts
+@@ -0,0 +1,76 @@
++import 'fake-indexeddb/auto';
++import Dexie from 'dexie';
++import {
++  type AppDb,
++  createAppDb,
++  type DeadletterEntry,
++  type MirrorRow,
++  type OutboxOp,
++} from '../../src/local-db/db';
++import dumpV1 from '../fixtures/local-db/v1/dump.json';
++
++// Dexie lit indexedDB au chargement du module : un import antérieur à fake-indexeddb le laisserait vide.
++Dexie.dependencies.indexedDB = indexedDB;
++Dexie.dependencies.IDBKeyRange = IDBKeyRange;
++
++/** Miroirs des tables J de test (`SYNC_FIXTURE_RULES`). */
++export const FIXTURE_MIRRORS: Record<string, string> = {
++  fixture_note: 'id',
++  fixture_note_item: 'id, noteId',
++  fixture_c2_log: 'id',
++};
++
++let counter = 0;
++const uniqueName = (prefix: string): string => `${prefix}-${++counter}-${crypto.randomUUID()}`;
++
++export function createTestLocalDb(name: string = uniqueName('test')): AppDb {
++  return createAppDb(name);
++}
++
++export function createFixtureLocalDb(name: string = uniqueName('fixture')): AppDb {
++  return createAppDb(name, { extraMirrors: FIXTURE_MIRRORS });
++}
++
++/** Jeu figé d'une version de la base locale (`test/fixtures/local-db/v<n>/dump.json`). */
++export interface FrozenLocalDbDump {
++  localDbVersion: number;
++  protocol: number;
++  stores: Record<string, string>;
++  meta: Record<string, unknown>;
++  outbox: OutboxOp[];
++  deadletter: DeadletterEntry[];
++  mirrors: Record<string, MirrorRow[]>;
++}
++
++const FROZEN_DUMPS: Record<number, unknown> = { 1: dumpV1 };
++
++export async function readFrozenDump(version: number): Promise<FrozenLocalDbDump> {
++  const dump = FROZEN_DUMPS[version];
++  if (!dump) throw new Error(`no frozen local db v${version}`);
++  return structuredClone(dump) as FrozenLocalDbDump;
++}
++
++/** Écrit le jeu figé `version` dans la base `name`, avec le schéma de cette version, puis la ferme. */
++export async function loadFrozenLocalDb(version: number, name: string): Promise<void> {
++  const dump = await readFrozenDump(version);
++  const db = new Dexie(name);
++  db.version(dump.localDbVersion).stores(dump.stores);
++  await db.open();
++  try {
++    await db.transaction('rw', db.tables, async () => {
++      await db.table('meta').bulkPut(Object.entries(dump.meta).map(([key, value]) => ({ key, value })));
++      await db.table('outbox').bulkPut(dump.outbox);
++      await db.table('deadletter').bulkPut(dump.deadletter);
++      for (const [store, rows] of Object.entries(dump.mirrors)) await db.table(store).bulkPut(rows);
++    });
++  } finally {
++    db.close();
++  }
++}
++
++/** JSON de toutes les tables, pour chercher une valeur témoin. */
++export async function dumpLocalDb(db: AppDb): Promise<string> {
++  const out: Record<string, unknown[]> = {};
++  for (const table of db.tables) out[table.name] = await table.toArray();
++  return JSON.stringify(out);
++}
+diff --git a/apps/web/test/sync/outbox.test.ts b/apps/web/test/sync/outbox.test.ts
+new file mode 100644
+index 0000000..44df235
+--- /dev/null
++++ b/apps/web/test/sync/outbox.test.ts
+@@ -0,0 +1,205 @@
++import { SYNC_FIXTURE_RULES, seqIds } from '@appsport/server/testing';
++import { afterEach, beforeEach, describe, expect, it } from 'vitest';
++import type { AppDb } from '../../src/local-db/db';
++import { HealthConsentRequiredError, pendingCount, writeLocal } from '../../src/sync/outbox';
++import { createFixtureLocalDb } from '../support/local-db';
++
++const NOW = '2026-10-06T10:00:00.000Z';
++const LATER = '2026-10-06T11:00:00.000Z';
++
++let db: AppDb;
++let ctx: Parameters<typeof writeLocal>[2];
++
++beforeEach(() => {
++  db = createFixtureLocalDb();
++  const ids = seqIds(25);
++  ctx = {
++    userId: 'u1',
++    now: () => NOW,
++    newOpId: ids.uuidv7,
++    healthConsentActive: true,
++    rules: SYNC_FIXTURE_RULES,
++  };
++});
++afterEach(async () => {
++  await db.delete();
++});
++
++const createNote = () =>
++  writeLocal(db, { entity: 'fixture_note', id: 'n1', kind: 'create', fields: { title: 't' } }, ctx);
++
++describe('writeLocal', () => {
++  it('écrit la ligne miroir et l’op dans l’outbox', async () => {
++    const op = await createNote();
++    expect(await db.mirror('fixture_note').get('n1')).toEqual({
++      id: 'n1',
++      ownerId: 'u1',
++      title: 't',
++      serverRevSeen: null,
++      deletedAt: null,
++      updatedAt: NOW,
++    });
++    expect(await db.outbox.get(op.opId)).toEqual({
++      ...op,
++      userId: 'u1',
++      protocol: 1,
++      attempts: 0,
++      clientTs: NOW,
++    });
++    expect(op).toMatchObject({ entity: 'fixture_note', id: 'n1', kind: 'create', fields: { title: 't' } });
++  });
++
++  it('opId en double : ni ligne ni op (une seule transaction)', async () => {
++    const op = await createNote();
++    const dup = { ...ctx, newOpId: () => op.opId };
++    await expect(
++      writeLocal(db, { entity: 'fixture_note', id: 'n2', kind: 'create', fields: { title: 'u' } }, dup),
++    ).rejects.toThrow();
++    expect(await db.mirror('fixture_note').get('n2')).toBeUndefined();
++    expect(await db.outbox.count()).toBe(1);
++  });
++
++  it('opId invalide : exception, rien d’écrit', async () => {
++    await expect(
++      writeLocal(
++        db,
++        { entity: 'fixture_note', id: 'n1', kind: 'create', fields: { title: 't' } },
++        {
++          ...ctx,
++          newOpId: () => 'pas-un-uuid',
++        },
++      ),
++    ).rejects.toThrow();
++    expect(await db.mirror('fixture_note').count()).toBe(0);
++    expect(await db.outbox.count()).toBe(0);
++  });
++
++  it('refuse un champ hors clientWritable et une entité non J', async () => {
++    await expect(
++      writeLocal(
++        db,
++        { entity: 'fixture_note', id: 'n1', kind: 'create', fields: { title: 't', ownerId: 'x' } },
++        ctx,
++      ),
++    ).rejects.toThrow('field_not_writable:ownerId');
++    await expect(
++      writeLocal(
++        db,
++        { entity: 'training_profile', id: 'u1', kind: 'patch', fields: { goal: 'muscle' } },
++        ctx,
++      ),
++    ).rejects.toThrow('entity_not_journal');
++    await expect(
++      writeLocal(db, { entity: 'nope', id: 'x', kind: 'create', fields: {} }, ctx),
++    ).rejects.toThrow('entity_not_journal');
++    expect(await db.outbox.count()).toBe(0);
++    expect(await db.mirror('fixture_note').count()).toBe(0);
++  });
++
++  it('sans consentement : champs et valeurs C2 retirés, table C2 refusée', async () => {
++    const noConsent = { ...ctx, healthConsentActive: false };
++    const op = await writeLocal(
++      db,
++      {
++        entity: 'fixture_note_item',
++        id: 'i1',
++        kind: 'create',
++        fields: { noteId: 'n1', label: 'x', painNote: 'TEMOIN', reason: 'pain' },
++      },
++      noConsent,
++    );
++    expect(op.fields).toEqual({ noteId: 'n1', label: 'x' });
++    const row = await db.mirror('fixture_note_item').get('i1');
++    expect(row).not.toHaveProperty('painNote');
++    expect(row).not.toHaveProperty('reason');
++
++    const kept = await writeLocal(
++      db,
++      {
++        entity: 'fixture_note_item',
++        id: 'i2',
++        kind: 'create',
++        fields: { noteId: 'n1', label: 'y', reason: 'fatigue' },
++      },
++      noConsent,
++    );
++    expect(kept.fields).toEqual({ noteId: 'n1', label: 'y', reason: 'fatigue' });
++    expect(await db.mirror('fixture_note_item').get('i2')).toMatchObject({ reason: 'fatigue' });
++
++    await expect(
++      writeLocal(db, { entity: 'fixture_c2_log', id: 'c1', kind: 'create', fields: { value: 3 } }, noConsent),
++    ).rejects.toBeInstanceOf(HealthConsentRequiredError);
++    expect(await db.mirror('fixture_c2_log').count()).toBe(0);
++    expect(await db.outbox.count()).toBe(2);
++  });
++
++  it('avec consentement : champs C2 gardés', async () => {
++    const op = await writeLocal(
++      db,
++      {
++        entity: 'fixture_note_item',
++        id: 'i1',
++        kind: 'create',
++        fields: { noteId: 'n1', label: 'x', painNote: 'p' },
++      },
++      ctx,
++    );
++    expect(op.fields).toEqual({ noteId: 'n1', label: 'x', painNote: 'p' });
++  });
++
++  it('patch fusionne, delete pose deletedAt ; les deux posent updatedAt', async () => {
++    await createNote();
++    const later = { ...ctx, now: () => LATER };
++    await writeLocal(db, { entity: 'fixture_note', id: 'n1', kind: 'patch', fields: { body: 'b' } }, later);
++    expect(await db.mirror('fixture_note').get('n1')).toEqual({
++      id: 'n1',
++      ownerId: 'u1',
++      title: 't',
++      body: 'b',
++      serverRevSeen: null,
++      deletedAt: null,
++      updatedAt: LATER,
++    });
++    const end = '2026-10-06T12:00:00.000Z';
++    const del = await writeLocal(
++      db,
++      { entity: 'fixture_note', id: 'n1', kind: 'delete', fields: {} },
++      {
++        ...ctx,
++        now: () => end,
++      },
++    );
++    expect(del.kind).toBe('delete');
++    expect(await db.mirror('fixture_note').get('n1')).toMatchObject({
++      deletedAt: end,
++      updatedAt: end,
++      body: 'b',
++    });
++    expect(await db.outbox.count()).toBe(3);
++  });
++
++  it('patch d’une ligne absente : row_missing, rien d’écrit', async () => {
++    await expect(
++      writeLocal(db, { entity: 'fixture_note', id: 'n9', kind: 'patch', fields: { body: 'b' } }, ctx),
++    ).rejects.toThrow('row_missing');
++    expect(await db.outbox.count()).toBe(0);
++  });
++});
++
++describe('pendingCount', () => {
++  it('compte les ops par utilisateur', async () => {
++    await createNote();
++    await writeLocal(db, { entity: 'fixture_note', id: 'n1', kind: 'patch', fields: { body: 'b' } }, ctx);
++    await writeLocal(
++      db,
++      { entity: 'fixture_note', id: 'n2', kind: 'create', fields: { title: 'v' } },
++      {
++        ...ctx,
++        userId: 'u2',
++      },
++    );
++    expect(await pendingCount(db, 'u1')).toBe(2);
++    expect(await pendingCount(db, 'u2')).toBe(1);
++    expect(await pendingCount(db, 'u3')).toBe(0);
++  });
++});
+diff --git a/apps/web/test/sync/protocol-converters.test.ts b/apps/web/test/sync/protocol-converters.test.ts
+new file mode 100644
+index 0000000..76b141a
+--- /dev/null
++++ b/apps/web/test/sync/protocol-converters.test.ts
+@@ -0,0 +1,22 @@
++import { SYNC_PROTOCOL } from '@appsport/contracts';
++import { makeOp } from '@appsport/server/testing';
++import { describe, expect, it } from 'vitest';
++import { convertOutboxOp, OUTBOX_CONVERTERS } from '../../src/sync/protocol-converters';
++
++const opV1 = makeOp({ userId: 'u1', entity: 'sync_rejection', id: 'r1', kind: 'patch', protocol: 1 });
++
++describe('convertOutboxOp', () => {
++  it('a un maillon pour chaque protocole antérieur', () => {
++    for (let p = 1; p < SYNC_PROTOCOL; p++) expect(OUTBOX_CONVERTERS[p], `v${p}`).toBeTypeOf('function');
++  });
++
++  it('amène une op v1 au protocole courant', () => {
++    expect(convertOutboxOp(opV1).protocol).toBe(SYNC_PROTOCOL);
++    expect(convertOutboxOp(opV1, 1)).toEqual(opV1);
++  });
++
++  it('lève si un maillon manque', () => {
++    expect(() => convertOutboxOp(opV1, 3)).toThrow(/v2/);
++    expect(() => convertOutboxOp(opV1, 3)).toThrow('outbox converter missing: v1 → v2');
++  });
++});
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index ac8d2e8..9166176 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -53,24 +53,33 @@ importers:
+         version: 4.23.15
+ 
+   apps/web:
+     dependencies:
+       '@appsport/contracts':
+         specifier: workspace:*
+         version: link:../../packages/contracts
+       '@appsport/domain':
+         specifier: workspace:*
+         version: link:../../packages/domain
++      dexie:
++        specifier: ^4.4.6
++        version: 4.4.6
++      zod:
++        specifier: ^4.6.5
++        version: 4.6.5
+     devDependencies:
+       '@appsport/server':
+         specifier: workspace:*
+         version: link:../server
++      fake-indexeddb:
++        specifier: ^6.2.5
++        version: 6.2.5
+       happy-dom:
+         specifier: ^20
+         version: 20.14.5
+ 
+   packages/contracts:
+     dependencies:
+       zod:
+         specifier: ^4.6.5
+         version: 4.6.5
+ 
+@@ -585,39 +594,46 @@ packages:
+     engines: {node: '>=4.0'}
+ 
+   chai@6.3.0:
+     resolution: {integrity: sha512-XWAtwJ6OHO+tj0EKCs0Y2UamnyOxseZWltU4x2U2wh8g4AigdjwvtUjvLP2tqkA/avxHEtzxNaqGq/YGNwckKg==}
+     engines: {node: '>=18'}
+ 
+   detect-libc@2.1.2:
+     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
+     engines: {node: '>=8'}
+ 
++  dexie@4.4.6:
++    resolution: {integrity: sha512-hJP/BO6mjB+tX6hToIO1kmxYLNmun90wYbfcoAoLpKEyDYal/k33dg0TAfoUe2TDsbbLoVIzljJ3BN2UbR5EOg==}
++
+   entities@7.0.1:
+     resolution: {integrity: sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA==}
+     engines: {node: '>=0.12'}
+ 
+   es-module-lexer@2.3.2:
+     resolution: {integrity: sha512-poHGpORABojJJucnV9KbOavETW8lBVnphkW77ER5/BQ5Fz7oXSoCNek7IH3vR5nRjdsEz926ibFYX8KtLQmdyw==}
+ 
+   esbuild@0.28.2:
+     resolution: {integrity: sha512-HKVLS8dvII+xoKW9kmqxbRKrnWEXfJJr/FZhhJmiqIB0e053QNYFqOBouTMO/k5sID4MvCiUCvv8b9M4h32wIA==}
+     engines: {node: '>=18'}
+     hasBin: true
+ 
+   estree-walker@3.0.3:
+     resolution: {integrity: sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g==}
+ 
+   expect-type@1.4.0:
+     resolution: {integrity: sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==}
+     engines: {node: '>=12.0.0'}
+ 
++  fake-indexeddb@6.2.5:
++    resolution: {integrity: sha512-CGnyrvbhPlWYMngksqrSSUT1BAVP49dZocrHuK0SvtR0D5TMs5wP0o3j7jexDJW01KSadjBp1M/71o/KR3nD1w==}
++    engines: {node: '>=18'}
++
+   fast-check@4.10.2:
+     resolution: {integrity: sha512-iK2f+YrcmoeGqk6fA0ea2bptcu/itMIm4NfEozq6N25+aG6h7s5HZbB/k1aV7b5w5sFLMCbbtRUsTVR+BgC3xw==}
+     engines: {node: '>=12.17.0'}
+ 
+   fdir@6.5.0:
+     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
+     engines: {node: '>=12.0.0'}
+     peerDependencies:
+       picomatch: ^3 || ^4
+     peerDependenciesMeta:
+@@ -1168,20 +1184,22 @@ snapshots:
+       node-addon-api: 8.9.2
+ 
+   buffer-image-size@0.6.4:
+     dependencies:
+       '@types/node': 24.19.1
+ 
+   chai@6.3.0: {}
+ 
+   detect-libc@2.1.2: {}
+ 
++  dexie@4.4.6: {}
++
+   entities@7.0.1: {}
+ 
+   es-module-lexer@2.3.2: {}
+ 
+   esbuild@0.28.2:
+     optionalDependencies:
+       '@esbuild/aix-ppc64': 0.28.2
+       '@esbuild/android-arm': 0.28.2
+       '@esbuild/android-arm64': 0.28.2
+       '@esbuild/android-x64': 0.28.2
+@@ -1207,20 +1225,22 @@ snapshots:
+       '@esbuild/win32-arm64': 0.28.2
+       '@esbuild/win32-ia32': 0.28.2
+       '@esbuild/win32-x64': 0.28.2
+ 
+   estree-walker@3.0.3:
+     dependencies:
+       '@types/estree': 1.0.9
+ 
+   expect-type@1.4.0: {}
+ 
++  fake-indexeddb@6.2.5: {}
++
+   fast-check@4.10.2:
+     dependencies:
+       pure-rand: 8.4.2
+ 
+   fdir@6.5.0(picomatch@4.0.7):
+     optionalDependencies:
+       picomatch: 4.0.7
+ 
+   fsevents@2.3.3:
+     optional: true

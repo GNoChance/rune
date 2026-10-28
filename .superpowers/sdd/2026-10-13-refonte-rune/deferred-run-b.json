@@ -1,0 +1,18 @@
+[
+ "T0-F2 apps/server/test/infra/name.test.ts: The two exact exceptions apply in every file and every path",
+ "T1-F8 apps/web/src/ui/theme/fonts.css: File list deviation: fonts.css and test/support/css-blocks.ts instead of fonts.ts",
+ "T1-F13 apps/web/src/ui/ui.module.css: Tinted banner backgrounds (color-mix) are not contrast-tested",
+ "T1-F14 apps/web/src/ui/theme/tokens.css: Clair --success and Carnet --accent-2 are used as small text but only reach 3:1",
+ "T6 re-review 1 minor: `known` can be true while the mirror is empty",
+ "T14-F5 docs/exploitation/P9-admin-indisponible.md: No-export branches keep the backups forever with no later deletion and no disclosure; step 1 contradicts step 3",
+ "T14-F6 docs/exploitation/P9-admin-indisponible.md: Erasure steps need long hand-typed sudo bash -c and rm -rf lines, with no typo recovery",
+ "T14-F10 apps/server/src/auth/admin-reset.ts: Reactivation takes effect before the reset link is used; the old password works again immediately",
+ "T1 re-review 1 minor: Footer inset makes its centred links sit off-centre in Carnet",
+ "T1 re-review 1 minor: Reported focused test count (69) does not match HEAD (73)",
+ "T2-F3 apps/web/src/ui/Logo.tsx: Mono frame stroke is 24 while light, Carnet and Calme mockups use 28",
+ "T2-F4 apps/web/src/ui/Logo.tsx: Per-theme logo choice left to consumers, glow fails contrast on light themes",
+ "T2-F7 apps/web/public/icons/icon-512.png: Icons grew from about 6 KB to about 370 KB, re-downloaded on every service worker update",
+ "T2-F8 apps/web/test/pwa/manifest.test.ts: Icon pixel tests sample only corners and centre",
+ "T14 re-review 1 minor: The commitment made for the trusted person is missing from P9, the page they actually read",
+ "T14 re-review 1 minor: Step 6 Sinon: « does not exist » overlaps the « unable to open config file » branch and skips removing b2.env"
+]

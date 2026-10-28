@@ -1,0 +1,2945 @@
+# Review package: e957b9a..HEAD
+
+## Commits
+ce5e596 feat(web): onboarding en 8 écrans et choix de la salle ou de la maison
+
+## Files changed
+ apps/web/src/App.tsx                               |  26 +-
+ apps/web/src/app-events.ts                         |   5 +
+ apps/web/src/app-services.tsx                      |   4 +-
+ .../src/features/onboarding/AvailabilityStep.tsx   |  54 ++++
+ .../web/src/features/onboarding/ExperienceStep.tsx |  40 +++
+ apps/web/src/features/onboarding/GoalStep.tsx      |  65 ++++
+ apps/web/src/features/onboarding/HealthStep.tsx    | 292 ++++++++++++++++++
+ .../web/src/features/onboarding/OnboardingFlow.tsx | 115 +++++++
+ apps/web/src/features/onboarding/PlaceKindStep.tsx |  32 ++
+ apps/web/src/features/onboarding/PlaceStep.tsx     | 124 ++++++++
+ apps/web/src/features/onboarding/ReadyStep.tsx     | 105 +++++++
+ apps/web/src/features/onboarding/SportStep.tsx     | 101 ++++++
+ apps/web/src/features/onboarding/StepActions.tsx   |  53 ++++
+ .../src/features/onboarding/onboarding.module.css  | 119 ++++++++
+ .../web/src/features/places/EquipmentChecklist.tsx |  49 +++
+ apps/web/src/features/places/GymCreate.tsx         | 185 +++++++++++
+ apps/web/src/features/places/GymPicker.tsx         | 124 ++++++++
+ apps/web/src/features/places/places.module.css     |  88 ++++++
+ apps/web/src/ui/AppShell.tsx                       |   2 +-
+ apps/web/test/app/use-live.test.tsx                |  38 +++
+ apps/web/test/onboarding/flow.test.tsx             | 145 +++++++++
+ apps/web/test/onboarding/health-step.test.tsx      | 183 +++++++++++
+ apps/web/test/onboarding/ready-step.test.tsx       |  91 ++++++
+ apps/web/test/onboarding/steps.test.tsx            | 338 +++++++++++++++++++++
+ apps/web/test/places/gym-picker.test.tsx           | 206 +++++++++++++
+ apps/web/test/support/onboarding.ts                |  98 ++++++
+ 26 files changed, 2674 insertions(+), 8 deletions(-)
+
+## Diff
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+index ab4df20..7ec87bc 100644
+--- a/apps/web/src/App.tsx
++++ b/apps/web/src/App.tsx
+@@ -1,18 +1,19 @@
+ import type { MeResponse } from '@appsport/contracts';
+ import { useEffect, useRef } from 'react';
+ import { Redirect, Route, Switch, useLocation } from 'wouter';
+ import { useMeState, useSyncState } from './app-services';
+ import { InvitePage } from './features/auth/InvitePage';
+ import { LoginPage } from './features/auth/LoginPage';
+ import { ResetPage } from './features/auth/ResetPage';
+ import { HomePage } from './features/home/HomePage';
++import { OnboardingFlow } from './features/onboarding/OnboardingFlow';
+ import { CreditsPage } from './features/public/CreditsPage';
+ import { HelpPage } from './features/public/HelpPage';
+ import { NotFound } from './features/public/NotFound';
+ import { PrivacyPage } from './features/public/PrivacyPage';
+ import { useRepos } from './repos';
+ import type { ConnectionState } from './sync/engine';
+ import { AppShell, PublicShell } from './ui';
+ 
+ /** Pages lisibles sans session (03 §13 : Confidentialité, Crédits, Aide) et parcours d'accès. */
+ export const PUBLIC_PATHS: readonly string[] = [
+@@ -107,22 +108,35 @@ export function App() {
+     case 'wait':
+       return null;
+     case 'redirect':
+       return <Redirect to={guard.to} replace />;
+     case 'not_found':
+       return (
+         <AppShell>
+           <NotFound />
+         </AppShell>
+       );
+-    case 'render':
+-      return PUBLIC_PATHS.includes(normalizePath(path)) ? (
+-        <PublicShell>
+-          <PublicRoutes />
+-        </PublicShell>
+-      ) : (
++    case 'render': {
++      const route = normalizePath(path);
++      if (PUBLIC_PATHS.includes(route)) {
++        return (
++          <PublicShell>
++            <PublicRoutes />
++          </PublicShell>
++        );
++      }
++      // L'onboarding n'a ni navigation de compte ni bandeau de mise à jour.
++      if (route === '/onboarding') {
++        return (
++          <PublicShell>
++            <OnboardingFlow />
++          </PublicShell>
++        );
++      }
++      return (
+         <AppShell>
+           <ConnectedRoutes />
+         </AppShell>
+       );
++    }
+   }
+ }
+diff --git a/apps/web/src/app-events.ts b/apps/web/src/app-events.ts
+new file mode 100644
+index 0000000..28bd360
+--- /dev/null
++++ b/apps/web/src/app-events.ts
+@@ -0,0 +1,5 @@
++/**
++ * Événements de l'appli émis sur `window`. Fin de l'onboarding : émis une fois après la réponse du
++ * serveur, avant le passage à l'accueil (T37 l'écoute pour demander le stockage persistant).
++ */
++export const ONBOARDING_COMPLETED_EVENT = 'appsport:onboarding-completed';
+diff --git a/apps/web/src/app-services.tsx b/apps/web/src/app-services.tsx
+index c8fb8ba..5c71218 100644
+--- a/apps/web/src/app-services.tsx
++++ b/apps/web/src/app-services.tsx
+@@ -36,21 +36,23 @@ export function useServices(): AppServices {
+ export function useSyncState(): SyncState {
+   const { sync } = useServices();
+   return useSyncExternalStore(sync.subscribe, sync.getState);
+ }
+ 
+ /** Requête Dexie observée : `undefined` tant que le premier résultat n'est pas arrivé. */
+ export function useLive<T>(query: () => Promise<T>, deps: readonly unknown[]): T | undefined {
+   const [value, setValue] = useState<T | undefined>(undefined);
+   useEffect(
+     () => {
+-      const subscription = liveQuery(query).subscribe({ next: setValue, error: () => {} });
++      // Requête enveloppée dans une fonction async : Dexie ne suit les lectures faites après un
++      // `await` natif que si la fonction passée à liveQuery est elle-même async.
++      const subscription = liveQuery(async () => query()).subscribe({ next: setValue, error: () => {} });
+       return () => subscription.unsubscribe();
+     },
+     // biome-ignore lint/correctness/useExhaustiveDependencies: dépendances de la requête fournies par l'appelant
+     deps,
+   );
+   return value;
+ }
+ 
+ export interface MeState {
+   loaded: boolean;
+diff --git a/apps/web/src/features/onboarding/AvailabilityStep.tsx b/apps/web/src/features/onboarding/AvailabilityStep.tsx
+new file mode 100644
+index 0000000..5156968
+--- /dev/null
++++ b/apps/web/src/features/onboarding/AvailabilityStep.tsx
+@@ -0,0 +1,54 @@
++import { DAYS_PER_WEEK, SESSION_MINUTES } from '@appsport/contracts';
++import { useState } from 'react';
++import { useLive } from '../../app-services';
++import { useRepos } from '../../repos';
++import { ChoiceList } from '../../ui';
++import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++
++type Days = (typeof DAYS_PER_WEEK)[number];
++type Minutes = (typeof SESSION_MINUTES)[number];
++
++/** E6 Disponibilité : séances par semaine (« 2 », « 3 », « 4 ») et durée (« 30 min » à « 90 min »). */
++export function AvailabilityStep(p: StepProps) {
++  const repos = useRepos();
++  const profile = useLive(() => repos.profile.get(), [repos]);
++  const [days, setDays] = useState<Days | null>(null);
++  const [minutes, setMinutes] = useState<Minutes | null>(null);
++  const save = useSaveStep(p, 'availability');
++  if (profile === undefined) return null;
++  const daysValue = days ?? profile?.daysPerWeek ?? null;
++  const minutesValue = minutes ?? profile?.sessionMinutes ?? null;
++  return (
++    <>
++      <h2>Disponibilité</h2>
++      <ChoiceList<Days>
++        name="days-per-week"
++        legend="Séances par semaine"
++        value={daysValue}
++        onChange={setDays}
++        options={DAYS_PER_WEEK.map((n) => ({ value: n, label: String(n) }))}
++      />
++      <ChoiceList<Minutes>
++        name="session-minutes"
++        legend="Durée d'une séance"
++        value={minutesValue}
++        onChange={setMinutes}
++        options={SESSION_MINUTES.map((n) => ({ value: n, label: `${n} min` }))}
++      />
++      <StepActions
++        onBack={p.onBack}
++        pending={save.pending}
++        error={save.error}
++        primary={{
++          label: saveLabel(p.mode),
++          disabled: daysValue === null || minutesValue === null,
++          onClick: () => {
++            if (daysValue !== null && minutesValue !== null) {
++              void save.run({ daysPerWeek: daysValue, sessionMinutes: minutesValue });
++            }
++          },
++        }}
++      />
++    </>
++  );
++}
+diff --git a/apps/web/src/features/onboarding/ExperienceStep.tsx b/apps/web/src/features/onboarding/ExperienceStep.tsx
+new file mode 100644
+index 0000000..4e10c36
+--- /dev/null
++++ b/apps/web/src/features/onboarding/ExperienceStep.tsx
+@@ -0,0 +1,40 @@
++import { EXPERIENCE_LABELS, EXPERIENCES, type Experience } from '@appsport/contracts';
++import { useState } from 'react';
++import { useLive } from '../../app-services';
++import { useRepos } from '../../repos';
++import { ChoiceList } from '../../ui';
++import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++
++/** E5 Niveau. */
++export function ExperienceStep(p: StepProps) {
++  const repos = useRepos();
++  const profile = useLive(() => repos.profile.get(), [repos]);
++  const [choice, setChoice] = useState<Experience | null>(null);
++  const save = useSaveStep(p, 'experience');
++  if (profile === undefined) return null;
++  const value = choice ?? profile?.experience ?? null;
++  return (
++    <>
++      <h2>Niveau</h2>
++      <ChoiceList<Experience>
++        name="experience"
++        legend="Depuis combien de temps fais-tu de la musculation régulièrement (au moins une fois par semaine) ?"
++        value={value}
++        onChange={setChoice}
++        options={EXPERIENCES.map((e) => ({ value: e, label: EXPERIENCE_LABELS[e] }))}
++      />
++      <StepActions
++        onBack={p.onBack}
++        pending={save.pending}
++        error={save.error}
++        primary={{
++          label: saveLabel(p.mode),
++          disabled: value === null,
++          onClick: () => {
++            if (value !== null) void save.run({ experience: value });
++          },
++        }}
++      />
++    </>
++  );
++}
+diff --git a/apps/web/src/features/onboarding/GoalStep.tsx b/apps/web/src/features/onboarding/GoalStep.tsx
+new file mode 100644
+index 0000000..8c7e15c
+--- /dev/null
++++ b/apps/web/src/features/onboarding/GoalStep.tsx
+@@ -0,0 +1,65 @@
++import { GOAL_LABELS, type Goal } from '@appsport/contracts';
++import { availableGoals } from '@appsport/domain';
++import { useState } from 'react';
++import { useLive, useMe } from '../../app-services';
++import { useRepos } from '../../repos';
++import { ChoiceList } from '../../ui';
++import { SportStep } from './SportStep';
++import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++
++/**
++ * E1 Objectif : « Perdre du gras » n'est pas proposé à un mineur. En édition, choisir l'objectif
++ * sportif sans sport enregistré mène d'abord au sport, puis un seul PATCH (R-ONB-3).
++ */
++export function GoalStep(p: StepProps) {
++  const repos = useRepos();
++  const me = useMe();
++  const profile = useLive(() => repos.profile.get(), [repos]);
++  const [choice, setChoice] = useState<Goal | null>(null);
++  const [askSport, setAskSport] = useState(false);
++  const save = useSaveStep(p, 'goal');
++  if (!me || profile === undefined) return null;
++
++  const goals = availableGoals(me.ageBand);
++  const saved = profile?.goal ?? null;
++  const value = choice ?? (saved !== null && goals.includes(saved) ? saved : null);
++  const needsSport = p.mode === 'edit' && value === 'sport_support' && !profile?.sportCode;
++
++  if (askSport) {
++    return (
++      <SportStep
++        mode="edit"
++        pendingGoal="sport_support"
++        onNext={p.onNext}
++        onBack={() => setAskSport(false)}
++      />
++    );
++  }
++
++  return (
++    <>
++      <h2>Objectif</h2>
++      <ChoiceList<Goal>
++        name="goal"
++        legend="Quel est ton objectif principal ?"
++        value={value}
++        onChange={setChoice}
++        options={goals.map((g) => ({ value: g, label: GOAL_LABELS[g] }))}
++      />
++      <StepActions
++        onBack={p.onBack}
++        pending={save.pending}
++        error={save.error}
++        primary={{
++          label: needsSport ? 'Suivant' : saveLabel(p.mode),
++          disabled: value === null,
++          onClick: () => {
++            if (value === null) return;
++            if (needsSport) setAskSport(true);
++            else void save.run({ goal: value });
++          },
++        }}
++      />
++    </>
++  );
++}
+diff --git a/apps/web/src/features/onboarding/HealthStep.tsx b/apps/web/src/features/onboarding/HealthStep.tsx
+new file mode 100644
+index 0000000..eaa03dc
+--- /dev/null
++++ b/apps/web/src/features/onboarding/HealthStep.tsx
+@@ -0,0 +1,292 @@
++import {
++  BODY_AREA_LABELS,
++  BODY_AREAS,
++  type BodyArea,
++  HEALTH_CONSENT_TEXT,
++  HEALTH_QUESTIONNAIRE,
++  LIMITATION_NOTE_MAX,
++  LIMITATION_SEVERITIES,
++  LIMITATION_SEVERITY_LABELS,
++  LIMITATION_SIDE_LABELS,
++  LIMITATION_SIDES,
++  type LimitationSeverity,
++  type LimitationSide,
++} from '@appsport/contracts';
++import { useId, useState } from 'react';
++import { useLive, useMe } from '../../app-services';
++import { useRepos } from '../../repos';
++import { Banner, Button, ChoiceList, Field, HealthWarning, useAction } from '../../ui';
++import styles from './onboarding.module.css';
++import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++
++const SELF_CHECK_TEXT =
++  "Si l'une de ces situations te concerne, demande l'avis d'un médecin avant de commencer.";
++const SEE_DOCTOR_TEXT = 'Nous te recommandons de consulter un médecin avant de commencer.';
++
++/** Explication et accord santé (E7.1, P-CST-1) : case jamais pré-cochée, distincte de Confidentialité. */
++export function HealthConsentPanel(p: { onGranted(): void; onSkip?: () => void }) {
++  const repos = useRepos();
++  const [agreed, setAgreed] = useState(false);
++  const grant = useAction(async () => {
++    await repos.consent.grantHealth();
++    p.onGranted();
++  });
++  return (
++    <section className={styles.panel}>
++      <p>
++        Les réponses de cet écran sont des données de santé. Elles servent seulement à adapter tes séances et
++        restent sur le serveur du cercle. Elles ne vont au coach qu'avec son propre accord, en plus de
++        celui-ci. Tu peux les supprimer à tout moment.
++      </p>
++      <label className={styles.check}>
++        <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
++        <span>{HEALTH_CONSENT_TEXT.text}</span>
++      </label>
++      {grant.error ? <Banner tone="error">{grant.error}</Banner> : null}
++      <div className={styles.actions}>
++        {p.onSkip ? (
++          <Button variant="secondary" onClick={p.onSkip}>
++            Passer
++          </Button>
++        ) : null}
++        <Button disabled={!agreed || grant.pending} onClick={() => void grant.run()}>
++          J'accepte et je renseigne
++        </Button>
++      </div>
++    </section>
++  );
++}
++
++type Answer = 'yes' | 'no';
++
++/**
++ * Questionnaire d'alerte (E7.2) : avec accord, réponses envoyées et seul l'indicateur de prudence
++ * est gardé ; sans accord (`record` faux), auto-vérification affichée, rien n'est envoyé (P-CST-2).
++ */
++export function ScreeningQuestions(p: { record: boolean; onSaved?(caution: boolean): void }) {
++  const repos = useRepos();
++  const id = useId();
++  const [answers, setAnswers] = useState<(Answer | null)[]>(() =>
++    HEALTH_QUESTIONNAIRE.questions.map(() => null),
++  );
++  const [caution, setCaution] = useState<boolean | null>(null);
++  const save = useAction(async (a: [boolean, boolean, boolean, boolean]) => {
++    const result = await repos.consent.saveScreening(a);
++    setCaution(result.caution);
++    p.onSaved?.(result.caution);
++  });
++
++  if (!p.record) {
++    return (
++      <section className={styles.panel}>
++        <p>{SELF_CHECK_TEXT}</p>
++        <ul className={styles.questions}>
++          {HEALTH_QUESTIONNAIRE.questions.map((q) => (
++            <li key={q}>{q}</li>
++          ))}
++        </ul>
++      </section>
++    );
++  }
++
++  const [a, b, c, d] = answers.map((x) => (x === null ? null : x === 'yes'));
++  const complete = a != null && b != null && c != null && d != null;
++  return (
++    <section className={styles.panel}>
++      {HEALTH_QUESTIONNAIRE.questions.map((q, i) => (
++        <ChoiceList<Answer>
++          key={q}
++          name={`${id}-screening-${i}`}
++          legend={q}
++          value={answers[i] ?? null}
++          onChange={(v) => setAnswers((prev) => prev.map((x, j) => (j === i ? v : x)))}
++          options={[
++            { value: 'yes', label: 'Oui' },
++            { value: 'no', label: 'Non' },
++          ]}
++        />
++      ))}
++      {save.error ? <Banner tone="error">{save.error}</Banner> : null}
++      {caution === true ? <Banner tone="warning">{SEE_DOCTOR_TEXT}</Banner> : null}
++      {caution === false ? <Banner tone="info">Réponses enregistrées.</Banner> : null}
++      <Button
++        variant="secondary"
++        disabled={!complete || save.pending}
++        onClick={() => {
++          if (complete) void save.run([a, b, c, d]);
++        }}
++      >
++        Enregistrer mes réponses
++      </Button>
++    </section>
++  );
++}
++
++/** Limitations facultatives (E7.3) : zone, côté, gêne et note de 200 caractères au plus. */
++export function LimitationsEditor() {
++  const repos = useRepos();
++  const id = useId();
++  const limitations = useLive(() => repos.consent.limitations(), [repos]);
++  const [bodyArea, setBodyArea] = useState<BodyArea | ''>('');
++  const [side, setSide] = useState<LimitationSide | ''>('');
++  const [severity, setSeverity] = useState<LimitationSeverity | null>(null);
++  const [note, setNote] = useState('');
++  const add = useAction(async () => {
++    if (bodyArea === '' || side === '' || severity === null) return;
++    const trimmed = note.trim();
++    await repos.consent.addLimitation({ bodyArea, side, severity, note: trimmed === '' ? null : trimmed });
++    setBodyArea('');
++    setSide('');
++    setSeverity(null);
++    setNote('');
++  });
++  const remove = useAction((limitationId: string) => repos.consent.removeLimitation(limitationId));
++
++  return (
++    <section className={styles.panel}>
++      <h3>Limitations</h3>
++      <p className={styles.note}>
++        Facultatif : une zone sensible ou une gêne à ménager ; aucun diagnostic n'est nécessaire.
++      </p>
++      {limitations === undefined ? null : limitations.length === 0 ? (
++        <p>Aucune</p>
++      ) : (
++        <ul className={styles.limitations}>
++          {limitations.map((l) => (
++            <li key={l.id} className={styles.limitation}>
++              <span>
++                <span id={`${id}-${l.id}`}>
++                  {`${BODY_AREA_LABELS[l.bodyArea]} · ${LIMITATION_SIDE_LABELS[l.side]} · ${LIMITATION_SEVERITY_LABELS[l.severity]}`}
++                </span>
++                {l.note ? <span className={styles.note}> — {l.note}</span> : null}
++              </span>
++              <Button
++                variant="secondary"
++                aria-describedby={`${id}-${l.id}`}
++                disabled={remove.pending}
++                onClick={() => void remove.run(l.id)}
++              >
++                Supprimer
++              </Button>
++            </li>
++          ))}
++        </ul>
++      )}
++      <Field label="Zone">
++        <select value={bodyArea} onChange={(e) => setBodyArea(e.target.value as BodyArea | '')}>
++          <option value="">Choisir</option>
++          {BODY_AREAS.map((a) => (
++            <option key={a} value={a}>
++              {BODY_AREA_LABELS[a]}
++            </option>
++          ))}
++        </select>
++      </Field>
++      <Field label="Côté">
++        <select value={side} onChange={(e) => setSide(e.target.value as LimitationSide | '')}>
++          <option value="">Choisir</option>
++          {LIMITATION_SIDES.map((s) => (
++            <option key={s} value={s}>
++              {LIMITATION_SIDE_LABELS[s]}
++            </option>
++          ))}
++        </select>
++      </Field>
++      <ChoiceList<LimitationSeverity>
++        name={`${id}-severity`}
++        legend="Gêne"
++        value={severity}
++        onChange={setSeverity}
++        options={LIMITATION_SEVERITIES.map((s) => ({ value: s, label: LIMITATION_SEVERITY_LABELS[s] }))}
++      />
++      <Field label="Note" hint={`${LIMITATION_NOTE_MAX} caractères au plus.`}>
++        <input
++          type="text"
++          maxLength={LIMITATION_NOTE_MAX}
++          value={note}
++          onChange={(e) => setNote(e.target.value)}
++        />
++      </Field>
++      {add.error ? <Banner tone="error">{add.error}</Banner> : null}
++      {remove.error ? <Banner tone="error">{remove.error}</Banner> : null}
++      <Button
++        variant="secondary"
++        disabled={bodyArea === '' || side === '' || severity === null || add.pending}
++        onClick={() => void add.run()}
++      >
++        Ajouter une limitation
++      </Button>
++    </section>
++  );
++}
++
++/** Mode prudent (E7.5, C1) : proposé à tous ; affiché imposé pour un mineur (R-CST-7). */
++export function CautiousModeToggle(p: { value: boolean; minor: boolean; onChange(v: boolean): void }) {
++  const hintId = useId();
++  return (
++    <div className={styles.toggle}>
++      <label className={styles.check}>
++        <input
++          type="checkbox"
++          role="switch"
++          aria-checked={p.minor || p.value}
++          checked={p.minor || p.value}
++          disabled={p.minor}
++          aria-describedby={p.minor ? hintId : undefined}
++          onChange={(e) => p.onChange(e.target.checked)}
++        />
++        <span>Je préfère une progression plus prudente</span>
++      </label>
++      {p.minor ? (
++        <span id={hintId} className={styles.note}>
++          Imposé jusqu'à 18 ans
++        </span>
++      ) : null}
++    </div>
++  );
++}
++
++/**
++ * E7 Santé et prudence, facultatif. Avec accord : questionnaire enregistré et limitations ; sans :
++ * accord proposé, ou auto-vérification après « Passer ». Le mode prudent est un état local, envoyé
++ * au clic sur « Suivant » (R-ONB-2).
++ */
++export function HealthStep(p: StepProps) {
++  const repos = useRepos();
++  const me = useMe();
++  const profile = useLive(() => repos.profile.get(), [repos]);
++  const [skipped, setSkipped] = useState(false);
++  const [cautious, setCautious] = useState<boolean | null>(null);
++  const save = useSaveStep(p, 'health');
++  if (!me || profile === undefined) return null;
++
++  const minor = me.ageBand === 'minor';
++  const stored = profile?.cautiousMode ?? false;
++  const changed = !minor && cautious !== null && cautious !== stored;
++  return (
++    <>
++      <h2>Santé et prudence</h2>
++      {me.consents.health.active ? (
++        <>
++          <ScreeningQuestions record />
++          <LimitationsEditor />
++        </>
++      ) : skipped ? (
++        <ScreeningQuestions record={false} />
++      ) : (
++        <HealthConsentPanel onGranted={() => {}} onSkip={() => setSkipped(true)} />
++      )}
++      <CautiousModeToggle value={cautious ?? stored} minor={minor} onChange={setCautious} />
++      <HealthWarning />
++      <StepActions
++        onBack={p.onBack}
++        pending={save.pending}
++        error={save.error}
++        primary={{
++          label: saveLabel(p.mode),
++          onClick: () => void save.run(changed ? { cautiousMode: cautious === true } : {}),
++        }}
++      />
++    </>
++  );
++}
+diff --git a/apps/web/src/features/onboarding/OnboardingFlow.tsx b/apps/web/src/features/onboarding/OnboardingFlow.tsx
+new file mode 100644
+index 0000000..4cd2bea
+--- /dev/null
++++ b/apps/web/src/features/onboarding/OnboardingFlow.tsx
+@@ -0,0 +1,115 @@
++import { ONBOARDING_STEPS, type OnboardingStep, type PlaceKind } from '@appsport/contracts';
++import { firstIncompleteStep } from '@appsport/domain';
++import { useCallback, useEffect, useRef, useState } from 'react';
++import { useSyncState } from '../../app-services';
++import { useRepos } from '../../repos';
++import { Page } from '../../ui';
++import { AvailabilityStep } from './AvailabilityStep';
++import { ExperienceStep } from './ExperienceStep';
++import { GoalStep } from './GoalStep';
++import { HealthStep } from './HealthStep';
++import styles from './onboarding.module.css';
++import { PlaceKindStep } from './PlaceKindStep';
++import { PlaceStep } from './PlaceStep';
++import { ReadyStep } from './ReadyStep';
++import { SportStep } from './SportStep';
++
++interface FlowState {
++  step: OnboardingStep;
++  /** Type du lieu principal : choisi à l'écran « Lieu principal », ou celui du lieu déjà créé. */
++  kind: PlaceKind | null;
++}
++
++/** Écran affiché : l'écran du lieu sans type connu revient à la question du type. */
++const shownStep = (s: FlowState): OnboardingStep =>
++  s.step === 'place' && s.kind === null ? 'place_kind' : s.step;
++
++/**
++ * Onboarding en 8 écrans (02 §8), hors de la coquille de l'appli. Départ au premier écran
++ * incomplet (R-ONB-2), recalculé à chaque pull réussi tant que l'utilisateur n'a rien changé (un
++ * nouvel appareil reçoit ses réponses après l'ouverture) ; chaque écran s'enregistre au clic sur
++ * « Suivant », « Retour » revient à l'écran précédent avec ses réponses.
++ */
++export function OnboardingFlow() {
++  const repos = useRepos();
++  const { lastPullOkAt } = useSyncState();
++  const [state, setState] = useState<FlowState | null>(null);
++  // Écran ou type de lieu changé par l'utilisateur : la reprise calculée ne s'applique plus.
++  const moved = useRef(false);
++
++  const resume = useCallback(async (): Promise<FlowState> => {
++    const [input, places] = await Promise.all([repos.profile.onboardingInput(), repos.places.list()]);
++    return { step: firstIncompleteStep(input), kind: places.find((p) => p.isPrimary)?.kind ?? null };
++  }, [repos]);
++
++  // biome-ignore lint/correctness/useExhaustiveDependencies: reprise recalculée après chaque pull réussi
++  useEffect(() => {
++    let active = true;
++    resume().then(
++      (s) => {
++        if (active && !moved.current) setState(s);
++      },
++      () => {
++        // Base locale illisible : départ au premier écran.
++        if (active && !moved.current) setState((prev) => prev ?? { step: 'goal', kind: null });
++      },
++    );
++    return () => {
++      active = false;
++    };
++  }, [resume, lastPullOkAt]);
++
++  if (!state) return null;
++
++  const step = shownStep(state);
++  const index = ONBOARDING_STEPS.indexOf(step);
++  const goTo = (s: OnboardingStep) => {
++    moved.current = true;
++    setState((prev) => (prev ? { ...prev, step: s } : prev));
++  };
++  const next = ONBOARDING_STEPS[index + 1];
++  const previous = ONBOARDING_STEPS[index - 1];
++  const onNext = () => {
++    if (next) goTo(next);
++  };
++  const onBack = previous ? () => goTo(previous) : undefined;
++  const props = { mode: 'onboarding', onNext, onBack } as const;
++
++  /** 409 onboarding_incomplete : l'écran indiqué par le serveur, sinon celui de la base locale. */
++  const onIncomplete = (serverStep: OnboardingStep | null) => {
++    if (serverStep) {
++      goTo(serverStep);
++      return;
++    }
++    moved.current = true;
++    resume().then(
++      (s) => setState(s),
++      () => {},
++    );
++  };
++
++  return (
++    <Page title="Prise en main">
++      <p className={styles.progress}>{`Étape ${index + 1}/${ONBOARDING_STEPS.length}`}</p>
++      <div key={step} data-testid="onboarding-step" data-step={step} className={styles.step}>
++        {step === 'goal' ? <GoalStep {...props} /> : null}
++        {step === 'sport' ? <SportStep {...props} /> : null}
++        {step === 'place_kind' ? (
++          <PlaceKindStep
++            {...props}
++            value={state.kind}
++            onChange={(kind) => {
++              moved.current = true;
++              setState((prev) => (prev ? { ...prev, kind } : prev));
++            }}
++          />
++        ) : null}
++        {step === 'place' && state.kind ? <PlaceStep {...props} kind={state.kind} /> : null}
++        {step === 'experience' ? <ExperienceStep {...props} /> : null}
++        {step === 'availability' ? <AvailabilityStep {...props} /> : null}
++        {step === 'health' ? <HealthStep {...props} /> : null}
++        {step === 'ready' ? <ReadyStep onBack={() => goTo('health')} onIncomplete={onIncomplete} /> : null}
++      </div>
++    </Page>
++  );
++}
+diff --git a/apps/web/src/features/onboarding/PlaceKindStep.tsx b/apps/web/src/features/onboarding/PlaceKindStep.tsx
+new file mode 100644
+index 0000000..654a80c
+--- /dev/null
++++ b/apps/web/src/features/onboarding/PlaceKindStep.tsx
+@@ -0,0 +1,32 @@
++import type { PlaceKind } from '@appsport/contracts';
++import { ChoiceList } from '../../ui';
++import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++
++/**
++ * E3 Lieu principal. Le type n'est pas stocké (c'est celui du lieu principal, créé à l'écran
++ * suivant) : seule l'étape est enregistrée.
++ */
++export function PlaceKindStep(p: StepProps & { value: PlaceKind | null; onChange(k: PlaceKind): void }) {
++  const save = useSaveStep(p, 'place_kind');
++  return (
++    <>
++      <h2>Lieu principal</h2>
++      <ChoiceList<PlaceKind>
++        name="place-kind"
++        legend="Où t'entraîneras-tu le plus souvent ?"
++        value={p.value}
++        onChange={p.onChange}
++        options={[
++          { value: 'gym', label: 'À la salle' },
++          { value: 'home', label: 'À la maison' },
++        ]}
++      />
++      <StepActions
++        onBack={p.onBack}
++        pending={save.pending}
++        error={save.error}
++        primary={{ label: saveLabel(p.mode), disabled: p.value === null, onClick: () => void save.run() }}
++      />
++    </>
++  );
++}
+diff --git a/apps/web/src/features/onboarding/PlaceStep.tsx b/apps/web/src/features/onboarding/PlaceStep.tsx
+new file mode 100644
+index 0000000..dbc1097
+--- /dev/null
++++ b/apps/web/src/features/onboarding/PlaceStep.tsx
+@@ -0,0 +1,124 @@
++import {
++  type EquipmentCode,
++  HOME_DEFAULT_PRESET,
++  HOME_PLACE_DEFAULT_NAME,
++  PLACE_NAME_MAX,
++  type PlaceKind,
++  PRESET_IDS,
++  PRESETS,
++  type PresetId,
++} from '@appsport/contracts';
++import { useState } from 'react';
++import { useLive, useMe } from '../../app-services';
++import { useRepos } from '../../repos';
++import { ChoiceList, Field, useAction } from '../../ui';
++import { EquipmentChecklist, sortEquipment } from '../places/EquipmentChecklist';
++import { GymPicker } from '../places/GymPicker';
++import styles from './onboarding.module.css';
++import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++
++const HOME_PRESETS = PRESET_IDS.filter((id) => PRESETS[id].kind === 'home');
++
++/**
++ * E4 Ma salle ou Ma maison : l'onboarding crée un seul lieu, principal (02 §8, E3/E4). Un lieu
++ * principal déjà là (retour arrière) est affiché sans rien recréer ; les autres lieux se gèrent
++ * dans Profil › Lieux.
++ */
++export function PlaceStep(p: StepProps & { kind: PlaceKind }) {
++  const repos = useRepos();
++  const me = useMe();
++  const places = useLive(() => repos.places.list(), [repos]);
++  // Lieu créé par cet écran : un nouvel essai n'envoie plus que l'étape.
++  const [created, setCreated] = useState(false);
++  const [name, setName] = useState(HOME_PLACE_DEFAULT_NAME);
++  const [nameError, setNameError] = useState<string | null>(null);
++  const [preset, setPreset] = useState<PresetId>(HOME_DEFAULT_PRESET);
++  const [equipment, setEquipment] = useState<EquipmentCode[]>(() =>
++    sortEquipment(PRESETS[HOME_DEFAULT_PRESET].equipment),
++  );
++  const save = useSaveStep(p, 'place');
++  const createHome = useAction(async () => {
++    await repos.places.create({ kind: 'home', name: name.trim(), equipment, isPrimary: true });
++    setCreated(true);
++    await save.run();
++  });
++  if (!me || places === undefined) return null;
++
++  const primary = places.find((pl) => pl.isPrimary);
++  const title = <h2>{(primary?.kind ?? p.kind) === 'gym' ? 'Ma salle' : 'Ma maison'}</h2>;
++
++  if (primary || created) {
++    return (
++      <>
++        {title}
++        <p>{primary ? `Ton lieu principal : ${primary.name}` : 'Ton lieu principal est enregistré.'}</p>
++        <p className={styles.note}>Tu pourras ajouter ou changer de lieu dans Profil › Lieux.</p>
++        <StepActions
++          onBack={p.onBack}
++          pending={save.pending}
++          error={save.error}
++          primary={{ label: saveLabel(p.mode), onClick: () => void save.run() }}
++        />
++      </>
++    );
++  }
++
++  if (p.kind === 'gym') {
++    return (
++      <>
++        {title}
++        <GymPicker
++          isPrimary
++          defaultVisible={me.ageBand !== 'minor'}
++          onDone={() => {
++            setCreated(true);
++            void save.run();
++          }}
++        />
++        <StepActions onBack={p.onBack} pending={save.pending} error={save.error} />
++      </>
++    );
++  }
++
++  function choosePreset(id: PresetId) {
++    setPreset(id);
++    setEquipment(sortEquipment(PRESETS[id].equipment));
++  }
++
++  function submitHome() {
++    if (name.trim() === '') {
++      setNameError('Donne un nom à ce lieu.');
++      return;
++    }
++    setNameError(null);
++    void createHome.run();
++  }
++
++  return (
++    <>
++      {title}
++      <Field label="Nom du lieu" error={nameError}>
++        <input
++          type="text"
++          maxLength={PLACE_NAME_MAX}
++          value={name}
++          onChange={(e) => setName(e.target.value)}
++        />
++      </Field>
++      <ChoiceList<PresetId>
++        name="home-preset"
++        legend="Ton matériel"
++        value={preset}
++        onChange={choosePreset}
++        options={HOME_PRESETS.map((id) => ({ value: id, label: PRESETS[id].label }))}
++      />
++      <EquipmentChecklist kind="home" value={equipment} onChange={setEquipment} />
++      <StepActions
++        onBack={p.onBack}
++        pending={createHome.pending || save.pending}
++        error={createHome.error ?? save.error}
++        primary={{ label: saveLabel(p.mode), onClick: submitHome }}
++      />
++    </>
++  );
++}
+diff --git a/apps/web/src/features/onboarding/ReadyStep.tsx b/apps/web/src/features/onboarding/ReadyStep.tsx
+new file mode 100644
+index 0000000..b6b6eee
+--- /dev/null
++++ b/apps/web/src/features/onboarding/ReadyStep.tsx
+@@ -0,0 +1,105 @@
++import { EXPERIENCE_LABELS, GOAL_LABELS, OnboardingStep, SPORTS } from '@appsport/contracts';
++import { useState } from 'react';
++import { useLocation } from 'wouter';
++import { ApiError } from '../../api/client';
++import { ONBOARDING_COMPLETED_EVENT } from '../../app-events';
++import { useLive } from '../../app-services';
++import { useRepos } from '../../repos';
++import { Banner, Button, plural, useAction } from '../../ui';
++import { OfflineReadyIndicator } from '../status/OfflineReadyIndicator';
++import { useReadiness } from '../status/use-readiness';
++import styles from './onboarding.module.css';
++
++/**
++ * E8 C'est prêt : récapitulatif et voyant « Prêt hors ligne ». « Commencer » termine l'onboarding
++ * une fois le voyant au vert (R-SYN-33), émet ONBOARDING_COMPLETED_EVENT puis mène à l'accueil ;
++ * sinon « Réessayer ». Un écran encore incomplet pour le serveur (409) est rendu à `onIncomplete`,
++ * avec l'étape qu'il indique (null si illisible).
++ */
++export function ReadyStep(p: { onBack(): void; onIncomplete(step: OnboardingStep | null): void }) {
++  const repos = useRepos();
++  const [, navigate] = useLocation();
++  const { readiness, loaded, retry } = useReadiness();
++  const profile = useLive(() => repos.profile.get(), [repos]);
++  const places = useLive(() => repos.places.list(), [repos]);
++  const [retrying, setRetrying] = useState(false);
++  const start = useAction(async () => {
++    try {
++      await repos.profile.completeOnboarding();
++    } catch (error) {
++      if (!(error instanceof ApiError) || error.code !== 'onboarding_incomplete') throw error;
++      const step = OnboardingStep.safeParse(error.body.step);
++      p.onIncomplete(step.success ? step.data : null);
++      return;
++    }
++    window.dispatchEvent(new CustomEvent(ONBOARDING_COMPLETED_EVENT));
++    navigate('/');
++  });
++
++  const onRetry = () => {
++    setRetrying(true);
++    void retry().finally(() => setRetrying(false));
++  };
++
++  const primary = places?.find((pl) => pl.isPrimary);
++  const sport = profile?.sportCode
++    ? profile.sportCode === 'other'
++      ? profile.sportOtherLabel
++      : SPORTS.find((s) => s.code === profile.sportCode)?.label
++    : null;
++
++  return (
++    <>
++      <h2>C'est prêt</h2>
++      {profile ? (
++        <dl className={styles.summary}>
++          {profile.goal ? (
++            <div>
++              <dt>Objectif</dt>
++              <dd>{GOAL_LABELS[profile.goal]}</dd>
++            </div>
++          ) : null}
++          {sport ? (
++            <div>
++              <dt>Sport</dt>
++              <dd>{sport}</dd>
++            </div>
++          ) : null}
++          {primary ? (
++            <div>
++              <dt>Lieu principal</dt>
++              <dd>{primary.name}</dd>
++            </div>
++          ) : null}
++          {profile.experience ? (
++            <div>
++              <dt>Niveau</dt>
++              <dd>{EXPERIENCE_LABELS[profile.experience]}</dd>
++            </div>
++          ) : null}
++          {profile.daysPerWeek && profile.sessionMinutes ? (
++            <div>
++              <dt>Disponibilité</dt>
++              <dd>{`${profile.daysPerWeek} ${plural(profile.daysPerWeek, 'séance', 'séances')} de ${profile.sessionMinutes} min`}</dd>
++            </div>
++          ) : null}
++        </dl>
++      ) : null}
++      {loaded ? <OfflineReadyIndicator readiness={readiness} /> : null}
++      {start.error ? <Banner tone="error">{start.error}</Banner> : null}
++      <div className={styles.actions}>
++        <Button variant="secondary" onClick={p.onBack} disabled={start.pending}>
++          Retour
++        </Button>
++        {loaded && !readiness.ready ? (
++          <Button variant="secondary" onClick={onRetry} disabled={retrying}>
++            Réessayer
++          </Button>
++        ) : null}
++        <Button onClick={() => void start.run()} disabled={!loaded || !readiness.ready || start.pending}>
++          Commencer
++        </Button>
++      </div>
++    </>
++  );
++}
+diff --git a/apps/web/src/features/onboarding/SportStep.tsx b/apps/web/src/features/onboarding/SportStep.tsx
+new file mode 100644
+index 0000000..f965d8d
+--- /dev/null
++++ b/apps/web/src/features/onboarding/SportStep.tsx
+@@ -0,0 +1,101 @@
++import {
++  GOAL_LABELS,
++  type Goal,
++  ONBOARDING_STEPS,
++  SPORT_OTHER_LABEL_MAX,
++  SPORTS,
++  type SportCode,
++} from '@appsport/contracts';
++import { useState } from 'react';
++import { useLive, useMe } from '../../app-services';
++import { useRepos } from '../../repos';
++import { ChoiceList, Field } from '../../ui';
++import styles from './onboarding.module.css';
++import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++
++type Practice = 'yes' | 'no';
++
++export const SPORT_REQUIRED_TEXT = `Obligatoire avec l'objectif « ${GOAL_LABELS.sport_support} ».`;
++
++/**
++ * E2 Autre sport : « Oui » imposé avec l'objectif sportif ; « Autre » exige un libellé (40
++ * caractères au plus). `pendingGoal` (édition depuis l'objectif) : PATCH { goal, sportCode,
++ * sportOtherLabel } en un seul envoi.
++ */
++export function SportStep(p: StepProps & { pendingGoal?: Goal }) {
++  const repos = useRepos();
++  const me = useMe();
++  const profile = useLive(() => repos.profile.get(), [repos]);
++  const [practice, setPractice] = useState<Practice | null>(null);
++  const [sport, setSport] = useState<SportCode | null>(null);
++  const [otherLabel, setOtherLabel] = useState<string | null>(null);
++  const save = useSaveStep(p, 'sport');
++  if (!me || profile === undefined) return null;
++
++  const savedSport = profile?.sportCode ?? null;
++  // Sans sport enregistré, « Non » n'est une réponse que si l'écran a déjà été validé.
++  const answered =
++    p.mode === 'edit' ||
++    me.onboardingCompletedAt !== null ||
++    (me.onboardingStep !== null &&
++      ONBOARDING_STEPS.indexOf(me.onboardingStep) >= ONBOARDING_STEPS.indexOf('sport'));
++  const required = (p.pendingGoal ?? profile?.goal) === 'sport_support';
++  const practiceValue: Practice | null = required
++    ? 'yes'
++    : (practice ?? (savedSport !== null ? 'yes' : answered && profile !== null ? 'no' : null));
++  const sportValue = sport ?? savedSport;
++  const label = (otherLabel ?? profile?.sportOtherLabel ?? '').trim();
++  const complete =
++    practiceValue === 'no' || (sportValue !== null && (sportValue !== 'other' || label !== ''));
++
++  function submit() {
++    if (!complete) return;
++    const answer =
++      practiceValue === 'yes' && sportValue !== null
++        ? { sportCode: sportValue, sportOtherLabel: sportValue === 'other' ? label : null }
++        : { sportCode: null, sportOtherLabel: null };
++    void save.run(p.pendingGoal ? { goal: p.pendingGoal, ...answer } : answer);
++  }
++
++  return (
++    <>
++      <h2>Autre sport</h2>
++      <ChoiceList<Practice>
++        name="sport-practice"
++        legend="Pratiques-tu un autre sport régulièrement ?"
++        value={practiceValue}
++        onChange={setPractice}
++        options={[
++          { value: 'no', label: 'Non', disabled: required },
++          { value: 'yes', label: 'Oui' },
++        ]}
++      />
++      {required ? <p className={styles.note}>{SPORT_REQUIRED_TEXT}</p> : null}
++      {practiceValue === 'yes' ? (
++        <ChoiceList<SportCode>
++          name="sport"
++          legend="Quel sport ?"
++          value={sportValue}
++          onChange={setSport}
++          options={SPORTS.map((s) => ({ value: s.code, label: s.label }))}
++        />
++      ) : null}
++      {practiceValue === 'yes' && sportValue === 'other' ? (
++        <Field label="Ton sport">
++          <input
++            type="text"
++            maxLength={SPORT_OTHER_LABEL_MAX}
++            value={otherLabel ?? profile?.sportOtherLabel ?? ''}
++            onChange={(e) => setOtherLabel(e.target.value)}
++          />
++        </Field>
++      ) : null}
++      <StepActions
++        onBack={p.onBack}
++        pending={save.pending}
++        error={save.error}
++        primary={{ label: saveLabel(p.mode), disabled: !complete, onClick: submit }}
++      />
++    </>
++  );
++}
+diff --git a/apps/web/src/features/onboarding/StepActions.tsx b/apps/web/src/features/onboarding/StepActions.tsx
+new file mode 100644
+index 0000000..cced649
+--- /dev/null
++++ b/apps/web/src/features/onboarding/StepActions.tsx
+@@ -0,0 +1,53 @@
++import type { OnboardingStep, TrainingProfilePatch } from '@appsport/contracts';
++import { useRepos } from '../../repos';
++import { Banner, Button, useAction } from '../../ui';
++import styles from './onboarding.module.css';
++
++/** Écran partagé par l'onboarding et le Profil (R-ONB-3). */
++export interface StepProps {
++  mode: 'onboarding' | 'edit';
++  onNext(): void;
++  onBack?: () => void;
++}
++
++/** Bouton qui enregistre l'écran : « Suivant » pendant l'onboarding, « Enregistrer » dans le Profil. */
++export const saveLabel = (mode: StepProps['mode']) => (mode === 'onboarding' ? 'Suivant' : 'Enregistrer');
++
++/**
++ * Enregistrement d'un écran au clic (R-ONB-2) : PATCH du profil, avec `onboardingStep` pendant
++ * l'onboarding (rien n'est envoyé en édition si rien n'a changé), puis `onNext`.
++ */
++export function useSaveStep(p: StepProps, step: OnboardingStep) {
++  const repos = useRepos();
++  return useAction(async (patch: TrainingProfilePatch = {}) => {
++    const body = p.mode === 'onboarding' ? { ...patch, onboardingStep: step } : patch;
++    if (Object.keys(body).length > 0) await repos.profile.update(body);
++    p.onNext();
++  });
++}
++
++/** Erreur de l'écran, « Retour » et bouton principal. */
++export function StepActions(p: {
++  onBack?: () => void;
++  primary?: { label: string; disabled?: boolean; onClick(): void };
++  pending?: boolean;
++  error?: string | null;
++}) {
++  return (
++    <>
++      {p.error ? <Banner tone="error">{p.error}</Banner> : null}
++      <div className={styles.actions}>
++        {p.onBack ? (
++          <Button variant="secondary" onClick={p.onBack} disabled={p.pending}>
++            Retour
++          </Button>
++        ) : null}
++        {p.primary ? (
++          <Button onClick={p.primary.onClick} disabled={p.primary.disabled || p.pending}>
++            {p.primary.label}
++          </Button>
++        ) : null}
++      </div>
++    </>
++  );
++}
+diff --git a/apps/web/src/features/onboarding/onboarding.module.css b/apps/web/src/features/onboarding/onboarding.module.css
+new file mode 100644
+index 0000000..59d9cdc
+--- /dev/null
++++ b/apps/web/src/features/onboarding/onboarding.module.css
+@@ -0,0 +1,119 @@
++.progress {
++  margin: 0;
++  font-size: 0.875rem;
++  font-weight: 600;
++  color: var(--color-muted);
++}
++
++.step,
++.panel {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-4);
++}
++
++.step h2 {
++  margin: 0;
++  font-size: 1.25rem;
++}
++
++.panel h3 {
++  margin: 0;
++  font-size: 1.125rem;
++}
++
++.panel p {
++  margin: 0;
++}
++
++.actions {
++  display: flex;
++  flex-wrap: wrap;
++  justify-content: flex-end;
++  gap: var(--space-2);
++}
++
++.note {
++  margin: 0;
++  font-size: 0.875rem;
++  color: var(--color-muted);
++}
++
++.check {
++  display: flex;
++  align-items: flex-start;
++  gap: var(--space-3);
++  min-height: 44px;
++}
++
++.check input {
++  flex-shrink: 0;
++  width: 1.5rem;
++  height: 1.5rem;
++  margin: 0;
++}
++
++.toggle {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-1);
++}
++
++.questions {
++  margin: 0;
++  padding-left: var(--space-6);
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-2);
++}
++
++.limitations {
++  margin: 0;
++  padding: 0;
++  list-style: none;
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-2);
++}
++
++.limitation {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  justify-content: space-between;
++  gap: var(--space-2);
++  padding: var(--space-2) var(--space-3);
++  border: 1px solid var(--color-border);
++  border-radius: var(--radius);
++  background: var(--color-surface);
++}
++
++.panel > button {
++  align-self: flex-start;
++}
++
++.summary {
++  margin: 0;
++  display: grid;
++  gap: var(--space-2);
++}
++
++.summary div {
++  display: flex;
++  flex-wrap: wrap;
++  justify-content: space-between;
++  gap: var(--space-2);
++  padding: var(--space-2) var(--space-3);
++  border: 1px solid var(--color-border);
++  border-radius: var(--radius);
++  background: var(--color-surface);
++}
++
++.summary dt {
++  color: var(--color-muted);
++}
++
++.summary dd {
++  margin: 0;
++  font-weight: 600;
++}
+diff --git a/apps/web/src/features/places/EquipmentChecklist.tsx b/apps/web/src/features/places/EquipmentChecklist.tsx
+new file mode 100644
+index 0000000..014850f
+--- /dev/null
++++ b/apps/web/src/features/places/EquipmentChecklist.tsx
+@@ -0,0 +1,49 @@
++import {
++  EQUIPMENT,
++  EQUIPMENT_CATEGORIES,
++  EQUIPMENT_CATEGORY_LABELS,
++  EQUIPMENT_LABELS,
++  type EquipmentCategory,
++  type EquipmentCode,
++} from '@appsport/contracts';
++import styles from './places.module.css';
++
++const CATEGORIES = Object.keys(EQUIPMENT_CATEGORIES) as EquipmentCategory[];
++
++/** Codes dans l'ordre de la taxonomie (EQUIPMENT), sans doublon. */
++export function sortEquipment(codes: Iterable<EquipmentCode>): EquipmentCode[] {
++  const present = new Set(codes);
++  return EQUIPMENT.filter((c) => present.has(c));
++}
++
++/** Matériel par catégorie ; les objets du quotidien ne s'affichent que pour une maison (R-EQ-3). */
++export function EquipmentChecklist(p: {
++  kind: 'gym' | 'home';
++  value: readonly EquipmentCode[];
++  onChange(next: EquipmentCode[]): void;
++  disabled?: boolean;
++}) {
++  const categories = CATEGORIES.filter((c) => p.kind === 'home' || c !== 'household');
++  const toggle = (code: EquipmentCode, present: boolean) =>
++    p.onChange(sortEquipment(present ? [...p.value, code] : p.value.filter((c) => c !== code)));
++  return (
++    <div className={styles.checklist}>
++      {categories.map((category) => (
++        <fieldset key={category} className={styles.category}>
++          <legend>{EQUIPMENT_CATEGORY_LABELS[category]}</legend>
++          {EQUIPMENT_CATEGORIES[category].map((code) => (
++            <label key={code} className={styles.item}>
++              <input
++                type="checkbox"
++                checked={p.value.includes(code)}
++                disabled={p.disabled}
++                onChange={(e) => toggle(code, e.target.checked)}
++              />
++              {EQUIPMENT_LABELS[code]}
++            </label>
++          ))}
++        </fieldset>
++      ))}
++    </div>
++  );
++}
+diff --git a/apps/web/src/features/places/GymCreate.tsx b/apps/web/src/features/places/GymCreate.tsx
+new file mode 100644
+index 0000000..4846ffa
+--- /dev/null
++++ b/apps/web/src/features/places/GymCreate.tsx
+@@ -0,0 +1,185 @@
++import {
++  type EquipmentCode,
++  GYM_CITY_MAX,
++  GYM_CITY_MIN,
++  GYM_NAME_MAX,
++  GYM_NAME_MIN,
++  type GymSummary,
++  PRESET_IDS,
++  PRESETS,
++  type PresetId,
++} from '@appsport/contracts';
++import { useId, useState } from 'react';
++import { ApiError } from '../../api/client';
++import { useRepos } from '../../repos';
++import { Banner, Button, ChoiceList, ERROR_MESSAGES, Field, plural, useAction } from '../../ui';
++import { EquipmentChecklist, sortEquipment } from './EquipmentChecklist';
++import styles from './places.module.css';
++
++const GYM_PRESETS = PRESET_IDS.filter((id) => PRESETS[id].kind === 'gym');
++
++/** « Basic Fit · Lyon · 2 membres visibles » (R-SAL-1). */
++export const gymLabel = (g: GymSummary) =>
++  `${g.name} · ${g.city} · ${g.visibleMemberCount} ${plural(g.visibleMemberCount, 'membre visible', 'membres visibles')}`;
++
++const lengthError = (value: string, min: number, max: number) =>
++  value.length < min || value.length > max ? `${min} à ${max} caractères.` : null;
++
++type Stage = 'info' | 'similar' | 'equipment';
++
++/**
++ * Création d'une salle (R-SAL-2, R-SAL-3) : nom et ville, salles proches à écarter, préréglage,
++ * puis validation de la liste pré-cochée. Une salle existante (proche ou doublon) se choisit à la
++ * place par `onPickExisting`.
++ */
++export function GymCreate(p: {
++  isPrimary: boolean;
++  visibleAtGym: boolean;
++  onDone(): void;
++  onPickExisting(gymId: string): void;
++}) {
++  const repos = useRepos();
++  const uid = useId();
++  const [name, setName] = useState('');
++  const [city, setCity] = useState('');
++  const [errors, setErrors] = useState<{ name: string | null; city: string | null }>({
++    name: null,
++    city: null,
++  });
++  const [stage, setStage] = useState<Stage>('info');
++  const [similar, setSimilar] = useState<GymSummary[]>([]);
++  const [preset, setPreset] = useState<PresetId | null>(null);
++  const [equipment, setEquipment] = useState<EquipmentCode[]>([]);
++  const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
++
++  const check = useAction(async (n: string, c: string) => {
++    const found = await repos.gyms.similar(n, c);
++    setSimilar(found);
++    setStage(found.length > 0 ? 'similar' : 'equipment');
++  });
++
++  const create = useAction(async () => {
++    setDuplicateOf(null);
++    try {
++      await repos.gyms.create({
++        name: name.trim(),
++        city: city.trim(),
++        equipment,
++        isPrimary: p.isPrimary,
++        visibleAtGym: p.visibleAtGym,
++      });
++    } catch (error) {
++      const gymId = error instanceof ApiError && error.code === 'gym_duplicate' ? error.body.gymId : null;
++      if (typeof gymId !== 'string') throw error;
++      setDuplicateOf(gymId);
++      return;
++    }
++    p.onDone();
++  });
++
++  /** Nom ou ville modifiés : les salles proches sont à revoir. */
++  const edit = (set: (v: string) => void) => (v: string) => {
++    set(v);
++    setStage('info');
++    setDuplicateOf(null);
++  };
++
++  function submitInfo() {
++    const n = name.trim();
++    const c = city.trim();
++    const next = {
++      name: lengthError(n, GYM_NAME_MIN, GYM_NAME_MAX),
++      city: lengthError(c, GYM_CITY_MIN, GYM_CITY_MAX),
++    };
++    setErrors(next);
++    if (next.name || next.city) return;
++    void check.run(n, c);
++  }
++
++  function choosePreset(id: PresetId) {
++    setPreset(id);
++    setEquipment(sortEquipment(PRESETS[id].equipment));
++  }
++
++  return (
++    <div className={styles.create}>
++      <Field label="Nom de la salle" hint="L'enseigne peut y figurer." error={errors.name}>
++        <input
++          type="text"
++          maxLength={GYM_NAME_MAX}
++          value={name}
++          onChange={(e) => edit(setName)(e.target.value)}
++        />
++      </Field>
++      <Field label="Ville" error={errors.city}>
++        <input
++          type="text"
++          maxLength={GYM_CITY_MAX}
++          value={city}
++          onChange={(e) => edit(setCity)(e.target.value)}
++        />
++      </Field>
++      {check.error ? <Banner tone="error">{check.error}</Banner> : null}
++      {stage === 'info' ? (
++        <Button onClick={submitInfo} disabled={check.pending}>
++          Continuer
++        </Button>
++      ) : null}
++
++      {stage === 'similar' ? (
++        <section className={styles.similar}>
++          <p>Ces salles existent peut-être déjà :</p>
++          <ul className={styles.similarList}>
++            {similar.map((g) => (
++              <li key={g.id} className={styles.similarItem}>
++                <span id={`${uid}-similar-${g.id}`}>{gymLabel(g)}</span>
++                <Button
++                  variant="secondary"
++                  aria-describedby={`${uid}-similar-${g.id}`}
++                  onClick={() => p.onPickExisting(g.id)}
++                >
++                  C'est ma salle
++                </Button>
++              </li>
++            ))}
++          </ul>
++          <Button variant="secondary" onClick={() => setStage('equipment')}>
++            Non, créer ma salle
++          </Button>
++        </section>
++      ) : null}
++
++      {stage === 'equipment' ? (
++        <>
++          <ChoiceList<PresetId>
++            name="gym-preset"
++            legend="Type de salle"
++            value={preset}
++            onChange={choosePreset}
++            options={GYM_PRESETS.map((id) => ({ value: id, label: PRESETS[id].label }))}
++          />
++          {preset !== null ? (
++            <>
++              <p className={styles.hint}>
++                Vérifie la liste : décoche ce qui manque, coche ce qui est en plus.
++              </p>
++              <EquipmentChecklist kind="gym" value={equipment} onChange={setEquipment} />
++            </>
++          ) : null}
++          {duplicateOf !== null ? (
++            <Banner tone="error">
++              <p className={styles.bannerText}>{ERROR_MESSAGES.gym_duplicate}</p>
++              <Button variant="secondary" onClick={() => p.onPickExisting(duplicateOf)}>
++                Choisir cette salle
++              </Button>
++            </Banner>
++          ) : null}
++          {create.error ? <Banner tone="error">{create.error}</Banner> : null}
++          <Button onClick={() => void create.run()} disabled={preset === null || create.pending}>
++            Créer la salle
++          </Button>
++        </>
++      ) : null}
++    </div>
++  );
++}
+diff --git a/apps/web/src/features/places/GymPicker.tsx b/apps/web/src/features/places/GymPicker.tsx
+new file mode 100644
+index 0000000..f567a4a
+--- /dev/null
++++ b/apps/web/src/features/places/GymPicker.tsx
+@@ -0,0 +1,124 @@
++import type { GymSummary } from '@appsport/contracts';
++import { useEffect, useId, useState } from 'react';
++import { useRepos } from '../../repos';
++import { Banner, Button, ChoiceList, errorMessage, Field, useAction } from '../../ui';
++import { GymCreate, gymLabel } from './GymCreate';
++import styles from './places.module.css';
++
++export const VISIBILITY_LABEL = 'Apparaître dans « Qui va à cette salle »';
++export const MINOR_VISIBILITY_HINT = 'Désactivé par défaut pour les moins de 18 ans.';
++
++/** Salles du serveur pour `query` ; la dernière recherche lancée l'emporte. */
++function useGymSearch(query: string): { gyms: GymSummary[] | null; error: string | null } {
++  const repos = useRepos();
++  const [state, setState] = useState<{ gyms: GymSummary[] | null; error: string | null }>({
++    gyms: null,
++    error: null,
++  });
++  useEffect(() => {
++    let current = true;
++    repos.gyms.search(query.trim()).then(
++      (gyms) => {
++        if (current) setState({ gyms, error: null });
++      },
++      (error: unknown) => {
++        if (current) setState((s) => ({ gyms: s.gyms, error: errorMessage(error) }));
++      },
++    );
++    return () => {
++      current = false;
++    };
++  }, [repos, query]);
++  return state;
++}
++
++/**
++ * « Ta salle » (R-SAL-1) : choisir une salle existante ou en créer une, et régler sa visibilité
++ * dans « Qui va à cette salle » (R-VIS-3 ; désactivée par défaut pour un mineur, P-MIN-6). Le lieu
++ * est créé ici, puis `onDone`.
++ */
++export function GymPicker(p: { isPrimary: boolean; defaultVisible: boolean; onDone(): void }) {
++  const repos = useRepos();
++  const hintId = useId();
++  const [query, setQuery] = useState('');
++  const [selected, setSelected] = useState<string | null>(null);
++  const [visible, setVisible] = useState(p.defaultVisible);
++  const [creating, setCreating] = useState(false);
++  const { gyms, error } = useGymSearch(query);
++  // Une salle choisie puis écartée par la recherche n'est plus validable.
++  const chosen = gyms?.some((g) => g.id === selected) ? selected : null;
++
++  const pick = useAction(async (gymId: string) => {
++    await repos.places.create({ kind: 'gym', gymId, isPrimary: p.isPrimary, visibleAtGym: visible });
++    p.onDone();
++  });
++
++  const visibility = (
++    <div className={styles.visibility}>
++      <label className={styles.item}>
++        <input
++          type="checkbox"
++          checked={visible}
++          aria-describedby={p.defaultVisible ? undefined : hintId}
++          onChange={(e) => setVisible(e.target.checked)}
++        />
++        {VISIBILITY_LABEL}
++      </label>
++      {p.defaultVisible ? null : (
++        <span id={hintId} className={styles.hint}>
++          {MINOR_VISIBILITY_HINT}
++        </span>
++      )}
++    </div>
++  );
++
++  if (creating) {
++    return (
++      <div className={styles.picker}>
++        <GymCreate
++          isPrimary={p.isPrimary}
++          visibleAtGym={visible}
++          onDone={p.onDone}
++          onPickExisting={(gymId) => void pick.run(gymId)}
++        />
++        {visibility}
++        {pick.error ? <Banner tone="error">{pick.error}</Banner> : null}
++        <Button variant="secondary" onClick={() => setCreating(false)}>
++          Revenir à la liste
++        </Button>
++      </div>
++    );
++  }
++
++  return (
++    <div className={styles.picker}>
++      <Field label="Rechercher une salle">
++        <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} />
++      </Field>
++      {error ? <Banner tone="error">{error}</Banner> : null}
++      {gyms !== null && gyms.length === 0 ? <p className={styles.hint}>Aucune salle trouvée.</p> : null}
++      {gyms !== null && gyms.length > 0 ? (
++        <ChoiceList<string>
++          name="gym"
++          legend="Salles"
++          value={chosen}
++          onChange={setSelected}
++          options={gyms.map((g) => ({ value: g.id, label: gymLabel(g) }))}
++        />
++      ) : null}
++      <Button variant="secondary" onClick={() => setCreating(true)}>
++        Ma salle n'est pas dans la liste
++      </Button>
++      {visibility}
++      {pick.error ? <Banner tone="error">{pick.error}</Banner> : null}
++      <Button
++        onClick={() => {
++          if (chosen !== null) void pick.run(chosen);
++        }}
++        disabled={chosen === null || pick.pending}
++      >
++        Valider
++      </Button>
++    </div>
++  );
++}
+diff --git a/apps/web/src/features/places/places.module.css b/apps/web/src/features/places/places.module.css
+new file mode 100644
+index 0000000..b37236a
+--- /dev/null
++++ b/apps/web/src/features/places/places.module.css
+@@ -0,0 +1,88 @@
++.picker,
++.create,
++.similar {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-4);
++}
++
++.picker > button,
++.create > button,
++.similar > button {
++  align-self: flex-start;
++}
++
++.similar p {
++  margin: 0;
++}
++
++.similarList {
++  margin: 0;
++  padding: 0;
++  list-style: none;
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-2);
++}
++
++.similarItem {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  justify-content: space-between;
++  gap: var(--space-2);
++  padding: var(--space-2) var(--space-3);
++  border: 1px solid var(--color-border);
++  border-radius: var(--radius);
++  background: var(--color-surface);
++}
++
++.checklist {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-4);
++}
++
++.category {
++  border: 0;
++  margin: 0;
++  padding: 0;
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-1);
++}
++
++.category legend {
++  font-weight: 600;
++  margin-bottom: var(--space-2);
++}
++
++.item {
++  display: flex;
++  align-items: center;
++  gap: var(--space-3);
++  min-height: 44px;
++}
++
++.item input {
++  flex-shrink: 0;
++  width: 1.25rem;
++  height: 1.25rem;
++  margin: 0;
++}
++
++.visibility {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-1);
++}
++
++.hint {
++  margin: 0;
++  font-size: 0.875rem;
++  color: var(--color-muted);
++}
++
++.bannerText {
++  margin: 0 0 var(--space-2);
++}
+diff --git a/apps/web/src/ui/AppShell.tsx b/apps/web/src/ui/AppShell.tsx
+index 01bc854..6ceb939 100644
+--- a/apps/web/src/ui/AppShell.tsx
++++ b/apps/web/src/ui/AppShell.tsx
+@@ -17,21 +17,21 @@ export function AppShell(p: { children: ReactNode }) {
+           <Link href="/profile">Profil</Link>
+           {me?.role === 'admin' ? <Link href="/admin/members">Administration</Link> : null}
+         </nav>
+       </header>
+       <main className={styles.main}>{p.children}</main>
+       <PublicLinks />
+     </div>
+   );
+ }
+ 
+-/** Cadre des pages publiques, lisibles sans session : pas de navigation de compte. */
++/** Cadre des pages publiques, lisibles sans session, et de l'onboarding : pas de navigation de compte. */
+ export function PublicShell(p: { children: ReactNode }) {
+   return (
+     <div className={styles.shell}>
+       <header className={styles.header}>
+         <Link href="/" className={styles.brand}>
+           appsport
+         </Link>
+       </header>
+       <main className={styles.main}>{p.children}</main>
+       <PublicLinks />
+diff --git a/apps/web/test/app/use-live.test.tsx b/apps/web/test/app/use-live.test.tsx
+new file mode 100644
+index 0000000..ba8e90a
+--- /dev/null
++++ b/apps/web/test/app/use-live.test.tsx
+@@ -0,0 +1,38 @@
++import { screen } from '@testing-library/react';
++import { describe, it } from 'vitest';
++import { useLive } from '../../src/app-services';
++import { useRepos } from '../../src/repos';
++import { renderWithServices } from '../support/render';
++import { seedMirror } from '../support/seed';
++
++/** Requêtes de dépôt (fonctions non async qui rendent la promesse d'un `await` imbriqué). */
++function Counts() {
++  const repos = useRepos();
++  const limitations = useLive(() => repos.consent.limitations(), [repos]);
++  const places = useLive(() => repos.places.list(), [repos]);
++  const profile = useLive(() => repos.profile.get(), [repos]);
++  return <p>{`${limitations?.length ?? '-'} ${places?.length ?? '-'} ${profile?.goal ?? '-'}`}</p>;
++}
++
++describe('useLive', () => {
++  it('une écriture de miroir après un await natif relance la requête du dépôt', async () => {
++    const { db } = await renderWithServices(<Counts />);
++    await screen.findByText('0 0 -');
++    await seedMirror(db, 'limitation', [
++      {
++        id: 'l-1',
++        ownerId: 'u-1',
++        bodyArea: 'knee',
++        side: 'left',
++        severity: 'mild',
++        note: null,
++        active: true,
++      },
++    ]);
++    await seedMirror(db, 'place', [
++      { id: 'p-1', ownerId: 'u-1', kind: 'home', gymId: null, name: 'Maison', isPrimary: true },
++    ]);
++    await seedMirror(db, 'training_profile', [{ id: 'u-1', ownerId: 'u-1', goal: 'muscle' }]);
++    await screen.findByText('1 1 muscle');
++  });
++});
+diff --git a/apps/web/test/onboarding/flow.test.tsx b/apps/web/test/onboarding/flow.test.tsx
+new file mode 100644
+index 0000000..67549b8
+--- /dev/null
++++ b/apps/web/test/onboarding/flow.test.tsx
+@@ -0,0 +1,145 @@
++import { firstIncompleteStep } from '@appsport/domain';
++import { fireEvent, screen } from '@testing-library/react';
++import { describe, expect, it } from 'vitest';
++import { createRepos } from '../../src/repos';
++import { settle } from '../support/auth';
++import { createFakeApi } from '../support/fake-api';
++import { createTestLocalDb } from '../support/local-db';
++import {
++  button,
++  choose,
++  currentStep,
++  isChecked,
++  newcomer,
++  radio,
++  seedPrimaryGym,
++  seedProfile,
++  serveProfile,
++  writes,
++} from '../support/onboarding';
++import { createTestServices, renderApp } from '../support/render';
++import { until } from '../support/wait';
++
++/** Onboarding dans l'appli (garde comprise), base et faux serveur fournis par le test. */
++async function openFlow(me = newcomer()) {
++  const db = createTestLocalDb();
++  const api = createFakeApi();
++  const server = serveProfile(api, db, me);
++  return { db, api, me, server, render: () => renderApp({ path: '/onboarding', me, db, api }) };
++}
++
++const progress = () => screen.getByText(/^Étape \d\/8$/).textContent;
++
++describe('OnboardingFlow (R-ONB-1, R-ONB-2)', () => {
++  it("départ 'goal', « Étape 1/8 », hors de la coquille de l'appli", async () => {
++    const { render } = await openFlow();
++    const { location } = await render();
++    await until(() => currentStep() === 'goal');
++    expect(progress()).toBe('Étape 1/8');
++    expect(location()).toBe('/onboarding');
++    expect(screen.queryByRole('navigation', { name: 'Navigation principale' })).toBeNull();
++  });
++
++  it('reprise au premier écran incomplet (firstIncompleteStep)', async () => {
++    const t = await openFlow(newcomer({ onboardingStep: 'place' }));
++    await seedProfile(t.db, { goal: 'muscle' });
++    await seedPrimaryGym(t.db);
++    const { services } = await createTestServices({ db: t.db, me: t.me });
++    const expected = firstIncompleteStep(await createRepos(services).profile.onboardingInput());
++    expect(expected).toBe('experience');
++    await t.render();
++    await until(() => currentStep() === 'experience');
++    expect(progress()).toBe('Étape 5/8');
++  });
++
++  it("santé validée : reprise à 'ready'", async () => {
++    const t = await openFlow(newcomer({ onboardingStep: 'health' }));
++    await seedProfile(t.db, { goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45 });
++    await seedPrimaryGym(t.db);
++    await t.render();
++    await until(() => currentStep() === 'ready');
++    expect(progress()).toBe('Étape 8/8');
++  });
++
++  it('nouvel appareil : la reprise est recalculée quand la première synchro arrive', async () => {
++    const t = await openFlow(newcomer({ onboardingStep: 'place' }));
++    const { sync } = await t.render();
++    await until(() => currentStep() === 'goal');
++    await seedProfile(t.db, { goal: 'muscle' });
++    await seedPrimaryGym(t.db);
++    sync.set({ lastPullOkAt: '2026-10-06T12:00:00.000Z' });
++    await until(() => currentStep() === 'experience');
++    expect(progress()).toBe('Étape 5/8');
++  });
++
++  it('écran déjà changé par l’utilisateur : une synchro ne le déplace plus', async () => {
++    const t = await openFlow(newcomer({ onboardingStep: 'goal' }));
++    await seedProfile(t.db, { goal: 'muscle' });
++    const { sync } = await t.render();
++    await until(() => currentStep() === 'sport');
++    fireEvent.click(await screen.findByRole('button', { name: 'Retour' }));
++    await until(() => currentStep() === 'goal');
++    sync.set({ lastPullOkAt: '2026-10-06T12:00:00.000Z' });
++    await settle();
++    expect(currentStep()).toBe('goal');
++  });
++
++  it('« Prendre du muscle » + « Suivant » → PATCH, puis « Autre sport » en 2/8 ; « Retour » garde la réponse', async () => {
++    const t = await openFlow();
++    await t.render();
++    await until(() => currentStep() === 'goal');
++    await screen.findByRole('radio', { name: 'Prendre du muscle' });
++    expect(button('Suivant').disabled).toBe(true);
++    expect(screen.queryByRole('button', { name: 'Retour' })).toBeNull();
++    choose('Prendre du muscle');
++    expect(t.server.patches).toEqual([]);
++    fireEvent.click(button('Suivant'));
++    await until(() => currentStep() === 'sport');
++    expect(t.server.patches).toEqual([{ goal: 'muscle', onboardingStep: 'goal' }]);
++    expect(progress()).toBe('Étape 2/8');
++
++    fireEvent.click(await screen.findByRole('button', { name: 'Retour' }));
++    await until(() => currentStep() === 'goal');
++    await until(() => isChecked('Prendre du muscle'));
++    expect(progress()).toBe('Étape 1/8');
++    expect(t.server.patches).toHaveLength(1);
++  });
++
++  it("étape 'place' sans type de lieu connu → 'place_kind' (le choix n'est pas gardé)", async () => {
++    const t = await openFlow(newcomer({ onboardingStep: 'place_kind' }));
++    await seedProfile(t.db, { goal: 'muscle' });
++    await t.render();
++    await until(() => currentStep() === 'place_kind');
++    expect(radio('À la salle').checked).toBe(false);
++    expect(radio('À la maison').checked).toBe(false);
++    expect(progress()).toBe('Étape 3/8');
++  });
++
++  it('retour depuis le niveau : le lieu principal existant est affiché, rien n’est recréé', async () => {
++    const t = await openFlow(newcomer({ onboardingStep: 'place' }));
++    await seedProfile(t.db, { goal: 'muscle' });
++    await seedPrimaryGym(t.db);
++    await t.render();
++    await until(() => currentStep() === 'experience');
++    fireEvent.click(await screen.findByRole('button', { name: 'Retour' }));
++    await until(() => currentStep() === 'place');
++    await screen.findByText('Ton lieu principal : Basic Fit');
++    fireEvent.click(button('Suivant'));
++    await until(() => currentStep() === 'experience');
++    expect(writes(t.api)).toEqual(['PATCH /api/me/training-profile']);
++    expect(t.server.patches).toEqual([{ onboardingStep: 'place' }]);
++  });
++
++  it('hors ligne : « Nécessite le réseau » en alerte, on reste sur l’objectif', async () => {
++    const t = await openFlow();
++    await t.render();
++    await until(() => currentStep() === 'goal');
++    await screen.findByRole('radio', { name: 'Gagner en force' });
++    t.api.setOffline('reject');
++    choose('Gagner en force');
++    fireEvent.click(button('Suivant'));
++    expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
++    expect(currentStep()).toBe('goal');
++    expect(t.server.patches).toEqual([]);
++  });
++});
+diff --git a/apps/web/test/onboarding/health-step.test.tsx b/apps/web/test/onboarding/health-step.test.tsx
+new file mode 100644
+index 0000000..028c8c2
+--- /dev/null
++++ b/apps/web/test/onboarding/health-step.test.tsx
+@@ -0,0 +1,183 @@
++import { HEALTH_CONSENT_TEXT, HEALTH_QUESTIONNAIRE, type MeResponse } from '@appsport/contracts';
++import { fireEvent, screen, within } from '@testing-library/react';
++import { describe, expect, it, vi } from 'vitest';
++import { HealthStep } from '../../src/features/onboarding/HealthStep';
++import { HEALTH_WARNING_TEXT } from '../../src/ui';
++import { createFakeApi } from '../support/fake-api';
++import { createTestLocalDb } from '../support/local-db';
++import { button, newcomer, seedProfile, serveProfile } from '../support/onboarding';
++import { renderWithServices } from '../support/render';
++import { seedMirror } from '../support/seed';
++import { until } from '../support/wait';
++
++const CAUTIOUS = 'Je préfère une progression plus prudente';
++const SELF_CHECK = "Si l'une de ces situations te concerne, demande l'avis d'un médecin avant de commencer";
++const consenting = (o: Partial<MeResponse> = {}) =>
++  newcomer({
++    consents: {
++      health: { active: true, textVersion: '1.0', at: '2026-10-06T10:00:00.000Z' },
++      aiCoach: { active: false, textVersion: null, at: null },
++    },
++    ...o,
++  });
++
++async function renderHealth(me: MeResponse = newcomer()) {
++  const db = createTestLocalDb();
++  const api = createFakeApi();
++  await seedProfile(db, { goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45 });
++  const server = serveProfile(api, db, me);
++  const onNext = vi.fn();
++  const rendered = await renderWithServices(<HealthStep mode="onboarding" onNext={onNext} />, {
++    me,
++    db,
++    api,
++  });
++  await screen.findByRole('switch', { name: CAUTIOUS });
++  return { ...rendered, ...server, onNext };
++}
++
++const toggle = () => screen.getByRole('switch', { name: CAUTIOUS }) as HTMLInputElement;
++const question = (i: number) =>
++  within(screen.getByRole('group', { name: HEALTH_QUESTIONNAIRE.questions[i] }));
++
++describe('HealthStep sans accord santé (E7, P-CST-1, P-CST-2)', () => {
++  it('texte de l’accord, case décochée, « J’accepte et je renseigne » désactivé', async () => {
++    await renderHealth();
++    expect(screen.getByText(HEALTH_CONSENT_TEXT.text)).toBeTruthy();
++    const box = screen.getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text }) as HTMLInputElement;
++    expect(box.checked).toBe(false);
++    expect(button("J'accepte et je renseigne").disabled).toBe(true);
++    fireEvent.click(box);
++    expect(button("J'accepte et je renseigne").disabled).toBe(false);
++  });
++
++  it('« Passer » : les 4 questions en auto-vérification, aucune requête', async () => {
++    const { api } = await renderHealth();
++    fireEvent.click(button('Passer'));
++    await screen.findByText(new RegExp(SELF_CHECK));
++    for (const q of HEALTH_QUESTIONNAIRE.questions) expect(screen.getByText(q)).toBeTruthy();
++    expect(screen.queryByRole('radio')).toBeNull();
++    expect(screen.queryByRole('button', { name: 'Enregistrer mes réponses' })).toBeNull();
++    expect(api.calls).toEqual([]);
++  });
++
++  it('mode prudent : rien à la bascule, enregistré avec l’étape au clic sur « Suivant » (R-ONB-2)', async () => {
++    const t = await renderHealth();
++    expect(toggle().checked).toBe(false);
++    fireEvent.click(toggle());
++    expect(toggle().checked).toBe(true);
++    expect(t.api.calls).toEqual([]);
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(t.patches).toEqual([{ cautiousMode: true, onboardingStep: 'health' }]);
++  });
++
++  it('« Suivant » sans changement : seulement l’étape', async () => {
++    const t = await renderHealth();
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(t.patches).toEqual([{ onboardingStep: 'health' }]);
++  });
++
++  it('accord donné : POST du consentement, puis le questionnaire enregistré', async () => {
++    const t = await renderHealth();
++    t.api.on('POST', '/api/me/consents', { status: 200, body: consenting() });
++    fireEvent.click(screen.getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text }));
++    fireEvent.click(button("J'accepte et je renseigne"));
++    await screen.findByRole('button', { name: 'Enregistrer mes réponses' });
++    expect(t.api.calls.find((c) => c.path === '/api/me/consents')?.body).toEqual({
++      type: 'health',
++      textVersion: '1.0',
++    });
++  });
++});
++
++describe('HealthStep avec accord santé', () => {
++  it('Oui à la 1re question : PUT des réponses, recommandation de consulter', async () => {
++    const t = await renderHealth(consenting());
++    let body: unknown;
++    t.api.on('PUT', '/api/me/health-screening', (req) => {
++      body = req.body;
++      return { status: 200, body: { caution: true } };
++    });
++    expect(button('Enregistrer mes réponses').disabled).toBe(true);
++    fireEvent.click(question(0).getByRole('radio', { name: 'Oui' }));
++    for (const i of [1, 2, 3]) fireEvent.click(question(i).getByRole('radio', { name: 'Non' }));
++    fireEvent.click(button('Enregistrer mes réponses'));
++    await screen.findByText('Nous te recommandons de consulter un médecin avant de commencer.');
++    expect(body).toEqual({ answers: [true, false, false, false], questionnaireVersion: '1.0' });
++  });
++
++  it('limitations : « aucun diagnostic », « Aucune », ajout avec note de 200 caractères au plus', async () => {
++    const t = await renderHealth(consenting());
++    let body: unknown;
++    t.api.on('POST', '/api/me/limitations', async (req) => {
++      body = req.body;
++      await seedMirror(t.db, 'limitation', [
++        {
++          id: 'l-1',
++          ownerId: 'u-1',
++          bodyArea: 'knee',
++          side: 'left',
++          severity: 'mild',
++          note: 'entorse ancienne',
++          active: true,
++        },
++      ]);
++      return { status: 201, body: { id: 'l-1' } };
++    });
++    expect(screen.getByText(/aucun diagnostic n'est nécessaire/)).toBeTruthy();
++    await screen.findByText('Aucune');
++    expect(button('Ajouter une limitation').disabled).toBe(true);
++    fireEvent.change(screen.getByLabelText('Zone'), { target: { value: 'knee' } });
++    fireEvent.change(screen.getByLabelText('Côté'), { target: { value: 'left' } });
++    fireEvent.click(screen.getByRole('radio', { name: 'Légère' }));
++    const note = screen.getByLabelText('Note') as HTMLInputElement;
++    expect(note.maxLength).toBe(200);
++    fireEvent.change(note, { target: { value: 'entorse ancienne' } });
++    fireEvent.click(button('Ajouter une limitation'));
++    await screen.findByText('Genou · Gauche · Légère');
++    expect(body).toEqual({ bodyArea: 'knee', side: 'left', severity: 'mild', note: 'entorse ancienne' });
++    expect(screen.queryByText('Aucune')).toBeNull();
++    expect((screen.getByLabelText('Note') as HTMLInputElement).value).toBe('');
++  });
++
++  it('limitation existante : « Supprimer » → DELETE', async () => {
++    const db = createTestLocalDb();
++    await seedMirror(db, 'limitation', [
++      {
++        id: 'l-1',
++        ownerId: 'u-1',
++        bodyArea: 'hip',
++        side: 'both',
++        severity: 'severe',
++        note: null,
++        active: true,
++      },
++    ]);
++    const api = createFakeApi().on('DELETE', '/api/me/limitations/:id', { status: 204 });
++    await renderWithServices(<HealthStep mode="onboarding" onNext={() => {}} />, {
++      me: consenting(),
++      db,
++      api,
++    });
++    await screen.findByText("Hanche · Les deux · Forte : m'empêche certains mouvements");
++    fireEvent.click(button('Supprimer'));
++    await until(() => api.calls.some((c) => c.method === 'DELETE'));
++    expect(api.calls.find((c) => c.method === 'DELETE')?.path).toBe('/api/me/limitations/l-1');
++  });
++});
++
++describe('HealthStep pour un mineur (R-CST-7)', () => {
++  it('mode prudent coché, désactivé et imposé ; avertissement santé ; « Suivant » actif sans réponse', async () => {
++    const t = await renderHealth(newcomer({ ageBand: 'minor', cautious: true }));
++    expect(toggle().checked).toBe(true);
++    expect(toggle().disabled).toBe(true);
++    expect(screen.getByText("Imposé jusqu'à 18 ans")).toBeTruthy();
++    expect(screen.getByText(HEALTH_WARNING_TEXT)).toBeTruthy();
++    expect(button('Suivant').disabled).toBe(false);
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(t.patches).toEqual([{ onboardingStep: 'health' }]);
++  });
++});
+diff --git a/apps/web/test/onboarding/ready-step.test.tsx b/apps/web/test/onboarding/ready-step.test.tsx
+new file mode 100644
+index 0000000..a314a2d
+--- /dev/null
++++ b/apps/web/test/onboarding/ready-step.test.tsx
+@@ -0,0 +1,91 @@
++import { fireEvent, screen } from '@testing-library/react';
++import { afterEach, describe, expect, it } from 'vitest';
++import { ONBOARDING_COMPLETED_EVENT } from '../../src/app-events';
++import { setMeta } from '../../src/local-db/meta';
++import { createFakeApi } from '../support/fake-api';
++import { createTestLocalDb } from '../support/local-db';
++import {
++  button,
++  currentStep,
++  newcomer,
++  seedPrimaryGym,
++  seedProfile,
++  serveProfile,
++} from '../support/onboarding';
++import { DEFAULT_NOW, makeMe, renderApp } from '../support/render';
++import { until } from '../support/wait';
++
++const HOUR = 3_600_000;
++const COMPLETE = '/api/me/onboarding/complete';
++
++let events = 0;
++const count = () => {
++  events += 1;
++};
++afterEach(() => {
++  window.removeEventListener(ONBOARDING_COMPLETED_EVENT, count);
++  events = 0;
++});
++
++/** Onboarding repris à « C'est prêt » ; dernier pull il y a `pullAgoMs`. */
++async function openReady(pullAgoMs: number) {
++  const me = newcomer({ onboardingStep: 'health' });
++  const db = createTestLocalDb();
++  const api = createFakeApi().on('GET', '/api/catalog', { status: 304 });
++  await seedProfile(db, { goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45 });
++  await seedPrimaryGym(db);
++  await setMeta(db, 'catalogVersion', 'cat-1');
++  await setMeta(db, 'serverCatalogVersion', 'cat-1');
++  await setMeta(db, 'lastPullOkAt', new Date(DEFAULT_NOW - pullAgoMs).toISOString());
++  serveProfile(api, db, me);
++  const rendered = await renderApp({ path: '/onboarding', me, db, api });
++  await until(() => currentStep() === 'ready');
++  return { ...rendered, api };
++}
++
++const indicatorState = () => screen.queryByTestId('offline-ready')?.getAttribute('data-state');
++
++describe('ReadyStep (E8, R-SYN-33)', () => {
++  it('récapitulatif, voyant vert, « Commencer » → fin de l’onboarding, événement, accueil', async () => {
++    const { api, location } = await openReady(HOUR);
++    api.on('POST', COMPLETE, { status: 200, body: makeMe() });
++    window.addEventListener(ONBOARDING_COMPLETED_EVENT, count);
++    for (const text of ['Prendre du muscle', '3 séances de 45 min', 'Basic Fit', 'Jamais']) {
++      await screen.findByText(text);
++    }
++    await until(() => indicatorState() === 'ready');
++    await until(() => !button('Commencer').disabled);
++    fireEvent.click(button('Commencer'));
++    await until(() => location() === '/');
++    expect(api.calls.filter((c) => c.path === COMPLETE).map((c) => c.method)).toEqual(['POST']);
++    await screen.findByText('Bonjour lea');
++    expect(events).toBe(1);
++  });
++
++  it('dernier pull il y a 25 h : « Commencer » désactivé, « Réessayer » lance une synchro manuelle', async () => {
++    const { sync, api } = await openReady(25 * HOUR);
++    await until(() => indicatorState() === 'not-ready');
++    expect(button('Commencer').disabled).toBe(true);
++    fireEvent.click(button('Réessayer'));
++    await until(() => sync.triggers.includes('manual'));
++    expect(api.calls.some((c) => c.path === COMPLETE)).toBe(false);
++  });
++
++  it('409 onboarding_incomplete : retour au premier écran incomplet', async () => {
++    const { api, location } = await openReady(HOUR);
++    api.on('POST', COMPLETE, { status: 409, body: { error: 'onboarding_incomplete', step: 'availability' } });
++    window.addEventListener(ONBOARDING_COMPLETED_EVENT, count);
++    await until(() => indicatorState() === 'ready');
++    await until(() => !button('Commencer').disabled);
++    fireEvent.click(button('Commencer'));
++    await until(() => currentStep() === 'availability');
++    expect(location()).toBe('/onboarding');
++    expect(events).toBe(0);
++  });
++
++  it('« Retour » ramène à la santé', async () => {
++    await openReady(HOUR);
++    fireEvent.click(button('Retour'));
++    await until(() => currentStep() === 'health');
++  });
++});
+diff --git a/apps/web/test/onboarding/steps.test.tsx b/apps/web/test/onboarding/steps.test.tsx
+new file mode 100644
+index 0000000..6a9d2f3
+--- /dev/null
++++ b/apps/web/test/onboarding/steps.test.tsx
+@@ -0,0 +1,338 @@
++import { EQUIPMENT, EQUIPMENT_LABELS, PRESETS, SPORTS } from '@appsport/contracts';
++import { fireEvent, screen, within } from '@testing-library/react';
++import { type ReactElement, useState } from 'react';
++import { describe, expect, it, vi } from 'vitest';
++import { AvailabilityStep } from '../../src/features/onboarding/AvailabilityStep';
++import { ExperienceStep } from '../../src/features/onboarding/ExperienceStep';
++import { GoalStep } from '../../src/features/onboarding/GoalStep';
++import { PlaceKindStep } from '../../src/features/onboarding/PlaceKindStep';
++import { PlaceStep } from '../../src/features/onboarding/PlaceStep';
++import { SportStep } from '../../src/features/onboarding/SportStep';
++import { createFakeApi } from '../support/fake-api';
++import { createTestLocalDb } from '../support/local-db';
++import {
++  button,
++  checkbox,
++  choose,
++  currentStep,
++  isChecked,
++  newcomer,
++  radio,
++  seedPrimaryGym,
++  seedProfile,
++  serveProfile,
++  writes,
++} from '../support/onboarding';
++import { makeMe, renderApp, renderWithServices } from '../support/render';
++import { until } from '../support/wait';
++
++const ADULT_GOALS = [
++  'Prendre du muscle',
++  'Gagner en force',
++  'Perdre du gras',
++  'Forme et santé',
++  'Me renforcer pour mon sport',
++];
++
++/** Écran seul, avec un faux serveur du profil ; `profile` est écrit dans le miroir avant le rendu. */
++async function renderStep(
++  ui: (onNext: () => void) => ReactElement,
++  o: { me?: ReturnType<typeof makeMe>; profile?: Parameters<typeof seedProfile>[1] } = {},
++) {
++  const me = o.me ?? newcomer();
++  const db = createTestLocalDb();
++  const api = createFakeApi();
++  if (o.profile) await seedProfile(db, o.profile);
++  const server = serveProfile(api, db, me);
++  const onNext = vi.fn();
++  const rendered = await renderWithServices(ui(onNext), { me, db, api });
++  return { ...rendered, ...server, onNext };
++}
++
++const radioLabels = (group: string) =>
++  within(screen.getByRole('group', { name: group }))
++    .getAllByRole('radio')
++    .map((r) => r.closest('label')?.textContent);
++
++describe('GoalStep (E1)', () => {
++  it('mineur : pas de « Perdre du gras », 4 options (P-MIN, 02 §15 n°11)', async () => {
++    await renderStep((onNext) => <GoalStep mode="onboarding" onNext={onNext} />, {
++      me: newcomer({ ageBand: 'minor' }),
++    });
++    await screen.findByRole('radio', { name: 'Prendre du muscle' });
++    expect(screen.getAllByRole('radio')).toHaveLength(4);
++    expect(screen.queryByRole('radio', { name: 'Perdre du gras' })).toBeNull();
++  });
++
++  it('adulte : les 5 objectifs ; « Suivant » désactivé sans choix', async () => {
++    await renderStep((onNext) => <GoalStep mode="onboarding" onNext={onNext} />);
++    await screen.findByRole('radio', { name: 'Prendre du muscle' });
++    expect(screen.getAllByRole('radio').map((r) => r.closest('label')?.textContent)).toEqual(ADULT_GOALS);
++    expect(button('Suivant').disabled).toBe(true);
++  });
++
++  it('édition : « Enregistrer » et PATCH { goal } sans onboardingStep', async () => {
++    const t = await renderStep((onNext) => <GoalStep mode="edit" onNext={onNext} />, {
++      me: makeMe(),
++      profile: { goal: 'muscle' },
++    });
++    await until(() => isChecked('Prendre du muscle'));
++    expect(screen.queryByRole('button', { name: 'Suivant' })).toBeNull();
++    choose('Gagner en force');
++    fireEvent.click(button('Enregistrer'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(t.patches).toEqual([{ goal: 'strength' }]);
++  });
++
++  it('édition sans sport : « Me renforcer pour mon sport » mène au sport, un seul PATCH', async () => {
++    const t = await renderStep((onNext) => <GoalStep mode="edit" onNext={onNext} />, {
++      me: makeMe(),
++      profile: { goal: 'muscle' },
++    });
++    await until(() => isChecked('Prendre du muscle'));
++    choose('Me renforcer pour mon sport');
++    expect(screen.queryByRole('button', { name: 'Enregistrer' })).toBeNull();
++    fireEvent.click(button('Suivant'));
++    await screen.findByRole('radio', { name: 'Course à pied' });
++    expect(t.patches).toEqual([]);
++    choose('Course à pied');
++    fireEvent.click(button('Enregistrer'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(t.patches).toEqual([{ goal: 'sport_support', sportCode: 'running', sportOtherLabel: null }]);
++  });
++
++  it('édition avec un sport enregistré : PATCH { goal: sport_support }', async () => {
++    const t = await renderStep((onNext) => <GoalStep mode="edit" onNext={onNext} />, {
++      me: makeMe(),
++      profile: { goal: 'muscle', sportCode: 'tennis' },
++    });
++    await until(() => isChecked('Prendre du muscle'));
++    choose('Me renforcer pour mon sport');
++    fireEvent.click(button('Enregistrer'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(t.patches).toEqual([{ goal: 'sport_support' }]);
++  });
++});
++
++describe('SportStep (E2)', () => {
++  it('objectif sport : « Oui » imposé, « Non » désactivé, avec la raison', async () => {
++    await renderStep((onNext) => <SportStep mode="onboarding" onNext={onNext} />, {
++      profile: { goal: 'sport_support' },
++    });
++    await until(() => isChecked('Oui'));
++    expect(radio('Non').disabled).toBe(true);
++    expect(screen.getByText("Obligatoire avec l'objectif « Me renforcer pour mon sport ».")).toBeTruthy();
++  });
++
++  it('« Autre » + « Pétanque » : 15 sports, libellé de 40 caractères au plus', async () => {
++    const t = await renderStep((onNext) => <SportStep mode="onboarding" onNext={onNext} />, {
++      profile: { goal: 'muscle' },
++    });
++    await screen.findByRole('radio', { name: 'Oui' });
++    choose('Oui');
++    expect(radioLabels('Quel sport ?')).toEqual(SPORTS.map((s) => s.label));
++    choose('Autre');
++    expect(button('Suivant').disabled).toBe(true);
++    const label = screen.getByLabelText('Ton sport') as HTMLInputElement;
++    expect(label.maxLength).toBe(40);
++    fireEvent.change(label, { target: { value: '   ' } });
++    expect(button('Suivant').disabled).toBe(true);
++    fireEvent.change(label, { target: { value: 'Pétanque' } });
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(t.patches).toEqual([{ sportCode: 'other', sportOtherLabel: 'Pétanque', onboardingStep: 'sport' }]);
++  });
++
++  it('« Non » → sport effacé', async () => {
++    const t = await renderStep((onNext) => <SportStep mode="onboarding" onNext={onNext} />, {
++      profile: { goal: 'muscle' },
++    });
++    await screen.findByRole('radio', { name: 'Non' });
++    choose('Non');
++    expect(screen.queryByRole('group', { name: 'Quel sport ?' })).toBeNull();
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(t.patches).toEqual([{ sportCode: null, sportOtherLabel: null, onboardingStep: 'sport' }]);
++  });
++
++  it('« Suivant » désactivé tant que la question n’a pas de réponse', async () => {
++    await renderStep((onNext) => <SportStep mode="onboarding" onNext={onNext} />, {
++      profile: { goal: 'muscle' },
++    });
++    await screen.findByRole('radio', { name: 'Non' });
++    expect(radio('Non').checked).toBe(false);
++    expect(radio('Oui').checked).toBe(false);
++    expect(button('Suivant').disabled).toBe(true);
++  });
++});
++
++function PlaceKindHarness(p: { onNext(): void }) {
++  const [kind, setKind] = useState<'gym' | 'home' | null>(null);
++  return <PlaceKindStep mode="onboarding" onNext={p.onNext} value={kind} onChange={setKind} />;
++}
++
++describe('PlaceKindStep (E3)', () => {
++  it('« Où t’entraîneras-tu le plus souvent ? » : salle ou maison, puis PATCH de l’étape', async () => {
++    const t = await renderStep((onNext) => <PlaceKindHarness onNext={onNext} />);
++    expect(radioLabels("Où t'entraîneras-tu le plus souvent ?")).toEqual(['À la salle', 'À la maison']);
++    expect(button('Suivant').disabled).toBe(true);
++    choose('À la maison');
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(t.patches).toEqual([{ onboardingStep: 'place_kind' }]);
++  });
++});
++
++describe('PlaceStep (E4)', () => {
++  it('maison : nom « Maison », sans matériel par défaut, préréglage « Petit matériel », POST puis PATCH', async () => {
++    const t = await renderStep((onNext) => <PlaceStep mode="onboarding" kind="home" onNext={onNext} />);
++    t.api.on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
++    const name = (await screen.findByLabelText('Nom du lieu')) as HTMLInputElement;
++    expect(name.value).toBe('Maison');
++    expect(name.maxLength).toBe(30);
++    expect(radioLabels('Ton matériel')).toEqual(['Sans matériel', 'Petit matériel', 'Home gym']);
++    expect(radio('Sans matériel').checked).toBe(true);
++    const household = within(screen.getByRole('group', { name: 'Objets du quotidien' }));
++    expect(
++      (household.getByRole('checkbox', { name: EQUIPMENT_LABELS.chair }) as HTMLInputElement).checked,
++    ).toBe(true);
++    expect(
++      (household.getByRole('checkbox', { name: EQUIPMENT_LABELS.table }) as HTMLInputElement).checked,
++    ).toBe(true);
++    expect(checkbox(EQUIPMENT_LABELS.dumbbells).checked).toBe(false);
++
++    choose('Petit matériel');
++    expect(checkbox(EQUIPMENT_LABELS.dumbbells).checked).toBe(true);
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(writes(t.api)).toEqual(['POST /api/places', 'PATCH /api/me/training-profile']);
++    expect(t.api.calls.find((c) => c.path === '/api/places')?.body).toEqual({
++      kind: 'home',
++      name: 'Maison',
++      equipment: EQUIPMENT.filter((c) => PRESETS.home_small.equipment.includes(c)),
++      isPrimary: true,
++    });
++    expect(t.patches).toEqual([{ onboardingStep: 'place' }]);
++  });
++
++  it('maison : changer de préréglage recoche la liste ; une case décochée reste décochée', async () => {
++    await renderStep((onNext) => <PlaceStep mode="onboarding" kind="home" onNext={onNext} />);
++    await screen.findByLabelText('Nom du lieu');
++    fireEvent.click(checkbox(EQUIPMENT_LABELS.table));
++    expect(checkbox(EQUIPMENT_LABELS.table).checked).toBe(false);
++    choose('Home gym');
++    expect(checkbox(EQUIPMENT_LABELS.table).checked).toBe(true);
++    expect(checkbox(EQUIPMENT_LABELS.barbell).checked).toBe(true);
++    choose('Sans matériel');
++    expect(checkbox(EQUIPMENT_LABELS.barbell).checked).toBe(false);
++  });
++
++  it("maison : POST réussi puis PATCH hors ligne → « Suivant » renvoie seulement l'étape", async () => {
++    const t = await renderStep((onNext) => <PlaceStep mode="onboarding" kind="home" onNext={onNext} />);
++    // Le réseau tombe juste après la création du lieu : le PATCH qui suit échoue.
++    t.api.on('POST', '/api/places', () => {
++      t.api.setOffline('reject');
++      return { status: 201, body: { id: 'p-1' } };
++    });
++    await screen.findByLabelText('Nom du lieu');
++    fireEvent.click(button('Suivant'));
++    expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
++    expect(t.onNext).not.toHaveBeenCalled();
++    t.api.setOffline(false);
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(writes(t.api)).toEqual([
++      'POST /api/places',
++      'PATCH /api/me/training-profile',
++      'PATCH /api/me/training-profile',
++    ]);
++  });
++
++  it("salle : « Valider » du GymPicker → POST du lieu, PATCH de l'étape, puis le niveau", async () => {
++    const me = newcomer({ onboardingStep: 'place_kind' });
++    const db = createTestLocalDb();
++    const api = createFakeApi()
++      .on('GET', '/api/gyms', {
++        status: 200,
++        body: [{ id: 'g-1', name: 'Basic Fit', city: 'Lyon', visibleMemberCount: 2 }],
++      })
++      .on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
++    await seedProfile(db, { goal: 'muscle' });
++    const server = serveProfile(api, db, me);
++    await renderApp({ path: '/onboarding', me, db, api });
++    await until(() => currentStep() === 'place_kind');
++    choose('À la salle');
++    fireEvent.click(button('Suivant'));
++    await until(() => currentStep() === 'place');
++    expect(screen.queryByRole('button', { name: 'Suivant' })).toBeNull();
++    await screen.findByRole('radio', { name: 'Basic Fit · Lyon · 2 membres visibles' });
++    choose('Basic Fit · Lyon · 2 membres visibles');
++    fireEvent.click(button('Valider'));
++    await until(() => currentStep() === 'experience');
++    expect(server.patches).toEqual([{ onboardingStep: 'place_kind' }, { onboardingStep: 'place' }]);
++    expect(api.calls.find((c) => c.path === '/api/places')?.body).toEqual({
++      kind: 'gym',
++      gymId: 'g-1',
++      isPrimary: true,
++      visibleAtGym: true,
++    });
++  });
++
++  it('lieu principal existant : « Ton lieu principal : Basic Fit », aucun POST', async () => {
++    const me = newcomer({ onboardingStep: 'place_kind' });
++    const db = createTestLocalDb();
++    const api = createFakeApi();
++    await seedPrimaryGym(db);
++    const server = serveProfile(api, db, me);
++    const onNext = vi.fn();
++    await renderWithServices(<PlaceStep mode="onboarding" kind="home" onNext={onNext} />, { me, db, api });
++    await screen.findByText('Ton lieu principal : Basic Fit');
++    expect(screen.queryByLabelText('Nom du lieu')).toBeNull();
++    fireEvent.click(button('Suivant'));
++    await until(() => onNext.mock.calls.length === 1);
++    expect(writes(api)).toEqual(['PATCH /api/me/training-profile']);
++    expect(server.patches).toEqual([{ onboardingStep: 'place' }]);
++  });
++});
++
++describe('ExperienceStep (E5)', () => {
++  it('question exacte ; « 6 mois à 2 ans » → PATCH', async () => {
++    const t = await renderStep((onNext) => <ExperienceStep mode="onboarding" onNext={onNext} />);
++    await screen.findByRole('radio', { name: 'Jamais' });
++    const legend =
++      'Depuis combien de temps fais-tu de la musculation régulièrement (au moins une fois par semaine) ?';
++    expect(radioLabels(legend)).toEqual(['Jamais', 'Moins de 6 mois', '6 mois à 2 ans', 'Plus de 2 ans']);
++    expect(button('Suivant').disabled).toBe(true);
++    choose('6 mois à 2 ans');
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(t.patches).toEqual([{ experience: '6_to_24_months', onboardingStep: 'experience' }]);
++  });
++});
++
++describe('AvailabilityStep (E6)', () => {
++  it('« 3 » (exact) et « 60 min » → PATCH ; les deux réponses sont exigées', async () => {
++    const t = await renderStep((onNext) => <AvailabilityStep mode="onboarding" onNext={onNext} />);
++    await screen.findByRole('radio', { name: '30 min' });
++    expect(radioLabels('Séances par semaine')).toEqual(['2', '3', '4']);
++    expect(radioLabels("Durée d'une séance")).toEqual(['30 min', '45 min', '60 min', '75 min', '90 min']);
++    choose('3');
++    expect(button('Suivant').disabled).toBe(true);
++    choose('60 min');
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(t.patches).toEqual([{ daysPerWeek: 3, sessionMinutes: 60, onboardingStep: 'availability' }]);
++  });
++
++  it('édition : réponses enregistrées cochées, PATCH sans onboardingStep', async () => {
++    const t = await renderStep((onNext) => <AvailabilityStep mode="edit" onNext={onNext} />, {
++      me: makeMe(),
++      profile: { daysPerWeek: 2, sessionMinutes: 45 },
++    });
++    await until(() => isChecked('2') && isChecked('45 min'));
++    choose('4');
++    fireEvent.click(button('Enregistrer'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(t.patches).toEqual([{ daysPerWeek: 4, sessionMinutes: 45 }]);
++  });
++});
+diff --git a/apps/web/test/places/gym-picker.test.tsx b/apps/web/test/places/gym-picker.test.tsx
+new file mode 100644
+index 0000000..f9a41e1
+--- /dev/null
++++ b/apps/web/test/places/gym-picker.test.tsx
+@@ -0,0 +1,206 @@
++import {
++  EQUIPMENT,
++  EQUIPMENT_CATEGORY_LABELS,
++  EQUIPMENT_LABELS,
++  type EquipmentCode,
++  PRESETS,
++} from '@appsport/contracts';
++import { fireEvent, screen, within } from '@testing-library/react';
++import { describe, expect, it, vi } from 'vitest';
++import { EquipmentChecklist, sortEquipment } from '../../src/features/places/EquipmentChecklist';
++import { GymPicker } from '../../src/features/places/GymPicker';
++import { createFakeApi, type FakeApi } from '../support/fake-api';
++import { button, checkbox, choose, radio } from '../support/onboarding';
++import { renderWithServices } from '../support/render';
++import { until } from '../support/wait';
++
++const BASIC_FIT = { id: 'g-1', name: 'Basic Fit', city: 'Lyon', visibleMemberCount: 2 };
++const BASIC_FIT_LABEL = 'Basic Fit · Lyon · 2 membres visibles';
++const VISIBLE = 'Apparaître dans « Qui va à cette salle »';
++const NOT_LISTED = "Ma salle n'est pas dans la liste";
++
++async function renderPicker(o: { defaultVisible?: boolean; api?: FakeApi } = {}) {
++  const api = o.api ?? createFakeApi();
++  api.on('GET', '/api/gyms', { status: 200, body: [BASIC_FIT] });
++  const onDone = vi.fn();
++  const rendered = await renderWithServices(
++    <GymPicker isPrimary defaultVisible={o.defaultVisible ?? true} onDone={onDone} />,
++    { api },
++  );
++  await screen.findByRole('radio', { name: BASIC_FIT_LABEL });
++  return { ...rendered, onDone };
++}
++
++const gets = (api: FakeApi, path: string) =>
++  api.calls.filter((c) => c.method === 'GET' && c.path === path).map((c) => c.query.toString());
++
++/** Ouvre la création et passe le nom et la ville. */
++function startCreate(name: string, city: string) {
++  fireEvent.click(button(NOT_LISTED));
++  fireEvent.change(screen.getByLabelText('Nom de la salle'), { target: { value: name } });
++  fireEvent.change(screen.getByLabelText('Ville'), { target: { value: city } });
++  fireEvent.click(button('Continuer'));
++}
++
++describe('GymPicker (R-SAL-1, R-VIS-3)', () => {
++  it('liste des salles avec le nombre de membres visibles ; recherche', async () => {
++    const { api } = await renderPicker();
++    expect(gets(api, '/api/gyms')).toEqual(['q=']);
++    fireEvent.change(screen.getByLabelText('Rechercher une salle'), { target: { value: 'bas' } });
++    await until(() => gets(api, '/api/gyms').includes('q=bas'));
++  });
++
++  it('majeur : visible par défaut ; « Valider » désactivé sans salle choisie', async () => {
++    await renderPicker();
++    expect(checkbox(VISIBLE).checked).toBe(true);
++    expect(screen.queryByText('Désactivé par défaut pour les moins de 18 ans.')).toBeNull();
++    expect(button('Valider').disabled).toBe(true);
++  });
++
++  it('mineur : décochée avec la raison ; « Valider » → POST du lieu puis onDone (P-MIN-6)', async () => {
++    const api = createFakeApi().on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
++    const { onDone } = await renderPicker({ defaultVisible: false, api });
++    expect(checkbox(VISIBLE).checked).toBe(false);
++    expect(screen.getByText('Désactivé par défaut pour les moins de 18 ans.')).toBeTruthy();
++    choose(BASIC_FIT_LABEL);
++    fireEvent.click(button('Valider'));
++    await until(() => onDone.mock.calls.length === 1);
++    expect(api.calls.find((c) => c.path === '/api/places')?.body).toEqual({
++      kind: 'gym',
++      gymId: 'g-1',
++      isPrimary: true,
++      visibleAtGym: false,
++    });
++  });
++});
++
++describe('GymCreate (R-SAL-2, R-SAL-3)', () => {
++  it('nom d’un caractère : « 2 à 60 caractères. », aucune requête', async () => {
++    const { api } = await renderPicker();
++    const before = api.calls.length;
++    startCreate('B', 'Lyon');
++    expect(screen.getByText('2 à 60 caractères.')).toBeTruthy();
++    expect(api.calls.length).toBe(before);
++  });
++
++  it('salles proches : « C’est ma salle » → POST du lieu de cette salle', async () => {
++    const api = createFakeApi()
++      .on('GET', '/api/gyms/similar', { status: 200, body: [BASIC_FIT] })
++      .on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
++    const { onDone } = await renderPicker({ api });
++    startCreate('Basic-Fit', 'Lyon');
++    await screen.findByText('Ces salles existent peut-être déjà :');
++    expect(gets(api, '/api/gyms/similar')).toEqual(['name=Basic-Fit&city=Lyon']);
++    expect(screen.getByRole('button', { name: 'Non, créer ma salle' })).toBeTruthy();
++    fireEvent.click(button("C'est ma salle"));
++    await until(() => onDone.mock.calls.length === 1);
++    expect(api.calls.find((c) => c.path === '/api/places')?.body).toEqual({
++      kind: 'gym',
++      gymId: 'g-1',
++      isPrimary: true,
++      visibleAtGym: true,
++    });
++  });
++
++  it('« Non, créer ma salle » mène aux préréglages', async () => {
++    const api = createFakeApi().on('GET', '/api/gyms/similar', { status: 200, body: [BASIC_FIT] });
++    await renderPicker({ api });
++    startCreate('Basic-Fit', 'Lyon');
++    fireEvent.click(await screen.findByRole('button', { name: 'Non, créer ma salle' }));
++    await screen.findByRole('group', { name: 'Type de salle' });
++  });
++
++  it('aucune salle proche : préréglages directement ; « Petite salle de quartier » ; « Créer la salle »', async () => {
++    const api = createFakeApi()
++      .on('GET', '/api/gyms/similar', { status: 200, body: [] })
++      .on('POST', '/api/gyms', { status: 201, body: { gymId: 'g-2', placeId: 'p-2' } });
++    const { onDone } = await renderPicker({ api });
++    startCreate('Basic-Fit', 'Lyon');
++    const presets = within(await screen.findByRole('group', { name: 'Type de salle' }));
++    expect(presets.getAllByRole('radio').map((r) => r.closest('label')?.textContent)).toEqual([
++      PRESETS.gym_large.label,
++      PRESETS.gym_small.label,
++      PRESETS.gym_crossfit.label,
++      PRESETS.gym_other.label,
++    ]);
++    expect(screen.queryByText('Ces salles existent peut-être déjà :')).toBeNull();
++    expect(button('Créer la salle').disabled).toBe(true);
++    choose('Petite salle de quartier');
++    const checked = screen
++      .getAllByRole('checkbox', { checked: true })
++      .map((c) => c.closest('label')?.textContent)
++      .filter((label) => label !== VISIBLE);
++    expect(checked).toEqual(sortEquipment(PRESETS.gym_small.equipment).map((c) => EQUIPMENT_LABELS[c]));
++    expect(checked).toHaveLength(12);
++    expect(screen.queryByRole('group', { name: EQUIPMENT_CATEGORY_LABELS.household })).toBeNull();
++    fireEvent.click(button('Créer la salle'));
++    await until(() => onDone.mock.calls.length === 1);
++    expect(api.calls.find((c) => c.method === 'POST' && c.path === '/api/gyms')?.body).toEqual({
++      name: 'Basic-Fit',
++      city: 'Lyon',
++      equipment: sortEquipment(PRESETS.gym_small.equipment),
++      isPrimary: true,
++      visibleAtGym: true,
++    });
++  });
++
++  it('409 gym_duplicate : « Cette salle existe déjà. » puis « Choisir cette salle »', async () => {
++    const api = createFakeApi()
++      .on('GET', '/api/gyms/similar', { status: 200, body: [] })
++      .on('POST', '/api/gyms', { status: 409, body: { error: 'gym_duplicate', gymId: 'g-1' } })
++      .on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
++    const { onDone } = await renderPicker({ api });
++    startCreate('Basic Fit', 'Lyon');
++    await screen.findByRole('group', { name: 'Type de salle' });
++    choose('Autre');
++    fireEvent.click(button('Créer la salle'));
++    expect((await screen.findByRole('alert')).textContent).toContain('Cette salle existe déjà.');
++    fireEvent.click(button('Choisir cette salle'));
++    await until(() => onDone.mock.calls.length === 1);
++    expect(api.calls.find((c) => c.path === '/api/places')?.body).toEqual({
++      kind: 'gym',
++      gymId: 'g-1',
++      isPrimary: true,
++      visibleAtGym: true,
++    });
++  });
++
++  it('« Revenir à la liste » quitte la création', async () => {
++    await renderPicker();
++    fireEvent.click(button(NOT_LISTED));
++    fireEvent.click(button('Revenir à la liste'));
++    expect(radio(BASIC_FIT_LABEL)).toBeTruthy();
++  });
++});
++
++describe('EquipmentChecklist (R-EQ-3)', () => {
++  const groups = () => screen.getAllByRole('group').map((g) => g.querySelector('legend')?.textContent);
++
++  it('salle : 4 groupes, sans objets du quotidien', async () => {
++    await renderWithServices(<EquipmentChecklist kind="gym" value={[]} onChange={() => {}} />);
++    expect(groups()).toEqual([
++      EQUIPMENT_CATEGORY_LABELS.small_equipment,
++      EQUIPMENT_CATEGORY_LABELS.benches_racks,
++      EQUIPMENT_CATEGORY_LABELS.free_weights,
++      EQUIPMENT_CATEGORY_LABELS.machines,
++    ]);
++  });
++
++  it('maison : 5 groupes ; cocher « Kettlebell » rend la liste triée', async () => {
++    const onChange = vi.fn();
++    await renderWithServices(
++      <EquipmentChecklist kind="home" value={['table', 'barbell', 'chair']} onChange={onChange} />,
++    );
++    expect(groups()).toHaveLength(5);
++    fireEvent.click(checkbox(EQUIPMENT_LABELS.kettlebell));
++    expect(onChange).toHaveBeenCalledWith(['chair', 'table', 'kettlebell', 'barbell']);
++    fireEvent.click(checkbox(EQUIPMENT_LABELS.table));
++    expect(onChange).toHaveBeenLastCalledWith(['chair', 'barbell']);
++  });
++
++  it('sortEquipment : ordre de la taxonomie, sans doublon', () => {
++    const codes: EquipmentCode[] = ['leg_curl', 'chair', 'dumbbells', 'chair'];
++    expect(sortEquipment(codes)).toEqual(EQUIPMENT.filter((c) => codes.includes(c)));
++    expect(sortEquipment(new Set<EquipmentCode>(['box', 'table']))).toEqual(['table', 'box']);
++  });
++});
+diff --git a/apps/web/test/support/onboarding.ts b/apps/web/test/support/onboarding.ts
+new file mode 100644
+index 0000000..9635620
+--- /dev/null
++++ b/apps/web/test/support/onboarding.ts
+@@ -0,0 +1,98 @@
++import { defaultLoadSettings, type MeResponse, type TrainingProfilePatch } from '@appsport/contracts';
++import { fireEvent, screen } from '@testing-library/react';
++import type { AppDb } from '../../src/local-db/db';
++import type { FakeApi } from './fake-api';
++import { makeMe } from './render';
++import { seedMirror } from './seed';
++
++export const PROFILE_PATH = '/api/me/training-profile';
++
++/** Profil d'entraînement d'un nouveau compte : rien n'est encore répondu. */
++export const EMPTY_PROFILE = {
++  goal: null,
++  experience: null,
++  daysPerWeek: null,
++  sessionMinutes: null,
++  sportCode: null,
++  sportOtherLabel: null,
++  cautiousMode: false,
++};
++
++type ProfileFields = { [K in keyof typeof EMPTY_PROFILE]?: unknown };
++
++/** Membre adulte dont l'onboarding n'est pas terminé (aucun écran validé par défaut). */
++export function newcomer(o: Partial<MeResponse> = {}): MeResponse {
++  return makeMe({ onboardingCompletedAt: null, onboardingStep: null, ...o });
++}
++
++export async function seedProfile(db: AppDb, fields: ProfileFields = {}, ownerId = 'u-1'): Promise<void> {
++  await seedMirror(db, 'training_profile', [{ id: ownerId, ownerId, ...EMPTY_PROFILE, ...fields }]);
++}
++
++/** Salle « Basic Fit » à Lyon, lieu principal de `ownerId`. */
++export async function seedPrimaryGym(db: AppDb, ownerId = 'u-1'): Promise<void> {
++  await seedMirror(db, 'gym', [
++    {
++      id: 'g-1',
++      name: 'Basic Fit',
++      nameKey: 'basic fit',
++      city: 'Lyon',
++      cityKey: 'lyon',
++      loadSettings: defaultLoadSettings('gym'),
++    },
++  ]);
++  await seedMirror(db, 'place', [
++    {
++      id: 'p-1',
++      ownerId,
++      kind: 'gym',
++      gymId: 'g-1',
++      name: null,
++      isPrimary: true,
++      visibleAtGym: true,
++      loadSettings: null,
++    },
++  ]);
++}
++
++/**
++ * Faux serveur du profil d'entraînement : chaque PATCH est noté, ses champs sont écrits dans le
++ * miroir `training_profile` (comme le pull qui suit l'envoi) et la réponse est `me` avec la
++ * dernière étape validée.
++ */
++export function serveProfile(api: FakeApi, db: AppDb, me: MeResponse): { patches: TrainingProfilePatch[] } {
++  const patches: TrainingProfilePatch[] = [];
++  let current = me;
++  api.on('PATCH', PROFILE_PATH, async (req) => {
++    const body = req.body as TrainingProfilePatch;
++    patches.push(body);
++    const { onboardingStep, ...fields } = body;
++    const row = await db.mirror('training_profile').get(me.id);
++    await seedMirror(db, 'training_profile', [
++      { ...EMPTY_PROFILE, ...row, ...fields, id: me.id, ownerId: me.id },
++    ]);
++    current = { ...current, onboardingStep: onboardingStep ?? current.onboardingStep };
++    return { status: 200, body: current };
++  });
++  return { patches };
++}
++
++/** Requêtes d'écriture envoyées, dans l'ordre (`POST /api/places`…). */
++export const writes = (api: FakeApi): string[] =>
++  api.calls.filter((c) => c.method !== 'GET').map((c) => `${c.method} ${c.path}`);
++
++export const radio = (name: string) => screen.getByRole('radio', { name }) as HTMLInputElement;
++export const checkbox = (name: string) => screen.getByRole('checkbox', { name }) as HTMLInputElement;
++export const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
++
++/** Radio coché, sans lever s'il n'est pas (encore) affiché. */
++export const isChecked = (name: string): boolean =>
++  (screen.queryByRole('radio', { name }) as HTMLInputElement | null)?.checked === true;
++
++export function choose(name: string): void {
++  fireEvent.click(radio(name));
++}
++
++/** Conteneur de l'écran courant (`data-step`). */
++export const currentStep = (): string | null =>
++  screen.queryByTestId('onboarding-step')?.getAttribute('data-step') ?? null;

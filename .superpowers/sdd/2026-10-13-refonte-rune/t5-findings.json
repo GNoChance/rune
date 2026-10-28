@@ -1,0 +1,368 @@
+{
+ "confirmed": [
+  {
+   "id": "T5-F1",
+   "severity": "Important",
+   "lenses": [
+    "correctness"
+   ],
+   "file": "apps/web/src/api/client.ts",
+   "line": "68 (wiring apps/web/src/main.tsx:38-41; pill apps/web/src/ui/ConnectionPill.tsx:11)",
+   "title": "Pill and « Nécessite le réseau » screens read two different sources",
+   "problem": "Class-E screens get their message from a per-request NetworkRequiredError thrown on OfflineError (client.ts:68). That failure never reaches the sync engine; createApiClient hooks only onUnauthenticated and onAccountDeleted. The pill reads useSyncState().connection, which changes only on engine cycles (foreground, online event, 60 s while outbox not empty, manual); the offline event starts no cycle. Scenario: last cycle OK, outbox empty, VPN cut (navigator.onLine true). Saving the pseudo on Profil gives « Nécessite le réseau » after 4 s; on Accueil the pill still says « En ligne ». Breaks spec §5 single source of truth. E2E offline step 1 hides it by calling triggerForeground first; the unit test sets connection offline by hand.",
+   "fix": "Add an onOffline() hook to ApiHooks called when fetchJsonWithTimeout throws OfflineError; wire it in main.tsx to an engine method (e.g. reportOffline()) that sets connection to 'offline' at once and schedules backoff/probe, or at least sync.syncNow('manual'). A class-E success while the engine says offline should also trigger syncNow. Add a test: renderApp on /profile, fake API offline and engine online, save pseudo, see « Nécessite le réseau », tap Accueil, expect pill « Hors ligne ». Remove the triggerForeground crutch in offline.spec step 1 or add a step without it.",
+   "specRef": "Redesign spec §5 (une seule source de vérité); brief Interfaces ConnectionPill; main spec 01 R-SYN-30",
+   "minorAction": "n/a"
+  },
+  {
+   "id": "T5-F2",
+   "severity": "Important",
+   "lenses": [
+    "ux"
+   ],
+   "file": "apps/web/src/ui/shell.module.css",
+   "line": "13, 131",
+   "title": "Fixed tab bar can hide the focused control; no scroll-padding (WCAG 2.2 SC 2.4.11)",
+   "problem": "Below 900 px, .tabBar is position: fixed over the bottom 84 px plus safe area. No scroll-padding-bottom or scroll-margin exists in apps/web/src. .shell padding-bottom only reserves room at the document end. Tabbing (keyboard, Switch Control) through a long form (Profil, Santé) can focus a control entirely behind the bar, with its focus ring hidden; focus() on the first invalid field or after a delete (PlacesPage) has the same effect. New regression in T5.",
+   "fix": "While the tab bar is shown (not wide), set scroll-padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)) on the scrolling root (e.g. :global(html:has([data-testid=\"tab-bar\"])) or a class toggled on documentElement by AppShell), 0 when wide. Add a css-blocks assertion in test/ui/base-styles.test.ts.",
+   "specRef": "WCAG 2.2 AA 2.4.11; global-constraints accessibilité; spec §5; named risk (e)",
+   "minorAction": "n/a"
+  },
+  {
+   "id": "T5-F3",
+   "severity": "Important",
+   "lenses": [
+    "ux"
+   ],
+   "file": "apps/web/src/ui/shell.module.css",
+   "line": "162, 190, 240-241, 75",
+   "title": "Active-state labels under 4.5:1 in Clair / Auto light, pairs untested",
+   "problem": "In the light palette: active tab label (12 px, 600) accent #1c6fb5 on accent 12% tint is 4.43:1; SideNav active entry 4.47:1; avatar initial (16 px bold) on accent 14% tint 4.34:1. All are normal-size text requiring 4.5:1 in all 5 themes. Sombre, Carnet and Nuit pass. contrast.test.ts does not declare these tinted pairs and its color-mix resolver cannot read transparent, so the shortfall is undetected. The MixClair mockup (#E3EDF8, about 4.45:1) has the same issue but the constraint is binding.",
+   "fix": "Lower the tint to about 8-10% (4.56-4.7:1) or use a stronger label colour in light themes. Write tints as color-mix(in srgb, var(--accent) N%, var(--surface)) so the resolver reads them. Add the three pairs (active tab, active side entry, avatar initial) to contrast.test.ts for all 5 themes.",
+   "specRef": "global-constraints contrastes ≥ 4,5:1 dans les 5 thèmes; spec §4 test automatique des contrastes",
+   "minorAction": "n/a"
+  },
+  {
+   "id": "T5-F4",
+   "severity": "Important",
+   "lenses": [
+    "design"
+   ],
+   "file": "apps/web/src/ui/screen-transition.ts",
+   "line": "61-85 (useScreenEntrance); apps/web/src/ui/AppShell.tsx:37",
+   "title": "Changing screen never resets scroll position",
+   "problem": "No scrollTo/scrollRestoration/scrollIntoView exists in apps/web/src, and wouter pushState keeps scrollY. With the fixed tab bar usable at any depth, tapping Accueil or Salles from the bottom of Profil (scrollY about 900) opens the new screen already scrolled, header or title off-screen. Forward links (Profil › Santé) do the same. The old header-based nav at the top rarely triggered it. Undercuts the requested transitions.",
+   "fix": "In useScreenEntrance (same layout effect, before el.animate) or an AppShell layout effect keyed on path, call window.scrollTo(0, 0) for 'tab' and 'forward'; for 'back' restore the scrollY saved per stack entry in NavState, or scroll to top. Add a shell test: scroll the window, click a tab, expect scrollY 0.",
+   "specRef": "Spec §5 (barre d'onglets) and §7 (changement d'écran); named risk (e)",
+   "minorAction": "n/a"
+  },
+  {
+   "id": "T5-F5",
+   "severity": "Important",
+   "lenses": [
+    "tests"
+   ],
+   "file": "apps/web/test/app/shell.test.tsx",
+   "line": "352-370",
+   "title": "BootSplash non-blocking and always-removed behaviour is untested",
+   "problem": "The test titled « sans jamais prendre le toucher, puis se retire » only checks aria-hidden, an svg, empty text and removal after a synthetic animationEnd on the overlay. Not covered: pointer-events: none (shell.module.css:289), the splash-out animation (:290), the 2 s safety timer (BootSplash.tsx:8,44), the target filter (BootSplash.tsx:55). Mutations stay green: delete pointer-events (Playwright retries until 1.45 s), delete splash-out and timer (opaque overlay stays forever, E2E toBeVisible ignores occlusion), drop e.target === e.currentTarget (inner path animationend removes veil early). The « une seule fois par session » test wraps its first-mount check in if (splash) so it passes even if nothing renders.",
+   "fix": "(a) Fake-timer test: advanceTimersByTime(2000), expect innerHTML ''. (b) Fire animationEnd on an inner path, overlay still present; fire on overlay, gone. (c) css-blocks assertion on .splash: pointer-events none and splash-out delay plus duration under MAX_MS. (d) One E2E: on first load, elementFromPoint at centre of the login button returns the button while the splash is mounted, and overlay count reaches 0 within 2.5 s. (e) Assert the first mount rendered in the once-per-session test.",
+   "specRef": "Brief Interfaces BootSplash; controller ruling on BootSplash; named risk (c)",
+   "minorAction": "n/a"
+  },
+  {
+   "id": "T5-F6",
+   "severity": "Important",
+   "lenses": [
+    "tests"
+   ],
+   "file": "apps/web/src/ui/screen-transition.ts",
+   "line": "73-79",
+   "title": "Transition direction and reduced-motion fade are not tested, only the data attribute",
+   "problem": "shell.test.tsx:311 checks only data-screen-transition (the decision), not the keyframes passed to el.animate (happy-dom 20.14.5 supports it). Mutations stay green: swap the sign at line 77, drop `reduced ||` at line 73 (forward/back still slide 48 px under reduced motion), delete .tabPill { transition: none } under reduced motion (shell.module.css:337). Spec §7 requires simple fades without sweep; spec §9 requires a reduced-motion test.",
+   "fix": "In the navigation test spy on Element.prototype.animate and assert lastCall[0]: forward transform[0] 'translateX(48px)', back 'translateX(-48px)', tab opacity only with no transform. Repeat forward under media(REDUCED): no transform key, duration 200 ms. Add expect(declarationsOf(parseCssBlocks(read('shell.module.css')), '.tabPill', REDUCE)?.get('transition')).toBe('none').",
+   "specRef": "Spec §7 (mouvement réduit), §9; brief Step 3; global-constraints",
+   "minorAction": "n/a"
+  }
+ ],
+ "minorsNow": [
+  {
+   "id": "T5-F7",
+   "severity": "Minor",
+   "lenses": [
+    "spec",
+    "correctness",
+    "ux",
+    "design",
+    "tests"
+   ],
+   "file": "apps/web/src/ui/screen-transition.ts",
+   "line": "15-27",
+   "title": "Retour to a target that is neither URL parent nor previous screen plays the forward slide",
+   "problem": "screenTransition returns 'back' only when the target is a path prefix of the current screen or equals stack.at(-2). Flow /places, /places/p-1, « Voir la salle » /gyms/g-1, then GymPage Retour to /places (GymPage.tsx:126,137): /gyms/g-1 is not under /places/ and stack.at(-2) is /places/p-1, so 'forward' is returned, the screen slides from the right and /places is pushed again. Same for any Retour after a deep link, reload or PWA relaunch (/settings to /profile, /gyms/g-1 to /places) and from /admin/gyms. nextStack and the stack are never exercised by tests (replacing nextStack with () => [to] stays green).",
+   "fix": "Treat a target found earlier in the stack as 'back' (e.g. stack.findLastIndex(s => clean(s) === b) < length-1) and slice the stack to it in nextStack; also 'back' when the target is the root href of the current tab and the current screen is deeper. Add table cases ['/gyms/g-1','/places',['/places','/places/p-1','/gyms/g-1'],'back'] and ['/settings','/profile',['/settings'],'back'], plus an integration step walking /places to p-1 to g-1 then back to p-1 expecting 'back'.",
+   "specRef": "Redesign spec §7 (retour par la gauche); task-5-brief Step 3",
+   "minorAction": "fix_now"
+  },
+  {
+   "id": "T5-F10",
+   "severity": "Minor",
+   "lenses": [
+    "correctness",
+    "tests"
+   ],
+   "file": "apps/web/src/sw/kill-switch.ts",
+   "line": "42, 55-57, 92, 106 (test: apps/web/test/sw/kill-switch.test.ts:109-126)",
+   "title": "Controlled-reload guard is never reset and its refused-storage path is untested",
+   "problem": "rune.kill-switch-reload is set on the first controlled reload and never cleared; sessionStorage lasts the tab or standalone PWA session (days). After a kill, swKill lifted, SW re-registered, a second kill in the same session finds firstControlledReload() false and the page stays on the killed build. The module-level controlledReloadDone also leaks between tests. The « stockage de session refusé » test calls applyKillSwitchIfNeeded once, so changing the catch at :55-57 to return true (reload every call) stays green.",
+   "fix": "Clear the key (try/catch) and reset controlledReloadDone when !health.swKill or the page is uncontrolled. In the test, call twice and expect the second to return false with reload called once; isolate module state (vi.resetModules with dynamic import, or inject the guard via KillSwitchEnv).",
+   "specRef": "Main spec R-PWA-6",
+   "minorAction": "fix_now"
+  },
+  {
+   "id": "T5-F11",
+   "severity": "Minor",
+   "lenses": [
+    "correctness"
+   ],
+   "file": "apps/web/src/ui/BootSplash.tsx",
+   "line": "38-43",
+   "title": "Splash plays mid-session if reduced motion is turned off while the app is open",
+   "problem": "markShown() runs only when playing (show && !reduced), so under reduced motion the session is never marked, and useMediaQuery follows live changes. Turning Reduce Motion off mid-session makes the opaque overlay (z 90) cover the current screen for about 1.45 s. Toggling reduced on then off within 2 s replays it too. Brief says « au premier affichage d'une session ».",
+   "fix": "Decide once at mount: useState(() => !alreadyShown() && !matchMedia(REDUCED).matches) and mark shown on first mount regardless of reduced (effect when show is true). Add a test: mount under reduced motion, switch media to not reduced, expect nothing rendered.",
+   "specRef": "Brief Interfaces BootSplash",
+   "minorAction": "fix_now"
+  },
+  {
+   "id": "T5-F14",
+   "severity": "Minor",
+   "lenses": [
+    "ux"
+   ],
+   "file": "apps/web/src/ui/shell.module.css",
+   "line": "33, 88-95",
+   "title": "Home header cannot wrap: pill overlaps avatar or is clipped with large text or long state",
+   "problem": "The old header wrapped. .header has no flex-wrap, .pill is nowrap with min-width 0, .avatar is flex none, .shell has overflow-x: clip. At 320 px with « Mise à jour nécessaire » (about 330 px needed) or 150% Android font on 390-412 px (about 440 px), pill text runs over the « Mon profil » circle or is clipped (WCAG 1.4.4, 1.4.10). Tab labels (« Progression » about 66 px cell at 320 px) overflow into the next cell with text scaling.",
+   "fix": "Add .header { flex-wrap: wrap; row-gap: 6px } and let .pill wrap (white-space: normal) or drop to its own line. For tabs add overflow-wrap: anywhere; text-align: center, or reduce label size within limits; verify 320 px at 200% text.",
+   "specRef": "global-constraints accessibilité",
+   "minorAction": "fix_now"
+  },
+  {
+   "id": "T5-F16",
+   "severity": "Minor",
+   "lenses": [
+    "ux",
+    "design"
+   ],
+   "file": "apps/web/src/ui/AppShell.tsx",
+   "line": "31-33",
+   "title": "On PC the home page shows the brand twice",
+   "problem": "At 900 px and wider SideNav renders the logo and RUNE link (aria-label Rune, href /) and HomeHeader on '/' renders it again about 240 px to the right, misaligned by 6 px (SideNav padding-top 24 vs header 18). Duplicate tab stop and double announcement « Rune, lien ».",
+   "fix": "When wide, render HomeHeader without the brand (pill and initial only, right-aligned), e.g. a brand={!wide} prop. Add a shell test: on PC at '/', exactly one link named « Rune ».",
+   "specRef": "Spec §5 (en-tête de l'accueil; navigation latérale)",
+   "minorAction": "fix_now"
+  },
+  {
+   "id": "T5-F19",
+   "severity": "Minor",
+   "lenses": [
+    "design"
+   ],
+   "file": "apps/web/src/ui/Page.tsx",
+   "line": "12 (PageHeader); ui.module.css:1008-1014 (.pageTitle)",
+   "title": "Top-level tab pages use the 24 px inner title instead of the 28 px screen title",
+   "problem": "Page always goes through PageHeader whose .pageTitle is 1.5rem. Mockups for tabs (ProgressionSombre, D01 Salles, C01 Profil) use Chakra Petch 28/700 with 6 px top margin and no Retour; GUIDE says screen titles are 28, inner header titles 24. Progression, Places and Profile show a smaller title.",
+   "fix": "When back is absent give PageHeader a screen-title variant (font-size 1.75rem, margin-top 6px), or a level=\"tab\" prop passed by Page for top-level tabs.",
+   "specRef": "GUIDE.md Type and Inner page header; ProgressionSombre.dc.html",
+   "minorAction": "fix_now"
+  },
+  {
+   "id": "T5-F22",
+   "severity": "Minor",
+   "lenses": [
+    "tests"
+   ],
+   "file": "apps/web/src/ui/shell.module.css",
+   "line": "13, 50, 69, 175",
+   "title": "Tab bar footprint, safe-area padding and 44 px targets are not pinned by tests",
+   "problem": "components.test.tsx already pins .chip and .backButton targets from CSS, but nothing asserts .shell padding-bottom (calc(100px + safe-area)) exceeds the bar footprint (16 + 68 + safe-area), .tab min-height 44, .avatar 44x44, .brand min-height 44. Mutations like .shell { padding-bottom: 24px } or .tab { min-height: 36px } stay green; Playwright re-scrolls when the bar intercepts a click, so E2E would not notice. The « Retour de 44 x 44 » test (shell.test:224) does not test the size either.",
+   "fix": "Add css-blocks assertions: .tab min-height >= 44; .avatar width and height 44; .shell padding-bottom contains env(safe-area-inset-bottom and its px part exceeds .tabBar height plus bottom. Add one E2E hit-test (sheet.spec elementFromPoint pattern): on /profile scrolled to bottom, the last control's centre resolves to it, not tab-bar.",
+   "specRef": "Named risk (e); global-constraints (cible tactile >= 44 px)",
+   "minorAction": "fix_now"
+  },
+  {
+   "id": "T5-F23",
+   "severity": "Minor",
+   "lenses": [
+    "tests"
+   ],
+   "file": "apps/web/test/app/shell.test.tsx",
+   "line": "186-191",
+   "title": "Connection pill dot tone is never asserted",
+   "problem": "CONNECTION_TONES (ConnectionStatus.tsx:20) and data-tone (ConnectionPill.tsx:14) are not asserted; the « le point est décoratif » test only checks an aria-hidden child. Changing offline: 'muted' to 'online' stays green and shows a green dot beside « Hors ligne ».",
+   "fix": "In the 6-state it.each also assert the data-tone attribute: online -> 'online'; offline and unknown -> 'muted'; the other three -> 'warning'; or assert the CONNECTION_TONES map next to CONNECTION_LABELS in counters.test.",
+   "specRef": "Named risk (b); controller ruling on ConnectionPill",
+   "minorAction": "fix_now"
+  },
+  {
+   "id": "T5-F24",
+   "severity": "Minor",
+   "lenses": [
+    "tests"
+   ],
+   "file": "apps/web/test/app/shell.test.tsx",
+   "line": "232-238, 147-157",
+   "title": "No-Administration-tab check matches by name only and desktop nav is covered by accident",
+   "problem": "« même pour un admin » runs under media() (phone, TabBar only) and looks only for a link named 'Administration'. The SideNav test uses a non-admin user. Admin desktop coverage exists only in guard.test.tsx:92 via happy-dom's 1024 px default. Adding an admin link with another label to TabBar or SideNav stays green.",
+   "fix": "For an admin, under both media() and media(DESKTOP), assert nav link hrefs equal exactly TAB_ITEMS.map(t => t.href) and none starts with '/admin'.",
+   "specRef": "Brief Step 1; controller ruling on TAB_ITEMS",
+   "minorAction": "fix_now"
+  }
+ ],
+ "deferred": [
+  {
+   "id": "T5-F8",
+   "severity": "Minor",
+   "lenses": [
+    "spec",
+    "design",
+    "tests"
+   ],
+   "file": "apps/web/src/ui/AppShell.tsx",
+   "line": "33-37",
+   "title": "On inner pages the update banner sits above the page header, not under it",
+   "problem": "bannerSlot is rendered before <main>, while PageHeader (Retour and h1) renders inside <main>. On Accueil the banner correctly follows HomeHeader, but on inner pages (e.g. /profile/health) the banner (about 150 px) is first on screen, pushing Retour and title down. Spec §5 says the banner goes under the header. Tests (shell.test:300, UpdateBanner.test:254) render only '/', so no test shows the banner on inner pages at all; moving it into HomeHeader would stay green and hide the forced post-426 banner (R-PWA-5) elsewhere.",
+   "fix": "On inner pages render the banner after PageHeader (e.g. Page renders a banner slot right after PageHeader), keeping the shell slot for the home only; or record an explicit ruling. Add tests at /profile and /places: update-banner present, the h1 precedes the banner, and no 'Mon profil' header link.",
+   "specRef": "Redesign spec §5; ruling UpdateBanner under the header; R-PWA-2/R-PWA-5",
+   "minorAction": "defer"
+  },
+  {
+   "id": "T5-F9",
+   "severity": "Minor",
+   "lenses": [
+    "spec"
+   ],
+   "file": "apps/web/src/sw/kill-switch.ts",
+   "line": "106",
+   "title": "Kill-switch change in commit 10404f9 is outside the task's file list, with no ruling",
+   "problem": "Global constraint: a task modifies only its listed files. 10404f9 changes the R-PWA-6 page-side rule (reload once per tab when nothing was removed but the page is controlled, new sessionStorage key rune.kill-switch-reload). src/sw is not in the T5 brief and no ruling covers it. Behaviour looks compliant, isolated and tested.",
+   "fix": "Get an explicit controller ruling accepting 10404f9 (or as a separate PWA fix), record it in progress.md Rulings, and keep the phone check required before tagging.",
+   "specRef": "global-constraints (une tâche ne modifie que les fichiers de sa liste); main spec 01 R-PWA-6",
+   "minorAction": "defer"
+  },
+  {
+   "id": "T5-F12",
+   "severity": "Minor",
+   "lenses": [
+    "correctness"
+   ],
+   "file": "apps/web/src/ui/AppShell.tsx",
+   "line": "33, 42 (TabBar.tsx:19; App.tsx:89)",
+   "title": "Tabs stay live and marked current where wrong: 404 on /admin for non-admin, and must-change-password",
+   "problem": "activeTab maps /admin to Profil regardless of the guard, so a member opening an old /admin/members bookmark sees « Page introuvable » with Profil aria-current=\"page\". With mustChangePassword every route except /profile redirects to /profile; typing a new password then tapping « Salles » or « Progression » bounces to /profile and empties the fields; the tab bar adds two more such links than the old header.",
+   "fix": "Compute the active tab as null when the guard returned not_found (pass a prop from App to AppShell; TabBar and SideNav take active as prop). Hide TabBar and SideNav, or render them without links, while me.mustChangePassword. Add tests for both.",
+   "specRef": "Brief Interfaces TabBar aria-current; main spec R-MDP-1",
+   "minorAction": "defer"
+  },
+  {
+   "id": "T5-F13",
+   "severity": "Minor",
+   "lenses": [
+    "correctness"
+   ],
+   "file": "apps/web/src/ui/AppShell.tsx",
+   "line": "33",
+   "title": "HomeHeader mounted behind an open modal gate is neither inert nor aria-hidden",
+   "problem": "inertOutside (BottomSheet, used by HealthReconsentGate) marks siblings existing when it runs and does not re-run. HomeHeader now mounts only on '/'. With the re-consent gate open on /profile, Android back to '/' mounts HomeHeader (Rune and Mon profil links, role=status pill) reachable by TalkBack/VoiceOver behind the modal. Same for SideNav/TabBar mounted when the window crosses 900 px.",
+   "fix": "Keep shell slots mounted (always-present header container and stable nav wrapper) so inert ancestors cover new content, or make inertOutside follow child-list changes with a MutationObserver.",
+   "specRef": "Main spec R-CST-6; BottomSheet contract",
+   "minorAction": "defer"
+  },
+  {
+   "id": "T5-F15",
+   "severity": "Minor",
+   "lenses": [
+    "ux"
+   ],
+   "file": "apps/web/src/ui/AppShell.tsx",
+   "line": "63",
+   "title": "Avatar link « Mon profil » collides with T10 hub row of the same name",
+   "problem": "The avatar has aria-label « Mon profil » but goes to /profile (h1 « Profil », hub in T10). T10 makes « Mon profil » a hub row leading to /profile/edit, so two links share a name with different destinations (WCAG 3.2.4, 2.4.4). The tab with the same destination is called « Profil ».",
+   "fix": "Rename the avatar link « Profil » (or « Profil de {username} »); update shell.test.tsx and UpdateBanner.test.tsx queries for { name: 'Mon profil' }.",
+   "specRef": "Brief T5 (rond initiale vers /profile); spec §5",
+   "minorAction": "defer"
+  },
+  {
+   "id": "T5-F17",
+   "severity": "Minor",
+   "lenses": [
+    "design"
+   ],
+   "file": "apps/web/src/ui/shell.module.css",
+   "line": "147-149",
+   "title": "Tab bar shadow uses hard-coded colours and ignores the theme",
+   "problem": "box-shadow uses rgb(16 21 31 / 0.08) and rgb(16 21 31 / 0.1), the only hard-coded colours in a web stylesheet outside tokens.css. Applied in all 5 themes: Sombre mockup has no shadow, Carnet gets a cold blue-black shadow. The bar also gets a 1 px var(--border) in Clair where MixClair has only the shadow.",
+   "fix": "Add a --shadow-float token in tokens.css (MixClair value on :root, none or dark-tuned for Sombre/Auto dark/Nuit, warm for Carnet) and use box-shadow: var(--shadow-float). Optionally make the bar border transparent in light themes.",
+   "specRef": "Spec §4 (tokens in one source)",
+   "minorAction": "defer"
+  },
+  {
+   "id": "T5-F18",
+   "severity": "Minor",
+   "lenses": [
+    "design"
+   ],
+   "file": "apps/web/src/ui/AppShell.tsx",
+   "line": "33-40",
+   "title": "Screen animation covers only <main>; header, banner and footer pop",
+   "problem": "useScreenEntrance animates <main> only. HomeHeader, the banner slot and PublicLinks sit outside it, so going to Accueil the header appears instantly while content fades over 300 ms; leaving Accueil the header vanishes and content jumps about 62 px before fading; the footer jumps on height changes.",
+   "fix": "Wrap header, bannerSlot and main in the .column div and pass that ref to useScreenEntrance, or move HomeHeader into the animated element.",
+   "specRef": "Spec §7 (changement d'onglet = fondu)",
+   "minorAction": "defer"
+  },
+  {
+   "id": "T5-F20",
+   "severity": "Minor",
+   "lenses": [
+    "design"
+   ],
+   "file": "apps/web/src/ui/BootSplash.tsx",
+   "line": "59",
+   "title": "Boot splash draws the flat logo in dark themes instead of the glowing one",
+   "problem": "<RuneMark size={132} /> is always the flat version. GUIDE says dark mode uses rune-mark.svg (gradient and glow) and the prototype fades in md-glow. HomeHeader and SideNav already pass glow={dark}, so in Sombre, Nuit and Auto dark the first screen is flat and differs from the header behind it.",
+   "fix": "Pass glow={useColorScheme() === 'dark'}; adapt draw selectors to the glow structure (first path after <defs>/<g>, e.g. .splashMark svg > path:first-of-type) and fade the blurred <g> in last (about 0.8 opacity).",
+   "specRef": "GUIDE.md Logo; spec §7; prototype rune-proto.html splash",
+   "minorAction": "defer"
+  },
+  {
+   "id": "T5-F21",
+   "severity": "Minor",
+   "lenses": [
+    "design"
+   ],
+   "file": "apps/web/src/ui/shell.module.css",
+   "line": "200-209",
+   "title": "Carnet on PC: the side nav hides the red margin line",
+   "problem": "Carnet decor is drawn on body with the red margin at x = 33 px. On PC the 240 px opaque SideNav covers it, yet the content still indents 46 px for a margin no longer visible, while ruled lines continue.",
+   "fix": "In wide mode draw the decor relative to the content column (background-image: var(--page-decor) on .column/.main inside .shell[data-wide], removed from body), or make the SideNav background transparent in Carnet.",
+   "specRef": "Spec §4 (only decor changes between themes)",
+   "minorAction": "defer"
+  },
+  {
+   "id": "T5-F25",
+   "severity": "Minor",
+   "lenses": [
+    "tests"
+   ],
+   "file": "apps/web/test/app/shell.test.tsx",
+   "line": "127-137",
+   "title": "Keyboard test proves nothing and tab-bar keyboard navigation is untested",
+   "problem": "profile.focus(); expect(document.activeElement).toBe(profile) holds for any focusable element, even tabindex=-1; the real guarantee is the tabindex null check above. Nothing activates a tab by keyboard or checks the bar's focus order relative to main. Spec §9 requires keyboard navigation coverage.",
+   "fix": "Replace the focus line with expect(a.tabIndex).toBe(0) per tab. Add one E2E step on a phone viewport: Tab until a tab link is focused, check order Accueil to Profil, press Enter on « Salles », expect URL /places and aria-current=\"page\" on Salles.",
+   "specRef": "Redesign spec §9; named risk (e)",
+   "minorAction": "defer"
+  }
+ ],
+ "refuted": [],
+ "needsRuling": []
+}

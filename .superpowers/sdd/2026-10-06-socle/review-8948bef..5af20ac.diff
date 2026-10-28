@@ -1,0 +1,841 @@
+# Review package: 8948bef..HEAD
+
+## Commits
+5af20ac feat(synchro): époque serveur, restore_upsert et purge des tombstones
+
+## Files changed
+ apps/server/src/auth/purge.ts                |   2 +-
+ apps/server/src/jobs/registry.ts             |   3 +-
+ apps/server/src/sync/epoch.ts                |  24 ++++
+ apps/server/src/sync/purge.ts                | 103 ++++++++++++++
+ apps/server/src/sync/push.ts                 |  27 +++-
+ apps/server/src/sync/restore-upsert.ts       |  55 ++++++++
+ apps/server/test/sync/epoch.test.ts          |  52 +++++++
+ apps/server/test/sync/purge.test.ts          | 161 +++++++++++++++++++++
+ apps/server/test/sync/push.test.ts           |  13 +-
+ apps/server/test/sync/restore-upsert.test.ts | 204 +++++++++++++++++++++++++++
+ 10 files changed, 629 insertions(+), 15 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/auth/purge.ts b/apps/server/src/auth/purge.ts
+index db18853..544eb8a 100644
+--- a/apps/server/src/auth/purge.ts
++++ b/apps/server/src/auth/purge.ts
+@@ -1,21 +1,21 @@
+ import {
+   CLOSED_AUTH_RECORD_RETENTION_DAYS,
+   SECURITY_EVENT_RETENTION_MONTHS,
+   SESSION_IDLE_DAYS,
+ } from '@appsport/contracts';
+ import type { DailyJob } from '../jobs/scheduler';
+ 
+ const DAY_MS = 86_400_000;
+ 
+ /** Retire des mois calendaires en UTC ; le jour est ramené à la fin du mois cible si besoin. */
+-function subtractMonths(date: Date, months: number): Date {
++export function subtractMonths(date: Date, months: number): Date {
+   const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - months, 1));
+   const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+   target.setUTCDate(Math.min(date.getUTCDate(), lastDay));
+   target.setUTCHours(
+     date.getUTCHours(),
+     date.getUTCMinutes(),
+     date.getUTCSeconds(),
+     date.getUTCMilliseconds(),
+   );
+   return target;
+diff --git a/apps/server/src/jobs/registry.ts b/apps/server/src/jobs/registry.ts
+index 183bd47..7e13156 100644
+--- a/apps/server/src/jobs/registry.ts
++++ b/apps/server/src/jobs/registry.ts
+@@ -1,5 +1,6 @@
+ import { authPurgeJob } from '../auth/purge';
++import { syncPurgeJob } from '../sync/purge';
+ import type { DailyJob } from './scheduler';
+ 
+ /** Jobs quotidiens ; les jobs des tâches suivantes s'ajoutent ici. */
+-export const DAILY_JOBS: DailyJob[] = [authPurgeJob];
++export const DAILY_JOBS: DailyJob[] = [authPurgeJob, syncPurgeJob];
+diff --git a/apps/server/src/sync/epoch.ts b/apps/server/src/sync/epoch.ts
+new file mode 100644
+index 0000000..0e2892f
+--- /dev/null
++++ b/apps/server/src/sync/epoch.ts
+@@ -0,0 +1,24 @@
++import type { DbExecutor } from '../db/schema';
++import type { Clock, IdGen } from '../deps';
++
++/**
++ * Nouvelle époque du serveur (après une restauration, R-SYN-25) : UUIDv7 neuf, base au compteur
++ * courant (les lignes de rev ≤ base viennent de la sauvegarde), début à l'heure de la rotation.
++ */
++export async function rotateServerEpoch(
++  db: DbExecutor,
++  deps: { ids: IdGen; clock: Clock },
++): Promise<{ epoch: string; baseRev: number }> {
++  const row = await db
++    .updateTable('serverMeta')
++    .set((eb) => ({
++      serverEpoch: deps.ids.uuidv7(),
++      epochBaseRev: eb.ref('syncCounter'),
++      epochStartedAt: deps.clock.now().toISOString(),
++    }))
++    .where('id', '=', 1)
++    .returning(['serverEpoch', 'epochBaseRev'])
++    .executeTakeFirst();
++  if (!row) throw new Error("server_meta absent : la base n'est pas initialisée.");
++  return { epoch: row.serverEpoch, baseRev: row.epochBaseRev };
++}
+diff --git a/apps/server/src/sync/purge.ts b/apps/server/src/sync/purge.ts
+new file mode 100644
+index 0000000..365112f
+--- /dev/null
++++ b/apps/server/src/sync/purge.ts
+@@ -0,0 +1,103 @@
++import { APPLIED_OP_TTL_MONTHS, TOMBSTONE_TTL_DAYS } from '@appsport/contracts';
++import { sql, type Transaction } from 'kysely';
++import { subtractMonths } from '../auth/purge';
++import type { Database } from '../db/schema';
++import type { AppDeps } from '../deps';
++import type { DailyJob } from '../jobs/scheduler';
++
++const DAY_MS = 86_400_000;
++const MIRRORED = new Set(['J', 'D', 'E']);
++/** Lignes partagées : leurs tombstones restent (R-SYN-26). */
++const NEVER_PURGED = new Set(['gym', 'place']);
++
++interface IncomingFk {
++  child: string;
++  from: string;
++  to: string;
++}
++
++/** Clés étrangères entrantes de chaque table, lues dans le schéma (toutes les tables). */
++async function incomingForeignKeys(trx: Transaction<Database>): Promise<Map<string, IncomingFk[]>> {
++  const tables = await sql<{ name: string }>`select name from sqlite_schema
++    where type = 'table' and name not like 'sqlite_%' order by name`.execute(trx);
++  const incoming = new Map<string, IncomingFk[]>();
++  for (const { name } of tables.rows) {
++    const fks = await sql<{ table: string; from: string; to: string | null }>`
++      select "table", "from", "to" from pragma_foreign_key_list(${name})`.execute(trx);
++    for (const fk of fks.rows) {
++      const list = incoming.get(fk.table) ?? [];
++      list.push({ child: name, from: fk.from, to: fk.to ?? 'id' });
++      incoming.set(fk.table, list);
++    }
++  }
++  return incoming;
++}
++
++/** Enfants avant parents (tri topologique) ; un cycle éventuel garde l'ordre alphabétique. */
++function childrenFirst(tables: string[], incoming: Map<string, IncomingFk[]>): string[] {
++  const pending = new Set(tables);
++  const order: string[] = [];
++  while (pending.size > 0) {
++    const ready = [...pending].filter(
++      (t) => !(incoming.get(t) ?? []).some((fk) => fk.child !== t && pending.has(fk.child)),
++    );
++    const next = ready.length > 0 ? ready : [...pending];
++    for (const t of next) {
++      pending.delete(t);
++      order.push(t);
++    }
++  }
++  return order;
++}
++
++/**
++ * Purge quotidienne de la synchro (R-SYN-26, 03 §7), en une transaction : tombstones J/D/E de plus
++ * de 90 j (hors salles et lieux), enfants avant parents, jamais un parent encore référencé ;
++ * `tombstone_purge_rev` monte au plus grand rev supprimé ; `applied_op` de plus de 12 mois.
++ */
++export const syncPurgeJob: DailyJob = {
++  name: 'sync-purge',
++  async run(deps: AppDeps) {
++    const now = deps.clock.now();
++    const tombstonesBefore = new Date(now.getTime() - TOMBSTONE_TTL_DAYS * DAY_MS).toISOString();
++    const opsBefore = subtractMonths(now, APPLIED_OP_TTL_MONTHS).toISOString();
++
++    const count = await deps.db.transaction().execute(async (trx) => {
++      const targets = Object.entries(deps.entityRules)
++        .filter(
++          ([entity, r]) =>
++            MIRRORED.has(r.syncClass) && r.columns.includes('deleted_at') && !NEVER_PURGED.has(entity),
++        )
++        .map(([entity]) => entity)
++        .sort();
++      const incoming = await incomingForeignKeys(trx);
++      let total = 0;
++      let maxRev = 0;
++      for (const table of childrenFirst(targets, incoming)) {
++        const referenced = (incoming.get(table) ?? []).map(
++          (fk) => sql`not exists (select 1 from ${sql.table(fk.child)} as c
++            where ${sql.ref(`c.${fk.from}`)} = ${sql.ref(`${table}.${fk.to}`)})`,
++        );
++        const conditions = [
++          sql`deleted_at is not null`,
++          sql`deleted_at < ${tombstonesBefore}`,
++          ...referenced,
++        ];
++        const deleted = await sql<{ rev: number }>`delete from ${sql.table(table)}
++          where ${sql.join(conditions, sql` and `)} returning rev`.execute(trx);
++        total += deleted.rows.length;
++        for (const { rev } of deleted.rows) maxRev = Math.max(maxRev, rev);
++      }
++      if (maxRev > 0) {
++        await trx
++          .updateTable('serverMeta')
++          .set({ tombstonePurgeRev: sql<number>`max(tombstone_purge_rev, ${maxRev})` })
++          .where('id', '=', 1)
++          .execute();
++      }
++      const ops = await trx.deleteFrom('appliedOp').where('appliedAt', '<', opsBefore).executeTakeFirst();
++      return total + Number(ops.numDeletedRows);
++    });
++    deps.logger.info('sync purge', { job: 'sync-purge', count });
++  },
++};
+diff --git a/apps/server/src/sync/push.ts b/apps/server/src/sync/push.ts
+index c83fa02..49c2ff6 100644
+--- a/apps/server/src/sync/push.ts
++++ b/apps/server/src/sync/push.ts
+@@ -3,26 +3,28 @@ import {
+   type EntityRule,
+   MIN_PROTOCOL,
+   type PushResult,
+   type RejectionCode,
+   SYNC_PROTOCOL,
+   SyncOp,
+   snakeToCamel,
+ } from '@appsport/contracts';
+ import { isUuidV7 } from '@appsport/domain';
+ import { sql, type Transaction } from 'kysely';
++import { z } from 'zod';
+ import type { SessionUser } from '../app-env';
+ import { writeStamp } from '../db/rev';
+ import type { AppliedOpTable, Database } from '../db/schema';
+ import type { AppDeps } from '../deps';
+ import { isHealthConsentActive } from '../privacy/consent-state';
+ import type { EntitySyncHooks, HookCtx } from './hooks';
++import { applyRestoreUpsert, type RestoreUpsertOutcome } from './restore-upsert';
+ 
+ /** Rejet d'une op : enregistré dans sync_rejection, le reste du lot continue. */
+ export class OpRejection extends Error {
+   readonly code: RejectionCode;
+   readonly reason: string;
+ 
+   constructor(code: RejectionCode, reason: string) {
+     super(`${code}: ${reason}`);
+     this.name = 'OpRejection';
+     this.code = code;
+@@ -211,28 +213,33 @@ async function applyOp(b: Batch, raw: Raw): Promise<Applied> {
+   if (existing && existing.ownerId !== user.id) throw new OpRejection('forbidden', 'owner_mismatch');
+   // 7. Parent (à la création, et pour un patch qui change de parent).
+   if (rule.parent && (clientId || (op.kind === 'patch' && snakeToCamel(rule.parent.column) in op.fields))) {
+     await assertParent(b, rule.parent, op.fields);
+   }
+   // 8. Table C2 sans accord : op écartée, rien d'écrit.
+   if (!b.consent && rule.category === 'C2' && op.kind !== 'delete') {
+     await recordAppliedOp(b, op.opId, op.entity, op.id, 'applied_partial', null);
+     return { result: { opId: op.opId, status: 'applied_partial', dropped: true } };
+   }
+-  // 9. Champs écrits par le client ; C2 à null sans accord.
++  // 9. Champs écrits par le client ; C2 à null sans accord ; restore_upsert admet aussi deletedAt.
+   const { fields, droppedFields } =
+     op.kind === 'delete' ? { fields: {}, droppedFields: [] } : keepFields(rule, op.fields, b.consent);
++  if (op.kind === 'restore_upsert' && Object.hasOwn(op.fields, 'deletedAt')) {
++    fields.deleted_at = restoredDeletedAt(op.fields.deletedAt);
++  }
+   // 10. Écriture.
+-  if (op.kind === 'restore_upsert') throw new OpRejection('validation', 'not_supported');
+   const hookCtx: HookCtx = { trx, deps, userId: user.id, op };
+   await hooks?.beforeApply?.(hookCtx, fields);
+-  const outcome = await writeRow(b, op, existing, fields);
++  const outcome =
++    op.kind === 'restore_upsert'
++      ? restoreOutcome(await applyRestoreUpsert(hookCtx, rule, fields))
++      : await writeRow(b, op, existing, fields);
+   // 11.
+   if (outcome.wrote) await hooks?.afterApply?.(hookCtx);
+   // 12.
+   const status = droppedFields.length > 0 ? 'applied_partial' : 'applied';
+   await recordAppliedOp(b, op.opId, op.entity, op.id, status, outcome.rev);
+   return {
+     result: {
+       opId: op.opId,
+       status,
+       ...(outcome.rev !== null ? { rev: outcome.rev } : {}),
+@@ -286,20 +293,34 @@ async function assertParent(
+   fields: Record<string, unknown>,
+ ): Promise<void> {
+   const parentId = fields[snakeToCamel(parent.column)];
+   if (typeof parentId !== 'string' || b.rejectedRows.has(`${parent.entity}:${parentId}`)) {
+     throw new OpRejection('parent_rejected', 'parent_rejected');
+   }
+   const row = await readRow(b.trx, parent.entity, parentId);
+   if (!row || row.ownerId !== b.user.id) throw new OpRejection('parent_rejected', 'parent_rejected');
+ }
+ 
++const IsoDateTime = z.iso.datetime();
++
++/** deletedAt d'un restore_upsert : null ou horodatage ISO, sinon rejet validation. */
++function restoredDeletedAt(value: unknown): string | null {
++  if (value === null) return null;
++  if (!IsoDateTime.safeParse(value).success) throw new OpRejection('validation', 'deleted_at');
++  return value as string;
++}
++
++const restoreOutcome = (r: RestoreUpsertOutcome): { rev: number; wrote: boolean } => ({
++  rev: r.rev,
++  wrote: r.outcome !== 'kept',
++});
++
+ function isC2Value(rule: EntityRule, column: string, value: unknown): boolean {
+   if (value === null || value === undefined) return false;
+   if (rule.c2Columns.includes(column)) return true;
+   const values = rule.c2Values && Object.hasOwn(rule.c2Values, column) ? rule.c2Values[column] : undefined;
+   return typeof value === 'string' && values !== undefined && values.includes(value);
+ }
+ 
+ function toSqlValue(value: unknown): unknown {
+   if (typeof value === 'boolean') return value ? 1 : 0;
+   if (typeof value === 'object' && value !== null) return JSON.stringify(value);
+diff --git a/apps/server/src/sync/restore-upsert.ts b/apps/server/src/sync/restore-upsert.ts
+new file mode 100644
+index 0000000..7463697
+--- /dev/null
++++ b/apps/server/src/sync/restore-upsert.ts
+@@ -0,0 +1,55 @@
++import type { EntityRule } from '@appsport/contracts';
++import { sql } from 'kysely';
++import { writeStamp } from '../db/rev';
++import { getServerMeta } from '../db/server-meta';
++import type { HookCtx } from './hooks';
++
++export type RestoreUpsertOutcome = { outcome: 'inserted' | 'replaced' | 'kept'; rev: number };
++
++/**
++ * Renvoi d'une ligne J après une nouvelle époque (R-SYN-27). `fields` : colonnes snake_case déjà
++ * filtrées, `deleted_at` compris s'il est fourni. Ligne absente → insérée ; ligne venue de la
++ * sauvegarde (rev ≤ epoch_base_rev) que le client avait vue plus récente (serverRevSeen > rev) →
++ * remplacée ; sinon gardée, sauf une suppression du client sur une ligne vivante, qui l'emporte.
++ */
++export async function applyRestoreUpsert(
++  ctx: HookCtx,
++  rule: EntityRule,
++  fields: Record<string, unknown>,
++): Promise<RestoreUpsertOutcome> {
++  const { trx, deps, userId, op } = ctx;
++  const table = sql.table(op.entity);
++  const found = await sql<{ rev: number; deletedAt: string | null }>`
++    select rev, deleted_at from ${table} where id = ${op.id}`.execute(trx);
++  const existing = found.rows[0];
++
++  if (!existing) {
++    const stamp = await writeStamp(trx, deps, userId);
++    const row: Record<string, unknown> = {
++      deleted_at: null,
++      ...fields,
++      id: op.id,
++      [rule.ownerColumn ?? 'owner_id']: userId,
++      rev: stamp.rev,
++      created_at: stamp.updatedAt,
++      updated_at: stamp.updatedAt,
++      updated_by: stamp.updatedBy,
++    };
++    const columns = sql.join(Object.keys(row).map((c) => sql.ref(c)));
++    await sql`insert into ${table} (${columns}) values (${sql.join(Object.values(row))})`.execute(trx);
++    return { outcome: 'inserted', rev: stamp.rev };
++  }
++
++  const { epochBaseRev } = await getServerMeta(trx);
++  const seen = op.serverRevSeen ?? null;
++  let set: Record<string, unknown> | null = null;
++  if (existing.rev <= epochBaseRev && seen !== null && seen > existing.rev) set = fields;
++  else if (fields.deleted_at != null && existing.deletedAt === null) set = { deleted_at: fields.deleted_at };
++  if (!set) return { outcome: 'kept', rev: existing.rev };
++
++  const stamp = await writeStamp(trx, deps, userId);
++  const values = { ...set, rev: stamp.rev, updated_at: stamp.updatedAt, updated_by: stamp.updatedBy };
++  const assignments = sql.join(Object.entries(values).map(([c, v]) => sql`${sql.ref(c)} = ${v}`));
++  await sql`update ${table} set ${assignments} where id = ${op.id}`.execute(trx);
++  return { outcome: 'replaced', rev: stamp.rev };
++}
+diff --git a/apps/server/test/sync/epoch.test.ts b/apps/server/test/sync/epoch.test.ts
+new file mode 100644
+index 0000000..5c0d00c
+--- /dev/null
++++ b/apps/server/test/sync/epoch.test.ts
+@@ -0,0 +1,52 @@
++import { EPOCH_HEADER, encodeWatermark } from '@appsport/contracts';
++import { isUuidV7 } from '@appsport/domain';
++import { afterEach, describe, expect, it } from 'vitest';
++import { createApp } from '../../src/app';
++import { getServerMeta } from '../../src/db/server-meta';
++import { rotateServerEpoch } from '../../src/sync/epoch';
++import { createSyncTestContext, createUserAndLogin, syncPull, type TestContext } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx?.close());
++
++const bumpRev = () => ctx.deps.sqlite.prepare('UPDATE server_meta SET sync_counter = sync_counter + 1').run();
++
++describe('rotateServerEpoch', () => {
++  it('nouvelle époque UUIDv7, base au compteur courant, début à l’heure de la rotation', async () => {
++    ctx = await createSyncTestContext({ now: '2026-10-05T10:00:00.000Z' });
++    bumpRev();
++    bumpRev();
++    const before = await getServerMeta(ctx.deps.db);
++    ctx.clock.set('2026-10-06T10:00:00.000Z');
++
++    const r = await rotateServerEpoch(ctx.deps.db, ctx.deps);
++    const after = await getServerMeta(ctx.deps.db);
++
++    expect(r.epoch).not.toBe(before.serverEpoch);
++    expect(isUuidV7(r.epoch)).toBe(true);
++    expect(after).toMatchObject({
++      serverEpoch: r.epoch,
++      epochBaseRev: before.syncCounter,
++      syncCounter: before.syncCounter,
++      epochStartedAt: '2026-10-06T10:00:00.000Z',
++    });
++    expect(r.baseRev).toBe(before.syncCounter);
++    expect(before.syncCounter).toBe(2);
++
++    const health = await createApp(ctx.deps).request('/api/health');
++    expect(health.headers.get(EPOCH_HEADER)).toBe(r.epoch);
++  });
++
++  it("un watermark de l'ancienne époque donne 410 watermark_expired", async () => {
++    ctx = await createSyncTestContext();
++    const a = await createUserAndLogin(ctx);
++    const old = await getServerMeta(ctx.deps.db);
++    const watermark = encodeWatermark(old.serverEpoch, old.syncCounter);
++    expect((await syncPull(ctx, a.cookie, { since: watermark })).status).toBe(200);
++
++    await rotateServerEpoch(ctx.deps.db, ctx.deps);
++    const res = await syncPull(ctx, a.cookie, { since: watermark });
++    expect(res.status).toBe(410);
++    expect(res.body.error).toBe('watermark_expired');
++  });
++});
+diff --git a/apps/server/test/sync/purge.test.ts b/apps/server/test/sync/purge.test.ts
+new file mode 100644
+index 0000000..848d6ed
+--- /dev/null
++++ b/apps/server/test/sync/purge.test.ts
+@@ -0,0 +1,161 @@
++import { encodeWatermark } from '@appsport/contracts';
++import { afterEach, describe, expect, it } from 'vitest';
++import { getServerMeta } from '../../src/db/server-meta';
++import { DAILY_JOBS } from '../../src/jobs/registry';
++import { createLogger } from '../../src/logger';
++import { syncPurgeJob } from '../../src/sync/purge';
++import {
++  createSyncTestContext,
++  createUserAndLogin,
++  insertFixtureRow,
++  seqIds,
++  syncPull,
++  type TestContext,
++} from '../support';
++
++type Member = Awaited<ReturnType<typeof createUserAndLogin>>;
++type Row = Record<string, unknown>;
++
++const NOW = '2026-10-06T10:00:00.000Z';
++const OLD = '2026-07-07T10:00:00.000Z'; // 91 j
++const RECENT = '2026-07-09T10:00:00.000Z'; // 89 j
++const rowIds = seqIds(8000);
++
++let ctx: TestContext;
++let lines: string[];
++afterEach(() => ctx?.close());
++
++async function setup(): Promise<Member> {
++  lines = [];
++  ctx = await createSyncTestContext({ now: NOW, deps: { logger: createLogger((l) => lines.push(l)) } });
++  return createUserAndLogin(ctx);
++}
++
++const bumpRev = () =>
++  (
++    ctx.deps.sqlite
++      .prepare('UPDATE server_meta SET sync_counter = sync_counter + 1 RETURNING sync_counter')
++      .get() as { sync_counter: number }
++  ).sync_counter;
++
++const rowOf = (table: string, id: string) =>
++  ctx.deps.sqlite.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id) as Row | undefined;
++
++function insertNote(owner: { id: string }, deletedAt: string | null): { id: string; rev: number } {
++  const id = rowIds.uuidv7();
++  const rev = bumpRev();
++  ctx.deps.sqlite
++    .prepare(
++      'INSERT INTO fixture_note (id, owner_id, rev, created_at, updated_at, updated_by, deleted_at, title) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
++    )
++    .run(id, owner.id, rev, NOW, NOW, owner.id, deletedAt, 'note');
++  return { id, rev };
++}
++
++function insertItem(
++  owner: { id: string },
++  noteId: string,
++  deletedAt: string | null,
++): { id: string; rev: number } {
++  const id = rowIds.uuidv7();
++  const rev = bumpRev();
++  ctx.deps.sqlite
++    .prepare(
++      'INSERT INTO fixture_note_item (id, owner_id, rev, created_at, updated_at, updated_by, deleted_at, note_id, label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
++    )
++    .run(id, owner.id, rev, NOW, NOW, owner.id, deletedAt, noteId, 'item');
++  return { id, rev };
++}
++
++function insertAppliedOp(owner: { id: string }, appliedAt: string): string {
++  const opId = rowIds.uuidv7();
++  ctx.deps.sqlite
++    .prepare(
++      "INSERT INTO applied_op (op_id, user_id, entity, row_id, status, assigned_rev, applied_at) VALUES (?, ?, 'fixture_note', ?, 'applied', 1, ?)",
++    )
++    .run(opId, owner.id, rowIds.uuidv7(), appliedAt);
++  return opId;
++}
++
++const purgeRev = async () => (await getServerMeta(ctx.deps.db)).tombstonePurgeRev;
++
++describe('syncPurgeJob (tombstones à 90 j, applied_op à 12 mois)', () => {
++  it('tombstone de 91 j supprimée, de 89 j gardée ; gym et place jamais purgées', async () => {
++    const a = await setup();
++    const old = insertNote(a, OLD);
++    const recent = insertNote(a, RECENT);
++    const live = insertNote(a, null);
++    const gym = await insertFixtureRow(ctx.deps.db, 'gym', { deletedAt: '2026-01-01T00:00:00.000Z' });
++    const place = await insertFixtureRow(ctx.deps.db, 'place', {
++      ownerId: a.id,
++      deletedAt: '2026-01-01T00:00:00.000Z',
++    });
++
++    await syncPurgeJob.run(ctx.deps);
++
++    expect(rowOf('fixture_note', old.id)).toBeUndefined();
++    expect(rowOf('fixture_note', recent.id)).toBeDefined();
++    expect(rowOf('fixture_note', live.id)).toBeDefined();
++    expect(rowOf('gym', gym.id as string)).toBeDefined();
++    expect(rowOf('place', place.id as string)).toBeDefined();
++    expect(await purgeRev()).toBe(old.rev);
++    const log = lines.map((l) => JSON.parse(l)).find((l) => l.msg === 'sync purge');
++    expect(log).toMatchObject({ job: 'sync-purge', count: 1 });
++  });
++
++  it('enfant et parent à 91 j supprimés sans erreur de FK ; parent avec un enfant vivant gardé', async () => {
++    const a = await setup();
++    const parent = insertNote(a, OLD);
++    const child = insertItem(a, parent.id, OLD);
++    const keptParent = insertNote(a, OLD);
++    const liveChild = insertItem(a, keptParent.id, null);
++    const other = insertNote(a, OLD);
++
++    await syncPurgeJob.run(ctx.deps);
++
++    expect(rowOf('fixture_note', parent.id)).toBeUndefined();
++    expect(rowOf('fixture_note_item', child.id)).toBeUndefined();
++    expect(rowOf('fixture_note', other.id)).toBeUndefined();
++    expect(rowOf('fixture_note', keptParent.id)).toBeDefined();
++    expect(rowOf('fixture_note_item', liveChild.id)).toBeDefined();
++    expect(await purgeRev()).toBe(other.rev);
++  });
++
++  it('tombstone_purge_rev ne diminue jamais', async () => {
++    const a = await setup();
++    insertNote(a, OLD);
++    ctx.deps.sqlite.prepare('UPDATE server_meta SET tombstone_purge_rev = 1000').run();
++    await syncPurgeJob.run(ctx.deps);
++    expect(await purgeRev()).toBe(1000);
++    await syncPurgeJob.run(ctx.deps);
++    expect(await purgeRev()).toBe(1000);
++  });
++
++  it('applied_op de plus de 12 mois calendaires supprimée', async () => {
++    const a = await setup();
++    const oldOp = insertAppliedOp(a, '2025-10-05T10:00:00.000Z');
++    const keptOp = insertAppliedOp(a, '2025-11-06T10:00:00.000Z');
++    await syncPurgeJob.run(ctx.deps);
++    const ops = (ctx.deps.sqlite.prepare('SELECT op_id FROM applied_op').all() as Row[]).map((r) => r.op_id);
++    expect(ops).not.toContain(oldOp);
++    expect(ops).toContain(keptOp);
++  });
++
++  it('après purge, un watermark antérieur au rev purgé donne 410', async () => {
++    const a = await setup();
++    const old = insertNote(a, OLD);
++    insertNote(a, null);
++    const { serverEpoch } = await getServerMeta(ctx.deps.db);
++    const since = encodeWatermark(serverEpoch, old.rev - 1);
++    expect((await syncPull(ctx, a.cookie, { since })).status).toBe(200);
++
++    await syncPurgeJob.run(ctx.deps);
++    const res = await syncPull(ctx, a.cookie, { since });
++    expect(res.status).toBe(410);
++    expect(res.body.error).toBe('watermark_expired');
++  });
++
++  it('est enregistré parmi les jobs quotidiens', () => {
++    expect(DAILY_JOBS).toContain(syncPurgeJob);
++  });
++});
+diff --git a/apps/server/test/sync/push.test.ts b/apps/server/test/sync/push.test.ts
+index 0fe2893..5d74ba6 100644
+--- a/apps/server/test/sync/push.test.ts
++++ b/apps/server/test/sync/push.test.ts
+@@ -213,35 +213,28 @@ describe('POST /api/sync/push : rejets', () => {
+         id: theirs.id,
+         kind: 'patch',
+         fields: { title: 'volé' },
+       }),
+     ]);
+     expect(res.body.results[0]).toMatchObject({ status: 'rejected', code: 'forbidden' });
+     expect(rowOf('fixture_note', theirs.id)).toMatchObject({ owner_id: b.id, title: 'à b' });
+     expect(JSON.parse(rowsOf('sync_rejection')[0]?.detail_json as string).reason).toBe('owner_mismatch');
+   });
+ 
+-  it("patch d'une ligne absente → validation ; restore_upsert → validation", async () => {
++  it("patch d'une ligne absente → validation", async () => {
+     const a = await setup();
+     const res = await syncPush(ctx, a.cookie, [
+       makeOp({ userId: a.id, entity: 'fixture_note', id: newId(), kind: 'patch', fields: { title: 't' } }),
+-      makeOp({
+-        userId: a.id,
+-        entity: 'fixture_note',
+-        id: newId(),
+-        kind: 'restore_upsert',
+-        fields: { title: 't' },
+-      }),
+     ]);
+-    expect(res.body.results.map((r: Row) => r.code)).toEqual(['validation', 'validation']);
++    expect(res.body.results.map((r: Row) => r.code)).toEqual(['validation']);
+     const reasons = rowsOf('sync_rejection').map((r) => JSON.parse(r.detail_json as string).reason);
+-    expect(reasons).toEqual(['row_missing', 'not_supported']);
++    expect(reasons).toEqual(['row_missing']);
+   });
+ 
+   it('une contrainte SQLite rejette une op sans annuler les autres (point de sauvegarde)', async () => {
+     const a = await setup();
+     const [n1, bad, n2] = [note(a), note(a, { title: '' }), note(a)];
+     const res = await syncPush(ctx, a.cookie, [n1, bad, n2]);
+     expect(res.body.results.map((r: Row) => r.status)).toEqual(['applied', 'rejected', 'applied']);
+     expect(res.body.results[1].code).toBe('validation');
+     expect(rowOf('fixture_note', bad.id)).toBeUndefined();
+     expect(rowsOf('fixture_note')).toHaveLength(2);
+diff --git a/apps/server/test/sync/restore-upsert.test.ts b/apps/server/test/sync/restore-upsert.test.ts
+new file mode 100644
+index 0000000..5c0f5e9
+--- /dev/null
++++ b/apps/server/test/sync/restore-upsert.test.ts
+@@ -0,0 +1,204 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { rotateServerEpoch } from '../../src/sync/epoch';
++import { SYNC_HOOKS } from '../../src/sync/hooks';
++import {
++  createSyncTestContext,
++  createUserAndLogin,
++  makeOp,
++  seqIds,
++  syncPush,
++  type TestContext,
++} from '../support';
++
++// Review Focus 2 (serveur, R-SYN-27) : les trois branches de restore_upsert après une nouvelle époque.
++type Member = Awaited<ReturnType<typeof createUserAndLogin>>;
++type Row = Record<string, unknown>;
++
++const rowIds = seqIds(8000);
++const newId = () => rowIds.uuidv7();
++
++let ctx: TestContext;
++afterEach(() => ctx?.close());
++
++async function setup(opts: Parameters<typeof createSyncTestContext>[0] = {}): Promise<Member> {
++  ctx = await createSyncTestContext(opts);
++  return createUserAndLogin(ctx);
++}
++
++const rowOf = (table: string, id: string) =>
++  ctx.deps.sqlite.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id) as Row | undefined;
++
++const ru = (
++  u: { id: string },
++  id: string,
++  fields: Record<string, unknown>,
++  serverRevSeen: number | null = null,
++  entity = 'fixture_note',
++) => makeOp({ userId: u.id, entity, id, kind: 'restore_upsert', fields, serverRevSeen });
++
++/** Note créée avant la restauration puis époque tournée : rev r1 ≤ epoch_base_rev. */
++async function restoredNote(u: Member): Promise<{ id: string; r1: number; baseRev: number }> {
++  const id = newId();
++  const created = await syncPush(ctx, u.cookie, [
++    makeOp({ userId: u.id, entity: 'fixture_note', id, kind: 'create', fields: { title: 'sauvegarde' } }),
++  ]);
++  const r1 = created.body.results[0].rev as number;
++  const { baseRev } = await rotateServerEpoch(ctx.deps.db, ctx.deps);
++  return { id, r1, baseRev };
++}
++
++describe('restore_upsert : trois branches (R-SYN-27)', () => {
++  it('ligne absente → insérée, tombstone comprise', async () => {
++    const a = await setup();
++    const live = newId();
++    const dead = newId();
++    const res = await syncPush(ctx, a.cookie, [
++      ru(a, live, { title: 'vivante', body: 'b' }),
++      ru(a, dead, { title: 'morte', deletedAt: '2026-09-01T00:00:00.000Z' }),
++    ]);
++    expect(res.status).toBe(200);
++    expect(res.body.results.map((r: Row) => r.status)).toEqual(['applied', 'applied']);
++    expect(rowOf('fixture_note', live)).toMatchObject({
++      owner_id: a.id,
++      title: 'vivante',
++      body: 'b',
++      deleted_at: null,
++      rev: res.body.results[0].rev,
++    });
++    expect(rowOf('fixture_note', dead)).toMatchObject({
++      title: 'morte',
++      deleted_at: '2026-09-01T00:00:00.000Z',
++      rev: res.body.results[1].rev,
++    });
++  });
++
++  it('rev ≤ epoch_base_rev et serverRevSeen > rev → remplacée par la version client', async () => {
++    const a = await setup();
++    const { id, r1, baseRev } = await restoredNote(a);
++    expect(r1).toBeLessThanOrEqual(baseRev);
++    const res = await syncPush(ctx, a.cookie, [ru(a, id, { title: 'client', body: 'x' }, r1 + 1)]);
++    const result = res.body.results[0];
++    expect(result).toEqual({ opId: expect.any(String), status: 'applied', rev: expect.any(Number) });
++    expect(result.rev).toBeGreaterThan(baseRev);
++    expect(rowOf('fixture_note', id)).toMatchObject({ title: 'client', body: 'x', rev: result.rev });
++  });
++
++  it('rev ≤ epoch_base_rev et serverRevSeen ≤ rev ou null → laissée (sauvegarde)', async () => {
++    const a = await setup();
++    const { id, r1 } = await restoredNote(a);
++    const res = await syncPush(ctx, a.cookie, [
++      ru(a, id, { title: 'client' }, r1),
++      ru(a, id, { title: 'client' }, null),
++    ]);
++    for (const r of res.body.results)
++      expect(r).toEqual({ opId: expect.any(String), status: 'applied', rev: r1 });
++    expect(rowOf('fixture_note', id)).toMatchObject({ title: 'sauvegarde', rev: r1 });
++  });
++
++  it('modifiée après la restauration → laissée ; la suppression du client l’emporte', async () => {
++    const a = await setup();
++    const { id } = await restoredNote(a);
++    const patched = await syncPush(ctx, a.cookie, [
++      makeOp({
++        userId: a.id,
++        entity: 'fixture_note',
++        id,
++        kind: 'patch',
++        fields: { title: 'apres-restauration' },
++      }),
++    ]);
++    const rp = patched.body.results[0].rev as number;
++
++    const r = await syncPush(ctx, a.cookie, [ru(a, id, { title: 'client' }, 1_000_000)]);
++    expect(r.body.results[0]).toEqual({ opId: expect.any(String), status: 'applied', rev: rp });
++    expect(rowOf('fixture_note', id)).toMatchObject({
++      title: 'apres-restauration',
++      rev: rp,
++      deleted_at: null,
++    });
++
++    const del = await syncPush(ctx, a.cookie, [
++      ru(a, id, { title: 'client', deletedAt: '2026-10-01T08:00:00.000Z' }, null),
++    ]);
++    const delRev = del.body.results[0].rev as number;
++    expect(del.body.results[0].status).toBe('applied');
++    expect(delRev).toBeGreaterThan(rp);
++    expect(rowOf('fixture_note', id)).toMatchObject({
++      title: 'apres-restauration',
++      deleted_at: '2026-10-01T08:00:00.000Z',
++      rev: delRev,
++    });
++  });
++
++  it('tombstone gardée : un restore_upsert sans deletedAt ne la ressuscite pas', async () => {
++    const a = await setup();
++    const { id } = await restoredNote(a);
++    const deleted = await syncPush(ctx, a.cookie, [
++      makeOp({ userId: a.id, entity: 'fixture_note', id, kind: 'delete' }),
++    ]);
++    const rd = deleted.body.results[0].rev as number;
++    const r = await syncPush(ctx, a.cookie, [ru(a, id, { title: 'client' }, 1_000_000)]);
++    expect(r.body.results[0]).toEqual({ opId: expect.any(String), status: 'applied', rev: rd });
++    expect(rowOf('fixture_note', id)?.deleted_at).not.toBeNull();
++  });
++
++  it('deletedAt invalide → validation', async () => {
++    const a = await setup();
++    const res = await syncPush(ctx, a.cookie, [ru(a, newId(), { title: 't', deletedAt: 'hier' })]);
++    expect(res.body.results[0]).toMatchObject({ status: 'rejected', code: 'validation' });
++  });
++});
++
++describe('restore_upsert : garde-fous du push', () => {
++  it('sur sync_rejection → forbidden', async () => {
++    const a = await setup();
++    const res = await syncPush(ctx, a.cookie, [
++      ru(a, newId(), { dismissedAt: null }, null, 'sync_rejection'),
++    ]);
++    expect(res.body.results[0]).toMatchObject({ status: 'rejected', code: 'forbidden' });
++  });
++
++  it('table C2 sans consentement → applied_partial dropped, rien écrit', async () => {
++    const a = await setup();
++    const id = newId();
++    const res = await syncPush(ctx, a.cookie, [ru(a, id, { value: 3 }, null, 'fixture_c2_log')]);
++    expect(res.body.results[0]).toEqual({
++      opId: expect.any(String),
++      status: 'applied_partial',
++      dropped: true,
++    });
++    expect(rowOf('fixture_c2_log', id)).toBeUndefined();
++  });
++
++  it("ligne d'un autre → forbidden, ligne intacte", async () => {
++    const a = await setup();
++    const b = await createUserAndLogin(ctx, { username: 'bob' });
++    const { id, r1 } = await restoredNote(a);
++    const res = await syncPush(ctx, b.cookie, [ru(b, id, { title: 'vol' }, r1 + 1)]);
++    expect(res.body.results[0]).toMatchObject({ status: 'rejected', code: 'forbidden' });
++    expect(rowOf('fixture_note', id)).toMatchObject({ owner_id: a.id, title: 'sauvegarde' });
++  });
++
++  it('beforeApply puis afterApply seulement si la ligne est écrite', async () => {
++    const calls: string[] = [];
++    const a = await setup({
++      deps: {
++        syncHooks: {
++          ...SYNC_HOOKS,
++          fixture_note: {
++            beforeApply: async (_c, fields) => {
++              calls.push(`before:${String(fields.title)}`);
++            },
++            afterApply: async () => {
++              calls.push('after');
++            },
++          },
++        },
++      },
++    });
++    const id = newId();
++    await syncPush(ctx, a.cookie, [ru(a, id, { title: 'un' })]);
++    await syncPush(ctx, a.cookie, [ru(a, id, { title: 'deux' })]);
++    expect(calls).toEqual(['before:un', 'after', 'before:deux']);
++  });
++});

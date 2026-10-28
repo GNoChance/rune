@@ -1,0 +1,253 @@
+diff --git a/infra/host/test/defaults.bash b/infra/host/test/defaults.bash
+index 535acaf..7f2a070 100644
+--- a/infra/host/test/defaults.bash
++++ b/infra/host/test/defaults.bash
+@@ -129,3 +129,18 @@ default_restic() {
+   # restic -r <dépôt> … : B2 seulement lit b2.env (sous-shell de restic_on).
+   printf '%s %s\n' "${2:-}" "${AWS_ACCESS_KEY_ID:-none}" >>"$STATE/restic-env"
+ }
++
++# Descripteur 9 hérité ouvert en écriture, et sous Linux sur $LOCK_FILE (take_lock : exec 9>"$LOCK_FILE").
++lock_fd_open() {
++  { : >&9; } 2>/dev/null || return 1
++  if [[ "$OSTYPE" == linux* ]]; then
++    [ "$(readlink "/proc/$$/fd/9")" = "$(readlink -f "$LOCK_FILE")" ] || return 1
++  fi
++}
++
++# flock -n 9 : comme le vrai flock, échoue si le descripteur 9 n'est pas ouvert sur le fichier verrou.
++default_flock() {
++  lock_fd_open && return 0
++  echo "flock: 9: Bad file descriptor" >&2
++  return 1
++}
+diff --git a/infra/host/test/helpers.bash b/infra/host/test/helpers.bash
+index 344d7df..3aa8ec2 100644
+--- a/infra/host/test/helpers.bash
++++ b/infra/host/test/helpers.bash
+@@ -79,6 +79,19 @@ write_backup_at() {
+ 
+ reset_calls() { : >"$CALLS"; }
+ 
++# Nouveau scénario dans le même test : arborescence, règles, appels et état remis à neuf.
++reset_host() {
++  rm -rf "${BATS_TEST_TMPDIR:?}"/*
++  setup_host
++}
++
++# Modes de data/ops (0750) et de status.json (0640) ; chmod est sans effet sous Windows (vérifié par le job infra).
++assert_ops_modes() {
++  [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* ]] && return 0
++  [ "$(stat -c %a "$APPSPORT_ROOT/data/ops")" = 750 ] || { echo "data/ops n'est pas en 0750" >&2; return 1; }
++  [ "$(stat -c %a "$APPSPORT_ROOT/data/ops/status.json")" = 640 ] || { echo "status.json n'est pas en 0640" >&2; return 1; }
++}
++
+ # Les motifs glob apparaissent dans $CALLS dans cet ordre (d'autres appels peuvent s'intercaler).
+ assert_calls_in_order() {
+   local i=0 line
+@@ -109,6 +122,23 @@ refute_call() {
+   done <"$CALLS"
+ }
+ 
++# refute_call_between <début> <fin> <motif> : aucun appel <motif> entre le premier <début> et le <fin> qui le suit.
++refute_call_between() {
++  local line inside=0
++  [ -f "$CALLS" ] || return 0
++  while IFS= read -r line; do
++    # shellcheck disable=SC2053 # motifs glob voulus
++    if [ "$inside" = 0 ]; then
++      if [[ "$line" == $1 ]]; then inside=1; fi
++    elif [[ "$line" == $2 ]]; then
++      return 0
++    elif [[ "$line" == $3 ]]; then
++      echo "appel inattendu entre « $1 » et « $2 » : $line" >&2
++      return 1
++    fi
++  done <"$CALLS"
++}
++
+ count_calls() {
+   local line n=0
+   if [ -f "$CALLS" ]; then
+diff --git a/infra/host/test/update.bats b/infra/host/test/update.bats
+index d35aea0..e22cd73 100644
+--- a/infra/host/test/update.bats
++++ b/infra/host/test/update.bats
+@@ -34,8 +34,14 @@ remember_files() {
+ @test "nominal --yes : séances affichées, étapes dans l'ordre, deploy.env, deploy.log et .deploy" {
+   set_healthy_versions v1.2.0 v1.3.0
+   printf 'alice\t2026-10-09T18:00:00.000Z\n' >"$STATE/sessions"
++  # Verrou toujours tenu à la dernière écriture de status.json (descripteur 9 ouvert sur $LOCK_FILE).
++  # shellcheck disable=SC2016 # extrait évalué par le stub
++  on chown "1000:1000 $APPSPORT_ROOT/data/ops/.status.*" 0 \
++    '. "$STUB_DEFAULTS"; if lock_fd_open; then touch "$STATE/lock-held"; fi'
+   run "$UPDATE" v1.3.0 --yes
+   [ "$status" -eq 0 ]
++  [ -f "$STATE/lock-held" ]
++  assert_ops_modes
+   [[ "$output" == *"- alice (début 2026-10-09T18:00:00.000Z)"* ]]
+   [[ "$output" == *"Déploiement de v1.3.0 réussi."* ]]
+   assert_calls_in_order \
+@@ -81,14 +87,18 @@ remember_files() {
+   [[ "$output" != *"APPSPORT_VERSION="* ]]
+ }
+ 
+-@test "confirmation « n » : abandon, code 1, aucun git" {
+-  remember_files
+-  run "$UPDATE" v1.3.0 <<<"n"
+-  [ "$status" -eq 1 ]
+-  [[ "$output" == *"Aucune séance en cours depuis moins de 3 h."* ]]
+-  [[ "$output" == *"Déployer v1.3.0 (version actuelle v1.2.0) ? [o/N]"* ]]
+-  [[ "$output" == *"Abandon : rien n'a été changé."* ]]
+-  assert_nothing_changed
++@test "confirmation « n », vide (Non par défaut) ou « y » : abandon, code 1, aucun git" {
++  local answer
++  for answer in n "" y; do
++    reset_host
++    remember_files
++    run "$UPDATE" v1.3.0 <<<"$answer"
++    [ "$status" -eq 1 ]
++    [[ "$output" == *"Aucune séance en cours depuis moins de 3 h."* ]]
++    [[ "$output" == *"Déployer v1.3.0 (version actuelle v1.2.0) ? [o/N]"* ]]
++    [[ "$output" == *"Abandon : rien n'a été changé."* ]]
++    assert_nothing_changed
++  done
+ }
+ 
+ @test "confirmation « o » : déploiement, code 0" {
+@@ -141,17 +151,40 @@ remember_files() {
+   [[ "$(last_deploy_line)" =~ ^$ISO\ v1\.2\.0\ v1\.3\.0\ pull-failed$ ]]
+ }
+ 
+-@test "sauvegarde pre-deploy en échec : pas de up, backup-failed, deploy.env inchangé" {
+-  on restic "-r $OFFSITE backup *" 1
+-  run "$UPDATE" v1.3.0 --yes
++# Instantané, dépôt local ou dépôt offsite en échec : retour au tag en place, ni up ni deploy.env, backup-failed.
++assert_backup_failed() {
+   [ "$status" -eq 1 ]
+   [[ "$output" == *"Échec de l'instantané ou de la sauvegarde pre-deploy. Le service n'a pas été modifié."* ]]
+-  assert_calls_in_order "restic -r $OFFSITE backup *" "git -C $APPSPORT_REPO checkout --quiet v1.2.0"
++  assert_calls_in_order "git -C $APPSPORT_REPO checkout --quiet v1.3.0" "git -C $APPSPORT_REPO checkout --quiet v1.2.0"
+   refute_call "docker compose * up *"
+   [ "$(deployed_version)" = "v1.2.0" ]
+   [[ "$(last_deploy_line)" =~ ^$ISO\ v1\.2\.0\ v1\.3\.0\ backup-failed$ ]]
+ }
+ 
++@test "sauvegarde pre-deploy en échec (instantané, dépôt local ou offsite) : pas de up, backup-failed, deploy.env inchangé" {
++  on restic "-r $OFFSITE backup *" 1
++  run "$UPDATE" v1.3.0 --yes
++  assert_backup_failed
++  assert_calls_in_order "restic -r $OFFSITE backup *" "git -C $APPSPORT_REPO checkout --quiet v1.2.0"
++
++  # Instantané pre-v1.3.0 en échec : aucune sauvegarde restic sans lui.
++  reset_host
++  on docker '* snapshot --tag pre-v1.3.0' 1
++  run "$UPDATE" v1.3.0 --yes
++  assert_backup_failed
++  refute_call "restic *"
++
++  # Dépôt local seul en échec : l'offsite est quand même tenté, l'échec n'est pas masqué.
++  reset_host
++  on restic "-r $BACKUP_ROOT/restic backup *" 1
++  run "$UPDATE" v1.3.0 --yes
++  assert_backup_failed
++  assert_calls_in_order \
++    "restic -r $BACKUP_ROOT/restic backup *" \
++    "restic -r $OFFSITE backup *" \
++    "git -C $APPSPORT_REPO checkout --quiet v1.2.0"
++}
++
+ @test "nouvelle version KO, image précédente saine : retour image seule, ni restore ni privacy, rolled-back-image" {
+   run "$UPDATE" v1.3.0 --yes
+   [ "$status" -eq 1 ]
+@@ -186,31 +219,84 @@ remember_files() {
+   # Lecture seule de la base courante (T24) : jamais --source ; depuis l'instantané moins 5 min.
+   refute_call "* privacy:collect *--source*"
+   assert_calls_in_order "* privacy:collect --since $ISO_GLOB --out *"
++  # 03 §8.3 : la réapplication précède toute requête, le service reste arrêté jusque-là.
++  local starts
++  for starts in "docker compose * up *" "docker compose * start *" "docker compose * restart *"; do
++    refute_call_between "docker compose * stop app" "* privacy:reapply *" "$starts"
++  done
++  [ "$(count_calls 'docker compose * up -d')" -eq 3 ]
++  assert_ops_modes
+   [ "$(deployed_version)" = "v1.2.0" ]
+   [[ "$(last_deploy_line)" =~ ^$ISO\ v1\.2\.0\ v1\.3\.0\ rolled-back-restore$ ]]
+   jq -e '.deploy | .version == "v1.3.0" and .previousVersion == "v1.2.0" and .ok == false' "$STATUS_FILE"
+   [ -z "$(compgen -G "$APPSPORT_ROOT/data/ops/privacy-*.json" || true)" ]
+ }
+ 
+-@test "restauration impossible : P4, liste privacy gardée, rollback-failed" {
++# Retour arrière auto en échec après l'étape image seule : P4, rollback-failed, .deploy.ok false.
++assert_auto_rollback_failed() {
++  [ "$status" -eq 1 ]
++  [[ "$output" == *"$1 : suivez P4."* ]]
++  [[ "$(last_deploy_line)" =~ ^$ISO\ v1\.2\.0\ v1\.3\.0\ rollback-failed$ ]]
++  jq -e '.deploy | .version == "v1.3.0" and .previousVersion == "v1.2.0" and .ok == false' "$STATUS_FILE"
++}
++
++@test "restauration, réapplication, collecte impossibles ou v1.2.0 KO après restauration : P4, rollback-failed" {
+   set_healthy_versions "v1.2.0@restored"
+   on docker '* restore *' 1
+   run "$UPDATE" v1.3.0 --yes
+-  [ "$status" -eq 1 ]
+-  [[ "$output" == *"Restauration ou réapplication impossible : suivez P4."* ]]
++  assert_auto_rollback_failed "Restauration ou réapplication impossible"
+   refute_call "* privacy:reapply *"
+   compgen -G "$APPSPORT_ROOT/data/ops/privacy-v1.3.0-*.json"
+-  [[ "$(last_deploy_line)" =~ ^$ISO\ v1\.2\.0\ v1\.3\.0\ rollback-failed$ ]]
+-  jq -e '.deploy.ok == false' "$STATUS_FILE"
++  # Le service reste arrêté : aucun troisième up -d sur une base restaurée sans réapplication.
++  [ "$(count_calls 'docker compose * up -d')" -eq 2 ]
++
++  # Réapplication en échec : liste gardée pour P4, service arrêté.
++  reset_host
++  set_healthy_versions "v1.2.0@restored"
++  on docker '* privacy:reapply *' 1
++  run "$UPDATE" v1.3.0 --yes
++  assert_auto_rollback_failed "Restauration ou réapplication impossible"
++  assert_calls_in_order "* restore /data/snapshots/pre-v1.3.0.db" "* privacy:reapply *"
++  compgen -G "$APPSPORT_ROOT/data/ops/privacy-v1.3.0-*.json"
++  [ "$(count_calls 'docker compose * up -d')" -eq 2 ]
++
++  # Collecte en échec : ni arrêt ni restauration.
++  reset_host
++  set_healthy_versions "v1.2.0@restored"
++  on docker '* privacy:collect *' 1
++  run "$UPDATE" v1.3.0 --yes
++  assert_auto_rollback_failed "privacy:collect impossible"
++  refute_call "docker compose * stop app"
++  refute_call "* restore *"
++
++  # v1.2.0 toujours KO après restauration : pas de rolled-back-restore.
++  reset_host
++  set_healthy_versions none
++  run "$UPDATE" v1.3.0 --yes
++  assert_auto_rollback_failed "L'image v1.2.0 ne répond pas après restauration"
++  assert_calls_in_order "* privacy:reapply *" "docker compose * up -d"
+ }
+ 
+-@test "retour arrière dont le checkout du tag précédent échoue : P4, rollback-failed" {
++@test "retour arrière (auto et --rollback) dont le checkout du tag précédent échoue : P4, rollback-failed" {
+   on git '* checkout --quiet v1.2.0' 1
+   run "$UPDATE" v1.3.0 --yes
+   [ "$status" -eq 1 ]
+   [[ "$output" == *"Tag v1.2.0 introuvable : suivez P4."* ]]
+   [[ "$(last_deploy_line)" =~ ^$ISO\ v1\.2\.0\ v1\.3\.0\ rollback-failed$ ]]
+   jq -e '.deploy | .version == "v1.3.0" and .ok == false' "$STATUS_FILE"
++
++  # --rollback manuel : ligne « <en place> <cible> rollback-failed », .deploy {cible, en place, ok false}.
++  reset_host
++  write_deploy_env_for_test v1.3.0
++  echo "2026-10-08T20:00:00Z v1.2.0 v1.3.0 ok" >>"$APPSPORT_ROOT/deploy.log"
++  echo v1.3.0 >"$STATE/image"
++  set_healthy_versions v1.2.0 v1.3.0
++  on git '* checkout --quiet v1.2.0' 1
++  run "$UPDATE" --rollback --yes
++  [ "$status" -eq 1 ]
++  [[ "$output" == *"Tag v1.2.0 introuvable : suivez P4."* ]]
++  [[ "$(last_deploy_line)" =~ ^$ISO\ v1\.3\.0\ v1\.2\.0\ rollback-failed$ ]]
++  jq -e '.deploy | .version == "v1.2.0" and .previousVersion == "v1.3.0" and .ok == false' "$STATUS_FILE"
+ }
+ 
+ @test "--rollback manuel, image v1.2.0 saine : image seule, ni restore ni privacy, rolled-back-image" {

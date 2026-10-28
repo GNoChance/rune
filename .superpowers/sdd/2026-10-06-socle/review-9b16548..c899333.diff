@@ -1,0 +1,864 @@
+# Review package: 9b16548..HEAD
+
+## Commits
+c899333 test(synchro): convergence deux appareils et scénarios d'époque et de consentement
+
+## Files changed
+ apps/server/test/support/index.ts             |   2 +
+ apps/web/package.json                         |   1 +
+ apps/web/test/support/in-process-transport.ts |  32 +++
+ apps/web/test/support/lossy-transport.ts      |  90 +++++++
+ apps/web/test/sync/convergence.test.ts        | 306 ++++++++++++++++++++++++
+ apps/web/test/sync/scenarios.test.ts          | 332 ++++++++++++++++++++++++++
+ pnpm-lock.yaml                                |   3 +
+ 7 files changed, 766 insertions(+)
+
+## Diff
+diff --git a/apps/server/test/support/index.ts b/apps/server/test/support/index.ts
+index 3cbe6c2..6f5fe90 100644
+--- a/apps/server/test/support/index.ts
++++ b/apps/server/test/support/index.ts
+@@ -1,10 +1,12 @@
++export { createLogger } from '../../src/logger';
++export { grantConsent } from '../../src/privacy/consent';
+ export { FakeClock } from './clock';
+ export { createTestContext, TEST_ARGON2, type TestContext, type TestRequestInit } from './context';
+ export { insertFixtureRow } from './factories';
+ export { seqIds } from './ids';
+ export { completeOnboarding } from './onboarding';
+ export {
+   createSyncTestContext,
+   dumpDatabase,
+   makeOp,
+   PROTOCOL_HEADERS,
+diff --git a/apps/web/package.json b/apps/web/package.json
+index bf7c420..9506950 100644
+--- a/apps/web/package.json
++++ b/apps/web/package.json
+@@ -9,13 +9,14 @@
+   },
+   "dependencies": {
+     "@appsport/contracts": "workspace:*",
+     "@appsport/domain": "workspace:*",
+     "dexie": "^4.4.6",
+     "zod": "^4.6.5"
+   },
+   "devDependencies": {
+     "@appsport/server": "workspace:*",
+     "fake-indexeddb": "^6.2.5",
++    "fast-check": "^4.10.2",
+     "happy-dom": "^20"
+   }
+ }
+diff --git a/apps/web/test/support/in-process-transport.ts b/apps/web/test/support/in-process-transport.ts
+new file mode 100644
+index 0000000..cddd743
+--- /dev/null
++++ b/apps/web/test/support/in-process-transport.ts
+@@ -0,0 +1,32 @@
++import type { TestContext } from '@appsport/server/testing';
++import type { SyncTransport } from '../../src/sync/transport';
++
++export interface InProcessLogEntry {
++  method: string;
++  path: string;
++  body: unknown;
++}
++
++/**
++ * Transport vers le vrai serveur en mémoire : ajoute le cookie courant et `Origin = appOrigin`,
++ * et journalise chaque requête qui atteint le serveur (`body` JSON décodé, sinon undefined).
++ */
++export function inProcessTransport(
++  ctx: TestContext,
++  getCookie: () => string,
++): SyncTransport & { log: InProcessLogEntry[] } {
++  const log: InProcessLogEntry[] = [];
++  return {
++    log,
++    async fetch(path, init) {
++      const method = (init.method ?? 'GET').toUpperCase();
++      const headers = new Headers(init.headers);
++      const cookie = getCookie();
++      if (cookie) headers.set('Cookie', cookie);
++      headers.set('Origin', ctx.deps.config.appOrigin);
++      const raw = typeof init.body === 'string' ? init.body : undefined;
++      log.push({ method, path, body: raw === undefined ? undefined : (JSON.parse(raw) as unknown) });
++      return ctx.app.request(path, { ...init, method, headers });
++    },
++  };
++}
+diff --git a/apps/web/test/support/lossy-transport.ts b/apps/web/test/support/lossy-transport.ts
+new file mode 100644
+index 0000000..fca6e2c
+--- /dev/null
++++ b/apps/web/test/support/lossy-transport.ts
+@@ -0,0 +1,90 @@
++import type { SyncTransport } from '../../src/sync/transport';
++
++export interface LossyOptions {
++  seed: number;
++  dropRate: number;
++  dupRate: number;
++  maxDelayMs: number;
++  reorder: boolean;
++}
++
++export interface LossyStats {
++  dropped: number;
++  duplicated: number;
++  replayedLate: number;
++}
++
++/** Générateur pseudo-aléatoire déterministe sur 32 bits, valeurs dans [0, 1). */
++function mulberry32(seed: number): () => number {
++  let a = seed >>> 0;
++  return () => {
++    a = (a + 0x6d2b79f5) >>> 0;
++    let t = a;
++    t = Math.imul(t ^ (t >>> 15), t | 1);
++    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
++    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
++  };
++}
++
++/** Copie rejouable plus tard : sans le signal de l'échéance d'origine, déjà levé à ce moment-là. */
++function detached(init: RequestInit): RequestInit {
++  const { signal: _signal, ...rest } = init;
++  return rest;
++}
++
++/**
++ * Réseau dégradé et déterministe (graine `seed`) autour de `inner`. À chaque appel : retard réel
++ * `rand() * maxDelayMs` ; si `reorder` et un doublon attend, il est rejoué tardivement (réponse
++ * ignorée) ; perte (`dropRate`) : une fois sur deux sans appel (requête perdue), sinon après l'appel
++ * (réponse perdue) ; doublon (`dupRate`) : mis en attente si `reorder`, sinon deux appels et la
++ * première réponse ; sinon l'appel tel quel. `heal()` remet taux et retard à 0 et vide la file.
++ */
++export function lossyTransport(
++  inner: SyncTransport,
++  opts: LossyOptions,
++): SyncTransport & { heal(): void; stats: LossyStats } {
++  const rand = mulberry32(opts.seed);
++  let { dropRate, dupRate, maxDelayMs } = opts;
++  const waiting: { path: string; init: RequestInit }[] = [];
++  const stats: LossyStats = { dropped: 0, duplicated: 0, replayedLate: 0 };
++
++  return {
++    stats,
++    heal() {
++      dropRate = 0;
++      dupRate = 0;
++      maxDelayMs = 0;
++      waiting.length = 0;
++    },
++    async fetch(path, init) {
++      const delay = rand() * maxDelayMs;
++      if (delay > 0) await new Promise<void>((resolve) => setTimeout(resolve, delay));
++      const late = opts.reorder ? waiting.shift() : undefined;
++      if (late) {
++        stats.replayedLate += 1;
++        try {
++          await (await inner.fetch(late.path, late.init)).text();
++        } catch {
++          // réponse d'un rejeu tardif ignorée
++        }
++      }
++      if (rand() < dropRate) {
++        stats.dropped += 1;
++        if (rand() < 0.5) throw new TypeError('lossy: request dropped');
++        await inner.fetch(path, init);
++        throw new TypeError('lossy: response dropped');
++      }
++      if (rand() < dupRate) {
++        stats.duplicated += 1;
++        if (opts.reorder) {
++          waiting.push({ path, init: detached(init) });
++          return inner.fetch(path, init);
++        }
++        const first = await inner.fetch(path, init);
++        await inner.fetch(path, detached(init));
++        return first;
++      }
++      return inner.fetch(path, init);
++    },
++  };
++}
+diff --git a/apps/web/test/sync/convergence.test.ts b/apps/web/test/sync/convergence.test.ts
+new file mode 100644
+index 0000000..5b878c6
+--- /dev/null
++++ b/apps/web/test/sync/convergence.test.ts
+@@ -0,0 +1,306 @@
++// @vitest-environment node
++import { createMonotonicUuidV7 } from '@appsport/domain';
++import {
++  createSyncTestContext,
++  createUserAndLogin,
++  login,
++  SYNC_FIXTURE_RULES,
++  type TestContext,
++} from '@appsport/server/testing';
++import fc from 'fast-check';
++import { describe, expect, it } from 'vitest';
++import type { AppDb, MirrorRow } from '../../src/local-db/db';
++import { setMeta } from '../../src/local-db/meta';
++import { createSyncEngine, type SyncEngine } from '../../src/sync/engine';
++import { type LocalChange, pendingCount, writeLocal } from '../../src/sync/outbox';
++import { inProcessTransport } from '../support/in-process-transport';
++import { createFixtureLocalDb } from '../support/local-db';
++import { type LossyOptions, lossyTransport } from '../support/lossy-transport';
++
++const randomBytes = (n: number) => crypto.getRandomValues(new Uint8Array(n));
++type Row = Record<string, unknown>;
++
++interface Device {
++  db: AppDb;
++  engine: SyncEngine;
++  lossy: ReturnType<typeof lossyTransport>;
++}
++
++interface Real {
++  ctx: TestContext;
++  userId: string;
++  devices: [Device, Device];
++  newRowId(): string;
++  newOpIds: [() => string, () => string];
++  createdItems: string[];
++}
++
++type Model = Record<string, never>;
++
++const live = async (d: Device, entity: string): Promise<MirrorRow[]> =>
++  (await d.db.mirror(entity).orderBy('id').toArray()).filter((r) => r.deletedAt == null);
++
++async function write(r: Real, dev: 0 | 1, change: LocalChange): Promise<void> {
++  await writeLocal(r.devices[dev].db, change, {
++    userId: r.userId,
++    now: () => r.ctx.clock.now().toISOString(),
++    newOpId: r.newOpIds[dev],
++    healthConsentActive: false,
++    rules: SYNC_FIXTURE_RULES,
++  });
++}
++
++abstract class Cmd implements fc.AsyncCommand<Model, Real> {
++  constructor(readonly dev: 0 | 1) {}
++  check(): boolean {
++    return true;
++  }
++  abstract run(m: Model, r: Real): Promise<void>;
++  abstract toString(): string;
++}
++
++class CreateNote extends Cmd {
++  constructor(
++    dev: 0 | 1,
++    readonly title: string,
++  ) {
++    super(dev);
++  }
++  async run(_m: Model, r: Real) {
++    await write(r, this.dev, {
++      entity: 'fixture_note',
++      id: r.newRowId(),
++      kind: 'create',
++      fields: { title: this.title },
++    });
++  }
++  toString() {
++    return `createNote(${this.dev}, ${JSON.stringify(this.title)})`;
++  }
++}
++
++class PatchNote extends Cmd {
++  constructor(
++    dev: 0 | 1,
++    readonly pick: number,
++    readonly fields: { title?: string; body?: string | null },
++  ) {
++    super(dev);
++  }
++  async run(_m: Model, r: Real) {
++    const notes = await live(r.devices[this.dev], 'fixture_note');
++    const note = notes[this.pick % Math.max(1, notes.length)];
++    if (!note) return;
++    await write(r, this.dev, { entity: 'fixture_note', id: note.id, kind: 'patch', fields: this.fields });
++  }
++  toString() {
++    return `patchNote(${this.dev}, #${this.pick}, ${JSON.stringify(this.fields)})`;
++  }
++}
++
++class DeleteNote extends Cmd {
++  constructor(
++    dev: 0 | 1,
++    readonly pick: number,
++  ) {
++    super(dev);
++  }
++  async run(_m: Model, r: Real) {
++    const notes = await live(r.devices[this.dev], 'fixture_note');
++    const note = notes[this.pick % Math.max(1, notes.length)];
++    if (!note) return;
++    await write(r, this.dev, { entity: 'fixture_note', id: note.id, kind: 'delete', fields: {} });
++  }
++  toString() {
++    return `deleteNote(${this.dev}, #${this.pick})`;
++  }
++}
++
++class CreateItem extends Cmd {
++  constructor(
++    dev: 0 | 1,
++    readonly pick: number,
++    readonly label: string,
++  ) {
++    super(dev);
++  }
++  async run(_m: Model, r: Real) {
++    const notes = await live(r.devices[this.dev], 'fixture_note');
++    const note = notes[this.pick % Math.max(1, notes.length)];
++    if (!note) return;
++    const id = r.newRowId();
++    await write(r, this.dev, {
++      entity: 'fixture_note_item',
++      id,
++      kind: 'create',
++      fields: { noteId: note.id, label: this.label },
++    });
++    r.createdItems.push(id);
++  }
++  toString() {
++    return `createItem(${this.dev}, #${this.pick}, ${JSON.stringify(this.label)})`;
++  }
++}
++
++class Sync extends Cmd {
++  async run(_m: Model, r: Real) {
++    await r.devices[this.dev].engine.syncNow('manual');
++  }
++  toString() {
++    return `sync(${this.dev})`;
++  }
++}
++
++const devArb = fc.constantFrom<0 | 1>(0, 1);
++const text = fc.string({ minLength: 1, maxLength: 20 });
++const commandArbs = [
++  fc
++    .tuple(devArb, fc.oneof({ arbitrary: fc.constant(''), weight: 1 }, { arbitrary: text, weight: 5 }))
++    .map(([d, title]) => new CreateNote(d, title) as Cmd),
++  fc
++    .tuple(
++      devArb,
++      fc.nat(),
++      fc.record(
++        { title: text, body: fc.option(fc.string({ maxLength: 20 }), { nil: null }) },
++        { requiredKeys: [] },
++      ),
++    )
++    .map(([d, pick, fields]) => new PatchNote(d, pick, fields) as Cmd),
++  fc.tuple(devArb, fc.nat()).map(([d, pick]) => new DeleteNote(d, pick) as Cmd),
++  fc.tuple(devArb, fc.nat(), text).map(([d, pick, label]) => new CreateItem(d, pick, label) as Cmd),
++  devArb.map((d) => new Sync(d) as Cmd),
++];
++
++const serverRows = (ctx: TestContext, table: string): Row[] =>
++  ctx.deps.sqlite.prepare(`SELECT * FROM ${table} ORDER BY id`).all() as Row[];
++
++/** Vue comparée : colonnes serveur (snake) ou miroir (camel) ramenées aux mêmes clés. */
++function view(rows: Row[], keys: Record<string, string>): Row[] {
++  return rows.map((row) => Object.fromEntries(Object.entries(keys).map(([out, key]) => [out, row[key]])));
++}
++
++const NOTE_SERVER = { id: 'id', title: 'title', body: 'body', deletedAt: 'deleted_at' };
++const NOTE_MIRROR = { id: 'id', title: 'title', body: 'body', deletedAt: 'deletedAt' };
++const ITEM_SERVER = { id: 'id', noteId: 'note_id', label: 'label', deletedAt: 'deleted_at' };
++const ITEM_MIRROR = { id: 'id', noteId: 'noteId', label: 'label', deletedAt: 'deletedAt' };
++const REJ_SERVER = { id: 'id', opId: 'op_id', entity: 'entity', rowId: 'row_id', code: 'code' };
++const REJ_MIRROR = { id: 'id', opId: 'opId', entity: 'entity', rowId: 'rowId', code: 'code' };
++
++const mirrorRows = async (d: Device, entity: string): Promise<Row[]> =>
++  d.db.mirror(entity).orderBy('id').toArray();
++
++async function setupReal(opts: LossyOptions, run: number): Promise<Real> {
++  const ctx = await createSyncTestContext();
++  const user = await createUserAndLogin(ctx);
++  const cookies = [user.cookie, await login(ctx, user.username, user.password, '100.64.0.2')];
++  const now = () => ctx.clock.now().getTime();
++  const newOpIds: [() => string, () => string] = [
++    createMonotonicUuidV7(now, randomBytes),
++    createMonotonicUuidV7(now, randomBytes),
++  ];
++  const devices = await Promise.all(
++    ([0, 1] as const).map(async (i): Promise<Device> => {
++      const db = createFixtureLocalDb();
++      await setMeta(db, 'userId', user.id);
++      const lossy = lossyTransport(
++        inProcessTransport(ctx, () => cookies[i] ?? ''),
++        { ...opts, seed: opts.seed + run * 2 + i },
++      );
++      const engine = createSyncEngine({
++        db,
++        transport: lossy,
++        now,
++        newOpId: newOpIds[i],
++        rules: SYNC_FIXTURE_RULES,
++        triggers: () => () => {},
++      });
++      return { db, engine, lossy };
++    }),
++  );
++  return {
++    ctx,
++    userId: user.id,
++    devices: devices as [Device, Device],
++    newRowId: createMonotonicUuidV7(now, randomBytes),
++    newOpIds,
++    createdItems: [],
++  };
++}
++
++async function settle(r: Real): Promise<void> {
++  for (const d of r.devices) d.lossy.heal();
++  for (let round = 0; round < 10; round++) {
++    for (const d of r.devices) await d.engine.syncNow('manual');
++    const pending = await Promise.all(r.devices.map((d) => pendingCount(d.db, r.userId)));
++    if (pending.every((n) => n === 0)) break;
++  }
++  for (const d of r.devices) await d.engine.pullNow();
++}
++
++async function expectConverged(r: Real): Promise<void> {
++  const { ctx } = r;
++  const notes = view(serverRows(ctx, 'fixture_note'), NOTE_SERVER);
++  const items = view(serverRows(ctx, 'fixture_note_item'), ITEM_SERVER);
++  const rejections = view(serverRows(ctx, 'sync_rejection'), REJ_SERVER);
++  const rejectedOpIds = new Set(rejections.map((x) => x.opId));
++  const deadItems = new Set<string>();
++
++  for (const d of r.devices) {
++    expect(await pendingCount(d.db, r.userId)).toBe(0);
++    expect(view(await mirrorRows(d, 'fixture_note'), NOTE_MIRROR)).toEqual(notes);
++    expect(view(await mirrorRows(d, 'fixture_note_item'), ITEM_MIRROR)).toEqual(items);
++    expect(view(await mirrorRows(d, 'sync_rejection'), REJ_MIRROR)).toEqual(rejections);
++    for (const dead of await d.db.deadletter.toArray()) {
++      expect(rejectedOpIds.has(dead.opId)).toBe(true);
++      if (dead.entity === 'fixture_note_item') deadItems.add(dead.id);
++    }
++  }
++  // Aucune perte ni doublon : chaque élément créé et non rejeté est au serveur, une seule fois.
++  const expectedItems = r.createdItems.filter((id) => !deadItems.has(id)).sort();
++  expect(items.map((i) => i.id)).toEqual(expectedItems);
++}
++
++async function teardown(r: Real): Promise<void> {
++  for (const d of r.devices) {
++    d.engine.stop();
++    await d.db.delete();
++  }
++  r.ctx.close();
++}
++
++describe('convergence de deux appareils sur le vrai serveur', () => {
++  it.each<LossyOptions>([
++    { seed: 20261006, dropRate: 0.3, dupRate: 0.2, maxDelayMs: 3, reorder: false },
++    { seed: 7, dropRate: 0.2, dupRate: 0.4, maxDelayMs: 3, reorder: true },
++  ])(
++    'deux appareils convergent malgré pertes, doublons, retards et réordonnancements (%o)',
++    async (opts) => {
++      let run = 0;
++      const totals = { dropped: 0, duplicated: 0, replayedLate: 0 };
++      await fc.assert(
++        fc.asyncProperty(fc.commands(commandArbs, { maxCommands: 60, size: 'large' }), async (cmds) => {
++          const real = await setupReal(opts, run++);
++          try {
++            await fc.asyncModelRun(() => ({ model: {}, real }), cmds);
++            for (const d of real.devices) {
++              totals.dropped += d.lossy.stats.dropped;
++              totals.duplicated += d.lossy.stats.duplicated;
++              totals.replayedLate += d.lossy.stats.replayedLate;
++            }
++            await settle(real);
++            await expectConverged(real);
++          } finally {
++            await teardown(real);
++          }
++        }),
++        { numRuns: 25, seed: opts.seed },
++      );
++      // Le transport a réellement perdu et dupliqué des requêtes.
++      expect(totals.dropped).toBeGreaterThan(0);
++      expect(totals.duplicated).toBeGreaterThan(0);
++      if (opts.reorder) expect(totals.replayedLate).toBeGreaterThan(0);
++    },
++    120_000,
++  );
++});
+diff --git a/apps/web/test/sync/scenarios.test.ts b/apps/web/test/sync/scenarios.test.ts
+new file mode 100644
+index 0000000..444e859
+--- /dev/null
++++ b/apps/web/test/sync/scenarios.test.ts
+@@ -0,0 +1,332 @@
++// @vitest-environment node
++import { mkdtempSync, rmSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { HEALTH_CONSENT_TEXT, type SyncOp } from '@appsport/contracts';
++import { createMonotonicUuidV7 } from '@appsport/domain';
++import {
++  createLogger,
++  createSyncTestContext,
++  createUserAndLogin,
++  dumpDatabase,
++  grantConsent,
++  login,
++  restoreInPlace,
++  SYNC_FIXTURE_RULES,
++  snapshotDb,
++  type TestContext,
++  type TestUser,
++} from '@appsport/server/testing';
++import { afterEach, describe, expect, it } from 'vitest';
++import { localHealthConsentActive } from '../../src/local-db/consent';
++import type { AppDb } from '../../src/local-db/db';
++import { setMeta } from '../../src/local-db/meta';
++import { createSyncEngine, type SyncEngine } from '../../src/sync/engine';
++import { type LocalChange, pendingCount, writeLocal } from '../../src/sync/outbox';
++import { inProcessTransport } from '../support/in-process-transport';
++import { createFixtureLocalDb, dumpLocalDb } from '../support/local-db';
++
++const WITNESS = 'TEMOIN-C2-7f3a';
++const WITNESS_N = 987654;
++const IP = '100.64.0.1';
++const randomBytes = (n: number) => crypto.getRandomValues(new Uint8Array(n));
++
++type Row = Record<string, unknown>;
++type Transport = ReturnType<typeof inProcessTransport>;
++
++interface Device {
++  db: AppDb;
++  engine: SyncEngine;
++  transport: Transport;
++  /** Cookie envoyé par le transport ; modifiable par le test. */
++  cookie: string;
++  userId: string;
++  newId(): string;
++  write(change: LocalChange, opts?: { userId?: string }): Promise<SyncOp>;
++}
++
++let ctx: TestContext;
++let lines: string[];
++const devices: Device[] = [];
++const tempDirs: string[] = [];
++
++afterEach(async () => {
++  for (const d of devices.splice(0)) {
++    d.engine.stop();
++    await d.db.delete();
++  }
++  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
++  ctx?.close();
++});
++
++async function setup(): Promise<void> {
++  lines = [];
++  ctx = await createSyncTestContext({ deps: { logger: createLogger((l) => lines.push(l)) } });
++}
++
++const nowMs = () => ctx.clock.now().getTime();
++
++async function device(user: TestUser, cookie: string): Promise<Device> {
++  const db = createFixtureLocalDb();
++  await setMeta(db, 'userId', user.id);
++  const newId = createMonotonicUuidV7(nowMs, randomBytes);
++  const d = {} as Device;
++  const transport = inProcessTransport(ctx, () => d.cookie);
++  const engine = createSyncEngine({
++    db,
++    transport,
++    now: nowMs,
++    newOpId: newId,
++    rules: SYNC_FIXTURE_RULES,
++    triggers: () => () => {},
++  });
++  Object.assign(d, {
++    db,
++    engine,
++    transport,
++    cookie,
++    userId: user.id,
++    newId,
++    async write(change: LocalChange, opts: { userId?: string } = {}) {
++      const op = await writeLocal(db, change, {
++        userId: opts.userId ?? d.userId,
++        now: () => new Date(nowMs()).toISOString(),
++        newOpId: newId,
++        healthConsentActive: await localHealthConsentActive(db),
++        rules: SYNC_FIXTURE_RULES,
++      });
++      if (!op) throw new Error('op non mise en file');
++      return op;
++    },
++  });
++  devices.push(d);
++  return d;
++}
++
++const serverRows = (table: string): Row[] =>
++  ctx.deps.sqlite.prepare(`SELECT * FROM ${table} ORDER BY id`).all() as Row[];
++
++const notesOfServer = () =>
++  serverRows('fixture_note').map((r) => ({
++    id: r.id,
++    title: r.title,
++    body: r.body,
++    deletedAt: r.deleted_at,
++  }));
++
++async function notesOf(d: Device) {
++  return (await d.db.mirror('fixture_note').orderBy('id').toArray()).map((r) => ({
++    id: r.id,
++    title: r.title,
++    body: r.body,
++    deletedAt: r.deletedAt,
++  }));
++}
++
++/** Requêtes envoyées, un push suivi de ses kinds : `POST /api/sync/push:patch`. */
++function sequence(t: Transport): string[] {
++  return t.log.map(({ method, path, body }) => {
++    const base = `${method} ${path}`;
++    if (path !== '/api/sync/push') return base;
++    const ops = (body as { ops: SyncOp[] }).ops;
++    return `${base}:${[...new Set(ops.map((o) => o.kind))].join(',')}`;
++  });
++}
++
++const pushedOps = (t: Transport): SyncOp[] =>
++  t.log.filter((e) => e.path === '/api/sync/push').flatMap((e) => (e.body as { ops: SyncOp[] }).ops);
++
++describe('scénarios de synchro ciblés (deux appareils, vrai serveur)', () => {
++  it('401 puis reconnexion du même utilisateur : outbox conservée puis envoyée', async () => {
++    await setup();
++    const user = await createUserAndLogin(ctx);
++    const a = await device(user, user.cookie);
++    const out = await ctx.request('/api/auth/logout', { method: 'POST', json: {}, cookie: user.cookie });
++    expect(out.status).toBeLessThan(300);
++
++    for (const title of ['un', 'deux', 'trois']) {
++      await a.write({ entity: 'fixture_note', id: a.newId(), kind: 'create', fields: { title } });
++    }
++    await a.engine.syncNow('manual');
++    expect(a.engine.getState().connection).toBe('unauthenticated');
++    expect(await pendingCount(a.db, user.id)).toBe(3);
++    expect(serverRows('fixture_note')).toHaveLength(0);
++
++    a.cookie = await login(ctx, user.username, user.password, IP);
++    await a.engine.syncNow('manual');
++    expect(a.engine.getState().connection).toBe('online');
++    expect(await pendingCount(a.db, user.id)).toBe(0);
++    expect(notesOfServer().map((n) => n.title)).toEqual(['un', 'deux', 'trois']);
++  });
++
++  it("l'outbox de A n'est jamais envoyée sous la session de B (03 §17 n°11)", async () => {
++    await setup();
++    const userA = await createUserAndLogin(ctx);
++    const userB = await createUserAndLogin(ctx);
++    const d = await device(userA, userA.cookie);
++    const noteIds = [d.newId(), d.newId()];
++    for (const id of noteIds) {
++      await d.write({ entity: 'fixture_note', id, kind: 'create', fields: { title: 'de A' } });
++    }
++    // B se connecte sur l'appareil : l'utilisateur local et la session changent.
++    await setMeta(d.db, 'userId', userB.id);
++    d.userId = userB.id;
++    d.cookie = userB.cookie;
++    await d.engine.syncNow('manual');
++
++    expect(d.engine.getState().connection).toBe('online');
++    expect(d.transport.log.length).toBeGreaterThan(0);
++    const pushed = pushedOps(d.transport);
++    expect(pushed.filter((o) => o.userId === userA.id || noteIds.includes(o.id))).toEqual([]);
++    expect(serverRows('fixture_note')).toHaveLength(0);
++    expect(await pendingCount(d.db, userA.id)).toBe(2);
++  });
++
++  it("changement d'époque avec un appareil en retard (R-SYN-26, R-SYN-27, Review Focus 2)", async () => {
++    await setup();
++    const user = await createUserAndLogin(ctx);
++    const a = await device(user, user.cookie);
++    const b = await device(user, await login(ctx, user.username, user.password, IP));
++    await a.engine.syncNow('manual');
++    await b.engine.syncNow('manual');
++    const e1 = a.engine.getState().serverEpoch;
++    expect(e1).not.toBeNull();
++    expect(b.engine.getState().serverEpoch).toBe(e1);
++
++    const n1 = a.newId();
++    await a.write({ entity: 'fixture_note', id: n1, kind: 'create', fields: { title: 'avant' } });
++    await a.engine.syncNow('manual');
++    await b.engine.pullNow();
++
++    const dir = mkdtempSync(join(tmpdir(), 'appsport-epoch-'));
++    tempDirs.push(dir);
++    const snapshot = join(dir, 'S.sqlite');
++    await snapshotDb(ctx, snapshot);
++
++    await a.write({ entity: 'fixture_note', id: n1, kind: 'patch', fields: { title: 'apres-S' } });
++    const n2 = a.newId();
++    await a.write({ entity: 'fixture_note', id: n2, kind: 'create', fields: { title: 'n2' } });
++    await a.engine.syncNow('manual');
++    await b.engine.pullNow();
++    expect((await b.db.mirror('fixture_note').get(n1))?.title).toBe('apres-S');
++
++    const { epoch: e2 } = await restoreInPlace(ctx, snapshot);
++    expect(e2).not.toBe(e1);
++    expect(notesOfServer().map((n) => n.id)).toEqual([n1]);
++
++    // B, hors ligne, garde un watermark ancien et une op en attente sur une ligne récente.
++    await b.write({ entity: 'fixture_note', id: n1, kind: 'patch', fields: { body: 'B-hors-ligne' } });
++
++    // A rejoue ses 60 jours (n1 remplacée, n2 réinsérée), puis modifie n1.
++    await a.engine.syncNow('manual');
++    expect(a.engine.getState().serverEpoch).toBe(e2);
++    expect(notesOfServer()).toMatchObject([
++      { id: n1, title: 'apres-S' },
++      { id: n2, title: 'n2', deletedAt: null },
++    ]);
++    await a.write({ entity: 'fixture_note', id: n1, kind: 'patch', fields: { title: 'final-A' } });
++    await a.engine.syncNow('manual');
++
++    expect(await pendingCount(b.db, user.id)).toBe(1);
++    b.transport.log.length = 0;
++    await b.engine.syncNow('manual');
++    const seq = sequence(b.transport);
++    expect(seq).toEqual([
++      'GET /api/health',
++      'POST /api/sync/push:restore_upsert',
++      'POST /api/sync/push:patch',
++      'GET /api/sync/pull',
++    ]);
++    expect(b.engine.getState().serverEpoch).toBe(e2);
++    expect(await pendingCount(b.db, user.id)).toBe(0);
++
++    const server = notesOfServer();
++    const n1Row = server.find((r) => r.id === n1);
++    expect({ title: n1Row?.title, body: n1Row?.body }).toEqual({ title: 'final-A', body: 'B-hors-ligne' });
++    expect(server.find((r) => r.id === n2)).toMatchObject({ title: 'n2', deletedAt: null });
++
++    await a.engine.pullNow();
++    expect(await notesOf(a)).toEqual(server);
++    expect(await notesOf(b)).toEqual(server);
++    expect(await a.db.deadletter.count()).toBe(0);
++    expect(await b.db.deadletter.count()).toBe(0);
++  });
++
++  describe('retrait du consentement pendant que B a des ops C2 en attente (Review Focus 3)', () => {
++    /** A et B partagent l'accord santé ; B, hors ligne, écrit les témoins C2 ; A retire l'accord. */
++    async function withdrawWhileBOffline() {
++      await setup();
++      const user = await createUserAndLogin(ctx);
++      await grantConsent(ctx.deps.db, ctx.deps, user.id, 'health', HEALTH_CONSENT_TEXT.version, null);
++      const a = await device(user, user.cookie);
++      const b = await device(user, await login(ctx, user.username, user.password, IP));
++      await a.engine.syncNow('manual');
++      await b.engine.syncNow('manual');
++      expect(await localHealthConsentActive(b.db)).toBe(true);
++
++      const note = b.newId();
++      const item = b.newId();
++      const log = b.newId();
++      await b.write({ entity: 'fixture_note', id: note, kind: 'create', fields: { title: 'séance' } });
++      await b.write({
++        entity: 'fixture_note_item',
++        id: item,
++        kind: 'create',
++        fields: { noteId: note, label: 'genou', painNote: WITNESS },
++      });
++      await b.write({ entity: 'fixture_c2_log', id: log, kind: 'create', fields: { value: WITNESS_N } });
++      expect(await pendingCount(b.db, user.id)).toBe(3);
++
++      const res = await ctx.request('/api/me/consents/withdraw', {
++        method: 'POST',
++        json: { type: 'health', password: user.password },
++        cookie: user.cookie,
++        ip: IP,
++      });
++      expect(res.status).toBe(200);
++      await a.engine.pullNow();
++      expect(await localHealthConsentActive(a.db)).toBe(false);
++      return { user, a, b, note, item };
++    }
++
++    async function expectNoWitnessAnywhere(a: Device, b: Device) {
++      for (const witness of [WITNESS, String(WITNESS_N)]) {
++        expect(dumpDatabase(ctx.deps.sqlite)).not.toContain(witness);
++        expect(lines.join('\n')).not.toContain(witness);
++        expect(await dumpLocalDb(a.db)).not.toContain(witness);
++        expect(await dumpLocalDb(b.db)).not.toContain(witness);
++      }
++      expect(serverRows('sync_rejection')).toHaveLength(0);
++      expect(await b.db.deadletter.count()).toBe(0);
++      expect(await b.db.mirror('fixture_c2_log').count()).toBe(0);
++    }
++
++    it('B pousse : ops C2 écartées sans rejet, copie locale supprimée, témoin absent partout', async () => {
++      const { user, a, b, note, item } = await withdrawWhileBOffline();
++      await b.engine.syncNow('manual');
++
++      expect(await pendingCount(b.db, user.id)).toBe(0);
++      expect(b.engine.getState().rejected).toBe(0);
++      expect(await localHealthConsentActive(b.db)).toBe(false);
++      expect(serverRows('fixture_c2_log')).toHaveLength(0);
++      expect(serverRows('fixture_note').map((r) => r.id)).toEqual([note]);
++      expect(serverRows('fixture_note_item')).toMatchObject([{ id: item, pain_note: null }]);
++      expect(await b.db.mirror('fixture_note_item').get(item)).toMatchObject({ painNote: null });
++      await expectNoWitnessAnywhere(a, b);
++    });
++
++    it('B tire le retrait avant de pousser : aucun témoin dans ses requêtes', async () => {
++      const { user, a, b, item } = await withdrawWhileBOffline();
++      await b.engine.pullNow();
++      await b.engine.syncNow('manual');
++
++      expect(await pendingCount(b.db, user.id)).toBe(0);
++      expect(pushedOps(b.transport).length).toBeGreaterThan(0);
++      const sent = JSON.stringify(b.transport.log);
++      expect(sent).not.toContain(WITNESS);
++      expect(sent).not.toContain(String(WITNESS_N));
++      expect(serverRows('fixture_note_item')).toMatchObject([{ id: item, pain_note: null }]);
++      await expectNoWitnessAnywhere(a, b);
++    });
++  });
++});
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 9166176..4e22125 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -66,20 +66,23 @@ importers:
+       zod:
+         specifier: ^4.6.5
+         version: 4.6.5
+     devDependencies:
+       '@appsport/server':
+         specifier: workspace:*
+         version: link:../server
+       fake-indexeddb:
+         specifier: ^6.2.5
+         version: 6.2.5
++      fast-check:
++        specifier: ^4.10.2
++        version: 4.10.2
+       happy-dom:
+         specifier: ^20
+         version: 20.14.5
+ 
+   packages/contracts:
+     dependencies:
+       zod:
+         specifier: ^4.6.5
+         version: 4.6.5
+ 

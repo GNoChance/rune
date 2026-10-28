@@ -1,0 +1,321 @@
+# Review package: 529a1b0..HEAD
+
+## Commits
+696cc3e fix(synchro): issue d'origine renvoyée au rejeu d'un opId
+
+## Files changed
+ apps/server/src/sync/push.ts          | 76 ++++++++++++++++++++++++++---------
+ apps/server/test/sync/push-c2.test.ts |  6 +++
+ apps/server/test/sync/push.test.ts    | 56 +++++++++++++++++++++++++-
+ packages/contracts/src/sync.ts        |  2 +
+ 4 files changed, 120 insertions(+), 20 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/sync/push.ts b/apps/server/src/sync/push.ts
+index e3a7e25..c83fa02 100644
+--- a/apps/server/src/sync/push.ts
++++ b/apps/server/src/sync/push.ts
+@@ -73,40 +73,53 @@ function isConstraintError(err: unknown): boolean {
+ 
+ /**
+  * Applique un lot d'ops (R-SYN-16) dans une transaction, un point de sauvegarde par op.
+  * Une erreur autre qu'un rejet ou une contrainte SQLite annule tout le lot (500, le client rejoue).
+  */
+ export async function applyPush(
+   deps: AppDeps,
+   user: SessionUser,
+   ops: readonly unknown[],
+ ): Promise<PushResult[]> {
+-  const results = await deps.db.transaction().execute(async (trx) => {
+-    const batch: Batch = {
+-      trx,
+-      deps,
+-      user,
+-      consent: await isHealthConsentActive(trx, user.id),
+-      rejectedRows: new Set(),
+-      written: new Map(),
+-    };
+-    const out: PushResult[] = [];
+-    for (const [index, raw] of ops.entries()) out.push(await applyInSavepoint(batch, asRecord(raw), index));
+-    for (const [entity, applied] of batch.written) {
+-      await own(deps.syncHooks, entity)?.afterBatch?.({ trx, deps, userId: user.id, applied });
+-    }
+-    return out;
+-  });
++  const results = await runBatch(deps, user, ops);
+   deps.logger.info('sync push', { event: 'sync_push', count: ops.length });
+   return results;
+ }
+ 
++/** Une valeur levée qui n'est pas une Error (hook) devient une Error sans contenu : 500 propre. */
++function asError(err: unknown): Error {
++  return err instanceof Error ? err : new Error('Valeur non Error levée pendant le push');
++}
++
++async function runBatch(deps: AppDeps, user: SessionUser, ops: readonly unknown[]): Promise<PushResult[]> {
++  try {
++    return await deps.db.transaction().execute(async (trx) => {
++      const batch: Batch = {
++        trx,
++        deps,
++        user,
++        consent: await isHealthConsentActive(trx, user.id),
++        rejectedRows: new Set(),
++        written: new Map(),
++      };
++      const out: PushResult[] = [];
++      for (const [index, raw] of ops.entries()) out.push(await applyInSavepoint(batch, asRecord(raw), index));
++      for (const [entity, applied] of batch.written) {
++        await own(deps.syncHooks, entity)?.afterBatch?.({ trx, deps, userId: user.id, applied });
++      }
++      return out;
++    });
++  } catch (err) {
++    throw asError(err);
++  }
++}
++
+ async function applyInSavepoint(b: Batch, raw: Raw, index: number): Promise<PushResult> {
+   const savepoint = `sync_op_${index}`;
+   await sql.raw(`SAVEPOINT ${savepoint}`).execute(b.trx);
+   let applied: Applied;
+   try {
+     applied = await applyOp(b, raw);
+   } catch (err) {
+     if (!(err instanceof OpRejection || err instanceof UnrecordedRejection || isConstraintError(err)))
+       throw err;
+     await sql.raw(`ROLLBACK TO ${savepoint}`).execute(b.trx);
+@@ -157,27 +170,26 @@ async function reject(b: Batch, raw: Raw, err: unknown): Promise<PushResult> {
+   return result;
+ }
+ 
+ async function applyOp(b: Batch, raw: Raw): Promise<Applied> {
+   const { trx, deps, user } = b;
+   // 0. Idempotence.
+   const rawOpId = textOf(raw, 'opId');
+   if (rawOpId) {
+     const seen = await trx
+       .selectFrom('appliedOp')
+-      .select(['userId', 'assignedRev'])
++      .select(['userId', 'status', 'assignedRev'])
+       .where('opId', '=', rawOpId)
+       .executeTakeFirst();
+     if (seen) {
+       if (seen.userId !== user.id) throw new UnrecordedRejection();
+-      const rev = seen.assignedRev ?? undefined;
+-      return { result: { opId: rawOpId, status: 'duplicate', ...(rev !== undefined ? { rev } : {}) } };
++      return { result: await duplicateOf(b, rawOpId, seen) };
+     }
+   }
+   // 1. Forme.
+   const parsed = SyncOp.safeParse(raw);
+   if (!parsed.success) throw new OpRejection('validation', 'schema');
+   const op = parsed.data;
+   const clientId = op.kind === 'create' || op.kind === 'restore_upsert';
+   if (clientId && !isUuidV7(op.id)) throw new OpRejection('validation', 'id_format');
+   // 2. Protocole.
+   if (op.protocol < MIN_PROTOCOL || op.protocol > SYNC_PROTOCOL)
+@@ -223,20 +235,46 @@ async function applyOp(b: Batch, raw: Raw): Promise<Applied> {
+     result: {
+       opId: op.opId,
+       status,
+       ...(outcome.rev !== null ? { rev: outcome.rev } : {}),
+       ...(droppedFields.length > 0 ? { droppedFields } : {}),
+     },
+     ...(outcome.wrote ? { wrote: { entity: op.entity, id: op.id } } : {}),
+   };
+ }
+ 
++/**
++ * Rejeu d'un opId déjà traité : renvoie l'issue d'origine pour que le client nettoie sa copie
++ * même si la première réponse s'est perdue. Le code d'un rejet est relu dans sync_rejection ;
++ * une op C2 écartée est la seule issue applied_partial sans rev attribué.
++ */
++async function duplicateOf(
++  b: Batch,
++  opId: string,
++  seen: { status: AppliedOpTable['status']; assignedRev: number | null },
++): Promise<PushResult> {
++  const result: PushResult = { opId, status: 'duplicate' };
++  if (seen.status !== 'duplicate') result.originalStatus = seen.status;
++  if (seen.assignedRev !== null) result.rev = seen.assignedRev;
++  if (seen.status === 'applied_partial' && seen.assignedRev === null) result.dropped = true;
++  if (seen.status === 'rejected') {
++    const rejection = await b.trx
++      .selectFrom('syncRejection')
++      .select('code')
++      .where('opId', '=', opId)
++      .where('ownerId', '=', b.user.id)
++      .executeTakeFirst();
++    if (rejection) result.code = rejection.code;
++  }
++  return result;
++}
++
+ async function readRow(
+   trx: Transaction<Database>,
+   entity: string,
+   id: string,
+ ): Promise<ExistingRow | undefined> {
+   const r =
+     await sql<ExistingRow>`select owner_id, rev, deleted_at from ${sql.table(entity)} where id = ${id}`.execute(
+       trx,
+     );
+   return r.rows[0];
+diff --git a/apps/server/test/sync/push-c2.test.ts b/apps/server/test/sync/push-c2.test.ts
+index a45221e..bfccbd0 100644
+--- a/apps/server/test/sync/push-c2.test.ts
++++ b/apps/server/test/sync/push-c2.test.ts
+@@ -108,20 +108,26 @@ describe('push et données de santé (C2)', () => {
+     });
+     const res = await syncPush(ctx, a.cookie, [op]);
+     expect(res.body.results).toEqual([{ opId: op.opId, status: 'applied_partial', dropped: true }]);
+     expect(rowsOf('fixture_c2_log')).toHaveLength(0);
+     expect(ctx.deps.sqlite.prepare('SELECT * FROM applied_op WHERE op_id = ?').get(op.opId)).toMatchObject({
+       status: 'applied_partial',
+       assigned_rev: null,
+     });
+     expect(rowsOf('sync_rejection')).toHaveLength(0);
+     expectNoWitness();
++
++    const again = await syncPush(ctx, a.cookie, [op]);
++    expect(again.body.results).toEqual([
++      { opId: op.opId, status: 'duplicate', originalStatus: 'applied_partial', dropped: true },
++    ]);
++    expect(rowsOf('fixture_c2_log')).toHaveLength(0);
+   });
+ 
+   it('avec accord : la donnée C2 est écrite', async () => {
+     const a = await setup();
+     await grantConsent(ctx.deps.db, ctx.deps, a.id, 'health', HEALTH_CONSENT_TEXT.version, null);
+     const { item, result } = await pushItem(a, { painNote: WITNESS, reason: 'pain' });
+     expect(result).toEqual({ opId: item.opId, status: 'applied', rev: expect.any(Number) });
+     expect(rowOf('fixture_note_item', item.id)).toMatchObject({ pain_note: WITNESS, reason: 'pain' });
+ 
+     const log = makeOp({
+diff --git a/apps/server/test/sync/push.test.ts b/apps/server/test/sync/push.test.ts
+index 2b670a2..0fe2893 100644
+--- a/apps/server/test/sync/push.test.ts
++++ b/apps/server/test/sync/push.test.ts
+@@ -60,27 +60,49 @@ describe('POST /api/sync/push : lot et idempotence', () => {
+     expect(res.body.results.every((r: Row) => r.status === 'applied')).toBe(true);
+     expect(rowsOf('fixture_note')).toHaveLength(200);
+   });
+ 
+   it('un opId déjà vu renvoie duplicate avec le rev du premier, une seule ligne applied_op', async () => {
+     const a = await setup();
+     const op = note(a);
+     const first = await syncPush(ctx, a.cookie, [op]);
+     const again = await syncPush(ctx, a.cookie, [op]);
+     expect(again.body.results).toEqual([
+-      { opId: op.opId, status: 'duplicate', rev: first.body.results[0].rev },
++      { opId: op.opId, status: 'duplicate', originalStatus: 'applied', rev: first.body.results[0].rev },
+     ]);
+     expect(
+       ctx.deps.sqlite.prepare('SELECT count(*) AS n FROM applied_op WHERE op_id = ?').get(op.opId),
+     ).toEqual({ n: 1 });
+   });
+ 
++  it('le même opId deux fois dans un lot : le second est duplicate', async () => {
++    const a = await setup();
++    const op = note(a);
++    const res = await syncPush(ctx, a.cookie, [op, op]);
++    const [first, second] = res.body.results;
++    expect(first.status).toBe('applied');
++    expect(second).toEqual({ opId: op.opId, status: 'duplicate', originalStatus: 'applied', rev: first.rev });
++    expect(rowsOf('fixture_note')).toHaveLength(1);
++  });
++
++  it("le rejeu d'une op rejetée renvoie duplicate avec le statut et le code d'origine", async () => {
++    const a = await setup();
++    const op = note(a, { title: '' });
++    const first = await syncPush(ctx, a.cookie, [op]);
++    expect(first.body.results[0]).toMatchObject({ status: 'rejected', code: 'validation' });
++    const again = await syncPush(ctx, a.cookie, [op]);
++    expect(again.body.results).toEqual([
++      { opId: op.opId, status: 'duplicate', originalStatus: 'rejected', code: 'validation' },
++    ]);
++    expect(rowsOf('sync_rejection')).toHaveLength(1);
++  });
++
+   it("l'opId d'un autre utilisateur est refusé forbidden sans écriture", async () => {
+     const a = await setup();
+     const b = await createUserAndLogin(ctx);
+     const op = note(a);
+     await syncPush(ctx, a.cookie, [op]);
+     const res = await syncPush(ctx, b.cookie, [{ ...op, userId: b.id }]);
+     expect(res.body.results).toEqual([{ opId: op.opId, status: 'rejected', code: 'forbidden' }]);
+     expect(rowsOf('sync_rejection')).toHaveLength(0);
+   });
+ 
+@@ -467,11 +489,43 @@ describe('POST /api/sync/push : hooks de synchro', () => {
+       id: newId(),
+       kind: 'create',
+       fields: { noteId: parent.id, label: 'l' },
+     });
+     const res = await syncPush(ctx, a.cookie, [parent, child]);
+     expect(res.status).toBe(500);
+     expect(rowsOf('fixture_note')).toHaveLength(0);
+     expect(rowsOf('applied_op')).toHaveLength(0);
+     expect(rowsOf('sync_rejection')).toHaveLength(0);
+   });
++
++  it('une valeur non Error levée par un hook donne un 500 propre', async () => {
++    const beforeApply = vi.fn(async () => {
++      throw 'VALEUR-SECRETE';
++    });
++    const lines: string[] = [];
++    const a = await setup({
++      deps: {
++        logger: createLogger((l) => lines.push(l)),
++        syncHooks: withHooks({ fixture_note: { beforeApply } }),
++      },
++    });
++    const res = await syncPush(ctx, a.cookie, [note(a)]);
++    expect(res.status).toBe(500);
++    expect(res.body).toEqual({ error: 'internal' });
++    expect(rowsOf('fixture_note')).toHaveLength(0);
++    expect(lines.join('\n')).not.toContain('VALEUR-SECRETE');
++  });
++
++  it("un create sans effet sur une ligne existante n'appelle ni afterApply ni afterBatch", async () => {
++    const afterBatch = vi.fn(async (_b: BatchCtx) => {});
++    const afterApply = vi.fn(async () => {});
++    const a = await setup({ deps: { syncHooks: withHooks({ fixture_note: { afterBatch, afterApply } }) } });
++    const id = newId();
++    await syncPush(ctx, a.cookie, [note(a, { title: 'premier' }, id)]);
++    afterBatch.mockClear();
++    afterApply.mockClear();
++    const res = await syncPush(ctx, a.cookie, [note(a, { title: 'second' }, id)]);
++    expect(res.body.results[0].status).toBe('applied');
++    expect(afterApply).not.toHaveBeenCalled();
++    expect(afterBatch).not.toHaveBeenCalled();
++  });
+ });
+diff --git a/packages/contracts/src/sync.ts b/packages/contracts/src/sync.ts
+index 8d9bced..6c1c519 100644
+--- a/packages/contracts/src/sync.ts
++++ b/packages/contracts/src/sync.ts
+@@ -50,20 +50,22 @@ export type PushRequest = z.infer<typeof PushRequest>;
+ 
+ /** Corps reçu par la route : chaque op est validée ensuite, une à une. */
+ export const PushEnvelope = z.object({
+   ops: z.array(z.looseObject({ opId: z.string().min(1) })).max(SYNC_PUSH_MAX),
+ });
+ export type PushEnvelope = z.infer<typeof PushEnvelope>;
+ 
+ export const PushResult = z.object({
+   opId: z.string(),
+   status: z.enum(['applied', 'applied_partial', 'duplicate', 'rejected']),
++  /** Avec status 'duplicate' : issue de la première application (code et dropped repris aussi). */
++  originalStatus: z.enum(['applied', 'applied_partial', 'rejected']).optional(),
+   rev: z.number().int().optional(),
+   code: RejectionCode.optional(),
+   droppedFields: z.array(z.string()).optional(),
+   dropped: z.boolean().optional(),
+ });
+ export type PushResult = z.infer<typeof PushResult>;
+ 
+ export const PushResponse = z.object({ results: z.array(PushResult) });
+ export type PushResponse = z.infer<typeof PushResponse>;
+ 

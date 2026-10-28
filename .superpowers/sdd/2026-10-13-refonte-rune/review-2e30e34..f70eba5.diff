@@ -1,0 +1,2671 @@
+# Review package: 2e30e34..HEAD
+
+## Commits
+f70eba5 feat(web): coquille Rune, barre d'onglets flottante, navigation latérale et état de connexion unique
+10404f9 fix(pwa): interrupteur d'urgence, la page encore contrôlée se recharge quand le SW a fait le ménage sans la joindre
+
+## Files changed
+ apps/web/e2e/epoch.spec.ts                         |   1 -
+ apps/web/e2e/offline.spec.ts                       |  10 +-
+ apps/web/e2e/protocol.spec.ts                      |   5 -
+ apps/web/e2e/sheet.spec.ts                         |   2 +-
+ apps/web/src/App.tsx                               |  17 +-
+ apps/web/src/features/places/GymPage.tsx           |   4 +-
+ apps/web/src/features/places/PlaceDetail.tsx       |   6 +-
+ apps/web/src/features/places/PlacesPage.tsx        |   9 +-
+ apps/web/src/features/profile/ProfilePage.tsx      |   2 +-
+ .../src/features/progression/ProgressionPage.tsx   |   6 +
+ apps/web/src/features/status/ConnectionStatus.tsx  |  30 +-
+ apps/web/src/features/status/status.module.css     |   6 +-
+ apps/web/src/main.tsx                              |   3 +
+ apps/web/src/sw/UpdateBanner.module.css            |  64 +++-
+ apps/web/src/sw/UpdateBanner.tsx                   |  38 +-
+ apps/web/src/sw/kill-switch.ts                     |  36 +-
+ apps/web/src/ui/AppShell.tsx                       |  83 +++--
+ apps/web/src/ui/BootSplash.tsx                     |  63 ++++
+ apps/web/src/ui/ConnectionPill.tsx                 |  18 +
+ apps/web/src/ui/Page.tsx                           |  16 +-
+ apps/web/src/ui/SideNav.tsx                        |  39 +++
+ apps/web/src/ui/TabBar.tsx                         | 110 ++++++
+ apps/web/src/ui/screen-transition.ts               |  85 +++++
+ apps/web/src/ui/shell.module.css                   | 339 ++++++++++++++++++
+ apps/web/src/ui/ui.module.css                      |  20 --
+ apps/web/test/app/guard.test.tsx                   |  25 +-
+ apps/web/test/app/shell.test.tsx                   | 387 +++++++++++++++++++++
+ apps/web/test/places/places-page.test.tsx          |   6 +-
+ apps/web/test/profile/profile-page.test.tsx        |   2 +-
+ apps/web/test/status/counters.test.tsx             |  67 ++--
+ apps/web/test/status/rejections-settings.test.tsx  |   5 +-
+ apps/web/test/sw/UpdateBanner.test.tsx             |   8 +-
+ apps/web/test/sw/kill-switch.test.ts               |  38 ++
+ 33 files changed, 1376 insertions(+), 174 deletions(-)
+
+## Diff
+diff --git a/apps/web/e2e/epoch.spec.ts b/apps/web/e2e/epoch.spec.ts
+index 3af3a60..918e61a 100644
+--- a/apps/web/e2e/epoch.spec.ts
++++ b/apps/web/e2e/epoch.spec.ts
+@@ -138,17 +138,16 @@ test('époque : restauration, nouvelle époque et pull complet sans perte de ses
+   });
+ 
+   await test.step('rechargement : nouvelle époque conservée, le serveur fait foi (R-SYN-28)', async () => {
+     await page.reload();
+     await expect(connection).toHaveAttribute('data-state', 'online', SYNC_TIMEOUT);
+     await expect.poll(() => metaValue(page, 'serverEpoch'), SYNC_TIMEOUT).toBe(epoch2);
+     await expect
+       .poll(async () => String(await metaValue(page, 'watermark')), SYNC_TIMEOUT)
+       .toMatch(new RegExp(`^${epoch2}:`));
+     await expect.poll(() => mirroredDaysPerWeek(page), SYNC_TIMEOUT).toBe(3);
+-    await expect(page.getByTestId('pending-counter')).toHaveAttribute('data-count', '0');
+     expect(await idbGetAll(page, 'outbox')).toEqual([]);
+     expect(replays, 'renvoi de retrait (T26) : aucun accord retiré').toEqual([]);
+     expect(denied, 'aucune session perdue').toEqual([]);
+     expect(fullPulls, 'le rechargement repart du filigrane, sans second pull complet').toBe(1);
+   });
+ });
+diff --git a/apps/web/e2e/offline.spec.ts b/apps/web/e2e/offline.spec.ts
+index 2485ad4..8185812 100644
+--- a/apps/web/e2e/offline.spec.ts
++++ b/apps/web/e2e/offline.spec.ts
+@@ -8,74 +8,80 @@ import { idbGetAll, triggerForeground } from './support/pwa';
+ const SHELL_TIMEOUT_MS = 10_000;
+ 
+ // 01 §9.1.6 scénario 2 (sans séance, brique 3) : hors ligne simulé par `context.setOffline(true)` puis par
+ // des requêtes qui n'aboutissent pas (délai de 4 s, R-SYN-30), retour du réseau, vue d'un second contexte.
+ test('hors ligne : coquille du cache, état de connexion, profil et second appareil', async ({
+   server,
+   context,
+   newContext,
+ }) => {
+   const page = await setupOnboardedAdmin(server, context);
++  // Pastille de connexion : dans l'en-tête de l'accueil seulement (spec refonte §5).
+   const connection = page.getByTestId('connection-status');
++  const tab = (name: string) =>
++    page.getByRole('navigation', { name: 'Navigation principale' }).getByRole('link', { name, exact: true });
+   const username = page.getByLabel('Pseudo', { exact: true });
+   const saveUsername = page.getByRole('button', { name: 'Enregistrer le pseudo', exact: true });
+   // Refus de classe E : l'alerte annoncée (`role="alert"`) du formulaire du pseudo, pas un texte quelconque.
+   const usernameAlert = page.locator('form').filter({ has: saveUsername }).getByRole('alert');
+ 
+   // Pas de navigation sous `setOffline` : WebKit y fait échouer même une navigation servie par le SW
+   // (« WebKit encountered an internal error »). Le rechargement à froid hors ligne passe par l'étape suivante.
+   await test.step('réseau coupé (context.setOffline)', async () => {
+     // Preuve du déclencheur « premier plan » (R-SYN-29) : la dernière synchro a réussi (aucune reprise
+     // programmée), l'outbox est vide (pas de cycle à 60 s) et l'événement `offline` n'en lance pas ;
+     // seul le cycle déclenché ici peut faire passer l'état à 'offline' dans les 5 s.
+     await expect(connection).toHaveAttribute('data-state', 'online');
+-    await expect(page.getByTestId('pending-counter')).toHaveAttribute('data-count', '0');
++    expect(await idbGetAll(page, 'outbox')).toEqual([]);
+     await context.setOffline(true);
+     await triggerForeground(page);
+     await expect(connection).toHaveAttribute('data-state', 'offline', { timeout: 5_000 });
+-    await page.getByRole('link', { name: 'Profil', exact: true }).click();
++    await tab('Profil').click();
+     await expect(username).toHaveValue('camille');
+     // Classe E (API en ligne) : refusée hors ligne avec « Nécessite le réseau ».
+     await username.fill('camille-sans-reseau');
+     await saveUsername.click();
+     await expect(usernameAlert).toHaveText('Nécessite le réseau');
+     await context.setOffline(false);
++    await tab('Accueil').click();
+     await expect(connection).toHaveAttribute('data-state', 'online', { timeout: 15_000 });
+   });
+ 
+   await test.step('requêtes sans réponse (VPN coupé) alors que navigator.onLine reste vrai', async () => {
+     await expect(connection).toHaveAttribute('data-state', 'online');
+     server.setFault({ kind: 'blackhole' });
+     await page.reload({ waitUntil: 'domcontentloaded', timeout: SHELL_TIMEOUT_MS });
+     await connection.waitFor({ state: 'attached', timeout: SHELL_TIMEOUT_MS });
+     await expect(connection).toHaveAttribute('data-state', 'offline', { timeout: 5_000 });
+     expect(await page.evaluate(() => navigator.onLine)).toBe(true);
+     await page.goto(`${server.url}/profile`, { waitUntil: 'domcontentloaded', timeout: SHELL_TIMEOUT_MS });
+     await expect(username).toHaveValue('camille');
+     // Classe E sous des requêtes muettes : refus au bout de SYNC_TIMEOUT_MS (4 s), pas une attente sans fin.
+     await username.fill('camille-sans-reponse');
+     await saveUsername.click();
+     await expect(usernameAlert).toHaveText('Nécessite le réseau', { timeout: SYNC_TIMEOUT_MS + 6_000 });
+     server.setFault(null);
+     // Accélère seulement le retour : les échecs du trou noir ont déjà programmé une reprise (2 s, 4 s…)
+     // qui suffirait à repasser 'online'. La preuve du déclencheur est à l'étape précédente.
+     await triggerForeground(page);
++    await tab('Accueil').click();
+     await expect(connection).toHaveAttribute('data-state', 'online', { timeout: 15_000 });
+   });
+ 
+   await test.step('second appareil : le nouveau pseudo arrive par la synchro', async () => {
+     const otherContext = await newContext();
+     const other = await otherContext.newPage();
+     await other.goto(`${server.url}/login`);
+     await loginViaUi(other, 'camille');
+     await expect(other).toHaveURL(`${server.url}/`);
+ 
++    await tab('Profil').click();
+     await username.fill('camille2');
+     const [renamed] = await Promise.all([
+       page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().endsWith('/api/me')),
+       saveUsername.click(),
+     ]);
+     expect(renamed.status()).toBe(200);
+ 
+     // Une seule ligne : la synchro met à jour l'utilisateur, elle n'en ajoute pas un second.
+     await expect
+       .poll(
+diff --git a/apps/web/e2e/protocol.spec.ts b/apps/web/e2e/protocol.spec.ts
+index cd7b79c..fd4f0bb 100644
+--- a/apps/web/e2e/protocol.spec.ts
++++ b/apps/web/e2e/protocol.spec.ts
+@@ -45,20 +45,15 @@ test("426 : file d'envoi gardée, bandeau non fermable, mise à jour vers B puis
+     // des rejets (R-VER-2) ; un refus ici ne pourrait venir que du 426, pas du retour du protocole.
+     expect(await outboxIds()).toEqual([op.opId]);
+     expect(await deadletterIds()).toEqual([]);
+   });
+ 
+   await test.step("protocole rétabli : la file d'envoi part, le refus du serveur va dans la file des rejets", async () => {
+     server.setFault(null);
+     await triggerForeground(page);
+     await expect(connection).toHaveAttribute('data-state', 'online', { timeout: 15_000 });
+     await expect.poll(outboxIds, { timeout: 15_000 }).toEqual([]);
+-    await expect(page.getByTestId('pending-counter')).toHaveAttribute('data-count', '0');
+     // L'opération factice vise une ligne sync_rejection inexistante : le serveur la refuse.
+     const deadletter = await deadletterIds();
+     expect(deadletter).toEqual([op.opId]);
+-    await expect(page.getByTestId('rejected-counter')).toHaveAttribute(
+-      'data-count',
+-      String(deadletter.length),
+-    );
+   });
+ });
+diff --git a/apps/web/e2e/sheet.spec.ts b/apps/web/e2e/sheet.spec.ts
+index 443ded1..430526a 100644
+--- a/apps/web/e2e/sheet.spec.ts
++++ b/apps/web/e2e/sheet.spec.ts
+@@ -36,21 +36,21 @@ async function createAdminWithTwoPlaces(server: E2EServer, page: Page): Promise<
+ // partage le contexte d'empilement de l'écran : les champs transparents des cartes de choix et des puces
+ // (z-index 1) la couvraient et prenaient les touchers destinés à ses actions.
+ test('feuille du bas : ses actions reçoivent le toucher, même par-dessus des cartes de choix', async ({
+   server,
+   page,
+ }) => {
+   await createAdminWithTwoPlaces(server, page);
+   await page.goto(`${server.url}/login`);
+   await loginViaUi(page, 'camille');
+   await page.waitForURL((url) => url.pathname === '/');
+-  await page.goto(`${server.url}/profile/places`);
++  await page.goto(`${server.url}/places`);
+ 
+   await page.getByRole('button', { name: 'Ajouter une maison', exact: true }).click();
+   const homeCreate = page.getByRole('region', { name: 'Ajouter une maison', exact: true });
+   await expect(homeCreate).toBeVisible();
+   const preset = homeCreate.getByRole('radio', { checked: true });
+   const presetBefore = await preset.getAttribute('value');
+ 
+   const garage = page.getByRole('listitem').filter({ has: page.getByRole('link', { name: 'Garage' }) });
+   await garage.getByRole('button', { name: 'Supprimer', exact: true }).click();
+   const sheet = page.getByRole('dialog', { name: 'Supprimer Garage ?' });
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+index 89b6433..e3b57b2 100644
+--- a/apps/web/src/App.tsx
++++ b/apps/web/src/App.tsx
+@@ -11,20 +11,21 @@ import { LoginPage } from './features/auth/LoginPage';
+ import { ResetPage } from './features/auth/ResetPage';
+ import { HomePage } from './features/home/HomePage';
+ import { OnboardingFlow } from './features/onboarding/OnboardingFlow';
+ import { GymPage } from './features/places/GymPage';
+ import { PlaceDetail } from './features/places/PlaceDetail';
+ import { PlacesPage } from './features/places/PlacesPage';
+ import { HealthReconsentGate } from './features/privacy/HealthReconsentGate';
+ import { HealthSection } from './features/privacy/HealthSection';
+ import { PrivacySettingsPage } from './features/privacy/PrivacySettingsPage';
+ import { ProfilePage } from './features/profile/ProfilePage';
++import { ProgressionPage } from './features/progression/ProgressionPage';
+ import { CreditsPage } from './features/public/CreditsPage';
+ import { HelpPage } from './features/public/HelpPage';
+ import { NotFound } from './features/public/NotFound';
+ import { PrivacyPage } from './features/public/PrivacyPage';
+ import { RejectionsPage } from './features/status/RejectionsPage';
+ import { SettingsPage } from './features/status/SettingsPage';
+ import { useRepos } from './repos';
+ import type { ConnectionState } from './sync/engine';
+ import { AppShell, PublicShell } from './ui';
+ 
+@@ -45,26 +46,33 @@ export type GuardResult =
+   | { kind: 'not_found' };
+ 
+ const LOST_SESSION: readonly ConnectionState[] = ['unauthenticated', 'account_deleted'];
+ 
+ /** Sans tenir compte de la casse, comme les routes de wouter : `/Admin/members` est une page admin. */
+ const isAdminPath = (path: string) => {
+   const p = path.toLowerCase();
+   return p === '/admin' || p.startsWith('/admin/');
+ };
+ 
++/**
++ * Anciennes adresses des lieux, passés sous l'onglet Salles : `/profile/places…` mène au même chemin sous
++ * `/places` (la suite, un identifiant par exemple, est gardée telle quelle).
++ */
++const MOVED_PLACES = /^\/profile\/places(\/.*)?$/i;
++
+ /** Chemin sans barre finale (`/privacy/` → `/privacy`), `/` gardé. */
+ export const normalizePath = (path: string): string => path.replace(/\/+$/, '') || '/';
+ 
+ /**
+  * Garde des routes, dans l'ordre : chemin public ; base locale pas encore lue ; session absente ou
+- * refusée par le serveur ; mot de passe à changer (R-MDP-1) ; onboarding ; rôle admin (R-ROLE-1).
++ * refusée par le serveur ; mot de passe à changer (R-MDP-1) ; onboarding ; rôle admin (R-ROLE-1) ; anciennes
++ * adresses des lieux.
+  */
+ export function resolveGuard(i: {
+   path: string;
+   loaded: boolean;
+   me: MeResponse | null;
+   connection: ConnectionState;
+ }): GuardResult {
+   const path = normalizePath(i.path);
+   const sessionValid = i.me !== null && !LOST_SESSION.includes(i.connection);
+   if (PUBLIC_PATHS.includes(path)) {
+@@ -72,20 +80,22 @@ export function resolveGuard(i: {
+   }
+   if (!i.loaded) return { kind: 'wait' };
+   if (!i.me || !sessionValid) return { kind: 'redirect', to: '/login' };
+   if (i.me.mustChangePassword) {
+     return path === '/profile' ? { kind: 'render' } : { kind: 'redirect', to: '/profile' };
+   }
+   const onboarded = i.me.onboardingCompletedAt !== null;
+   if (!onboarded && path !== '/onboarding') return { kind: 'redirect', to: '/onboarding' };
+   if (onboarded && path === '/onboarding') return { kind: 'redirect', to: '/' };
+   if (isAdminPath(path) && i.me.role !== 'admin') return { kind: 'not_found' };
++  const moved = MOVED_PLACES.exec(path);
++  if (moved) return { kind: 'redirect', to: `/places${moved[1] ?? ''}` };
+   return { kind: 'render' };
+ }
+ 
+ function PublicRoutes() {
+   return (
+     <Switch>
+       <Route path="/login" component={LoginPage} />
+       <Route path="/invite" component={InvitePage} />
+       <Route path="/reset" component={ResetPage} />
+       <Route path="/privacy" component={PrivacyPage} />
+@@ -93,23 +103,24 @@ function PublicRoutes() {
+       <Route path="/help" component={HelpPage} />
+       <Route component={NotFound} />
+     </Switch>
+   );
+ }
+ 
+ function ConnectedRoutes() {
+   return (
+     <Switch>
+       <Route path="/" component={HomePage} />
++      <Route path="/progression" component={ProgressionPage} />
++      <Route path="/places" component={PlacesPage} />
++      <Route path="/places/:id" component={PlaceDetail} />
+       <Route path="/profile" component={ProfilePage} />
+-      <Route path="/profile/places" component={PlacesPage} />
+-      <Route path="/profile/places/:id" component={PlaceDetail} />
+       <Route path="/profile/health" component={HealthSection} />
+       <Route path="/profile/privacy" component={PrivacySettingsPage} />
+       <Route path="/settings" component={SettingsPage} />
+       <Route path="/rejections" component={RejectionsPage} />
+       <Route path="/gyms/:id" component={GymPage} />
+       <Route path="/admin/members" component={MembersPage} />
+       <Route path="/admin/invitations" component={InvitationsPage} />
+       <Route path="/admin/gyms" component={AdminGymsPage} />
+       <Route path="/admin/health" component={ServerHealthPage} />
+       <Route component={NotFound} />
+diff --git a/apps/web/src/features/places/GymPage.tsx b/apps/web/src/features/places/GymPage.tsx
+index 09d265c..e847ebd 100644
+--- a/apps/web/src/features/places/GymPage.tsx
++++ b/apps/web/src/features/places/GymPage.tsx
+@@ -116,32 +116,32 @@ export function GymPage(p: { params: { id: string } }) {
+       {state.error.retry ? (
+         <Button variant="secondary" onClick={refresh}>
+           Réessayer
+         </Button>
+       ) : null}
+     </>
+   ) : null;
+ 
+   if (!state.loaded) {
+     return failure ? (
+-      <Page title="Salle" back="/profile/places">
++      <Page title="Salle" back="/places">
+         {failure}
+       </Page>
+     ) : null;
+   }
+ 
+   const { detail, offline } = state.loaded;
+   const editable = detail.canEdit && !offline;
+   const deleted = detail.deletedAt !== null;
+ 
+   return (
+-    <Page title={detail.name} back="/profile/places">
++    <Page title={detail.name} back="/places">
+       {offline ? <Banner tone="info">{OFFLINE_GYM_TEXT}</Banner> : null}
+       {failure}
+       {editing && editable ? (
+         <GymInfoForm
+           detail={detail}
+           onCancel={closeEditor}
+           onSaved={() => {
+             closeEditor();
+             refresh();
+           }}
+diff --git a/apps/web/src/features/places/PlaceDetail.tsx b/apps/web/src/features/places/PlaceDetail.tsx
+index 6d8cd49..0a48360 100644
+--- a/apps/web/src/features/places/PlaceDetail.tsx
++++ b/apps/web/src/features/places/PlaceDetail.tsx
+@@ -11,21 +11,21 @@ import styles from './places.module.css';
+  * Fiche d'un lieu (Profil › Lieux) : le matériel d'une maison se coche ici (R-LIEU-3) ; une salle
+  * renvoie à sa fiche partagée, où se modifie son matériel (R-LIEU-2).
+  */
+ export function PlaceDetail(p: { params: { id: string } }) {
+   const repos = useRepos();
+   const id = p.params.id;
+   const place = useLive(() => repos.places.get(id), [repos, id]);
+   if (place === undefined) return null;
+   if (place === null) {
+     return (
+-      <Page title="Lieu" back="/profile/places">
++      <Page title="Lieu" back="/places">
+         <p>Lieu introuvable.</p>
+       </Page>
+     );
+   }
+   return place.kind === 'home' ? <HomeDetail place={place} /> : <GymPlaceDetail place={place} />;
+ }
+ 
+ /** « Salle · Lyon · lieu principal », « Maison ». */
+ const placeMeta = (place: PlaceView) =>
+   [place.kind === 'gym' ? 'Salle' : 'Maison', place.city, place.isPrimary ? 'lieu principal' : null]
+@@ -52,42 +52,42 @@ function HomeDetail(p: { place: PlaceView }) {
+   async function change(next: EquipmentCode[]) {
+     const current = draft ?? p.place.equipment;
+     const added = next.find((c) => !current.includes(c));
+     const code = added ?? current.find((c) => !next.includes(c));
+     if (code === undefined) return;
+     setDraft(next);
+     if (!(await toggle.run(code, added !== undefined))) setDraft(null);
+   }
+ 
+   return (
+-    <Page title={p.place.name} back="/profile/places">
++    <Page title={p.place.name} back="/places">
+       <p className={styles.meta}>{placeMeta(p.place)}</p>
+       <section aria-labelledby={titleId} className={styles.section}>
+         <h2 id={titleId}>Matériel</h2>
+         <p className={styles.hint}>Coche le matériel disponible dans ce lieu.</p>
+         {toggle.error ? <Banner tone="error">{toggle.error}</Banner> : null}
+         <EquipmentChecklist
+           kind="home"
+           value={draft ?? p.place.equipment}
+           onChange={(next) => void change(next)}
+           disabled={toggle.pending}
+         />
+       </section>
+     </Page>
+   );
+ }
+ 
+ /** Lieu de type salle : matériel de la salle en lecture, lien vers sa fiche. */
+ function GymPlaceDetail(p: { place: PlaceView }) {
+   const titleId = useId();
+   return (
+-    <Page title={p.place.name} back="/profile/places">
++    <Page title={p.place.name} back="/places">
+       <p className={styles.meta}>{placeMeta(p.place)}</p>
+       <section aria-labelledby={titleId} className={styles.section}>
+         <h2 id={titleId}>Matériel</h2>
+         <EquipmentList value={p.place.equipment} />
+         <p className={styles.hint}>
+           Le matériel d'une salle se modifie sur sa fiche, partagée par ses membres.
+         </p>
+         {p.place.gymId ? <Link href={`/gyms/${p.place.gymId}`}>Voir la salle</Link> : null}
+       </section>
+     </Page>
+diff --git a/apps/web/src/features/places/PlacesPage.tsx b/apps/web/src/features/places/PlacesPage.tsx
+index cb0fb47..0fae9bc 100644
+--- a/apps/web/src/features/places/PlacesPage.tsx
++++ b/apps/web/src/features/places/PlacesPage.tsx
+@@ -70,21 +70,21 @@ export function PlacesPage() {
+     const list = places ?? [];
+     const i = list.findIndex((o) => o.id === id);
+     const next = list[i + 1] ?? list[i - 1];
+     const links = listRef.current?.querySelectorAll<HTMLElement>('[data-place]') ?? [];
+     Array.from(links)
+       .find((a) => a.dataset.place === next?.id)
+       ?.focus();
+   }
+ 
+   return (
+-    <Page title="Lieux" back="/profile">
++    <Page title="Lieux">
+       {places.length > 0 ? (
+         <ul ref={listRef} className={styles.places}>
+           {places.map((place) => (
+             <PlaceItem
+               key={place.id}
+               place={place}
+               others={places.filter((o) => o.id !== place.id)}
+               minor={minor}
+               onRemoved={() => removed(place.id)}
+             />
+@@ -184,26 +184,21 @@ function PlaceItem(p: { place: PlaceView; others: PlaceView[]; minor: boolean; o
+       setNameError(NAME_REQUIRED);
+       return;
+     }
+     setNameError(null);
+     if (next === place.name || (await update.run({ name: next }))) closeRename();
+   }
+ 
+   return (
+     <li className={styles.place}>
+       <div className={styles.placeHead}>
+-        <Link
+-          id={nameId}
+-          data-place={place.id}
+-          href={`/profile/places/${place.id}`}
+-          className={styles.placeName}
+-        >
++        <Link id={nameId} data-place={place.id} href={`/places/${place.id}`} className={styles.placeName}>
+           {place.name}
+         </Link>
+         {place.isPrimary ? <span className={styles.badge}>Principal</span> : null}
+       </div>
+       <p className={styles.meta}>
+         {place.kind === 'gym' ? (place.city ? `Salle · ${place.city}` : 'Salle') : 'Maison'}
+       </p>
+       {place.kind === 'gym' ? (
+         <div className={styles.visibility}>
+           <label className={styles.item}>
+diff --git a/apps/web/src/features/profile/ProfilePage.tsx b/apps/web/src/features/profile/ProfilePage.tsx
+index 83d583f..f40ce93 100644
+--- a/apps/web/src/features/profile/ProfilePage.tsx
++++ b/apps/web/src/features/profile/ProfilePage.tsx
+@@ -384,21 +384,21 @@ function TrainingSection(p: { me: MeResponse }) {
+         minor={p.me.ageBand === 'minor'}
+         disabled={cautious.pending}
+         onChange={(v) => void changeCautious(v)}
+       />
+       {cautious.error ? <Banner tone="error">{cautious.error}</Banner> : null}
+     </Section>
+   );
+ }
+ 
+ const LINKS: readonly { href: string; label: string }[] = [
+-  { href: '/profile/places', label: 'Lieux' },
++  { href: '/places', label: 'Lieux' },
+   { href: '/profile/health', label: 'Santé' },
+   { href: '/profile/privacy', label: 'Confidentialité' },
+   { href: '/settings', label: 'Réglages' },
+ ];
+ 
+ function ProfileLinks() {
+   return (
+     <nav aria-label="Autres pages du profil">
+       <ul className={styles.links}>
+         {LINKS.map((l) => (
+diff --git a/apps/web/src/features/progression/ProgressionPage.tsx b/apps/web/src/features/progression/ProgressionPage.tsx
+new file mode 100644
+index 0000000..869fc60
+--- /dev/null
++++ b/apps/web/src/features/progression/ProgressionPage.tsx
+@@ -0,0 +1,6 @@
++import { Page } from '../../ui';
++
++/** Onglet Progression : page provisoire, sans donnée ; l'avant-goût (rangs, compteurs à 0) arrive ensuite. */
++export function ProgressionPage() {
++  return <Page title="Progression">{null}</Page>;
++}
+diff --git a/apps/web/src/features/status/ConnectionStatus.tsx b/apps/web/src/features/status/ConnectionStatus.tsx
+index a2275a3..5bc1297 100644
+--- a/apps/web/src/features/status/ConnectionStatus.tsx
++++ b/apps/web/src/features/status/ConnectionStatus.tsx
+@@ -1,25 +1,27 @@
+-import { useSyncState } from '../../app-services';
+ import type { ConnectionState } from '../../sync/engine';
+-import styles from './status.module.css';
+ 
++/**
++ * Libellés de l'état de connexion tel que le moteur de synchro l'a constaté (résultat des appels et sonde
++ * `/api/health`, R-SYN-30), jamais `navigator.onLine`. Affichés par la pastille de l'en-tête (`ConnectionPill`),
++ * qui lit la même source que les écrans qui répondent « Nécessite le réseau » : `useSyncState().connection`.
++ */
+ export const CONNECTION_LABELS: Record<ConnectionState, string> = {
+   online: 'En ligne',
+   offline: 'Hors ligne',
+   unknown: 'Connexion…',
+   unauthenticated: 'Session expirée',
+   protocol_unsupported: 'Mise à jour nécessaire',
+   account_deleted: 'Compte supprimé',
+ };
+ 
+-/**
+- * État de connexion tel que le moteur de synchro l'a constaté (résultat des appels et sonde
+- * `/api/health`, R-SYN-30) ; annoncé poliment quand il change.
+- */
+-export function ConnectionStatus() {
+-  const { connection } = useSyncState();
+-  return (
+-    <span data-testid="connection-status" data-state={connection} role="status" className={styles.connection}>
+-      {CONNECTION_LABELS[connection]}
+-    </span>
+-  );
+-}
++/** Ton du point de la pastille : vert en ligne, avertissement quand il faut agir, gris sinon. */
++export type ConnectionTone = 'online' | 'warning' | 'muted';
++
++export const CONNECTION_TONES: Record<ConnectionState, ConnectionTone> = {
++  online: 'online',
++  offline: 'muted',
++  unknown: 'muted',
++  unauthenticated: 'warning',
++  protocol_unsupported: 'warning',
++  account_deleted: 'warning',
++};
+diff --git a/apps/web/src/features/status/status.module.css b/apps/web/src/features/status/status.module.css
+index a064db5..ae38792 100644
+--- a/apps/web/src/features/status/status.module.css
++++ b/apps/web/src/features/status/status.module.css
+@@ -35,25 +35,21 @@
+ .failures {
+   margin: 0;
+   padding-left: var(--space-6);
+   color: var(--color-muted);
+ }
+ 
+ .indicator > button {
+   justify-self: start;
+ }
+ 
+-/* Compteurs de la zone d'état (R-SYN-34). */
+-.connection {
+-  font-weight: 600;
+-}
+-
++/* Compteurs de synchro (R-SYN-34). */
+ .counter:empty {
+   display: none;
+ }
+ 
+ .rejected {
+   color: var(--color-danger);
+   font-weight: 600;
+ }
+ 
+ .rejections {
+diff --git a/apps/web/src/main.tsx b/apps/web/src/main.tsx
+index 9eb4a06..dbea839 100644
+--- a/apps/web/src/main.tsx
++++ b/apps/web/src/main.tsx
+@@ -10,20 +10,21 @@ import { createApiClient } from './api/client';
+ import { type AppServices, handleAccountDeleted, ServicesProvider } from './app-services';
+ import { bootApp } from './boot';
+ import { createAppDb } from './local-db/db';
+ import { reposFor } from './repos';
+ import { probeHealth } from './sw/kill-switch';
+ import { installPersistOnOnboarding } from './sw/persist';
+ import { bootServiceWorker } from './sw/register';
+ import { getSwStatus } from './sw/sw-client';
+ import { createSyncEngine } from './sync/engine';
+ import { browserTransport } from './sync/transport';
++import { BootSplash } from './ui/BootSplash';
+ import { applyTheme, readThemeChoice } from './ui/theme/theme';
+ 
+ // Thème gardé sur l'appareil, posé avant tout rendu (spec refonte §4) ; Auto suit la media query CSS.
+ applyTheme(readThemeChoice());
+ 
+ const randomBytes = (n: number) => crypto.getRandomValues(new Uint8Array(n));
+ const go = (to: string) => navigate(to, { replace: true });
+ 
+ const db = createAppDb();
+ const transport = browserTransport();
+@@ -51,18 +52,20 @@ installPersistOnOnboarding(repos.status);
+ 
+ const root = document.getElementById('root');
+ if (!root) throw new Error('#root absent de index.html');
+ createRoot(root).render(
+   <StrictMode>
+     <Router>
+       <ServicesProvider services={services}>
+         <App />
+       </ServicesProvider>
+     </Router>
++    {/* Logo qui se dessine au premier affichage de la session, par-dessus l'écran sans le retarder. */}
++    <BootSplash />
+   </StrictMode>,
+ );
+ 
+ // Production seulement (Vite en développement ne sert pas de SW) ; non attendu : le premier rendu n'attend
+ // jamais. Sonde /api/health : interrupteur d'urgence (R-PWA-6), sinon enregistrement du SW.
+ if (import.meta.env.PROD) {
+   void bootServiceWorker({ db, status: repos.status, sync, fetchHealth: () => probeHealth(transport) });
+ }
+diff --git a/apps/web/src/sw/UpdateBanner.module.css b/apps/web/src/sw/UpdateBanner.module.css
+index e0d7872..80ea98b 100644
+--- a/apps/web/src/sw/UpdateBanner.module.css
++++ b/apps/web/src/sw/UpdateBanner.module.css
+@@ -1,27 +1,71 @@
+-/* Bandeau de mise à jour (R-PWA-2) : en tête du cadre connecté, au-dessus de l'en-tête. */
++/*
++ * Bandeau de mise à jour (R-PWA-2, maquette E06) : sous l'en-tête du cadre connecté, carte teintée d'accent
++ * au rayon 14 ; icône dans un rond, titre, puis « Mettre à jour » et « Plus tard » côte à côte, à parts égales.
++ */
+ .banner {
+   display: flex;
+-  flex-wrap: wrap;
+-  align-items: center;
+-  gap: var(--space-2) var(--space-4);
+-  padding: var(--space-3) var(--space-4);
+-  background: var(--color-info-bg);
+-  border-bottom: 1px solid var(--color-border);
++  flex-direction: column;
++  gap: var(--space-3);
++  padding: 14px;
++  border-radius: var(--radius-control);
++  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
++  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+ }
+ 
+ /* Après un 426 (R-PWA-5) : la synchro est arrêtée tant que l'appli n'est pas mise à jour. */
+ .forced {
+-  background: var(--color-warning-bg);
++  background: var(--warning-bg);
++  border-color: color-mix(in srgb, var(--warning-text) 30%, transparent);
++}
++
++.head {
++  display: flex;
++  align-items: center;
++  gap: var(--space-3);
++}
++
++.icon {
++  flex: none;
++  display: grid;
++  place-items: center;
++  width: 36px;
++  height: 36px;
++  border-radius: 50%;
++  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
++  color: var(--accent);
++}
++
++.forced .icon {
++  background: color-mix(in srgb, var(--warning-text) 14%, var(--warning-bg));
++  color: var(--warning-text);
+ }
+ 
+ .text {
+   display: flex;
+   flex-direction: column;
+-  margin: 0 auto 0 0;
++  gap: 2px;
++  margin: 0;
++  min-width: 0;
++}
++
++.text strong {
++  font-size: 1.03125rem;
++  font-weight: 600;
++}
++
++.text span {
++  font-size: 0.875rem;
++  line-height: 1.4;
++  color: var(--text-muted);
+ }
+ 
+ .actions {
+   display: flex;
+   flex-wrap: wrap;
+-  gap: var(--space-2);
++  gap: 10px;
++}
++
++.actions > * {
++  flex: 1 1 0;
++  min-width: max-content;
+ }
+diff --git a/apps/web/src/sw/UpdateBanner.tsx b/apps/web/src/sw/UpdateBanner.tsx
+index c57c7db..304e00f 100644
+--- a/apps/web/src/sw/UpdateBanner.tsx
++++ b/apps/web/src/sw/UpdateBanner.tsx
+@@ -4,42 +4,68 @@ import { useRepos } from '../repos';
+ import { Button } from '../ui/Button';
+ import {
+   NO_UPDATE,
+   type SwController,
+   shouldShowUpdateBanner,
+   swControllerStore,
+   type UpdateState,
+ } from './register';
+ import styles from './UpdateBanner.module.css';
+ 
++function DownloadIcon() {
++  return (
++    <svg
++      aria-hidden="true"
++      width="20"
++      height="20"
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth="2"
++      strokeLinecap="round"
++      strokeLinejoin="round"
++    >
++      <path d="M12 3v12" />
++      <path d="m7 10 5 5 5-5" />
++      <path d="M5 21h14" />
++    </svg>
++  );
++}
++
+ /**
+- * Bandeau « Nouvelle version disponible » (R-PWA-2). Non fermable (`dismissible` faux, après un 426,
+- * R-PWA-5) : pas de « Plus tard », et la consigne pour reprendre la synchronisation.
++ * Bandeau « Nouvelle version disponible » (R-PWA-2), sous l'en-tête (maquette E06) : icône, titre, puis les
++ * actions côte à côte. Non fermable (`dismissible` faux, après un 426, R-PWA-5) : pas de « Plus tard », et la
++ * consigne pour reprendre la synchronisation.
+  */
+ export function UpdateBannerView(p: {
+   show: boolean;
+   dismissible: boolean;
+   onUpdate(): void;
+   onDismiss(): void;
+ }) {
+   if (!p.show) return null;
+   return (
+     <div
+       role="status"
+       data-testid="update-banner"
+       data-dismissible={String(p.dismissible)}
+       className={p.dismissible ? styles.banner : `${styles.banner} ${styles.forced}`}
+     >
+-      <p className={styles.text}>
+-        <strong>Nouvelle version disponible</strong>
+-        {p.dismissible ? null : <span>Mets à jour l'appli pour reprendre la synchronisation.</span>}
+-      </p>
++      <div className={styles.head}>
++        <span aria-hidden="true" className={styles.icon}>
++          <DownloadIcon />
++        </span>
++        <p className={styles.text}>
++          <strong>Nouvelle version disponible</strong>
++          {p.dismissible ? null : <span>Mets à jour l'appli pour reprendre la synchronisation.</span>}
++        </p>
++      </div>
+       <div className={styles.actions}>
+         <Button onClick={p.onUpdate}>Mettre à jour</Button>
+         {p.dismissible ? (
+           <Button variant="secondary" onClick={p.onDismiss}>
+             Plus tard
+           </Button>
+         ) : null}
+       </div>
+     </div>
+   );
+diff --git a/apps/web/src/sw/kill-switch.ts b/apps/web/src/sw/kill-switch.ts
+index a13e192..b4af826 100644
+--- a/apps/web/src/sw/kill-switch.ts
++++ b/apps/web/src/sw/kill-switch.ts
+@@ -1,18 +1,18 @@
+ import { HealthResponse } from '@rune/contracts';
+ import { fetchJsonWithTimeout, type SyncTransport } from '../sync/transport';
+ import { ILLUSTRATIONS_CACHE_PREFIX, SHELL_CACHE_PREFIX } from './precache-manifest';
+ import type { SwContainerLike } from './register';
+ 
+ /** Navigateur que l'interrupteur d'urgence touche ; le vrai par défaut, factice dans les tests. */
+ export interface KillSwitchEnv {
+-  serviceWorker?: Pick<SwContainerLike, 'getRegistrations'>;
++  serviceWorker?: Pick<SwContainerLike, 'getRegistrations' | 'controller'>;
+   caches?: CacheStorage;
+   reload?: () => void;
+ }
+ 
+ /** `navigator.serviceWorker`, absent d'un contexte non sécurisé ou d'un navigateur sans SW. */
+ export function browserServiceWorker(): SwContainerLike | undefined {
+   return typeof navigator === 'undefined' ? undefined : (navigator.serviceWorker ?? undefined);
+ }
+ 
+ /** Cache Storage de la page, absent hors contexte sécurisé. */
+@@ -31,20 +31,41 @@ export async function probeHealth(transport: SyncTransport): Promise<HealthRespo
+       method: 'GET',
+       cache: 'no-store',
+     });
+     const parsed = HealthResponse.safeParse(body);
+     return parsed.success ? parsed.data : null;
+   } catch {
+     return null;
+   }
+ }
+ 
++/** Rechargement de l'onglet déjà fait parce qu'il restait contrôlé (garde contre une boucle). */
++const CONTROLLED_RELOAD_KEY = 'rune.kill-switch-reload';
++/** Repli quand le stockage de session est refusé : une fois par chargement de la page. */
++let controlledReloadDone = false;
++
++/**
++ * Vrai la première fois seulement, dans cet onglet : le rechargement d'une page encore contrôlée ne se
++ * répète pas, même si un navigateur gardait le SW désenregistré aux commandes après lui.
++ */
++function firstControlledReload(): boolean {
++  try {
++    if (sessionStorage.getItem(CONTROLLED_RELOAD_KEY) === '1') return false;
++    sessionStorage.setItem(CONTROLLED_RELOAD_KEY, '1');
++    return true;
++  } catch {
++    if (controlledReloadDone) return false;
++    controlledReloadDone = true;
++    return true;
++  }
++}
++
+ const doomedCache = (name: string) =>
+   name.startsWith(SHELL_CACHE_PREFIX) || name.startsWith(ILLUSTRATIONS_CACHE_PREFIX);
+ 
+ /** Valeur de `task`, ou `fallback` s'il échoue, même en levant tout de suite. */
+ async function orElse<T>(task: () => Promise<T>, fallback: T): Promise<T> {
+   try {
+     return await task();
+   } catch {
+     return fallback;
+   }
+@@ -52,36 +73,41 @@ async function orElse<T>(task: () => Promise<T>, fallback: T): Promise<T> {
+ 
+ /** Un retrait refusé n'arrête pas les autres ; vrai si au moins un a eu lieu. */
+ async function anyDone(tasks: readonly (() => Promise<boolean>)[]): Promise<boolean> {
+   const results = await Promise.all(tasks.map((task) => orElse(task, false)));
+   return results.includes(true);
+ }
+ 
+ /**
+  * Interrupteur d'urgence côté page (R-PWA-6), au démarrage : si `swKill`, désenregistre tout SW, vide les
+  * caches `shell-*` et `illustrations-*` (ni le marqueur `rune-meta`, ni un cache inconnu, ni jamais
+- * IndexedDB), puis recharge la page depuis le réseau. Recharge une seule fois et seulement si quelque chose
+- * a été retiré : le SW a pu faire le ménage avant (T36), et la page rechargée ne trouve plus rien, ce qui
+- * évite la boucle. Rend `true` si la page est rechargée.
++ * IndexedDB), puis recharge la page depuis le réseau. Recharge une seule fois : si quelque chose a été retiré,
++ * ou si le SW a fait le ménage avant (T36) sans pouvoir recharger cette page, encore contrôlée par lui (une fois
++ * par onglet). La page rechargée ne trouve plus rien et n'est plus contrôlée, ce qui évite la boucle. Rend
++ * `true` si la page est rechargée.
+  */
+ export async function applyKillSwitchIfNeeded(
+   health: HealthResponse,
+   env: KillSwitchEnv = {},
+ ): Promise<boolean> {
+   if (!health.swKill) return false;
+   const serviceWorker = env.serviceWorker ?? browserServiceWorker();
+   const storage = env.caches ?? browserCaches();
+   const reload = env.reload ?? (() => window.location.reload());
+ 
+   const registrations = serviceWorker ? await orElse(() => serviceWorker.getRegistrations(), []) : [];
+   const unregistered = await anyDone(registrations.map((r) => () => r.unregister()));
+   const names = storage ? await orElse(() => storage.keys(), []) : [];
+   const deleted = storage
+     ? await anyDone(names.filter(doomedCache).map((n) => () => storage.delete(n)))
+     : false;
+ 
+-  if (!unregistered && !deleted) return false;
++  // Le SW a pu tout retirer pendant la navigation, quand l'ancien document était parti et celui-ci pas encore
++  // prêt : son rechargement n'a visé aucune fenêtre. Servie par lui (contrôlée), la page resterait sur ce build.
++  if (!unregistered && !deleted && (serviceWorker?.controller == null || !firstControlledReload())) {
++    return false;
++  }
+   // Trace pour le diagnostic sur téléphone (R-TST-4, P8) : sinon ce rechargement unique passe inaperçu.
+   console.info("[rune] interrupteur d'urgence : service worker et caches retirés, rechargement");
+   reload();
+   return true;
+ }
+diff --git a/apps/web/src/ui/AppShell.tsx b/apps/web/src/ui/AppShell.tsx
+index ff584bb..ab7c314 100644
+--- a/apps/web/src/ui/AppShell.tsx
++++ b/apps/web/src/ui/AppShell.tsx
+@@ -1,48 +1,81 @@
+-import type { ReactNode } from 'react';
+-import { Link } from 'wouter';
++import { type ReactNode, useRef } from 'react';
++import { Link, useLocation } from 'wouter';
+ import { useMe } from '../app-services';
+-import { ConnectionStatus } from '../features/status/ConnectionStatus';
+-import { PendingCounter, RejectedCounter } from '../features/status/PendingCounter';
+ import { UpdateBanner } from '../sw/UpdateBanner';
++import { ConnectionPill } from './ConnectionPill';
++import { RuneMark, RuneWordmark } from './Logo';
++import { SideNav } from './SideNav';
++import { useScreenEntrance, useScreenTransition } from './screen-transition';
++import shell from './shell.module.css';
++import { activeTab, TabBar } from './TabBar';
+ import styles from './ui.module.css';
++import { useColorScheme } from './use-color-scheme';
++import { useMediaQuery } from './use-media-query';
++
++/** Largeur à partir de laquelle la barre d'onglets laisse la place à la navigation latérale (spec refonte §5). */
++export const WIDE_QUERY = '(min-width: 900px)';
+ 
+ /**
+- * Cadre des écrans connectés : bandeau de mise à jour (R-PWA-2), navigation, zone d'état (connexion,
+- * éléments en attente et refusés, R-SYN-34), liens vers les pages publiques.
++ * Cadre des écrans connectés (spec refonte §5) : en-tête de l'accueil, bandeau de mise à jour juste dessous
++ * (R-PWA-2), l'écran qui entre selon la navigation (avant, retour, onglet), la barre d'onglets flottante sur
++ * téléphone ou la navigation latérale à partir de 900 px. Les compteurs de synchro sont dans Réglages.
+  */
+ export function AppShell(p: { children: ReactNode }) {
+-  const me = useMe();
++  const [path] = useLocation();
++  const wide = useMediaQuery(WIDE_QUERY);
++  const transition = useScreenTransition(path);
++  const screen = useRef<HTMLElement>(null);
++  useScreenEntrance(screen, path, transition);
+   return (
+-    <div className={styles.shell}>
+-      <UpdateBanner />
+-      <header className={styles.header}>
+-        <Link href="/" className={styles.brand}>
+-          Rune
+-        </Link>
+-        <nav aria-label="Navigation principale" className={styles.nav}>
+-          <Link href="/">Accueil</Link>
+-          <Link href="/profile">Profil</Link>
+-          {me?.role === 'admin' ? <Link href="/admin/members">Administration</Link> : null}
+-        </nav>
+-        <div className={styles.status}>
+-          <ConnectionStatus />
+-          <PendingCounter />
+-          <RejectedCounter />
++    <div className={shell.shell} data-wide={wide ? '' : undefined}>
++      {wide ? <SideNav /> : null}
++      <div className={shell.column}>
++        {activeTab(path) === '/' ? <HomeHeader /> : null}
++        <div className={shell.bannerSlot}>
++          <UpdateBanner />
+         </div>
+-      </header>
+-      <main className={styles.main}>{p.children}</main>
+-      <PublicLinks />
++        <main ref={screen} className={shell.main} data-screen-transition={transition}>
++          {p.children}
++        </main>
++        <PublicLinks />
++      </div>
++      {wide ? null : <TabBar />}
+     </div>
+   );
+ }
+ 
++/**
++ * En-tête de l'accueil (maquettes MixSombre / MixClair) : logo et RUNE vers l'accueil, pastille de connexion,
++ * rond de l'initiale vers le Profil. Les pages internes ont leur Retour et leur titre (`PageHeader`).
++ */
++function HomeHeader() {
++  const me = useMe();
++  const dark = useColorScheme() === 'dark';
++  return (
++    <header className={shell.header}>
++      <Link href="/" className={shell.brand} aria-label="Rune">
++        <RuneMark glow={dark} />
++        <RuneWordmark />
++      </Link>
++      <div className={shell.headerEnd}>
++        <ConnectionPill />
++        {me ? (
++          <Link href="/profile" aria-label="Mon profil" className={shell.avatar}>
++            <span aria-hidden="true">{me.username.charAt(0).toUpperCase()}</span>
++          </Link>
++        ) : null}
++      </div>
++    </header>
++  );
++}
++
+ /**
+  * Cadre des pages publiques, lisibles sans session, et de l'onboarding : pas de navigation de
+  * compte ni de bandeau de mise à jour (R-PWA-3). `homeLink` faux (onboarding) : la marque est un simple texte, l'accueil ramènerait à
+  * l'onboarding en perdant l'écran en cours.
+  */
+ export function PublicShell(p: { children: ReactNode; homeLink?: boolean }) {
+   return (
+     <div className={styles.shell}>
+       <header className={styles.header}>
+         {p.homeLink === false ? (
+diff --git a/apps/web/src/ui/BootSplash.tsx b/apps/web/src/ui/BootSplash.tsx
+new file mode 100644
+index 0000000..02f945d
+--- /dev/null
++++ b/apps/web/src/ui/BootSplash.tsx
+@@ -0,0 +1,63 @@
++import { useEffect, useState } from 'react';
++import { RuneMark } from './Logo';
++import styles from './shell.module.css';
++import { useReducedMotion } from './use-reduced-motion';
++
++const SHOWN_KEY = 'rune.boot-splash';
++/** Filet de sécurité : retiré même si la fin de son animation n'arrive jamais (onglet en arrière-plan). */
++const MAX_MS = 2000;
++
++/** Repli quand le stockage de session est refusé (navigation privée, données bloquées) : une fois par chargement. */
++let shownThisPage = false;
++
++function alreadyShown(): boolean {
++  try {
++    return sessionStorage.getItem(SHOWN_KEY) === '1';
++  } catch {
++    return shownThisPage;
++  }
++}
++
++function markShown(): void {
++  shownThisPage = true;
++  try {
++    sessionStorage.setItem(SHOWN_KEY, '1');
++  } catch {
++    // Stockage refusé : le repli du chargement suffit.
++  }
++}
++
++/**
++ * Démarrage (spec refonte §7) : au premier affichage d'une session, le logo se dessine (moins de 1,2 s) puis
++ * le voile s'efface. Il se pose par-dessus l'écran sans jamais le retarder ni prendre le toucher
++ * (`pointer-events: none`), reste muet pour les lecteurs d'écran, et se retire à la fin de son animation.
++ * Sous mouvement réduit, il ne rend rien.
++ */
++export function BootSplash() {
++  const reduced = useReducedMotion();
++  const [show, setShow] = useState(() => !alreadyShown());
++  const playing = show && !reduced;
++
++  useEffect(() => {
++    if (!playing) return;
++    markShown();
++    const timer = setTimeout(() => setShow(false), MAX_MS);
++    return () => clearTimeout(timer);
++  }, [playing]);
++
++  if (!playing) return null;
++  return (
++    <div
++      aria-hidden="true"
++      className={styles.splash}
++      onAnimationEnd={(e) => {
++        // Les animations du dessin remontent jusqu'ici : seule celle du voile le retire.
++        if (e.target === e.currentTarget) setShow(false);
++      }}
++    >
++      <span className={styles.splashMark}>
++        <RuneMark size={132} />
++      </span>
++    </div>
++  );
++}
+diff --git a/apps/web/src/ui/ConnectionPill.tsx b/apps/web/src/ui/ConnectionPill.tsx
+new file mode 100644
+index 0000000..babfee9
+--- /dev/null
++++ b/apps/web/src/ui/ConnectionPill.tsx
+@@ -0,0 +1,18 @@
++import { useSyncState } from '../app-services';
++import { CONNECTION_LABELS, CONNECTION_TONES } from '../features/status/ConnectionStatus';
++import styles from './shell.module.css';
++
++/**
++ * Pastille compacte de l'en-tête de l'accueil (maquettes MixSombre / MixClair) : un point, puis l'état de
++ * connexion. Une seule source de vérité, `useSyncState().connection`, celle des écrans qui répondent
++ * « Nécessite le réseau » : jamais « En ligne » quand ils sont hors ligne. Annoncée poliment quand elle change.
++ */
++export function ConnectionPill() {
++  const { connection } = useSyncState();
++  return (
++    <span data-testid="connection-status" data-state={connection} role="status" className={styles.pill}>
++      <span aria-hidden="true" className={styles.pillDot} data-tone={CONNECTION_TONES[connection]} />
++      {CONNECTION_LABELS[connection]}
++    </span>
++  );
++}
+diff --git a/apps/web/src/ui/Page.tsx b/apps/web/src/ui/Page.tsx
+index e333549..a0b9428 100644
+--- a/apps/web/src/ui/Page.tsx
++++ b/apps/web/src/ui/Page.tsx
+@@ -1,18 +1,16 @@
+ import type { ReactNode } from 'react';
+-import { Link } from 'wouter';
++import { PageHeader } from './PageHeader';
+ import styles from './ui.module.css';
+ 
+-/** Page d'écran : un seul titre de niveau 1, lien de retour facultatif. */
+-export function Page(p: { title: string; back?: string; children: ReactNode }) {
++/**
++ * Page d'écran : son en-tête (`PageHeader` : Retour de 44 × 44 si `back`, puis le seul titre de niveau 1),
++ * puis le contenu. Les onglets de premier niveau n'ont pas de Retour.
++ */
++export function Page(p: { title: string; back?: string | (() => void); children: ReactNode }) {
+   return (
+     <section className={styles.page}>
+-      {p.back ? (
+-        <Link href={p.back} className={styles.back}>
+-          Retour
+-        </Link>
+-      ) : null}
+-      <h1>{p.title}</h1>
++      <PageHeader title={p.title} back={p.back} />
+       {p.children}
+     </section>
+   );
+ }
+diff --git a/apps/web/src/ui/SideNav.tsx b/apps/web/src/ui/SideNav.tsx
+new file mode 100644
+index 0000000..41e5bf1
+--- /dev/null
++++ b/apps/web/src/ui/SideNav.tsx
+@@ -0,0 +1,39 @@
++import { Link, useLocation } from 'wouter';
++import { RuneMark, RuneWordmark } from './Logo';
++import styles from './shell.module.css';
++import { activeTab, TAB_ICONS, TAB_ITEMS } from './TabBar';
++import { useColorScheme } from './use-color-scheme';
++
++/**
++ * Navigation latérale sur PC (largeur ≥ 900 px, spec refonte §5) : la marque, puis les mêmes entrées que la
++ * barre d'onglets, l'entrée active portant `aria-current="page"`.
++ */
++export function SideNav() {
++  const [path] = useLocation();
++  const active = activeTab(path);
++  const dark = useColorScheme() === 'dark';
++  return (
++    <div className={styles.sideNav} data-testid="side-nav">
++      <Link href="/" className={styles.brand} aria-label="Rune">
++        <RuneMark glow={dark} />
++        <RuneWordmark />
++      </Link>
++      <nav aria-label="Navigation principale">
++        <ul className={styles.sideList}>
++          {TAB_ITEMS.map((t) => (
++            <li key={t.href}>
++              <Link
++                href={t.href}
++                aria-current={t.href === active ? 'page' : undefined}
++                className={styles.sideItem}
++              >
++                {TAB_ICONS[t.href]}
++                {t.label}
++              </Link>
++            </li>
++          ))}
++        </ul>
++      </nav>
++    </div>
++  );
++}
+diff --git a/apps/web/src/ui/TabBar.tsx b/apps/web/src/ui/TabBar.tsx
+new file mode 100644
+index 0000000..5c093b4
+--- /dev/null
++++ b/apps/web/src/ui/TabBar.tsx
+@@ -0,0 +1,110 @@
++import type { CSSProperties, ReactNode } from 'react';
++import { Link, useLocation } from 'wouter';
++import styles from './shell.module.css';
++
++export type TabHref = '/' | '/progression' | '/places' | '/profile';
++
++/** Onglets du socle (spec refonte §5) ; à la brique 5, Nutrition prend la place de Salles. */
++export const TAB_ITEMS: readonly { href: TabHref; label: string }[] = [
++  { href: '/', label: 'Accueil' },
++  { href: '/progression', label: 'Progression' },
++  { href: '/places', label: 'Salles' },
++  { href: '/profile', label: 'Profil' },
++];
++
++/** Préfixes rangés sous chaque onglet : les salles sous Salles, les réglages et l'administration sous Profil. */
++const SECTIONS: readonly { tab: TabHref; prefixes: readonly string[] }[] = [
++  { tab: '/progression', prefixes: ['/progression'] },
++  { tab: '/places', prefixes: ['/places', '/gyms'] },
++  { tab: '/profile', prefixes: ['/profile', '/settings', '/rejections', '/admin'] },
++];
++
++/**
++ * Onglet d'une adresse, par préfixe de chemin (sans tenir compte de la casse ni de la barre finale, comme
++ * les routes) : « Accueil » sur `/` exactement, `null` hors des onglets (page inconnue).
++ */
++export function activeTab(path: string): TabHref | null {
++  const p = path.toLowerCase().replace(/\/+$/, '') || '/';
++  if (p === '/') return '/';
++  for (const { tab, prefixes } of SECTIONS) {
++    if (prefixes.some((prefix) => p === prefix || p.startsWith(`${prefix}/`))) return tab;
++  }
++  return null;
++}
++
++function Icon(p: { children: ReactNode }) {
++  return (
++    <svg
++      aria-hidden="true"
++      width="23"
++      height="23"
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth="1.9"
++      strokeLinecap="round"
++      strokeLinejoin="round"
++    >
++      {p.children}
++    </svg>
++  );
++}
++
++/** Icônes des onglets (maquettes MixSombre / MixClair). */
++export const TAB_ICONS: Record<TabHref, ReactNode> = {
++  '/': (
++    <Icon>
++      <path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" />
++    </Icon>
++  ),
++  '/progression': (
++    <Icon>
++      <path d="M3 17l6-6 4 4 8-8" />
++      <path d="M14 7h7v7" />
++    </Icon>
++  ),
++  '/places': (
++    <Icon>
++      <path d="M6 7v10M3 9v6M18 7v10M21 9v6M6 12h12" />
++    </Icon>
++  ),
++  '/profile': (
++    <Icon>
++      <circle cx="12" cy="8" r="4" />
++      <path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" />
++    </Icon>
++  ),
++};
++
++/**
++ * Barre d'onglets flottante en pilule, sur téléphone (maquettes MixSombre / MixClair) : l'onglet actif porte
++ * `aria-current="page"` et la pastille glisse jusqu'à lui ; sans onglet actif, elle se cache.
++ */
++export function TabBar() {
++  const [path] = useLocation();
++  const active = activeTab(path);
++  const index = TAB_ITEMS.findIndex((t) => t.href === active);
++  return (
++    <nav aria-label="Navigation principale" data-testid="tab-bar" className={styles.tabBar}>
++      <span
++        aria-hidden="true"
++        data-tab-pill=""
++        data-index={index < 0 ? undefined : String(index)}
++        hidden={index < 0}
++        className={styles.tabPill}
++        style={{ '--tab-index': Math.max(index, 0) } as CSSProperties}
++      />
++      {TAB_ITEMS.map((t) => (
++        <Link
++          key={t.href}
++          href={t.href}
++          aria-current={t.href === active ? 'page' : undefined}
++          className={styles.tab}
++        >
++          {TAB_ICONS[t.href]}
++          {t.label}
++        </Link>
++      ))}
++    </nav>
++  );
++}
+diff --git a/apps/web/src/ui/screen-transition.ts b/apps/web/src/ui/screen-transition.ts
+new file mode 100644
+index 0000000..a828491
+--- /dev/null
++++ b/apps/web/src/ui/screen-transition.ts
+@@ -0,0 +1,85 @@
++import { type RefObject, useLayoutEffect, useState } from 'react';
++import { activeTab } from './TabBar';
++import { useReducedMotion } from './use-reduced-motion';
++
++/** Entrée d'un écran (spec refonte §7) : vers l'avant depuis la droite, retour depuis la gauche, onglet en fondu. */
++export type ScreenTransition = 'forward' | 'back' | 'tab' | 'none';
++
++const clean = (path: string) => path.toLowerCase().replace(/\/+$/, '') || '/';
++
++/**
++ * Transition de `from` vers `to`, d'après la pile des écrans visités dans l'onglet (`stack`, `from` en dernier) :
++ * autre onglet → fondu ; écran parent, ou écran juste avant dans la pile (retour du navigateur) → retour ;
++ * sinon → avant.
++ */
++export function screenTransition(from: string, to: string, stack: readonly string[]): ScreenTransition {
++  const a = clean(from);
++  const b = clean(to);
++  if (a === b) return 'none';
++  if (activeTab(a) !== activeTab(b)) return 'tab';
++  if (a.startsWith(`${b}/`)) return 'back';
++  const before = stack.at(-2);
++  if (before !== undefined && clean(before) === b) return 'back';
++  return 'forward';
++}
++
++/** Pile après la transition : un onglet repart de son écran, un retour dépile, un écran nouveau s'empile. */
++function nextStack(stack: readonly string[], to: string, transition: ScreenTransition): string[] {
++  if (transition === 'tab') return [to];
++  if (transition === 'back') {
++    const before = stack.at(-2);
++    return before !== undefined && clean(before) === clean(to)
++      ? stack.slice(0, -1)
++      : [...stack.slice(0, -1), to];
++  }
++  return transition === 'none' ? [...stack] : [...stack, to];
++}
++
++interface NavState {
++  path: string;
++  stack: string[];
++  transition: ScreenTransition;
++}
++
++/** Transition de l'écran affiché, recalculée à chaque changement d'adresse du routeur (wouter). */
++export function useScreenTransition(path: string): ScreenTransition {
++  const [nav, setNav] = useState<NavState>({ path, stack: [path], transition: 'none' });
++  if (nav.path === path) return nav.transition;
++  const transition = screenTransition(nav.path, path, nav.stack);
++  // État dérivé de l'adresse : posé pendant le rendu, React rend aussitôt de nouveau avec lui.
++  setNav({ path, stack: nextStack(nav.stack, path, transition), transition });
++  return transition;
++}
++
++const EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
++const SLIDE = '48px';
++
++/**
++ * Joue l'entrée de l'écran `ref` à chaque changement de `path` (Web Animations : aucun style en ligne, rien
++ * de figé à la fin). Sous mouvement réduit, un simple fondu ; sans `animate` (navigateur ancien), rien.
++ */
++export function useScreenEntrance(
++  ref: RefObject<HTMLElement | null>,
++  path: string,
++  transition: ScreenTransition,
++) {
++  const reduced = useReducedMotion();
++  // biome-ignore lint/correctness/useExhaustiveDependencies: l'entrée se rejoue à chaque nouvelle adresse.
++  useLayoutEffect(() => {
++    const el = ref.current;
++    if (!el || transition === 'none' || typeof el.animate !== 'function') return;
++    const fade = { opacity: [0, 1] };
++    const keyframes =
++      reduced || transition === 'tab'
++        ? fade
++        : {
++            ...fade,
++            transform: [`translateX(${transition === 'forward' ? SLIDE : `-${SLIDE}`})`, 'none'],
++          };
++    const duration = reduced ? 200 : transition === 'tab' ? 300 : 380;
++    const animation = el.animate(keyframes, { duration, easing: EASE });
++    // Annulée par l'écran suivant : sa promesse `finished` rejetée n'est pas une erreur.
++    animation.finished?.catch(() => {});
++    return () => animation.cancel();
++  }, [path]);
++}
+diff --git a/apps/web/src/ui/shell.module.css b/apps/web/src/ui/shell.module.css
+new file mode 100644
+index 0000000..eec1b0e
+--- /dev/null
++++ b/apps/web/src/ui/shell.module.css
+@@ -0,0 +1,339 @@
++/*
++ * Coquille des écrans connectés (spec refonte §5, maquettes MixSombre / MixClair) : en-tête de l'accueil,
++ * pastille de connexion, barre d'onglets flottante (téléphone), navigation latérale (≥ 900 px), voile du
++ * démarrage. Couleurs : jetons de theme/tokens.css seulement, donc juste dans les 5 thèmes.
++ */
++
++/* Téléphone : la page garde sous elle la place de la barre flottante (68 px, 16 px au-dessus et en dessous). */
++.shell {
++  min-height: 100vh;
++  display: flex;
++  flex-direction: column;
++  overflow-x: clip;
++  padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px));
++}
++
++.column {
++  flex: 1;
++  min-width: 0;
++  display: flex;
++  flex-direction: column;
++}
++
++.main {
++  flex: 1;
++  width: 100%;
++  max-width: var(--content-width);
++  margin: 0 auto;
++  padding: 18px;
++  padding-inline-start: max(18px, var(--page-inset-start));
++}
++
++/* En-tête de l'accueil : marque à gauche, pastille et initiale à droite. */
++.header {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: var(--space-3);
++  width: 100%;
++  max-width: var(--content-width);
++  margin: 0 auto;
++  padding: 18px 18px 0;
++  padding-inline-start: max(18px, var(--page-inset-start));
++}
++
++/* Logo et mot RUNE : en clair, cadre du logo à l'accent et rune à l'encre (GUIDE). */
++.brand {
++  display: flex;
++  align-items: center;
++  gap: 9px;
++  min-height: 44px;
++  color: var(--text);
++  font-size: 1.0625rem;
++  text-decoration: none;
++  --rune-mark-frame: var(--accent);
++}
++
++.headerEnd {
++  display: flex;
++  align-items: center;
++  gap: 6px;
++  min-width: 0;
++}
++
++/* Rond de 36 px de l'initiale, dans une cible de 44 × 44. */
++.avatar {
++  flex: none;
++  display: grid;
++  place-items: center;
++  width: 44px;
++  height: 44px;
++  border-radius: 50%;
++  text-decoration: none;
++}
++
++.avatar > span {
++  display: grid;
++  place-items: center;
++  width: 36px;
++  height: 36px;
++  border-radius: 50%;
++  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
++  color: var(--accent);
++  font-family: var(--font-display);
++  font-weight: 700;
++}
++
++/* Pastille de connexion : point de 7 px, texte secondaire en 13 px. */
++.pill {
++  display: inline-flex;
++  align-items: center;
++  gap: 6px;
++  min-width: 0;
++  font-size: 0.8125rem;
++  color: var(--text-muted);
++  white-space: nowrap;
++}
++
++.pillDot {
++  flex: none;
++  width: 7px;
++  height: 7px;
++  border-radius: 50%;
++  background: var(--text-muted);
++}
++
++.pillDot[data-tone="online"] {
++  background: var(--success);
++}
++
++.pillDot[data-tone="warning"] {
++  background: var(--warning-text);
++}
++
++/* Bandeau de mise à jour sous l'en-tête, aux marges de la page ; rien quand il n'y a pas de version. */
++.bannerSlot {
++  width: 100%;
++  max-width: var(--content-width);
++  margin: 0 auto;
++  padding: 18px 18px 0;
++  padding-inline-start: max(18px, var(--page-inset-start));
++}
++
++.bannerSlot:empty {
++  display: none;
++}
++
++/*
++ * Barre d'onglets en pilule (68 px, rayon 24, 4 colonnes) posée au-dessus du contenu, sous les feuilles du bas
++ * (z-index 100). Fond de la carte presque opaque et flou derrière ; ombre portée des maquettes en clair.
++ */
++.tabBar {
++  position: fixed;
++  left: 14px;
++  right: 14px;
++  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
++  z-index: 50;
++  max-width: 560px;
++  height: 68px;
++  margin: 0 auto;
++  padding: 7px;
++  display: grid;
++  grid-template-columns: repeat(4, minmax(0, 1fr));
++  gap: 4px;
++  border-radius: 24px;
++  border: 1px solid var(--border);
++  background: color-mix(in srgb, var(--surface) 92%, transparent);
++  box-shadow:
++    0 2px 6px rgb(16 21 31 / 0.08),
++    0 12px 30px rgb(16 21 31 / 0.1);
++  -webkit-backdrop-filter: blur(12px);
++  backdrop-filter: blur(12px);
++}
++
++/* Pastille de l'onglet actif : une colonne de large, elle glisse jusqu'à l'onglet n° --tab-index. */
++.tabPill {
++  position: absolute;
++  left: 7px;
++  top: 7px;
++  bottom: 7px;
++  width: calc((100% - 26px) / 4);
++  border-radius: 17px;
++  background: color-mix(in srgb, var(--accent) 12%, transparent);
++  transform: translateX(calc(var(--tab-index, 0) * (100% + 4px)));
++  transition: transform var(--dur-screen) var(--ease);
++}
++
++.tabPill[hidden] {
++  display: none;
++}
++
++.tab {
++  position: relative;
++  z-index: 1;
++  min-width: 0;
++  min-height: 44px;
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  justify-content: center;
++  gap: 2px;
++  border-radius: 17px;
++  color: var(--text-muted);
++  font-size: 0.75rem;
++  font-weight: 500;
++  line-height: 1.2;
++  text-decoration: none;
++  transition: color var(--dur-fast) var(--ease);
++}
++
++.tab[aria-current="page"] {
++  color: var(--accent);
++  font-weight: 600;
++}
++
++.tab:focus-visible {
++  outline-offset: -2px;
++}
++
++/* Navigation latérale (≥ 900 px) : marque en haut, entrées de 48 px, l'active teintée d'accent. */
++.sideNav {
++  position: sticky;
++  top: 0;
++  height: 100vh;
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-6);
++  padding: var(--space-6) var(--space-4);
++  border-inline-end: 1px solid var(--border);
++  background: var(--surface);
++}
++
++.sideNav .brand {
++  padding-inline: 10px;
++}
++
++.sideList {
++  margin: 0;
++  padding: 0;
++  list-style: none;
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-1);
++}
++
++.sideItem {
++  display: flex;
++  align-items: center;
++  gap: var(--space-3);
++  min-height: 48px;
++  padding: 0 14px;
++  border-radius: var(--radius-control);
++  color: var(--text-muted);
++  font-weight: 500;
++  text-decoration: none;
++  transition:
++    background-color var(--dur-fast) var(--ease),
++    color var(--dur-fast) var(--ease);
++}
++
++.sideItem[aria-current="page"] {
++  background: color-mix(in srgb, var(--accent) 12%, transparent);
++  color: var(--accent);
++  font-weight: 600;
++}
++
++@media (hover: hover) {
++  .sideItem:hover:not([aria-current="page"]) {
++    background: color-mix(in srgb, var(--accent) 6%, transparent);
++    color: var(--text);
++  }
++}
++
++/* PC : navigation latérale à gauche, contenu centré limité à 960 px, plus de place gardée en bas. */
++@media (min-width: 900px) {
++  .shell[data-wide] {
++    display: grid;
++    grid-template-columns: 240px minmax(0, 1fr);
++    padding-bottom: 0;
++  }
++
++  .shell[data-wide] .main,
++  .shell[data-wide] .header,
++  .shell[data-wide] .bannerSlot {
++    max-width: 960px;
++  }
++}
++
++/* Couleurs forcées (contraste élevé) : les teintes disparaissent, l'onglet actif garde un cadre. */
++@media (forced-colors: active) {
++  .tab[aria-current="page"],
++  .sideItem[aria-current="page"] {
++    outline: 2px solid LinkText;
++    outline-offset: -2px;
++  }
++}
++
++/*
++ * Démarrage : voile du fond du thème par-dessus tout, qui ne prend jamais le toucher. Le cadre du logo se
++ * dessine (900 ms), la rune et les repères apparaissent, puis le voile s'efface (fin à 1,45 s).
++ * Longueur du cadre brisé dans le viewBox 512 : 1 288 unités, d'où le tiret de 1 300.
++ */
++.splash {
++  position: fixed;
++  inset: 0;
++  z-index: 90;
++  display: grid;
++  place-items: center;
++  background: var(--bg);
++  pointer-events: none;
++  animation: splash-out 300ms var(--ease) 1150ms forwards;
++}
++
++.splashMark {
++  display: flex;
++  color: var(--text);
++  --rune-mark-frame: var(--accent);
++}
++
++.splashMark g > path:first-child {
++  stroke-dasharray: 1300;
++  animation: splash-draw 900ms var(--ease) 100ms backwards;
++}
++
++.splashMark g > path:nth-child(2) {
++  animation: splash-fade 300ms var(--ease) 700ms backwards;
++}
++
++.splashMark svg > path {
++  animation: splash-fade 400ms var(--ease) 650ms backwards;
++}
++
++@keyframes splash-draw {
++  from {
++    stroke-dashoffset: 1300;
++  }
++  to {
++    stroke-dashoffset: 0;
++  }
++}
++
++@keyframes splash-fade {
++  from {
++    opacity: 0;
++  }
++}
++
++@keyframes splash-out {
++  to {
++    opacity: 0;
++    visibility: hidden;
++  }
++}
++
++/* Mouvement réduit : la pastille change d'onglet sans glisser (le démarrage, lui, ne s'affiche pas). */
++@media (prefers-reduced-motion: reduce) {
++  .tabPill {
++    transition: none;
++  }
++}
+diff --git a/apps/web/src/ui/ui.module.css b/apps/web/src/ui/ui.module.css
+index a094a24..4a60169 100644
+--- a/apps/web/src/ui/ui.module.css
++++ b/apps/web/src/ui/ui.module.css
+@@ -48,36 +48,20 @@
+   border-bottom: 1px solid var(--border);
+ }
+ 
+ .brand {
+   font-weight: 700;
+   text-decoration: none;
+   color: var(--text);
+   margin-right: auto;
+ }
+ 
+-.nav {
+-  display: flex;
+-  flex-wrap: wrap;
+-  gap: var(--space-3);
+-}
+-
+-.status {
+-  flex-basis: 100%;
+-  display: flex;
+-  flex-wrap: wrap;
+-  align-items: center;
+-  gap: var(--space-1) var(--space-3);
+-  font-size: 0.875rem;
+-  color: var(--text-muted);
+-}
+-
+ .main {
+   flex: 1;
+   width: 100%;
+   max-width: var(--content-width);
+   margin: 0 auto;
+   padding: var(--space-4);
+   padding-inline-start: var(--page-inset-start);
+ }
+ 
+ .footer {
+@@ -96,24 +80,20 @@
+   flex-direction: column;
+   gap: var(--space-4);
+ }
+ 
+ .page h1 {
+   margin: 0;
+   font-size: 1.5rem;
+   line-height: 1.25;
+ }
+ 
+-.back {
+-  font-size: 0.875rem;
+-}
+-
+ /*
+  * Boutons (GUIDE, Primary/Secondary/Danger button) : 52 px, rayon 14, Barlow 600 17. Retour du geste en
+  * 150 ms sur la courbe unique ; sous mouvement réduit, aucun déplacement (voir en bas de la feuille).
+  */
+ .button {
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+   gap: var(--space-2);
+   min-height: 52px;
+diff --git a/apps/web/test/app/guard.test.tsx b/apps/web/test/app/guard.test.tsx
+index d609c58..c366da0 100644
+--- a/apps/web/test/app/guard.test.tsx
++++ b/apps/web/test/app/guard.test.tsx
+@@ -40,20 +40,31 @@ const ROWS: Row[] = [
+   ['/admin/members', true, makeMe(), 'online', { kind: 'not_found' }],
+   ['/admin/members', true, admin(), 'online', RENDER],
+   // wouter compare les chemins sans tenir compte de la casse : la garde aussi.
+   ['/Admin/members', true, makeMe(), 'online', { kind: 'not_found' }],
+   ['/ADMIN/health', true, makeMe(), 'online', { kind: 'not_found' }],
+   ['/ADMIN', true, makeMe(), 'online', { kind: 'not_found' }],
+   ['/privacy/', false, null, 'online', RENDER],
+   ['/help/', true, null, 'offline', RENDER],
+   ['/login/', true, makeMe(), 'online', to('/')],
+   ['/onboarding/', true, makeMe(), 'online', to('/')],
++  // Lieux passés sous l'onglet Salles : l'ancienne adresse mène au même chemin sous /places, sans boucle.
++  ['/profile/places', true, makeMe(), 'online', to('/places')],
++  ['/profile/places/', true, makeMe(), 'online', to('/places')],
++  ['/profile/places/p-2', true, makeMe(), 'online', to('/places/p-2')],
++  ['/Profile/Places/P-2', true, makeMe(), 'online', to('/places/P-2')],
++  ['/places', true, makeMe(), 'online', RENDER],
++  ['/places/p-2', true, makeMe(), 'online', RENDER],
++  ['/profile/placesx', true, makeMe(), 'online', RENDER],
++  ['/profile/places', true, null, 'online', to('/login')],
++  ['/profile/places', true, makeMe({ mustChangePassword: true }), 'online', to('/profile')],
++  ['/profile/places', true, notOnboarded(), 'online', to('/onboarding')],
+ ];
+ 
+ describe('resolveGuard', () => {
+   it.each(ROWS)('%s, chargé %s, connexion %s', (path, loaded, me, connection, expected) => {
+     expect(resolveGuard({ path, loaded, me, connection })).toEqual(expected);
+   });
+ });
+ 
+ describe('App', () => {
+   it('/privacy sans session', async () => {
+@@ -70,27 +81,31 @@ describe('App', () => {
+     const { location } = await renderApp({ path: '/', me: notOnboarded() });
+     await until(() => location() === '/onboarding');
+   });
+ 
+   it('session refusée par le serveur → /login', async () => {
+     const sync = createFakeSyncEngine({ connection: 'unauthenticated' });
+     const { location } = await renderApp({ path: '/', sync });
+     await until(() => location() === '/login');
+   });
+ 
+-  it("lien 'Administration' pour un admin seulement", async () => {
++  it("plus d'onglet 'Administration' (l'admin passe par Profil) ; /admin/members reste servi à un admin", async () => {
+     const first = await renderApp({ path: '/', me: admin() });
+-    const link = await screen.findByRole('link', { name: 'Administration' });
+-    expect(link.getAttribute('href')).toBe('/admin/members');
+-    first.unmount();
+-    await renderApp({ path: '/', me: makeMe() });
+     await screen.findByText('Bonjour lea');
+     expect(screen.queryByRole('link', { name: 'Administration' })).toBeNull();
++    first.unmount();
++    await renderApp({ path: '/admin/members', me: admin() });
++    expect(await screen.findByRole('heading', { level: 1, name: 'Membres' })).toBeTruthy();
++  });
++
++  it('/profile/places/p-2 → /places/p-2', async () => {
++    const { location } = await renderApp({ path: '/profile/places/p-2' });
++    await until(() => location() === '/places/p-2');
+   });
+ 
+   it('rappel annuel du mot de passe pour un admin', async () => {
+     await renderApp({ path: '/', me: admin({ passwordReminderDue: true }) });
+     expect((await screen.findByText(/Pense à changer ton mot de passe/)).textContent).toBe(
+       'Pense à changer ton mot de passe (rappel annuel).',
+     );
+   });
+ });
+diff --git a/apps/web/test/app/shell.test.tsx b/apps/web/test/app/shell.test.tsx
+new file mode 100644
+index 0000000..2fd3dee
+--- /dev/null
++++ b/apps/web/test/app/shell.test.tsx
+@@ -0,0 +1,387 @@
++import { act, fireEvent, render, screen, within } from '@testing-library/react';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { type SwController, swControllerStore, type UpdateState } from '../../src/sw/register';
++import type { ConnectionState } from '../../src/sync/engine';
++import { BootSplash } from '../../src/ui/BootSplash';
++import { ConnectionPill } from '../../src/ui/ConnectionPill';
++import { SideNav } from '../../src/ui/SideNav';
++import { screenTransition } from '../../src/ui/screen-transition';
++import { activeTab, TAB_ITEMS, TabBar } from '../../src/ui/TabBar';
++import { createFakeSyncEngine } from '../support/fake-api';
++import { newcomer } from '../support/onboarding';
++import { makeMe, renderApp, renderWithServices } from '../support/render';
++import { until } from '../support/wait';
++
++const DESKTOP = '(min-width: 900px)';
++const REDUCED = '(prefers-reduced-motion: reduce)';
++
++/** Réglages du téléphone simulés : les media queries listées répondent vrai, les autres faux. */
++function media(...matching: string[]) {
++  vi.stubGlobal('matchMedia', (query: string) => ({
++    matches: matching.includes(query),
++    media: query,
++    addEventListener: () => {},
++    removeEventListener: () => {},
++  }));
++}
++
++afterEach(() => {
++  vi.unstubAllGlobals();
++  swControllerStore.set(null);
++  sessionStorage.clear();
++});
++
++const mainNav = () => screen.getByRole('navigation', { name: 'Navigation principale' });
++const tab = (name: string) => within(mainNav()).getByRole('link', { name });
++/** En-tête de l'accueil : celui qui porte le rond de l'initiale (les pages ont aussi leur `<header>`). */
++const homeHeader = async () => {
++  const header = (await screen.findByRole('link', { name: 'Mon profil' })).closest('header');
++  if (!header) throw new Error('en-tête de l’accueil absent');
++  return header;
++};
++const current = () =>
++  within(mainNav())
++    .queryAllByRole('link')
++    .filter((a) => a.getAttribute('aria-current') === 'page')
++    .map((a) => a.textContent);
++
++describe('TAB_ITEMS', () => {
++  it('Accueil, Progression, Salles, Profil, dans cet ordre', () => {
++    expect(TAB_ITEMS).toEqual([
++      { href: '/', label: 'Accueil' },
++      { href: '/progression', label: 'Progression' },
++      { href: '/places', label: 'Salles' },
++      { href: '/profile', label: 'Profil' },
++    ]);
++  });
++});
++
++describe('activeTab : onglet actif selon le préfixe de l’adresse', () => {
++  it.each([
++    ['/', '/'],
++    ['/progression', '/progression'],
++    ['/places', '/places'],
++    ['/places/p-1', '/places'],
++    ['/places/', '/places'],
++    ['/gyms/g-1', '/places'],
++    ['/profile', '/profile'],
++    ['/profile/health', '/profile'],
++    ['/profile/privacy', '/profile'],
++    ['/settings', '/profile'],
++    ['/rejections', '/profile'],
++    ['/admin/members', '/profile'],
++    ['/Places/P-1', '/places'],
++    ['/placesx', null],
++    ['/profiles', null],
++    ['/inconnu', null],
++  ] as const)('%s → %s', (path, expected) => {
++    expect(activeTab(path)).toBe(expected);
++  });
++});
++
++describe('TabBar', () => {
++  it('nav « Navigation principale », les 4 onglets en liens', async () => {
++    await renderWithServices(<TabBar />, { path: '/' });
++    const links = within(mainNav()).getAllByRole('link');
++    expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
++      ['Accueil', '/'],
++      ['Progression', '/progression'],
++      ['Salles', '/places'],
++      ['Profil', '/profile'],
++    ]);
++  });
++
++  it('sur /places/… l’onglet « Salles » porte aria-current="page", lui seul', async () => {
++    await renderWithServices(<TabBar />, { path: '/places/p-1' });
++    expect(current()).toEqual(['Salles']);
++  });
++
++  it('sur /profile/health c’est « Profil »', async () => {
++    await renderWithServices(<TabBar />, { path: '/profile/health' });
++    expect(current()).toEqual(['Profil']);
++  });
++
++  it('« Accueil » seulement sur / exactement', async () => {
++    const first = await renderWithServices(<TabBar />, { path: '/' });
++    expect(current()).toEqual(['Accueil']);
++    first.unmount();
++    await renderWithServices(<TabBar />, { path: '/inconnu' });
++    expect(current()).toEqual([]);
++  });
++
++  it('suit la navigation : la pastille passe sur l’onglet touché', async () => {
++    const view = await renderWithServices(<TabBar />, { path: '/' });
++    const pill = view.container.querySelector('[data-tab-pill]');
++    expect(pill?.getAttribute('data-index')).toBe('0');
++    fireEvent.click(tab('Salles'));
++    expect(view.location()).toBe('/places');
++    expect(current()).toEqual(['Salles']);
++    expect(pill?.getAttribute('data-index')).toBe('2');
++  });
++
++  it('sans onglet actif, la pastille est cachée', async () => {
++    const view = await renderWithServices(<TabBar />, { path: '/inconnu' });
++    expect(view.container.querySelector('[data-tab-pill]')?.hasAttribute('hidden')).toBe(true);
++  });
++
++  it('clavier : chaque onglet est un vrai lien, dans l’ordre, jamais retiré de la tabulation', async () => {
++    await renderWithServices(<TabBar />, { path: '/places' });
++    const links = within(mainNav()).getAllByRole('link');
++    expect(links.map((a) => a.tagName)).toEqual(['A', 'A', 'A', 'A']);
++    for (const a of links) {
++      expect(a.hasAttribute('href')).toBe(true);
++      expect(a.getAttribute('tabindex')).toBeNull();
++    }
++    const profile = tab('Profil');
++    profile.focus();
++    expect(document.activeElement).toBe(profile);
++  });
++
++  it('icônes décoratives : le nom de chaque onglet est son libellé', async () => {
++    const view = await renderWithServices(<TabBar />, { path: '/' });
++    for (const svg of view.container.querySelectorAll('svg'))
++      expect(svg.getAttribute('aria-hidden')).toBe('true');
++  });
++});
++
++describe('SideNav (≥ 900 px)', () => {
++  it('mêmes entrées, même onglet actif', async () => {
++    await renderWithServices(<SideNav />, { path: '/gyms/g-1' });
++    expect(
++      within(mainNav())
++        .getAllByRole('link')
++        .map((a) => a.getAttribute('href')),
++    ).toEqual(['/', '/progression', '/places', '/profile']);
++    expect(current()).toEqual(['Salles']);
++  });
++});
++
++describe('ConnectionPill', () => {
++  it.each([
++    ['online', 'En ligne'],
++    ['offline', 'Hors ligne'],
++    ['unknown', 'Connexion…'],
++    ['unauthenticated', 'Session expirée'],
++    ['protocol_unsupported', 'Mise à jour nécessaire'],
++    ['account_deleted', 'Compte supprimé'],
++  ] as const)('%s → « %s »', async (state: ConnectionState, label) => {
++    await renderWithServices(<ConnectionPill />, { sync: createFakeSyncEngine({ connection: state }) });
++    const pill = screen.getByTestId('connection-status');
++    expect(pill.getAttribute('data-state')).toBe(state);
++    expect(pill.textContent).toBe(label);
++  });
++
++  it('hors ligne : « Hors ligne », jamais « En ligne », et suit le moteur sans rechargement', async () => {
++    const { sync } = await renderWithServices(<ConnectionPill />, {
++      sync: createFakeSyncEngine({ connection: 'offline' }),
++    });
++    expect(screen.getByTestId('connection-status').textContent).toBe('Hors ligne');
++    expect(screen.queryByText('En ligne')).toBeNull();
++    act(() => sync.set({ connection: 'online' }));
++    expect(screen.getByTestId('connection-status').textContent).toBe('En ligne');
++    act(() => sync.set({ connection: 'offline' }));
++    expect(screen.getByTestId('connection-status').textContent).toBe('Hors ligne');
++  });
++
++  it('annoncée poliment (role="status"), le point est décoratif', async () => {
++    await renderWithServices(<ConnectionPill />);
++    const pill = screen.getByRole('status');
++    expect(pill.textContent).toBe('En ligne');
++    expect(pill.querySelector('[aria-hidden="true"]')).not.toBeNull();
++  });
++});
++
++describe('coquille', () => {
++  it('en-tête de l’accueil : logo et RUNE vers l’accueil, pastille, rond de l’initiale vers /profile', async () => {
++    media();
++    await renderApp({ path: '/' });
++    const header = await homeHeader();
++    expect(within(header).getByRole('link', { name: 'Rune' }).getAttribute('href')).toBe('/');
++    expect(within(header).getByTestId('connection-status').textContent).toBe('En ligne');
++    const avatar = within(header).getByRole('link', { name: 'Mon profil' });
++    expect(avatar.getAttribute('href')).toBe('/profile');
++    expect(avatar.textContent).toBe('L');
++  });
++
++  it("l'en-tête n'affiche plus « 0 en attente » ni les compteurs", async () => {
++    media();
++    await renderApp({ path: '/' });
++    const header = await homeHeader();
++    await screen.findByText('Bonjour lea');
++    expect(header.textContent).not.toContain('en attente');
++    expect(screen.queryByTestId('pending-counter')).toBeNull();
++    expect(screen.queryByTestId('rejected-counter')).toBeNull();
++  });
++
++  it('connexion « offline » : la pastille dit « Hors ligne », jamais « En ligne »', async () => {
++    media();
++    await renderApp({ path: '/', sync: createFakeSyncEngine({ connection: 'offline' }) });
++    const header = await homeHeader();
++    expect(within(header).getByTestId('connection-status').textContent).toBe('Hors ligne');
++    expect(screen.queryByText('En ligne')).toBeNull();
++  });
++
++  it('pages internes : pas d’en-tête de l’accueil, un Retour de 44 × 44 et le titre', async () => {
++    media();
++    await renderApp({ path: '/profile/health' });
++    await screen.findByRole('heading', { level: 1, name: 'Santé' });
++    expect(screen.queryByRole('link', { name: 'Mon profil' })).toBeNull();
++    expect(screen.getByRole('link', { name: 'Retour' }).getAttribute('href')).toBe('/profile');
++  });
++
++  it("l'onglet « Administration » n'existe plus dans la barre, même pour un admin", async () => {
++    media();
++    await renderApp({ path: '/', me: makeMe({ role: 'admin' }) });
++    await screen.findByText('Bonjour lea');
++    expect(within(mainNav()).queryByRole('link', { name: 'Administration' })).toBeNull();
++    expect(screen.queryByRole('link', { name: 'Administration' })).toBeNull();
++  });
++
++  it('les pages /admin restent servies à un admin', async () => {
++    media();
++    await renderApp({ path: '/admin/members', me: makeMe({ role: 'admin' }) });
++    expect(await screen.findByRole('heading', { level: 1, name: 'Membres' })).toBeTruthy();
++    expect(current()).toEqual(['Profil']);
++  });
++
++  it('téléphone : barre d’onglets ; ≥ 900 px : navigation latérale, jamais les deux', async () => {
++    media();
++    const phone = await renderApp({ path: '/' });
++    await screen.findByText('Bonjour lea');
++    expect(screen.getAllByRole('navigation', { name: 'Navigation principale' })).toHaveLength(1);
++    expect(screen.getByTestId('tab-bar')).toBeTruthy();
++    expect(screen.queryByTestId('side-nav')).toBeNull();
++    phone.unmount();
++    media(DESKTOP);
++    await renderApp({ path: '/' });
++    await screen.findByText('Bonjour lea');
++    expect(screen.getAllByRole('navigation', { name: 'Navigation principale' })).toHaveLength(1);
++    expect(screen.getByTestId('side-nav')).toBeTruthy();
++    expect(screen.queryByTestId('tab-bar')).toBeNull();
++  });
++
++  it('onboarding : ni barre d’onglets ni pastille', async () => {
++    media();
++    await renderApp({ path: '/onboarding', me: newcomer() });
++    await screen.findByTestId('onboarding-step');
++    expect(screen.queryByRole('navigation', { name: 'Navigation principale' })).toBeNull();
++    expect(screen.queryByTestId('connection-status')).toBeNull();
++  });
++
++  it('/progression : page provisoire, titre « Progression », onglet actif', async () => {
++    media();
++    await renderApp({ path: '/progression' });
++    expect(await screen.findByRole('heading', { level: 1, name: 'Progression' })).toBeTruthy();
++    expect(current()).toEqual(['Progression']);
++  });
++
++  it('/places : la liste des lieux, onglet « Salles »', async () => {
++    media();
++    await renderApp({ path: '/places' });
++    expect(await screen.findByRole('heading', { level: 1, name: 'Lieux' })).toBeTruthy();
++    expect(current()).toEqual(['Salles']);
++  });
++
++  it('/profile/places redirige vers /places', async () => {
++    media();
++    const view = await renderApp({ path: '/profile/places' });
++    await until(() => view.location() === '/places');
++    expect(await screen.findByRole('heading', { level: 1, name: 'Lieux' })).toBeTruthy();
++  });
++
++  it('/profile/places/p-2 redirige vers /places/p-2, sans boucle', async () => {
++    media();
++    const view = await renderApp({ path: '/profile/places/p-2' });
++    await until(() => view.location() === '/places/p-2');
++    await screen.findByRole('heading', { level: 1 });
++    expect(view.visits()).toEqual(['/profile/places/p-2', '/places/p-2']);
++  });
++
++  it('bandeau de mise à jour sous l’en-tête, avant le contenu', async () => {
++    media();
++    swControllerStore.set(fakeController({ available: true, forced: false }));
++    await renderApp({ path: '/' });
++    const banner = await screen.findByTestId('update-banner');
++    const header = await homeHeader();
++    const main = screen.getByRole('main');
++    expect(header.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
++    expect(banner.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
++  });
++
++  it("changement d'écran : la transition est posée selon l'historique (onglet, avant, retour)", async () => {
++    media();
++    const view = await renderApp({ path: '/' });
++    await screen.findByText('Bonjour lea');
++    const screenEl = () => view.container.querySelector('[data-screen-transition]');
++    fireEvent.click(tab('Profil'));
++    await screen.findByRole('heading', { level: 1, name: 'Profil' });
++    expect(screenEl()?.getAttribute('data-screen-transition')).toBe('tab');
++    fireEvent.click(screen.getByRole('link', { name: 'Santé' }));
++    await screen.findByRole('heading', { level: 1, name: 'Santé' });
++    expect(screenEl()?.getAttribute('data-screen-transition')).toBe('forward');
++    fireEvent.click(screen.getByRole('link', { name: 'Retour' }));
++    await screen.findByRole('heading', { level: 1, name: 'Profil' });
++    expect(screenEl()?.getAttribute('data-screen-transition')).toBe('back');
++  });
++});
++
++describe('screenTransition', () => {
++  it.each([
++    ['/', '/', [], 'none'],
++    ['/', '/profile', ['/'], 'tab'],
++    ['/places/p-1', '/profile', ['/places', '/places/p-1'], 'tab'],
++    ['/profile', '/profile/health', ['/profile'], 'forward'],
++    ['/places', '/places/p-1', ['/places'], 'forward'],
++    ['/profile/health', '/profile', ['/profile', '/profile/health'], 'back'],
++    // Retour du navigateur vers une page sœur visitée juste avant.
++    ['/profile/privacy', '/profile/health', ['/profile/health', '/profile/privacy'], 'back'],
++    ['/places/p-1', '/places', [], 'back'],
++    ['/places/p-1', '/gyms/g-1', ['/places/p-1'], 'forward'],
++  ] as const)('%s → %s', (from, to, history, expected) => {
++    expect(screenTransition(from, to, history)).toBe(expected);
++  });
++});
++
++describe('BootSplash', () => {
++  it('sous mouvement réduit, ne rend rien', () => {
++    media(REDUCED);
++    const { container } = render(<BootSplash />);
++    expect(container.innerHTML).toBe('');
++  });
++
++  it('sinon : le logo se dessine par-dessus, décoratif, sans jamais prendre le toucher, puis se retire', () => {
++    media();
++    const { container } = render(<BootSplash />);
++    const splash = container.firstElementChild as HTMLElement | null;
++    expect(splash).not.toBeNull();
++    expect(splash?.getAttribute('aria-hidden')).toBe('true');
++    expect(splash?.querySelector('svg')).not.toBeNull();
++    expect(splash?.textContent).toBe('');
++    if (!splash) return;
++    fireEvent.animationEnd(splash);
++    expect(container.innerHTML).toBe('');
++  });
++
++  it('une seule fois par session : un second montage ne rend rien', () => {
++    media();
++    const first = render(<BootSplash />);
++    const splash = first.container.firstElementChild;
++    if (splash) fireEvent.animationEnd(splash);
++    first.unmount();
++    const { container } = render(<BootSplash />);
++    expect(container.innerHTML).toBe('');
++  });
++});
++
++/** Contrôleur factice d'une version en attente (comme dans UpdateBanner.test.tsx). */
++function fakeController(initial: Omit<UpdateState, 'dismissed'>): SwController {
++  const state: UpdateState = { ...initial, dismissed: false };
++  return {
++    getState: () => state,
++    subscribe: () => () => {},
++    checkForUpdate: async () => {},
++    applyUpdate: async () => {},
++    markForced() {},
++    dismiss() {},
++  };
++}
+diff --git a/apps/web/test/places/places-page.test.tsx b/apps/web/test/places/places-page.test.tsx
+index 22c34bf..f085935 100644
+--- a/apps/web/test/places/places-page.test.tsx
++++ b/apps/web/test/places/places-page.test.tsx
+@@ -91,21 +91,21 @@ const sent = (api: FakeApi, method: string, path: string) =>
+ describe('PlacesPage (02 §11 Lieux, R-LIEU-1 à R-LIEU-4)', () => {
+   it("le principal d'abord avec le badge « Principal », puis les autres", async () => {
+     // « Garage » principale vient après « Basic Fit » par l'id, le nom et l'ordre d'écriture.
+     await renderPlaces({ garagePrimary: true });
+     const names = screen.getAllByRole('listitem').map((li) => li.querySelector('a')?.textContent);
+     expect(names).toEqual(['Garage', 'Basic Fit']);
+     expect(place('Garage').getByText('Principal')).toBeTruthy();
+     expect(place('Basic Fit').queryByText('Principal')).toBeNull();
+     expect(place('Basic Fit').getByText('Salle · Lyon')).toBeTruthy();
+     expect(place('Garage').getByText('Maison')).toBeTruthy();
+-    expect(screen.getByRole('link', { name: 'Garage' }).getAttribute('href')).toBe('/profile/places/p-2');
++    expect(screen.getByRole('link', { name: 'Garage' }).getAttribute('href')).toBe('/places/p-2');
+   });
+ 
+   it('« Définir comme principal » → PATCH { isPrimary: true } ; absent sur le principal', async () => {
+     const api = createFakeApi().on('PATCH', '/api/places/:id', { status: 204 });
+     await renderPlaces({ api });
+     expect(place('Basic Fit').queryByRole('button', { name: 'Définir comme principal' })).toBeNull();
+     fireEvent.click(place('Garage').getByRole('button', { name: 'Définir comme principal' }));
+     await until(() => sent(api, 'PATCH', '/api/places/p-2').length === 1);
+     expect(sent(api, 'PATCH', '/api/places/p-2')).toEqual([{ isPrimary: true }]);
+   });
+@@ -448,19 +448,19 @@ describe('PlaceDetail', () => {
+     expect(screen.queryByRole('checkbox')).toBeNull();
+   });
+ 
+   it('lieu inconnu : « Lieu introuvable. »', async () => {
+     await renderDetail('p-9');
+     expect(await screen.findByText('Lieu introuvable.')).toBeTruthy();
+   });
+ });
+ 
+ describe('routes des lieux', () => {
+-  it('/profile/places et /profile/places/:id dans la coquille', async () => {
++  it('/places et /places/:id dans la coquille', async () => {
+     const db = createTestLocalDb();
+     await seedPlaces(db);
+-    await renderApp({ path: '/profile/places', db });
++    await renderApp({ path: '/places', db });
+     expect(await screen.findByRole('heading', { level: 1, name: 'Lieux' })).toBeTruthy();
+     fireEvent.click(screen.getByRole('link', { name: 'Garage' }));
+     expect(await screen.findByRole('heading', { level: 1, name: 'Garage' })).toBeTruthy();
+   });
+ });
+diff --git a/apps/web/test/profile/profile-page.test.tsx b/apps/web/test/profile/profile-page.test.tsx
+index 2d11f4d..8d4604b 100644
+--- a/apps/web/test/profile/profile-page.test.tsx
++++ b/apps/web/test/profile/profile-page.test.tsx
+@@ -425,21 +425,21 @@ describe('ProfilePage › Entraînement (R-ONB-3)', () => {
+     const toggle = (await screen.findByRole('switch', { name: CAUTIOUS })) as HTMLInputElement;
+     expect(toggle.checked).toBe(true);
+     expect(toggle.disabled).toBe(true);
+   });
+ });
+ 
+ describe('ProfilePage › liens et route', () => {
+   it('liens Lieux, Santé, Confidentialité et Réglages', async () => {
+     await renderProfile();
+     const href = (name: string) => screen.getByRole('link', { name }).getAttribute('href');
+-    expect(href('Lieux')).toBe('/profile/places');
++    expect(href('Lieux')).toBe('/places');
+     expect(href('Santé')).toBe('/profile/health');
+     expect(href('Confidentialité')).toBe('/profile/privacy');
+     expect(href('Réglages')).toBe('/settings');
+   });
+ 
+   it('/profile rend le Profil dans la coquille', async () => {
+     await renderApp({ path: '/profile' });
+     expect(await screen.findByRole('heading', { level: 1, name: 'Profil' })).toBeTruthy();
+     expect(screen.getByRole('navigation', { name: 'Navigation principale' })).toBeTruthy();
+   });
+diff --git a/apps/web/test/status/counters.test.tsx b/apps/web/test/status/counters.test.tsx
+index 5523504..a274f73 100644
+--- a/apps/web/test/status/counters.test.tsx
++++ b/apps/web/test/status/counters.test.tsx
+@@ -1,15 +1,16 @@
+ import { act, fireEvent, screen, within } from '@testing-library/react';
+ import { afterEach, describe, expect, it } from 'vitest';
+-import { CONNECTION_LABELS, ConnectionStatus } from '../../src/features/status/ConnectionStatus';
++import { CONNECTION_LABELS } from '../../src/features/status/ConnectionStatus';
++import { PendingCounter, RejectedCounter } from '../../src/features/status/PendingCounter';
+ import type { SyncEngine } from '../../src/sync/engine';
+-import { createFakeApi, createFakeSyncEngine } from '../support/fake-api';
++import { createFakeApi } from '../support/fake-api';
+ import { createTestLocalDb } from '../support/local-db';
+ import { newcomer } from '../support/onboarding';
+ import { renderApp, renderWithServices } from '../support/render';
+ import { seedMirror } from '../support/seed';
+ import { until } from '../support/wait';
+ 
+ const rejection = (id: string, opId: string) => ({
+   id,
+   ownerId: 'u-1',
+   opId,
+@@ -22,93 +23,77 @@ const rejection = (id: string, opId: string) => ({
+ });
+ 
+ const count = (testId: string) => screen.queryByTestId(testId)?.getAttribute('data-count') ?? null;
+ 
+ let engine: SyncEngine | null = null;
+ afterEach(() => {
+   engine?.stop();
+   engine = null;
+ });
+ 
+-describe('connection-status (R-SYN-30 : état du moteur, jamais navigator.onLine)', () => {
+-  it.each([
+-    ['online', 'En ligne'],
+-    ['offline', 'Hors ligne'],
+-    ['unknown', 'Connexion…'],
+-    ['unauthenticated', 'Session expirée'],
+-    ['protocol_unsupported', 'Mise à jour nécessaire'],
+-    ['account_deleted', 'Compte supprimé'],
+-  ] as const)('connection-status %s', async (state, label) => {
+-    await renderWithServices(<ConnectionStatus />, { sync: createFakeSyncEngine({ connection: state }) });
+-    const status = screen.getByTestId('connection-status');
+-    expect(status.getAttribute('data-state')).toBe(state);
+-    expect(status.textContent).toBe(label);
+-    expect(CONNECTION_LABELS[state]).toBe(label);
+-  });
+-
+-  it("suit l'état du moteur sans rechargement", async () => {
+-    const { sync } = await renderWithServices(<ConnectionStatus />);
+-    expect(screen.getByTestId('connection-status').textContent).toBe('En ligne');
+-    act(() => sync.set({ connection: 'offline' }));
+-    expect(screen.getByTestId('connection-status').getAttribute('data-state')).toBe('offline');
+-    expect(screen.getByTestId('connection-status').textContent).toBe('Hors ligne');
++describe('CONNECTION_LABELS (R-SYN-30 : état du moteur, jamais navigator.onLine)', () => {
++  it('un libellé par état du moteur', () => {
++    expect(CONNECTION_LABELS).toEqual({
++      online: 'En ligne',
++      offline: 'Hors ligne',
++      unknown: 'Connexion…',
++      unauthenticated: 'Session expirée',
++      protocol_unsupported: 'Mise à jour nécessaire',
++      account_deleted: 'Compte supprimé',
++    });
+   });
+ });
+ 
+-describe("zone d'état de la coquille (R-SYN-34)", () => {
+-  it("chaque écran connecté porte l'état de connexion et les deux compteurs dans l'en-tête", async () => {
+-    await renderApp({ path: '/profile' });
+-    const header = await screen.findByRole('banner');
+-    expect(within(header).getByTestId('connection-status')).toBeTruthy();
+-    expect(within(header).getByTestId('pending-counter')).toBeTruthy();
+-    expect(within(header).getByTestId('rejected-counter')).toBeTruthy();
+-  });
+-
++describe('compteurs de synchro (R-SYN-34, affichés dans Réglages)', () => {
+   it("l'onboarding n'a pas de zone d'état", async () => {
+     await renderApp({ path: '/onboarding', me: newcomer() });
+     await screen.findByTestId('onboarding-step');
+     expect(screen.queryByTestId('pending-counter')).toBeNull();
+     expect(screen.queryByTestId('connection-status')).toBeNull();
+   });
+ 
+   it("pending-counter : data-count '0' puis '3' après sync.set({ pending: 3 }), « 3 en attente »", async () => {
+-    const { sync } = await renderApp({ path: '/' });
+-    await until(() => count('pending-counter') === '0');
++    const { sync } = await renderWithServices(<PendingCounter />);
++    expect(count('pending-counter')).toBe('0');
+     expect(screen.getByTestId('pending-counter').textContent).toBe('0 en attente');
+     act(() => sync.set({ pending: 3 }));
+     expect(count('pending-counter')).toBe('3');
+     expect(screen.getByTestId('pending-counter').textContent).toBe('3 en attente');
+   });
+ 
+   it("rejected-counter : un sync_rejection non ignoré, compté par le moteur → '1 refusé', lien /rejections", async () => {
+     const db = createTestLocalDb();
+     await seedMirror(db, 'sync_rejection', [rejection('r-1', 'op-1')]);
+     const api = createFakeApi();
+     api.setOffline('reject');
+-    const view = await renderApp({ path: '/', db, api, realSync: true });
++    const view = await renderWithServices(<RejectedCounter />, {
++      path: '/settings',
++      db,
++      api,
++      realSync: true,
++    });
+     engine = view.engine;
+     view.engine.start();
+     await until(() => count('rejected-counter') === '1');
+     const counter = screen.getByTestId('rejected-counter');
+     expect(counter.textContent).toBe('1 refusé');
+     const link = within(counter).getByRole('link', { name: '1 refusé' });
+     expect(link.getAttribute('href')).toBe('/rejections');
+     fireEvent.click(link);
+-    expect(await screen.findByRole('heading', { level: 1, name: 'Éléments refusés' })).toBeTruthy();
+     expect(view.location()).toBe('/rejections');
+   });
+ 
+   it("rejected-counter : deux refus → '2 refusés'", async () => {
+-    const { sync } = await renderApp({ path: '/' });
++    const { sync } = await renderWithServices(<RejectedCounter />);
+     act(() => sync.set({ rejected: 2 }));
+-    await until(() => count('rejected-counter') === '2');
++    expect(count('rejected-counter')).toBe('2');
+     expect(screen.getByTestId('rejected-counter').textContent).toBe('2 refusés');
+   });
+ 
+   it("rejected-counter : aucun refus → data-count '0', ni texte ni lien", async () => {
+-    await renderApp({ path: '/' });
+-    await until(() => count('rejected-counter') === '0');
++    await renderWithServices(<RejectedCounter />);
+     const counter = screen.getByTestId('rejected-counter');
++    expect(count('rejected-counter')).toBe('0');
+     expect(counter.textContent).toBe('');
+     expect(within(counter).queryByRole('link')).toBeNull();
+   });
+ });
+diff --git a/apps/web/test/status/rejections-settings.test.tsx b/apps/web/test/status/rejections-settings.test.tsx
+index 8b68383..f40df75 100644
+--- a/apps/web/test/status/rejections-settings.test.tsx
++++ b/apps/web/test/status/rejections-settings.test.tsx
+@@ -56,21 +56,22 @@ async function renderRejections(seed: (db: AppDb) => Promise<void>) {
+   await seed(db);
+   const api = createFakeApi();
+   api.setOffline('reject');
+   const view = await renderApp({ path: '/rejections', db, api, realSync: true });
+   engine = view.engine;
+   view.engine.start();
+   await screen.findByRole('heading', { level: 1, name: 'Éléments refusés' });
+   return view;
+ }
+ 
+-const counter = () => screen.getByTestId('rejected-counter').getAttribute('data-count');
++/** Refus comptés par le moteur : la source du compteur « N refusé(s) » (Réglages › Synchronisation). */
++const counter = () => String(engine?.getState().rejected);
+ const item = (text: string) => {
+   const li = screen.getByText(text).closest('li');
+   if (!li) throw new Error(`aucun élément pour ${text}`);
+   return li;
+ };
+ 
+ describe('RejectionsPage (R-SYN-18)', () => {
+   it.each([
+     ['validation', 'Données invalides'],
+     ['forbidden', 'Action non autorisée'],
+@@ -133,21 +134,21 @@ describe('RejectionsPage (R-SYN-18)', () => {
+     for (const d of descriptions) expect(d).toContain('Données invalides');
+   });
+ 
+   it("code inconnu : le code lui-même s'affiche", async () => {
+     await renderRejections(async (db) => {
+       await db.deadletter.put(dead('op-9', 'quota_exceeded'));
+     });
+     expect(await screen.findByText('quota_exceeded')).toBeTruthy();
+   });
+ 
+-  it("« Ignorer » r-1 → op patch { dismissedAt }, élément retiré, rejected-counter '1'", async () => {
++  it('« Ignorer » r-1 → op patch { dismissedAt }, élément retiré, 1 refus compté', async () => {
+     const { db } = await renderRejections(async (db) => {
+       await seedMirror(db, 'sync_rejection', [rejection('r-1', 'op-1')]);
+       await db.deadletter.put(dead('op-7', 'parent_rejected'));
+     });
+     await screen.findByText('Données invalides');
+     await until(() => counter() === '2');
+     fireEvent.click(within(item('Données invalides')).getByRole('button', { name: 'Ignorer' }));
+     await until(() => screen.queryByText('Données invalides') === null);
+     expect(screen.getByText('Élément parent refusé')).toBeTruthy();
+     const ops = await db.outbox.toArray();
+diff --git a/apps/web/test/sw/UpdateBanner.test.tsx b/apps/web/test/sw/UpdateBanner.test.tsx
+index 3459cbf..0b84632 100644
+--- a/apps/web/test/sw/UpdateBanner.test.tsx
++++ b/apps/web/test/sw/UpdateBanner.test.tsx
+@@ -243,26 +243,28 @@ describe('cadres (AppShell, PublicShell)', () => {
+     await screen.findByRole('heading', { level: 1, name: 'Aide' });
+     fireEvent.click(screen.getByRole('link', { name: 'Rune' }));
+     await screen.findByRole('navigation', { name: 'Navigation principale' });
+     await settle();
+     expect(banner()).toBeNull();
+     act(() => controller.markForced());
+     const shown = await screen.findByTestId('update-banner');
+     expect(shown.getAttribute('data-dismissible')).toBe('false');
+   });
+ 
+-  it('AppShell : le bandeau en premier', async () => {
++  it("AppShell : le bandeau sous l'en-tête de l'accueil, avant le contenu de l'écran", async () => {
+     swControllerStore.set(fakeController({ available: true, forced: false }));
+     await renderApp({ path: '/' });
+     const shown = await screen.findByTestId('update-banner');
+-    expect(shown.parentElement?.firstElementChild).toBe(shown);
+-    expect(shown.parentElement?.querySelector('header')).not.toBeNull();
++    const header = screen.getByRole('link', { name: 'Mon profil' }).closest('header');
++    const main = screen.getByRole('main');
++    expect(header?.compareDocumentPosition(shown)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
++    expect(shown.compareDocumentPosition(main)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+   });
+ 
+   // Membre onboardé, hors séance, version en attente : seul le cadre décide. (Un membre en onboarding
+   // ne prouverait rien sur PublicShell : la règle masquerait le bandeau de toute façon.)
+   it('PublicShell (page publique, membre onboardé) : aucun bandeau ; puis AppShell : bandeau', async () => {
+     swControllerStore.set(fakeController({ available: true, forced: true }));
+     const watch = watchBanner();
+     const { db } = await renderApp({ path: '/privacy' });
+     // Le cadre est rendu (en-tête) : l'absence du bandeau n'est pas celle d'une page encore vide.
+     await screen.findAllByRole('banner');
+diff --git a/apps/web/test/sw/kill-switch.test.ts b/apps/web/test/sw/kill-switch.test.ts
+index 839536e..6373f41 100644
+--- a/apps/web/test/sw/kill-switch.test.ts
++++ b/apps/web/test/sw/kill-switch.test.ts
+@@ -39,20 +39,21 @@ async function seededCaches(o: Parameters<typeof createFakeCacheStorage>[0] = {}
+ /** Trace console du rechargement (diagnostic sur téléphone, P8) : attendue, gardée hors de la sortie des tests. */
+ let info: MockInstance<typeof console.info>;
+ 
+ beforeEach(() => {
+   info = vi.spyOn(console, 'info').mockImplementation(() => {});
+ });
+ 
+ afterEach(() => {
+   vi.useRealTimers();
+   vi.restoreAllMocks();
++  sessionStorage.clear();
+ });
+ 
+ describe('applyKillSwitchIfNeeded (R-PWA-6)', () => {
+   it('swKill faux → false, rien touché', async () => {
+     const f = createFakeSwContainer();
+     const caches = await seededCaches();
+     const reload = vi.fn();
+     expect(await applyKillSwitchIfNeeded(HEALTH, { serviceWorker: f.container, caches, reload })).toBe(false);
+     expect(f.unregisterCalls).toBe(0);
+     expect(await caches.keys()).toHaveLength(6);
+@@ -81,20 +82,57 @@ describe('applyKillSwitchIfNeeded (R-PWA-6)', () => {
+     const f = createFakeSwContainer({ registrations: 0 });
+     const caches = createFakeCacheStorage();
+     await caches.open(LOCAL_DB_MARKER_CACHE);
+     await caches.open('autre');
+     const reload = vi.fn();
+     expect(await applyKillSwitchIfNeeded(KILL, { serviceWorker: f.container, caches, reload })).toBe(false);
+     expect(reload).not.toHaveBeenCalled();
+     expect(info).not.toHaveBeenCalled();
+   });
+ 
++  it('le SW a fait le ménage sans joindre cette page, encore contrôlée → rechargée une fois, sans boucle', async () => {
++    // Course réelle (E2E kill-switch) : le SW nettoie pendant la navigation, quand l'ancien document est parti et
++    // le nouveau pas encore prêt ; son navigate ne vise personne, et la page servie par lui resterait sur ce build.
++    const f = createFakeSwContainer({ registrations: 0 });
++    f.setController(true);
++    const caches = createFakeCacheStorage();
++    await caches.open(LOCAL_DB_MARKER_CACHE);
++    const reload = vi.fn();
++    const env = { serviceWorker: f.container, caches, reload };
++    expect(await applyKillSwitchIfNeeded(KILL, env)).toBe(true);
++    expect(reload).toHaveBeenCalledTimes(1);
++    expect(info).toHaveBeenCalledTimes(1);
++    // Même onglet, toujours contrôlé (navigateur qui garderait le SW désenregistré) : pas de second rechargement.
++    expect(await applyKillSwitchIfNeeded(KILL, env)).toBe(false);
++    expect(reload).toHaveBeenCalledTimes(1);
++  });
++
++  it('page contrôlée, stockage de session refusé → rechargée une fois quand même', async () => {
++    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
++      throw new Error('refusé');
++    });
++    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
++      throw new Error('refusé');
++    });
++    const f = createFakeSwContainer({ registrations: 0 });
++    f.setController(true);
++    const reload = vi.fn();
++    expect(
++      await applyKillSwitchIfNeeded(KILL, {
++        serviceWorker: f.container,
++        caches: createFakeCacheStorage(),
++        reload,
++      }),
++    ).toBe(true);
++    expect(reload).toHaveBeenCalledTimes(1);
++  });
++
+   it('deuxième passage après le rechargement → plus rien à faire, pas de boucle', async () => {
+     const f = createFakeSwContainer({ registrations: 2 });
+     const caches = await seededCaches();
+     const reload = vi.fn();
+     const env = { serviceWorker: f.container, caches, reload };
+     expect(await applyKillSwitchIfNeeded(KILL, env)).toBe(true);
+     expect(f.unregisterCalls).toBe(2);
+     expect(await applyKillSwitchIfNeeded(KILL, env)).toBe(false);
+     expect(reload).toHaveBeenCalledTimes(1);
+   });

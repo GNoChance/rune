@@ -1,0 +1,2047 @@
+# Review package: 35d89f5..HEAD
+
+## Commits
+3d69225 feat(web): choix du coach dès l'onboarding et présentation animée
+
+## Files changed
+ apps/web/e2e/arrival.spec.ts                       |   2 +-
+ apps/web/e2e/epoch.spec.ts                         |  14 +-
+ apps/web/e2e/sheet.spec.ts                         |  14 +-
+ apps/web/e2e/support/flows.ts                      |  10 +-
+ apps/web/src/features/coach/CoachIntro.tsx         | 177 ++++++++
+ apps/web/src/features/coach/CoachStep.tsx          | 157 +++++++
+ apps/web/src/features/coach/coach-lines.ts         | 108 +++++
+ apps/web/src/features/coach/coach.module.css       | 440 ++++++++++++++++++++
+ .../web/src/features/onboarding/OnboardingFlow.tsx |  72 +++-
+ apps/web/src/features/onboarding/StepTitle.tsx     |   4 +-
+ .../src/features/onboarding/onboarding.module.css  |   7 -
+ apps/web/test/coach/coach-step.test.tsx            | 463 +++++++++++++++++++++
+ apps/web/test/onboarding/flow.test.tsx             |  40 +-
+ apps/web/test/support/onboarding.ts                |  11 +-
+ 14 files changed, 1466 insertions(+), 53 deletions(-)
+
+## Diff
+diff --git a/apps/web/e2e/arrival.spec.ts b/apps/web/e2e/arrival.spec.ts
+index c5a69bb..f0a4d13 100644
+--- a/apps/web/e2e/arrival.spec.ts
++++ b/apps/web/e2e/arrival.spec.ts
+@@ -53,21 +53,21 @@ test('arrivée : admin installé, session protégée, puis un membre invité par
+ }) => {
+   await test.step("admin : lien d'amorçage dans l'appli installée, compte puis onboarding", async () => {
+     await emulateStandalone(context);
+     const { link } = await bootstrapAdmin(server);
+     await page.goto(link);
+     await requireServiceWorker(page);
+     // R-INV-4 : le fragment qui porte le code quitte l'adresse dès la lecture.
+     await expect(page).toHaveURL(`${server.url}/invite`);
+     // R-ARR-1 : dans l'appli installée, le lien mène directement à la création du compte.
+     await createAccountViaUi(page, 'camille');
+-    await expect(page.getByTestId('onboarding-step')).toHaveAttribute('data-step', 'goal');
++    await expect(page.getByTestId('onboarding-step')).toHaveAttribute('data-step', 'coach');
+     // R-CPT-2 : stockage persistant demandé à la création du compte, résultat noté (accordé ou non).
+     await expect.poll(async () => typeof (await metaValue(page, 'persistGranted'))).toBe('boolean');
+     // Témoin : seule la demande de fin d'onboarding (R-SYN-31) peut encore le remplacer par un booléen.
+     await idbPut(page, 'meta', { key: 'persistGranted', value: PERSIST_SENTINEL });
+     expect(await metaValue(page, 'persistGranted')).toBe(PERSIST_SENTINEL);
+     await completeOnboardingViaUi(page, {
+       place: { kind: 'gym', name: 'Fitness Park Nation', city: 'Paris' },
+     });
+     await expect(page).toHaveURL(`${server.url}/`);
+     await waitForController(page);
+diff --git a/apps/web/e2e/epoch.spec.ts b/apps/web/e2e/epoch.spec.ts
+index 918e61a..b51eaee 100644
+--- a/apps/web/e2e/epoch.spec.ts
++++ b/apps/web/e2e/epoch.spec.ts
+@@ -1,41 +1,51 @@
+ import { join } from 'node:path';
+ import type { Page } from '@playwright/test';
+ import { PRIVACY_POLICY_VERSION } from '@rune/contracts';
+ import { expect, test } from './support/fixtures';
+ import { E2E_PASSWORD, loginViaUi } from './support/flows';
+ import { idbGetAll, metaValue, triggerForeground } from './support/pwa';
+ import { bootstrapAdmin, type E2EServer } from './support/server';
+ 
+ const SYNC_TIMEOUT = { timeout: 20_000 };
+ 
+-/** Administrateur créé par l'API (amorçage, compte, profil, lieu maison, fin de l'onboarding), sans accord santé. */
++/**
++ * Administrateur créé par l'API (amorçage, compte, profil avec son coach, lieu maison, fin de l'onboarding),
++ * sans accord santé. Sans coach, le serveur refuse de terminer l'onboarding.
++ */
+ async function createAdminViaApi(server: E2EServer, page: Page): Promise<void> {
+   const { code } = await bootstrapAdmin(server);
+   const call = async (method: 'POST' | 'PATCH', path: string, data: unknown, status: number) => {
+     const res = await page.request.fetch(`${server.url}${path}`, {
+       method,
+       headers: { Origin: server.url },
+       data,
+     });
+     expect(res.status(), `${method} ${path}`).toBe(status);
+   };
+   await call(
+     'POST',
+     '/api/invitations/accept',
+     { code, username: 'camille', password: E2E_PASSWORD, termsVersion: PRIVACY_POLICY_VERSION },
+     201,
+   );
+   await call(
+     'PATCH',
+     '/api/me/training-profile',
+-    { goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45, onboardingStep: 'health' },
++    {
++      coach: 'skald',
++      goal: 'muscle',
++      experience: 'none',
++      daysPerWeek: 3,
++      sessionMinutes: 45,
++      onboardingStep: 'health',
++    },
+     200,
+   );
+   await call('POST', '/api/places', { kind: 'home', equipment: [], isPrimary: true }, 201);
+   await call('POST', '/api/me/onboarding/complete', {}, 200);
+ }
+ 
+ async function serverEpoch(server: E2EServer, page: Page): Promise<string> {
+   const res = await page.request.get(`${server.url}/api/health`);
+   expect(res.status()).toBe(200);
+   return ((await res.json()) as { epoch: string }).epoch;
+diff --git a/apps/web/e2e/sheet.spec.ts b/apps/web/e2e/sheet.spec.ts
+index 430526a..4caa0a9 100644
+--- a/apps/web/e2e/sheet.spec.ts
++++ b/apps/web/e2e/sheet.spec.ts
+@@ -1,37 +1,47 @@
+ import type { Page } from '@playwright/test';
+ import { PRIVACY_POLICY_VERSION } from '@rune/contracts';
+ import { expect, test } from './support/fixtures';
+ import { E2E_PASSWORD, loginViaUi } from './support/flows';
+ import { bootstrapAdmin, type E2EServer } from './support/server';
+ 
+-/** Administrateur créé par l'API, onboarding fini, avec deux maisons : « Maison » (principale) et « Garage ». */
++/**
++ * Administrateur créé par l'API (profil avec son coach, sans quoi l'onboarding ne se termine pas), onboarding
++ * fini, avec deux maisons : « Maison » (principale) et « Garage ».
++ */
+ async function createAdminWithTwoPlaces(server: E2EServer, page: Page): Promise<void> {
+   const { code } = await bootstrapAdmin(server);
+   const call = async (method: 'POST' | 'PATCH', path: string, data: unknown, status: number) => {
+     const res = await page.request.fetch(`${server.url}${path}`, {
+       method,
+       headers: { Origin: server.url },
+       data,
+     });
+     expect(res.status(), `${method} ${path}`).toBe(status);
+   };
+   await call(
+     'POST',
+     '/api/invitations/accept',
+     { code, username: 'camille', password: E2E_PASSWORD, termsVersion: PRIVACY_POLICY_VERSION },
+     201,
+   );
+   await call(
+     'PATCH',
+     '/api/me/training-profile',
+-    { goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45, onboardingStep: 'health' },
++    {
++      coach: 'skald',
++      goal: 'muscle',
++      experience: 'none',
++      daysPerWeek: 3,
++      sessionMinutes: 45,
++      onboardingStep: 'health',
++    },
+     200,
+   );
+   await call('POST', '/api/places', { kind: 'home', equipment: [], isPrimary: true }, 201);
+   await call('POST', '/api/places', { kind: 'home', name: 'Garage', equipment: [], isPrimary: false }, 201);
+   await call('POST', '/api/me/onboarding/complete', {}, 200);
+ }
+ 
+ // Spec refonte §6 (maquette C06) : la feuille du bas passe au-dessus de toute la page. Rendue sur place, elle
+ // partage le contexte d'empilement de l'écran : les champs transparents des cartes de choix et des puces
+ // (z-index 1) la couvraient et prenaient les touchers destinés à ses actions.
+diff --git a/apps/web/e2e/support/flows.ts b/apps/web/e2e/support/flows.ts
+index 6c27b2b..37a2af9 100644
+--- a/apps/web/e2e/support/flows.ts
++++ b/apps/web/e2e/support/flows.ts
+@@ -17,32 +17,38 @@ const button = (page: Page, name: string) => page.getByRole('button', { name, ex
+ export async function createAccountViaUi(page: Page, username: string): Promise<void> {
+   await page.getByLabel('Pseudo', { exact: true }).fill(username);
+   await page.getByLabel('Mot de passe', { exact: true }).fill(E2E_PASSWORD);
+   await page.getByLabel('Confirmation', { exact: true }).fill(E2E_PASSWORD);
+   await page.getByLabel("J'ai lu la page Confidentialité et règles", { exact: true }).check();
+   await button(page, 'Créer mon compte').click();
+   await page.waitForURL((url) => url.pathname === '/onboarding');
+ }
+ 
+ /**
+- * Les 8 écrans de l'onboarding (02 §8) depuis l'objectif : chaque écran est attendu par son `data-step`,
+- * puis E8 « Commencer » une fois le voyant « Prêt hors ligne » au vert (R-SYN-33) ; attend l'accueil.
++ * Les 9 écrans de l'onboarding (spec refonte §10.1) depuis le coach : Le Skald, sa présentation, puis
++ * chaque écran attendu par son `data-step`, et E8 « Commencer » une fois le voyant « Prêt hors ligne » au
++ * vert (R-SYN-33) ; attend l'accueil.
+  */
+ export async function completeOnboardingViaUi(
+   page: Page,
+   o: { place: { kind: 'gym'; name: string; city: string } | { kind: 'home' } },
+ ): Promise<void> {
+   const current = page.getByTestId('onboarding-step');
+   const at = (step: string) => expect(current).toHaveAttribute('data-step', step);
+   const choose = (name: string) => current.getByRole('radio', { name, exact: true }).check();
+   const next = () => button(page, 'Suivant').click();
+ 
++  await at('coach');
++  await choose('Le Skald');
++  await button(page, 'Continuer').click();
++  // Coach enregistré : sa présentation s'ouvre, toujours à l'étape coach.
++  await button(page, "C'est parti").click();
+   await at('goal');
+   await choose(GOAL_LABELS.muscle);
+   await next();
+   await at('sport');
+   await choose('Non');
+   await next();
+   await at('place_kind');
+   await choose(o.place.kind === 'gym' ? 'À la salle' : 'À la maison');
+   await next();
+   await at('place');
+diff --git a/apps/web/src/features/coach/CoachIntro.tsx b/apps/web/src/features/coach/CoachIntro.tsx
+new file mode 100644
+index 0000000..4b546af
+--- /dev/null
++++ b/apps/web/src/features/coach/CoachIntro.tsx
+@@ -0,0 +1,177 @@
++import type { CoachId } from '@rune/contracts';
++import { useCallback, useEffect, useRef, useState } from 'react';
++import { CoachAvatar, CoachBubble, useReducedMotion } from '../../ui';
++import type { CoachMode } from '../../ui/art/art-types';
++import { StepActions } from '../onboarding/StepActions';
++import { StepTitle } from '../onboarding/StepTitle';
++import styles from './coach.module.css';
++import { COACHES, coachText } from './coach-lines';
++
++/** Rythme du dévoilement de la présentation, d'après le prototype : l'avatar grandit d'abord. */
++const REVEAL_START_MS = 650;
++const CHAR_MS = 19;
++/** Pauses après une fin de phrase (. ! ?) et après une virgule ou un deux-points. */
++const SENTENCE_PAUSE_MS = 210;
++const CLAUSE_PAUSE_MS = 130;
++/** Démonstration du mode nutrition : jouée une fois, peu après le texte entier, puis retour. */
++const DEMO_DELAY_MS = 750;
++const DEMO_HOLD_MS = 3300;
++
++const pauseAfter = (ch: string | undefined) =>
++  ch !== undefined && '.!?'.includes(ch)
++    ? SENTENCE_PAUSE_MS
++    : ch === ':' || ch === ','
++      ? CLAUSE_PAUSE_MS
++      : CHAR_MS;
++
++const MODES: readonly { mode: CoachMode; label: string }[] = [
++  { mode: 'training', label: 'Entraînement' },
++  { mode: 'nutrition', label: 'Nutrition' },
++];
++
++/**
++ * Présentation du coach choisi (spec refonte §8, prototype « intro ») : l'avatar grandit, la bulle « Message
++ * d'accueil » dévoile sa présentation, puis une courte démonstration du mode nutrition (ligne `nutri`,
++ * étiquette « Aperçu ») revient d'elle-même à l'entraînement ; l'interrupteur « Entraînement / Nutrition » la
++ * rejoue à la demande, sans retour automatique. Chaque changement de mode est annoncé poliment.
++ *
++ * Le dévoilement n'est qu'une copie animée, cachée aux lecteurs d'écran : le texte entier est dans l'arbre
++ * d'accessibilité dès le premier rendu, il n'y a jamais d'indicateur « en train d'écrire », et sous mouvement
++ * réduit le texte entier s'affiche d'emblée. « C'est parti » est là dès le départ : rien n'attend l'animation.
++ */
++export function CoachIntro(p: { coach: CoachId; pseudo: string; onBack(): void; onStart(): void }) {
++  const reduced = useReducedMotion();
++  const intro = coachText(p.coach, 'intro', p.pseudo);
++  const nutri = coachText(p.coach, 'nutri', p.pseudo);
++  const [typed, setTyped] = useState(false);
++  const [mode, setMode] = useState<CoachMode>('training');
++  const [announcement, setAnnouncement] = useState('');
++  // Un geste sur l'interrupteur coupe la démonstration automatique.
++  const touched = useRef(false);
++  const demoPlayed = useRef(false);
++  const revealed = reduced || typed;
++  const markTyped = useCallback(() => setTyped(true), []);
++
++  function switchMode(next: CoachMode) {
++    setMode(next);
++    setAnnouncement(next === 'nutrition' ? `Mode nutrition. ${nutri}` : 'Mode entraînement.');
++  }
++
++  // biome-ignore lint/correctness/useExhaustiveDependencies: démonstration programmée une fois, à la fin du texte
++  useEffect(() => {
++    if (!revealed) return;
++    let back: ReturnType<typeof setTimeout> | undefined;
++    const start = setTimeout(() => {
++      if (touched.current || demoPlayed.current) return;
++      demoPlayed.current = true;
++      switchMode('nutrition');
++      back = setTimeout(() => {
++        if (!touched.current) switchMode('training');
++      }, DEMO_HOLD_MS);
++    }, DEMO_DELAY_MS);
++    return () => {
++      clearTimeout(start);
++      clearTimeout(back);
++    };
++  }, [revealed]);
++
++  function choose(next: CoachMode) {
++    touched.current = true;
++    setTyped(true);
++    if (next !== mode) switchMode(next);
++  }
++
++  return (
++    <div className={styles.intro}>
++      <div className={styles.stage} data-mode={mode} aria-hidden="true">
++        <span className={styles.halo} data-tone="training" />
++        <span className={styles.halo} data-tone="nutrition" />
++        <span className={styles.grow}>
++          {MODES.map((m) => (
++            <span key={m.mode} className={styles.layer} data-layer={m.mode}>
++              <CoachAvatar coach={p.coach} mode={m.mode} size={184} animated={m.mode === mode} decorative />
++            </span>
++          ))}
++        </span>
++      </div>
++      <div className={`${styles.identity} ${styles.introFade}`}>
++        <StepTitle>{COACHES[p.coach].name}</StepTitle>
++        <fieldset className={styles.modeSwitch} aria-label="Mode du coach" data-mode={mode}>
++          <span className={styles.modePill} aria-hidden="true" />
++          {MODES.map((m) => (
++            <button
++              key={m.mode}
++              type="button"
++              className={styles.modeButton}
++              aria-pressed={mode === m.mode}
++              onClick={() => choose(m.mode)}
++            >
++              <span className={styles.modeDot} aria-hidden="true" />
++              {m.label}
++            </button>
++          ))}
++        </fieldset>
++      </div>
++      <div className={styles.introFade}>
++        <CoachBubble
++          coach={p.coach}
++          mode={mode}
++          label={mode === 'nutrition' ? 'Aperçu' : "Message d'accueil"}
++        >
++          {/* Les deux textes superposés : la bulle garde sa hauteur d'un mode à l'autre ; l'autre est caché. */}
++          <div className={styles.modeTexts} data-mode={mode}>
++            <div data-text="training" aria-hidden={mode === 'training' ? undefined : true}>
++              <TypedText text={intro} done={revealed} onDone={markTyped} />
++            </div>
++            <p data-text="nutrition" aria-hidden={mode === 'nutrition' ? undefined : true}>
++              {nutri}
++            </p>
++          </div>
++        </CoachBubble>
++      </div>
++      <p className={`${styles.hint} ${styles.introFade}`}>
++        Touche « Nutrition » pour voir ton coach à table.
++      </p>
++      <p className={styles.srOnly} role="status">
++        {announcement}
++      </p>
++      <StepActions onBack={p.onBack} primary={{ label: "C'est parti", onClick: p.onStart }} />
++    </div>
++  );
++}
++
++/**
++ * Texte qui se dévoile caractère par caractère tant que `done` est faux, puis appelle `onDone`. Le texte entier
++ * garde sa place (il fixe la hauteur de la bulle et c'est lui que lisent les lecteurs d'écran) ; la copie
++ * animée, posée dessus, leur est cachée. Seul ce composant suit les caractères : l'écran ne se redessine pas
++ * à chaque lettre.
++ */
++function TypedText(p: { text: string; done: boolean; onDone(): void }) {
++  const [shown, setShown] = useState(0);
++  const { text, done, onDone } = p;
++
++  useEffect(() => {
++    if (done) return;
++    let count = 0;
++    let timer: ReturnType<typeof setTimeout>;
++    const step = () => {
++      count += 1;
++      setShown((s) => Math.max(s, count));
++      if (count < text.length) timer = setTimeout(step, pauseAfter(text[count - 1]));
++      else onDone();
++    };
++    timer = setTimeout(step, REVEAL_START_MS);
++    return () => clearTimeout(timer);
++  }, [text, done, onDone]);
++
++  return (
++    <p className={styles.reveal} data-revealing={done ? undefined : ''}>
++      <span className={styles.fullText}>{text}</span>
++      {done ? null : (
++        <span className={styles.typed} aria-hidden="true" data-reveal="">
++          {text.slice(0, shown)}
++        </span>
++      )}
++    </p>
++  );
++}
+diff --git a/apps/web/src/features/coach/CoachStep.tsx b/apps/web/src/features/coach/CoachStep.tsx
+new file mode 100644
+index 0000000..39d896e
+--- /dev/null
++++ b/apps/web/src/features/coach/CoachStep.tsx
+@@ -0,0 +1,157 @@
++import { COACH_IDS, type CoachId } from '@rune/contracts';
++import { useContext, useId, useState } from 'react';
++import { useLive, useMe } from '../../app-services';
++import { useRepos } from '../../repos';
++import { CheckGlyph, CoachAvatar, useAction } from '../../ui';
++import { StepActions } from '../onboarding/StepActions';
++import { StepTitle, StepTitleContext } from '../onboarding/StepTitle';
++import { CoachIntro } from './CoachIntro';
++import styles from './coach.module.css';
++import { COACHES, coachText } from './coach-lines';
++
++/**
++ * Étape 1 sur 9 de l'onboarding, « Choisis ton coach » (spec refonte §8) : trois cartes, puis « Continuer »
++ * enregistre le coach sur le serveur (`setCoach`, classe E) et ouvre sa présentation ; « C'est parti » passe
++ * à la suite (`onNext`). Un échec (hors ligne, erreur du serveur) laisse sur le choix avec le message : on
++ * n'avance jamais sans coach enregistré. Le coach déjà enregistré est coché au retour et n'est pas renvoyé.
++ * `onChange` : un coach a été touché (la reprise calculée ne doit plus déplacer l'écran).
++ */
++export function CoachStep(p: { onNext(): void; onChange(): void }) {
++  const repos = useRepos();
++  const me = useMe();
++  const profile = useLive(() => repos.profile.get(), [repos]);
++  const [choice, setChoice] = useState<CoachId | null>(null);
++  const [presenting, setPresenting] = useState(false);
++  const titles = useContext(StepTitleContext);
++  const saved = profile?.coach ?? null;
++
++  /** Choix ↔ présentation : le titre de l'écran affiché prend le focus. */
++  function present(show: boolean) {
++    if (titles) titles.focusNext.current = true;
++    setPresenting(show);
++  }
++
++  const save = useAction(async (coach: CoachId) => {
++    if (coach !== saved) await repos.profile.setCoach(coach);
++    present(true);
++  });
++
++  if (!me || profile === undefined) return null;
++  const value = choice ?? saved;
++
++  if (presenting && value) {
++    return <CoachIntro coach={value} pseudo={me.username} onBack={() => present(false)} onStart={p.onNext} />;
++  }
++
++  return (
++    <>
++      <StepTitle>Choisis ton coach</StepTitle>
++      <CoachChoices
++        name="coach"
++        legend="Il t'accompagnera à l'entraînement comme en nutrition. Choisis la voix qui te correspond."
++        pseudo={me.username}
++        value={value}
++        onChange={(coach) => {
++          setChoice(coach);
++          save.reset();
++          p.onChange();
++        }}
++      />
++      <p className={styles.note}>
++        <svg
++          aria-hidden="true"
++          width="16"
++          height="16"
++          viewBox="0 0 24 24"
++          fill="none"
++          stroke="currentColor"
++          strokeWidth="2"
++          strokeLinecap="round"
++          strokeLinejoin="round"
++        >
++          <circle cx="12" cy="12" r="9" />
++          <path d="M12 11v5M12 8h.01" />
++        </svg>
++        Tu pourras changer de coach plus tard dans ton profil.
++      </p>
++      <StepActions
++        pending={save.pending}
++        error={save.error}
++        primary={{
++          label: 'Continuer',
++          disabled: value === null,
++          onClick: () => {
++            if (value !== null) void save.run(value);
++          },
++        }}
++      />
++    </>
++  );
++}
++
++/**
++ * Les trois coachs en cartes de choix unique (prototype « coach ») : avatar, nom, tempérament et aperçu de sa
++ * voix entre guillemets. Chaque carte est un `<label>` qui contient le vrai bouton radio, transparent et posé
++ * sur toute la carte ; le radio est nommé par le nom du coach et décrit par le tempérament et l'aperçu.
++ */
++export function CoachChoices(p: {
++  name: string;
++  legend: string;
++  pseudo: string;
++  value: CoachId | null;
++  onChange(coach: CoachId): void;
++}) {
++  return (
++    <fieldset className={styles.choices}>
++      <legend className={styles.lead}>{p.legend}</legend>
++      <div className={`${styles.cards} stagger`}>
++        {COACH_IDS.map((coach) => (
++          <CoachCard
++            key={coach}
++            name={p.name}
++            coach={coach}
++            pseudo={p.pseudo}
++            checked={p.value === coach}
++            onChange={() => p.onChange(coach)}
++          />
++        ))}
++      </div>
++    </fieldset>
++  );
++}
++
++function CoachCard(p: { name: string; coach: CoachId; pseudo: string; checked: boolean; onChange(): void }) {
++  const id = useId();
++  const texts = COACHES[p.coach];
++  return (
++    <label className={styles.card}>
++      <input
++        type="radio"
++        name={p.name}
++        value={p.coach}
++        checked={p.checked}
++        onChange={() => p.onChange()}
++        aria-labelledby={`${id}-name`}
++        aria-describedby={`${id}-temper ${id}-sample`}
++        className={styles.cardInput}
++      />
++      <span className={styles.cardAvatar}>
++        <CoachAvatar coach={p.coach} size={84} animated="brief" decorative />
++      </span>
++      <span className={styles.cardText}>
++        <span id={`${id}-name`} className={styles.cardName}>
++          {texts.name}
++        </span>
++        <span id={`${id}-temper`} className={styles.cardTemper}>
++          {texts.temper}
++        </span>
++        <span id={`${id}-sample`} className={styles.cardQuote}>
++          {`« ${coachText(p.coach, 'sample', p.pseudo)} »`}
++        </span>
++      </span>
++      <span className={styles.cardMark} aria-hidden="true">
++        {p.checked ? <CheckGlyph /> : null}
++      </span>
++    </label>
++  );
++}
+diff --git a/apps/web/src/features/coach/coach-lines.ts b/apps/web/src/features/coach/coach-lines.ts
+new file mode 100644
+index 0000000..adfeef7
+--- /dev/null
++++ b/apps/web/src/features/coach/coach-lines.ts
+@@ -0,0 +1,108 @@
++import type { CoachId } from '@rune/contracts';
++import { parisDate } from '@rune/domain';
++import { COACH_NAMES } from '../../ui';
++
++/** Textes d'un coach, écrits à l'avance (spec refonte §8) : `{pseudo}` et `{jours}` sont remplacés à l'affichage. */
++export interface CoachTexts {
++  name: string;
++  /** Tempérament, sur la carte du choix. */
++  temper: string;
++  /** Aperçu de sa voix, sur la carte du choix. */
++  sample: string;
++  /** Présentation, après le choix (« Message d'accueil »). */
++  intro: string;
++  /** Démonstration du mode nutrition (« Aperçu ») : jamais de chiffre nutritionnel. */
++  nutri: string;
++  /** Mot de la fin de l'onboarding. */
++  ready: string;
++  /** Lignes du jour de l'accueil, une par jour civil de Paris, à tour de rôle. */
++  daily: readonly string[];
++}
++
++/**
++ * Textes des trois coachs, mot pour mot (spec refonte §8, garde-fous de la spec 06 : aucun chiffre
++ * nutritionnel, rien qui pousse à forcer, vocabulaire non prescriptif). Ce ne sont pas des réponses d'IA.
++ */
++export const COACHES: Readonly<Record<CoachId, CoachTexts>> = {
++  ombre: {
++    name: COACH_NAMES.ombre,
++    temper: 'Froid et laconique. Exigeant, jamais humiliant.',
++    sample: 'Quête acceptée. Rang E. Montre-moi ta discipline.',
++    intro:
++      "Je suis L'Ombre. Je fixe tes quêtes, tu les accomplis. Le dialogue viendra plus tard : d'ici là, avance.",
++    nutri: "Bois régulièrement. Après l'effort, un vrai repas. La récupération fait partie de la quête.",
++    ready: 'Éveil validé. Rang E. Le reste se gagne en séance.',
++    daily: [
++      'Jour 1. Rang E. La discipline se prouve, elle ne se promet pas.',
++      'Une quête attend. Ton rang aussi.',
++      "Pas d'excuse aujourd'hui. Juste la suite.",
++    ],
++  },
++  skald: {
++    name: COACH_NAMES.skald,
++    temper: 'Mentor chaleureux. Il raconte, il explique.',
++    sample: 'Chaque saga commence par un premier pas, {pseudo}. Je serai là pour la raconter.',
++    intro:
++      "Je suis le Skald. Je raconterai ta saga, séance après séance, et je t'expliquerai chaque étape. Nos vraies conversations viendront plus tard : pour l'instant, je pose les premiers vers.",
++    nutri: "À table aussi, la saga s'écrit, {pseudo}. Un vrai repas après ta séance t'aidera à récupérer.",
++    ready: 'Le prologue est écrit, {pseudo}. La saga commence.',
++    daily: [
++      "Le premier chapitre de ta saga s'ouvre aujourd'hui, {pseudo}. Les grands récits commencent toujours ainsi.",
++      'Chaque jour ajoute une ligne à ta saga.',
++      'Les héros aussi ont commencé au rang E.',
++    ],
++  },
++  scribe: {
++    name: COACH_NAMES.scribe,
++    temper: 'Calme et précis. Il aime les plans clairs et les bilans.',
++    sample: "Trois séances par semaine : c'est un rythme tenable. Je note tout.",
++    intro:
++      "Je suis le Scribe. Je prépare un plan clair et je note chaque série pour faire le point avec toi. Nos échanges viendront plus tard : pour l'instant, je consigne.",
++    nutri: 'Note du jour : bois régulièrement, et prévois un vrai repas après ta séance.',
++    ready: 'Profil complet, lieu noté. Le plan arrivera ici.',
++    daily: [
++      'Profil complet, lieu noté, rythme de {jours} séances par semaine. Le plan arrivera ici.',
++      'Point du jour : ton profil est à jour.',
++      'Je consigne. Les premières séances arriveront bientôt.',
++    ],
++  },
++};
++
++const DAY_MS = 86_400_000;
++
++/** Numéro du jour civil de Paris : jours écoulés depuis le 1970-01-01, jamais le jour UTC. */
++function parisDayNumber(date: Date): number {
++  return Math.floor(Date.parse(`${parisDate(date)}T00:00:00Z`) / DAY_MS);
++}
++
++/** Texte fixe d'un coach (aperçu, présentation, nutrition, mot de la fin), `{pseudo}` remplacé. */
++export function coachText(
++  coach: CoachId,
++  key: 'sample' | 'intro' | 'nutri' | 'ready',
++  pseudo: string,
++): string {
++  return COACHES[coach][key].replaceAll('{pseudo}', pseudo);
++}
++
++/**
++ * Ligne du jour de l'accueil : `daily[jourParis % daily.length]`, `{pseudo}` et `{jours}` (`daysPerWeek` du
++ * profil) remplacés. Sans rythme connu, une ligne qui dit `{jours}` cède la place à la suivante : jamais de
++ * valeur inventée à l'écran.
++ */
++export function coachLine(
++  coach: CoachId,
++  _moment: 'daily',
++  date: Date,
++  pseudo: string,
++  daysPerWeek: number | null,
++): string {
++  const lines = COACHES[coach].daily;
++  const day = parisDayNumber(date);
++  for (let offset = 0; offset < lines.length; offset++) {
++    // Modulo toujours positif, même avant 1970.
++    const line = lines[(((day + offset) % lines.length) + lines.length) % lines.length] ?? '';
++    if (line.includes('{jours}') && daysPerWeek === null) continue;
++    return line.replaceAll('{pseudo}', pseudo).replaceAll('{jours}', String(daysPerWeek));
++  }
++  return '';
++}
+diff --git a/apps/web/src/features/coach/coach.module.css b/apps/web/src/features/coach/coach.module.css
+new file mode 100644
+index 0000000..db12222
+--- /dev/null
++++ b/apps/web/src/features/coach/coach.module.css
+@@ -0,0 +1,440 @@
++/*
++ * Choix et présentation du coach (spec refonte §8) : mise en page des maquettes B01 (titre, phrase, cartes,
++ * actions) et comportement du prototype (écrans « coach » et « intro »). Couleurs prises dans les jetons ;
++ * mouvement sur la courbe et les durées communes (motion.css), remplacé par des fondus sous mouvement réduit.
++ */
++
++/* ---------- Choix du coach ---------- */
++
++.choices {
++  min-width: 0;
++  margin: 0;
++  padding: 0;
++  border: 0;
++}
++
++/* La phrase sous le titre (maquette B01 : 15,5 px, texte secondaire) sert de légende au groupe. */
++.lead {
++  padding: 0;
++  margin: 0 0 var(--space-4);
++  font-size: 0.96875rem;
++  line-height: 1.45;
++  color: var(--text-muted);
++}
++
++.cards {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-3);
++}
++
++/*
++ * Carte d'un coach (prototype « coach-card ») : avatar de 84 px, nom, tempérament et aperçu ; coche en haut à
++ * droite. Mêmes bord, fond et états que la carte de choix de la boîte à outils.
++ */
++.card {
++  position: relative;
++  display: grid;
++  grid-template-columns: 84px minmax(0, 1fr);
++  align-items: center;
++  gap: 14px;
++  padding: 12px 40px 12px 12px;
++  border-radius: var(--radius-card);
++  border: 2px solid var(--border);
++  background: var(--surface);
++  transition:
++    border-color var(--dur-fast) var(--ease),
++    background-color var(--dur-fast) var(--ease);
++}
++
++/* Le vrai bouton radio, transparent, couvre toute la carte : doigt, souris et clavier le visent directement. */
++.cardInput {
++  appearance: none;
++  position: absolute;
++  inset: 0;
++  z-index: 1;
++  width: 100%;
++  height: 100%;
++  margin: 0;
++  border-radius: inherit;
++  opacity: 0;
++  cursor: pointer;
++}
++
++.cardAvatar {
++  display: grid;
++  place-items: center;
++  transition: opacity var(--dur-fast) var(--ease);
++}
++
++.cardText {
++  display: flex;
++  flex-direction: column;
++  gap: 3px;
++  min-width: 0;
++}
++
++.cardName {
++  font-family: var(--font-title);
++  font-weight: 700;
++  font-size: 1.125rem;
++  line-height: 1.2;
++}
++
++.cardTemper {
++  font-size: 0.84375rem;
++  line-height: 1.35;
++  color: var(--text-muted);
++}
++
++.cardQuote {
++  margin-top: 5px;
++  padding-left: 10px;
++  border-left: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
++  font-size: 0.875rem;
++  line-height: 1.38;
++}
++
++.cardMark {
++  position: absolute;
++  top: 12px;
++  right: 12px;
++  display: grid;
++  place-items: center;
++  width: 24px;
++  height: 24px;
++  border-radius: 50%;
++  border: 2px solid color-mix(in srgb, var(--text-muted) 70%, var(--surface));
++}
++
++/* Choisie : bord accent, teinte, coche pleine et petit ressort (retour du geste). */
++.card:has(.cardInput:checked) {
++  border-color: var(--accent);
++  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
++  animation: card-spring var(--dur-fast) var(--ease);
++}
++
++.card:has(.cardInput:checked) .cardMark {
++  border-color: var(--accent);
++  background: var(--accent);
++  color: var(--accent-text);
++}
++
++/* Un coach choisi : les avatars des autres s'effacent un peu (dessins décoratifs ; le texte garde son contraste). */
++.cards:has(.cardInput:checked) .card:not(:has(.cardInput:checked)) .cardAvatar {
++  opacity: 0.55;
++}
++
++.card:has(.cardInput:focus-visible) {
++  outline: 2px solid var(--focus);
++  outline-offset: 2px;
++}
++
++@media (hover: hover) {
++  .card:has(.cardInput:hover:not(:checked)) {
++    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
++  }
++}
++
++@keyframes card-spring {
++  0% {
++    transform: scale(0.98);
++  }
++  60% {
++    transform: scale(1.02);
++  }
++  100% {
++    transform: none;
++  }
++}
++
++.note {
++  margin: 0;
++  display: flex;
++  align-items: flex-start;
++  gap: var(--space-2);
++  font-size: 0.84375rem;
++  line-height: 1.4;
++  color: var(--text-muted);
++}
++
++.note svg {
++  flex: none;
++  margin-top: 1px;
++  color: var(--accent);
++}
++
++/* ---------- Présentation ---------- */
++
++.intro {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-4);
++}
++
++/* Scène de l'avatar : halo de l'entraînement (accent) ou de la nutrition (or), avatar de 184 px qui grandit. */
++.stage {
++  position: relative;
++  height: 232px;
++  display: grid;
++  place-items: center;
++}
++
++.halo {
++  position: absolute;
++  left: 50%;
++  top: 50%;
++  width: 280px;
++  height: 280px;
++  margin: -140px 0 0 -140px;
++  border-radius: 50%;
++  transition: opacity var(--dur-screen) var(--ease);
++  animation: intro-fade var(--dur-screen) var(--ease) 150ms backwards;
++}
++
++.halo[data-tone="training"] {
++  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 24%, transparent) 0%, transparent 62%);
++}
++
++.halo[data-tone="nutrition"] {
++  background: radial-gradient(
++    circle,
++    color-mix(in srgb, var(--warning-text) 26%, transparent) 0%,
++    transparent 62%
++  );
++  opacity: 0;
++}
++
++.stage[data-mode="nutrition"] .halo[data-tone="training"] {
++  opacity: 0;
++}
++
++.stage[data-mode="nutrition"] .halo[data-tone="nutrition"] {
++  opacity: 1;
++}
++
++.grow {
++  position: relative;
++  display: block;
++  width: 184px;
++  height: 184px;
++  animation: grow-in var(--dur-screen) var(--ease) 160ms backwards;
++}
++
++/* Les deux versions de l'avatar, superposées : la nutrition tourne et grandit à la place de l'entraînement. */
++.layer {
++  position: absolute;
++  inset: 0;
++  transition:
++    opacity var(--dur-screen) var(--ease),
++    transform var(--dur-screen) var(--ease);
++}
++
++.layer[data-layer="nutrition"] {
++  opacity: 0;
++  transform: scale(1.1) rotate(-8deg);
++}
++
++.stage[data-mode="nutrition"] .layer[data-layer="training"] {
++  opacity: 0;
++  transform: scale(0.88) rotate(8deg);
++}
++
++.stage[data-mode="nutrition"] .layer[data-layer="nutrition"] {
++  opacity: 1;
++  transform: none;
++}
++
++.identity {
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  gap: 10px;
++}
++
++/* Le nom du coach, centré (prototype : 26 px) ; plus spécifique que le titre d'étape de l'onboarding. */
++.intro .identity h2 {
++  margin: 0;
++  font-size: 1.625rem;
++  line-height: 1.1;
++  text-align: center;
++}
++
++/* Interrupteur « Entraînement / Nutrition » : deux boutons pressables, pastille qui glisse sous le choisi. */
++.modeSwitch {
++  position: relative;
++  display: inline-grid;
++  grid-template-columns: 1fr 1fr;
++  min-width: 0;
++  margin: 0;
++  padding: 3px;
++  border-radius: 999px;
++  border: 1px solid var(--border);
++  background: var(--surface);
++}
++
++.modePill {
++  position: absolute;
++  left: 3px;
++  top: 3px;
++  bottom: 3px;
++  width: calc(50% - 3px);
++  border-radius: 999px;
++  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
++  transition:
++    transform var(--dur-fast) var(--ease),
++    background-color var(--dur-fast) var(--ease);
++}
++
++.modeSwitch[data-mode="nutrition"] .modePill {
++  transform: translateX(100%);
++  background: color-mix(in srgb, var(--warning-text) 14%, var(--surface));
++}
++
++.modeButton {
++  position: relative;
++  z-index: 1;
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  gap: 7px;
++  min-height: 44px;
++  padding: 0 16px;
++  border: 0;
++  border-radius: 999px;
++  background: transparent;
++  color: var(--text-muted);
++  font: inherit;
++  font-size: 0.875rem;
++  font-weight: 600;
++  cursor: pointer;
++  transition: color var(--dur-fast) var(--ease);
++}
++
++.modeButton[aria-pressed="true"] {
++  color: var(--accent);
++}
++
++.modeSwitch[data-mode="nutrition"] .modeButton[aria-pressed="true"] {
++  color: var(--warning-text);
++}
++
++.modeDot {
++  width: 7px;
++  height: 7px;
++  transform: rotate(45deg);
++  background: currentColor;
++}
++
++/* Nom, interrupteur, bulle et aide arrivent juste après l'avatar. */
++.introFade {
++  animation: intro-fade var(--dur-screen) var(--ease) 420ms backwards;
++}
++
++/*
++ * Dévoilement : le texte entier reste à sa place (il réserve la hauteur de la bulle et c'est lui que lisent les
++ * lecteurs d'écran), invisible tant que la copie animée, posée dessus et cachée aux lecteurs, s'écrit.
++ */
++.reveal {
++  position: relative;
++  margin: 0;
++}
++
++.reveal[data-revealing] .fullText {
++  opacity: 0;
++}
++
++.typed {
++  position: absolute;
++  inset: 0;
++}
++
++/*
++ * Texte de l'entraînement et texte de la nutrition superposés dans la même case : la bulle prend la hauteur
++ * du plus long et ne saute pas d'un mode à l'autre. Le texte de l'autre mode s'efface en glissant un peu.
++ */
++.modeTexts {
++  display: grid;
++}
++
++.modeTexts > * {
++  grid-area: 1 / 1;
++  margin: 0;
++  transition:
++    opacity var(--dur-fast) var(--ease),
++    transform var(--dur-fast) var(--ease);
++}
++
++.modeTexts[data-mode="training"] > [data-text="nutrition"] {
++  opacity: 0;
++  transform: translateY(6px);
++}
++
++.modeTexts[data-mode="nutrition"] > [data-text="training"] {
++  opacity: 0;
++  transform: translateY(-6px);
++}
++
++.hint {
++  margin: 0;
++  font-size: 0.8125rem;
++  line-height: 1.4;
++  color: var(--text-muted);
++  text-align: center;
++}
++
++/* Annonce du mode aux lecteurs d'écran, invisible à l'écran. */
++.srOnly {
++  position: absolute;
++  width: 1px;
++  height: 1px;
++  margin: -1px;
++  padding: 0;
++  overflow: hidden;
++  clip-path: inset(50%);
++  white-space: nowrap;
++  border: 0;
++}
++
++@keyframes intro-fade {
++  from {
++    opacity: 0;
++  }
++  to {
++    opacity: 1;
++  }
++}
++
++@keyframes grow-in {
++  from {
++    opacity: 0;
++    transform: scale(0.6);
++  }
++  to {
++    opacity: 1;
++    transform: none;
++  }
++}
++
++/* Mouvement réduit (spec refonte §7) : plus de ressort, d'agrandissement ni de rotation, de simples fondus. */
++@media (prefers-reduced-motion: reduce) {
++  .card:has(.cardInput:checked) {
++    animation: none;
++  }
++
++  .grow {
++    animation-name: intro-fade;
++  }
++
++  .layer,
++  .layer[data-layer="nutrition"],
++  .stage[data-mode="nutrition"] .layer[data-layer="training"],
++  .modeTexts[data-mode="training"] > [data-text="nutrition"],
++  .modeTexts[data-mode="nutrition"] > [data-text="training"] {
++    transform: none;
++  }
++
++  .modePill {
++    transition: background-color var(--dur-fast) var(--ease);
++  }
++}
+diff --git a/apps/web/src/features/onboarding/OnboardingFlow.tsx b/apps/web/src/features/onboarding/OnboardingFlow.tsx
+index a01b3ea..5dc5eef 100644
+--- a/apps/web/src/features/onboarding/OnboardingFlow.tsx
++++ b/apps/web/src/features/onboarding/OnboardingFlow.tsx
+@@ -1,93 +1,119 @@
+ import { ONBOARDING_STEPS, type OnboardingStep, type PlaceKind } from '@rune/contracts';
+ import { firstIncompleteStep } from '@rune/domain';
+ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+ import { useSyncState } from '../../app-services';
+ import { useRepos } from '../../repos';
+-import { Banner, ERROR_MESSAGES, Page } from '../../ui';
++import { Banner, ERROR_MESSAGES, Page, SegmentedProgress } from '../../ui';
++import { CoachStep } from '../coach/CoachStep';
+ import { AvailabilityStep } from './AvailabilityStep';
+ import { ExperienceStep } from './ExperienceStep';
+ import { GoalStep } from './GoalStep';
+ import { HealthStep } from './HealthStep';
+ import styles from './onboarding.module.css';
+ import { PlaceKindStep } from './PlaceKindStep';
+ import { PlaceStep } from './PlaceStep';
+ import { ReadyStep } from './ReadyStep';
+ import { SportStep } from './SportStep';
+ import { StepTitleContext } from './StepTitle';
+ 
++/**
++ * Écrans de l'onboarding (spec refonte §10.1) : le coach d'abord, puis les écrans du serveur. Le coach n'est
++ * pas une étape serveur (`ONBOARDING_STEPS` inchangé) : le serveur refuse seulement de terminer sans coach.
++ */
++export type FlowStep = 'coach' | OnboardingStep;
++const FLOW_STEPS: readonly FlowStep[] = ['coach', ...ONBOARDING_STEPS];
++
+ interface FlowState {
+-  step: OnboardingStep;
++  step: FlowStep;
+   /** Type du lieu principal : choisi à l'écran « Lieu principal », ou celui du lieu déjà créé. */
+   kind: PlaceKind | null;
++  /**
++   * Écran qui suit le coach : celui de la reprise quand elle passe d'abord par le coach (profil sans coach),
++   * sinon l'objectif.
++   */
++  afterCoach: OnboardingStep;
+ }
+ 
+ /**
+  * Écran affiché : l'écran du lieu sans type connu revient à la question du type (seul un 409 du
+  * serveur peut mener à 'place' : la reprise locale passe par 'place_kind').
+  */
+-export const shownStep = (s: FlowState): OnboardingStep =>
++export const shownStep = (s: Pick<FlowState, 'step' | 'kind'>): FlowStep =>
+   s.step === 'place' && s.kind === null ? 'place_kind' : s.step;
+ 
+ /**
+- * Onboarding en 8 écrans (02 §8), hors de la coquille de l'appli. Départ au premier écran
+- * incomplet (R-ONB-2), recalculé à chaque pull réussi tant que l'utilisateur n'a rien changé (un
+- * nouvel appareil reçoit ses réponses après l'ouverture) ; chaque écran s'enregistre au clic sur
+- * « Suivant », « Retour » revient à l'écran précédent avec ses réponses. À chaque changement
+- * d'écran, le titre du nouvel écran (« Étape n/8 <titre> ») prend le focus.
++ * Onboarding en 9 écrans (spec refonte §10.1), hors de la coquille de l'appli. Départ au premier écran
++ * incomplet (R-ONB-2), précédé de l'étape coach tant que le profil n'a pas de coach ; recalculé à chaque
++ * pull réussi tant que l'utilisateur n'a rien changé (un nouvel appareil reçoit ses réponses, coach compris,
++ * après l'ouverture). Chaque écran s'enregistre au clic, « Retour » revient à l'écran précédent avec ses
++ * réponses. À chaque changement d'écran, le titre du nouvel écran (« Étape n sur 9 <titre> ») prend le focus.
+  */
+ export function OnboardingFlow() {
+   const repos = useRepos();
+   const { lastPullOkAt } = useSyncState();
+   const [state, setState] = useState<FlowState | null>(null);
+   // Raison d'un retour imposé par le serveur (409), affichée jusqu'au changement d'écran suivant.
+   const [notice, setNotice] = useState<string | null>(null);
+-  // Écran ou type de lieu changé par l'utilisateur : la reprise calculée ne s'applique plus.
++  // Écran, coach ou type de lieu changé par l'utilisateur : la reprise calculée ne s'applique plus.
+   const moved = useRef(false);
+   const focusNext = useRef(false);
+   const progressId = useId();
+   const titles = useMemo(() => ({ progressId, focusNext }), [progressId]);
+ 
+   const resume = useCallback(async (): Promise<FlowState> => {
+-    const [input, places] = await Promise.all([repos.profile.onboardingInput(), repos.places.list()]);
+-    return { step: firstIncompleteStep(input), kind: places.find((p) => p.isPrimary)?.kind ?? null };
++    const [input, places, profile] = await Promise.all([
++      repos.profile.onboardingInput(),
++      repos.places.list(),
++      repos.profile.get(),
++    ]);
++    const step = firstIncompleteStep(input);
++    return {
++      step: profile?.coach ? step : 'coach',
++      kind: places.find((p) => p.isPrimary)?.kind ?? null,
++      afterCoach: step,
++    };
+   }, [repos]);
+ 
+   // biome-ignore lint/correctness/useExhaustiveDependencies: reprise recalculée après chaque pull réussi
+   useEffect(() => {
+     let active = true;
+     resume().then(
+       (s) => {
+         if (active && !moved.current) setState(s);
+       },
+       () => {
+         // Base locale illisible : départ au premier écran.
+-        if (active && !moved.current) setState((prev) => prev ?? { step: 'goal', kind: null });
++        if (active && !moved.current)
++          setState((prev) => prev ?? { step: 'coach', kind: null, afterCoach: 'goal' });
+       },
+     );
+     return () => {
+       active = false;
+     };
+   }, [resume, lastPullOkAt]);
+ 
+   if (!state) return null;
+ 
+   const step = shownStep(state);
+-  const index = ONBOARDING_STEPS.indexOf(step);
+-  const goTo = (s: OnboardingStep, reason: string | null = null) => {
++  const index = FLOW_STEPS.indexOf(step);
++  const goTo = (s: FlowStep, reason: string | null = null) => {
+     moved.current = true;
+     focusNext.current = true;
+     setNotice(reason);
+-    setState((prev) => (prev ? { ...prev, step: s } : prev));
++    // Revenir au coach depuis l'objectif : la suite du coach redevient l'objectif.
++    setState((prev) =>
++      prev ? { ...prev, step: s, afterCoach: s === 'coach' ? 'goal' : prev.afterCoach } : prev,
++    );
+   };
+-  const next = ONBOARDING_STEPS[index + 1];
+-  const previous = ONBOARDING_STEPS[index - 1];
++  const next = FLOW_STEPS[index + 1];
++  const previous = FLOW_STEPS[index - 1];
+   const onNext = () => {
+     if (next) goTo(next);
+   };
+   const onBack = previous ? () => goTo(previous) : undefined;
+   const props = { mode: 'onboarding', onNext, onBack } as const;
+ 
+   /** 409 onboarding_incomplete : l'écran indiqué par le serveur, sinon celui de la base locale. */
+   const onIncomplete = (serverStep: OnboardingStep | null) => {
+     const reason = ERROR_MESSAGES.onboarding_incomplete;
+     if (serverStep) {
+@@ -100,24 +126,34 @@ export function OnboardingFlow() {
+         focusNext.current = true;
+         setNotice(reason);
+         setState(s);
+       },
+       () => {},
+     );
+   };
+ 
+   return (
+     <Page title="Prise en main">
+-      <p id={progressId} className={styles.progress}>{`Étape ${index + 1}/${ONBOARDING_STEPS.length}`}</p>
++      <div id={progressId}>
++        <SegmentedProgress step={index + 1} total={FLOW_STEPS.length} />
++      </div>
+       {notice ? <Banner tone="warning">{notice}</Banner> : null}
+       <StepTitleContext.Provider value={titles}>
+         <div key={step} data-testid="onboarding-step" data-step={step} className={styles.step}>
++          {step === 'coach' ? (
++            <CoachStep
++              onNext={() => goTo(state.afterCoach)}
++              onChange={() => {
++                moved.current = true;
++              }}
++            />
++          ) : null}
+           {step === 'goal' ? <GoalStep {...props} /> : null}
+           {step === 'sport' ? <SportStep {...props} /> : null}
+           {step === 'place_kind' ? (
+             <PlaceKindStep
+               {...props}
+               value={state.kind}
+               onChange={(kind) => {
+                 moved.current = true;
+                 setState((prev) => (prev ? { ...prev, kind } : prev));
+               }}
+diff --git a/apps/web/src/features/onboarding/StepTitle.tsx b/apps/web/src/features/onboarding/StepTitle.tsx
+index e125e52..d5044db 100644
+--- a/apps/web/src/features/onboarding/StepTitle.tsx
++++ b/apps/web/src/features/onboarding/StepTitle.tsx
+@@ -1,23 +1,23 @@
+ import { createContext, type ReactNode, type RefObject, useCallback, useContext, useId } from 'react';
+ 
+ /**
+- * Titre d'écran dans l'onboarding : `progressId` nomme le titre avec « Étape n/8 » ; `focusNext`
++ * Titre d'écran dans l'onboarding : `progressId` nomme le titre avec « Étape n sur 9 » ; `focusNext`
+  * vaut vrai après un changement d'écran, et le prochain titre affiché prend alors le focus.
+  */
+ export const StepTitleContext = createContext<{
+   progressId: string;
+   focusNext: RefObject<boolean>;
+ } | null>(null);
+ 
+ /**
+- * Titre d'un écran (h2). Dans l'onboarding, il est nommé « Étape n/8 <titre> » et reçoit le focus
++ * Titre d'un écran (h2). Dans l'onboarding, il est nommé « Étape n sur 9 <titre> » et reçoit le focus
+  * dès qu'il apparaît après un changement d'écran (lecteur d'écran et clavier repartent de là) ;
+  * hors onboarding (Profil), simple titre.
+  */
+ export function StepTitle(p: { children: ReactNode }) {
+   const ctx = useContext(StepTitleContext);
+   const id = useId();
+   const focusOnMount = useCallback(
+     (el: HTMLHeadingElement | null) => {
+       if (!el || !ctx?.focusNext.current) return;
+       ctx.focusNext.current = false;
+diff --git a/apps/web/src/features/onboarding/onboarding.module.css b/apps/web/src/features/onboarding/onboarding.module.css
+index c4afee2..9517bdb 100644
+--- a/apps/web/src/features/onboarding/onboarding.module.css
++++ b/apps/web/src/features/onboarding/onboarding.module.css
+@@ -1,17 +1,10 @@
+-.progress {
+-  margin: 0;
+-  font-size: 0.875rem;
+-  font-weight: 600;
+-  color: var(--color-muted);
+-}
+-
+ .step,
+ .panel {
+   display: flex;
+   flex-direction: column;
+   gap: var(--space-4);
+ }
+ 
+ .step h2 {
+   margin: 0;
+   font-size: 1.25rem;
+diff --git a/apps/web/test/coach/coach-step.test.tsx b/apps/web/test/coach/coach-step.test.tsx
+new file mode 100644
+index 0000000..4b7bed9
+--- /dev/null
++++ b/apps/web/test/coach/coach-step.test.tsx
+@@ -0,0 +1,463 @@
++import { COACH_IDS, type CoachId } from '@rune/contracts';
++import { act, fireEvent, render, screen } from '@testing-library/react';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { CoachIntro } from '../../src/features/coach/CoachIntro';
++import { COACHES, coachLine, coachText } from '../../src/features/coach/coach-lines';
++import type { AppDb } from '../../src/local-db/db';
++import { settle } from '../support/auth';
++import { createFakeApi } from '../support/fake-api';
++import { createTestLocalDb } from '../support/local-db';
++import {
++  button,
++  choose,
++  currentStep,
++  isChecked,
++  newcomer,
++  PROFILE_PATH,
++  radio,
++  seedPrimaryGym,
++  seedProfile,
++  serveProfile,
++  writes,
++} from '../support/onboarding';
++import { renderApp } from '../support/render';
++import { until } from '../support/wait';
++
++/** Textes de la spec refonte §8, mot pour mot (brief de la tâche 7), avant remplacement de {pseudo} et {jours}. */
++const TEXTS: Record<
++  CoachId,
++  {
++    name: string;
++    temper: string;
++    sample: string;
++    intro: string;
++    nutri: string;
++    ready: string;
++    daily: readonly string[];
++  }
++> = {
++  ombre: {
++    name: "L'Ombre",
++    temper: 'Froid et laconique. Exigeant, jamais humiliant.',
++    sample: 'Quête acceptée. Rang E. Montre-moi ta discipline.',
++    intro:
++      "Je suis L'Ombre. Je fixe tes quêtes, tu les accomplis. Le dialogue viendra plus tard : d'ici là, avance.",
++    nutri: "Bois régulièrement. Après l'effort, un vrai repas. La récupération fait partie de la quête.",
++    ready: 'Éveil validé. Rang E. Le reste se gagne en séance.',
++    daily: [
++      'Jour 1. Rang E. La discipline se prouve, elle ne se promet pas.',
++      'Une quête attend. Ton rang aussi.',
++      "Pas d'excuse aujourd'hui. Juste la suite.",
++    ],
++  },
++  skald: {
++    name: 'Le Skald',
++    temper: 'Mentor chaleureux. Il raconte, il explique.',
++    sample: 'Chaque saga commence par un premier pas, {pseudo}. Je serai là pour la raconter.',
++    intro:
++      "Je suis le Skald. Je raconterai ta saga, séance après séance, et je t'expliquerai chaque étape. Nos vraies conversations viendront plus tard : pour l'instant, je pose les premiers vers.",
++    nutri: "À table aussi, la saga s'écrit, {pseudo}. Un vrai repas après ta séance t'aidera à récupérer.",
++    ready: 'Le prologue est écrit, {pseudo}. La saga commence.',
++    daily: [
++      "Le premier chapitre de ta saga s'ouvre aujourd'hui, {pseudo}. Les grands récits commencent toujours ainsi.",
++      'Chaque jour ajoute une ligne à ta saga.',
++      'Les héros aussi ont commencé au rang E.',
++    ],
++  },
++  scribe: {
++    name: 'Le Scribe',
++    temper: 'Calme et précis. Il aime les plans clairs et les bilans.',
++    sample: "Trois séances par semaine : c'est un rythme tenable. Je note tout.",
++    intro:
++      "Je suis le Scribe. Je prépare un plan clair et je note chaque série pour faire le point avec toi. Nos échanges viendront plus tard : pour l'instant, je consigne.",
++    nutri: 'Note du jour : bois régulièrement, et prévois un vrai repas après ta séance.',
++    ready: 'Profil complet, lieu noté. Le plan arrivera ici.',
++    daily: [
++      'Profil complet, lieu noté, rythme de {jours} séances par semaine. Le plan arrivera ici.',
++      'Point du jour : ton profil est à jour.',
++      'Je consigne. Les premières séances arriveront bientôt.',
++    ],
++  },
++};
++
++/**
++ * Éléments qui portent exactement `text` et qu'aucun ancêtre ne cache aux lecteurs d'écran (copie animée de la
++ * bulle, texte de l'autre mode). Pas d'option `ignore` à sélecteur descendant : happy-dom garde en cache le
++ * résultat de `matches` quand l'aria-hidden d'un ancêtre change.
++ */
++const readable = (text: string) =>
++  screen.queryAllByText(text).filter((el) => el.closest('[aria-hidden="true"]') === null);
++const REDUCE = '(prefers-reduced-motion: reduce)';
++
++/** Réglages du téléphone simulés : les media queries listées répondent vrai, les autres faux. */
++function phoneSettings(...matching: string[]) {
++  vi.stubGlobal('matchMedia', (query: string) => ({
++    matches: matching.includes(query),
++    media: query,
++    addEventListener: () => {},
++    removeEventListener: () => {},
++  }));
++}
++
++afterEach(() => {
++  vi.useRealTimers();
++  vi.unstubAllGlobals();
++});
++
++/** Onboarding dans l'appli (garde comprise) ; `prepare` remplit la base avant le premier rendu. */
++async function openFlow(me = newcomer(), prepare?: (db: AppDb) => Promise<void>) {
++  const db = createTestLocalDb();
++  const api = createFakeApi();
++  const server = serveProfile(api, db, me);
++  await prepare?.(db);
++  const rendered = await renderApp({ path: '/onboarding', me, db, api });
++  return { ...rendered, server };
++}
++
++/** Le titre de l'écran, nommé avec l'indicateur d'étape, a le focus. */
++const hasFocus = (name: string) =>
++  screen.queryByRole('heading', { level: 2, name }) === document.activeElement;
++
++/** Textes qui décrivent un élément (aria-describedby), dans l'ordre. */
++const described = (el: Element) =>
++  (el.getAttribute('aria-describedby') ?? '')
++    .split(' ')
++    .filter(Boolean)
++    .map((id) => document.getElementById(id)?.textContent ?? '')
++    .join(' ');
++
++describe('étape coach de l’onboarding (spec refonte §8, §10.1)', () => {
++  it('« Choisis ton coach », étape 1 sur 9 : L’Ombre, Le Skald, Le Scribe, « Continuer » attend un choix', async () => {
++    await openFlow();
++    await until(() => currentStep() === 'coach');
++    await screen.findByRole('heading', { level: 2, name: 'Étape 1 sur 9 Choisis ton coach' });
++    expect(screen.getByText('Étape 1 sur 9')).toBeTruthy();
++    expect(screen.getAllByRole('radio').map((r) => r.getAttribute('value'))).toEqual([
++      'ombre',
++      'skald',
++      'scribe',
++    ]);
++    for (const name of ["L'Ombre", 'Le Skald', 'Le Scribe']) expect(radio(name).checked).toBe(false);
++    // Chaque carte est décrite par le tempérament et l'aperçu du coach, {pseudo} remplacé.
++    expect(described(radio('Le Skald'))).toBe(
++      'Mentor chaleureux. Il raconte, il explique. « Chaque saga commence par un premier pas, lea. Je serai là pour la raconter. »',
++    );
++    expect(screen.getByText('Tu pourras changer de coach plus tard dans ton profil.')).toBeTruthy();
++    expect(button('Continuer').disabled).toBe(true);
++    expect(screen.queryByRole('button', { name: 'Retour' })).toBeNull();
++    choose('Le Skald');
++    expect(isChecked('Le Skald')).toBe(true);
++    expect(button('Continuer').disabled).toBe(false);
++  });
++
++  it('« Le Skald » puis « Continuer » : setCoach, présentation, « C’est parti » mène à l’objectif (2 sur 9)', async () => {
++    const t = await openFlow();
++    await until(() => currentStep() === 'coach');
++    await screen.findByRole('radio', { name: 'Le Skald' });
++    choose('Le Skald');
++    expect(t.server.patches).toEqual([]);
++    fireEvent.click(button('Continuer'));
++    await screen.findByRole('button', { name: "C'est parti" });
++    expect(t.server.patches).toEqual([{ coach: 'skald' }]);
++    expect(currentStep()).toBe('coach');
++    // Présentation : le nom du coach prend le focus, toujours à l'étape 1 sur 9.
++    await until(() => hasFocus('Étape 1 sur 9 Le Skald'));
++    expect(screen.getByText("Message d'accueil")).toBeTruthy();
++    expect(readable(COACHES.skald.intro)).toHaveLength(1);
++    expect(screen.queryByText(/en train d'écrire/i)).toBeNull();
++    expect(screen.getByRole('group', { name: 'Mode du coach' })).toBeTruthy();
++
++    fireEvent.click(button("C'est parti"));
++    await until(() => currentStep() === 'goal');
++    expect(screen.getByText('Étape 2 sur 9')).toBeTruthy();
++    await until(() => hasFocus('Étape 2 sur 9 Objectif'));
++    expect(t.server.patches).toEqual([{ coach: 'skald' }]);
++  });
++
++  it('présentation : « Retour » revient au choix, le coach toujours coché', async () => {
++    await openFlow();
++    await until(() => currentStep() === 'coach');
++    await screen.findByRole('radio', { name: 'Le Scribe' });
++    choose('Le Scribe');
++    fireEvent.click(button('Continuer'));
++    await screen.findByRole('button', { name: "C'est parti" });
++    fireEvent.click(button('Retour'));
++    await until(() => hasFocus('Étape 1 sur 9 Choisis ton coach'));
++    await until(() => isChecked('Le Scribe'));
++  });
++
++  it('« Retour » depuis l’objectif : le coach enregistré est coché, « Continuer » sans changement ne renvoie rien', async () => {
++    const t = await openFlow();
++    await until(() => currentStep() === 'coach');
++    await screen.findByRole('radio', { name: "L'Ombre" });
++    choose("L'Ombre");
++    fireEvent.click(button('Continuer'));
++    fireEvent.click(await screen.findByRole('button', { name: "C'est parti" }));
++    await until(() => currentStep() === 'goal');
++    fireEvent.click(await screen.findByRole('button', { name: 'Retour' }));
++    await until(() => currentStep() === 'coach');
++    await until(() => isChecked("L'Ombre"));
++    fireEvent.click(button('Continuer'));
++    fireEvent.click(await screen.findByRole('button', { name: "C'est parti" }));
++    await until(() => currentStep() === 'goal');
++    expect(writes(t.api)).toEqual(['PATCH /api/me/training-profile']);
++  });
++
++  it('hors ligne : « Nécessite le réseau », on reste sur le choix sans coach enregistré', async () => {
++    const t = await openFlow();
++    await until(() => currentStep() === 'coach');
++    await screen.findByRole('radio', { name: "L'Ombre" });
++    t.api.setOffline('reject');
++    choose("L'Ombre");
++    fireEvent.click(button('Continuer'));
++    expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
++    expect(currentStep()).toBe('coach');
++    expect(screen.queryByRole('button', { name: "C'est parti" })).toBeNull();
++    expect(isChecked("L'Ombre")).toBe(true);
++    expect(t.server.patches).toEqual([]);
++  });
++
++  it('erreur du serveur : le message, on reste sur le choix', async () => {
++    const t = await openFlow();
++    t.api.on('PATCH', PROFILE_PATH, { status: 500, body: { error: 'internal' } });
++    await until(() => currentStep() === 'coach');
++    await screen.findByRole('radio', { name: 'Le Scribe' });
++    choose('Le Scribe');
++    fireEvent.click(button('Continuer'));
++    expect((await screen.findByRole('alert')).textContent).toBe('Le serveur a rencontré une erreur.');
++    expect(currentStep()).toBe('coach');
++    expect(screen.queryByRole('button', { name: "C'est parti" })).toBeNull();
++  });
++
++  it('reprise sans coach : l’étape coach d’abord, puis l’écran enregistré (disponibilité, 7 sur 9)', async () => {
++    const t = await openFlow(newcomer({ onboardingStep: 'availability' }), async (db) => {
++      await seedProfile(db, { coach: null, goal: 'muscle', experience: 'none' });
++      await seedPrimaryGym(db);
++    });
++    await until(() => currentStep() === 'coach');
++    expect(screen.getByText('Étape 1 sur 9')).toBeTruthy();
++    await screen.findByRole('radio', { name: 'Le Scribe' });
++    choose('Le Scribe');
++    fireEvent.click(button('Continuer'));
++    fireEvent.click(await screen.findByRole('button', { name: "C'est parti" }));
++    await until(() => currentStep() === 'availability');
++    expect(screen.getByText('Étape 7 sur 9')).toBeTruthy();
++    expect(t.server.patches).toEqual([{ coach: 'scribe' }]);
++  });
++
++  it('reprise avec un coach : inchangée, directement à l’écran enregistré', async () => {
++    await openFlow(newcomer({ onboardingStep: 'availability' }), async (db) => {
++      await seedProfile(db, { coach: 'ombre', goal: 'muscle', experience: 'none' });
++      await seedPrimaryGym(db);
++    });
++    await until(() => currentStep() === 'availability');
++    expect(screen.getByText('Étape 7 sur 9')).toBeTruthy();
++  });
++
++  it('un coach choisi sur la carte : une synchro qui arrive ne déplace plus l’écran', async () => {
++    const t = await openFlow(newcomer({ onboardingStep: 'goal' }));
++    await until(() => currentStep() === 'coach');
++    await screen.findByRole('radio', { name: 'Le Skald' });
++    choose('Le Skald');
++    // Un autre appareil avait déjà choisi un coach : la synchro l'apporte après le geste.
++    await seedProfile(t.db, { coach: 'ombre', goal: 'muscle' });
++    t.sync.set({ lastPullOkAt: '2026-10-06T12:00:00.000Z' });
++    await settle();
++    expect(currentStep()).toBe('coach');
++    expect(isChecked('Le Skald')).toBe(true);
++  });
++});
++
++/** Avance l'horloge simulée par pas de 50 ms jusqu'à `cond` ; rend le temps écoulé. */
++function advanceUntil(cond: () => boolean, maxMs: number): number {
++  let elapsed = 0;
++  while (!cond()) {
++    if (elapsed >= maxMs) throw new Error(`condition jamais remplie en ${maxMs} ms`);
++    act(() => {
++      vi.advanceTimersByTime(50);
++    });
++    elapsed += 50;
++  }
++  return elapsed;
++}
++
++function renderIntro(coach: CoachId = 'skald') {
++  const onBack = vi.fn();
++  const onStart = vi.fn();
++  const view = render(<CoachIntro coach={coach} pseudo="lea" onBack={onBack} onStart={onStart} />);
++  return { ...view, onBack, onStart };
++}
++
++/** Copie animée du texte de la bulle (cachée aux lecteurs d'écran), absente une fois le texte entier. */
++const typedCopy = (root: HTMLElement) => root.querySelector('[data-reveal]');
++const pressed = (name: string) => button(name).getAttribute('aria-pressed');
++const nutritionShown = () => screen.queryByText('Aperçu') !== null;
++
++describe('présentation du coach (CoachIntro)', () => {
++  it('texte entier lisible dès le départ, copie animée cachée qui se dévoile, jamais d’indicateur de frappe', () => {
++    vi.useFakeTimers();
++    phoneSettings();
++    const { container } = renderIntro('skald');
++    const full = COACHES.skald.intro;
++    expect(readable(full)).toHaveLength(1);
++    expect(screen.getByText("Message d'accueil")).toBeTruthy();
++    expect(button("C'est parti")).toBeTruthy();
++    const copy = typedCopy(container);
++    expect(copy?.closest('[aria-hidden="true"]')).not.toBeNull();
++    act(() => {
++      vi.advanceTimersByTime(1500);
++    });
++    const partial = typedCopy(container)?.textContent ?? '';
++    expect(partial.length).toBeGreaterThan(0);
++    expect(partial.length).toBeLessThan(full.length);
++    expect(full.startsWith(partial)).toBe(true);
++    expect(readable(full)).toHaveLength(1);
++    expect(screen.queryByText(/écrire/i)).toBeNull();
++    expect(container.querySelector('[data-typing], [aria-busy="true"]')).toBeNull();
++    advanceUntil(() => typedCopy(container) === null, 15_000);
++    expect(readable(full)).toHaveLength(1);
++  });
++
++  it('démonstration nutrition jouée une fois après le texte : ligne nutri, « Aperçu », puis retour', () => {
++    vi.useFakeTimers();
++    phoneSettings();
++    const { container } = renderIntro('skald');
++    advanceUntil(nutritionShown, 20_000);
++    // La démonstration attend la fin du texte.
++    expect(typedCopy(container)).toBeNull();
++    expect(readable(coachText('skald', 'nutri', 'lea'))).toHaveLength(1);
++    // Le texte de l'autre mode reste dans la bulle (même hauteur) mais sort de l'arbre d'accessibilité.
++    expect(readable(COACHES.skald.intro)).toEqual([]);
++    expect(screen.getByText('Le Skald · Nutrition')).toBeTruthy();
++    expect(pressed('Nutrition')).toBe('true');
++    expect(pressed('Entraînement')).toBe('false');
++    expect(screen.getByRole('status').textContent).toBe(
++      `Mode nutrition. ${coachText('skald', 'nutri', 'lea')}`,
++    );
++    const shown = advanceUntil(() => !nutritionShown(), 10_000);
++    expect(shown).toBeGreaterThanOrEqual(2000);
++    expect(screen.getByText("Message d'accueil")).toBeTruthy();
++    expect(readable(COACHES.skald.intro)).toHaveLength(1);
++    expect(readable(coachText('skald', 'nutri', 'lea'))).toEqual([]);
++    expect(pressed('Entraînement')).toBe('true');
++    expect(screen.getByRole('status').textContent).toBe('Mode entraînement.');
++    // Une seule fois.
++    act(() => {
++      vi.advanceTimersByTime(30_000);
++    });
++    expect(nutritionShown()).toBe(false);
++  });
++
++  it('interrupteur « Entraînement / Nutrition » : rejoue la nutrition à la demande, sans retour automatique', () => {
++    vi.useFakeTimers();
++    phoneSettings();
++    renderIntro('ombre');
++    fireEvent.click(button('Nutrition'));
++    expect(pressed('Nutrition')).toBe('true');
++    expect(readable(COACHES.ombre.nutri)).toHaveLength(1);
++    expect(screen.getByText('Aperçu')).toBeTruthy();
++    act(() => {
++      vi.advanceTimersByTime(30_000);
++    });
++    expect(nutritionShown()).toBe(true);
++    fireEvent.click(button('Entraînement'));
++    expect(pressed('Entraînement')).toBe('true');
++    expect(readable(COACHES.ombre.intro)).toHaveLength(1);
++    expect(screen.getByText("Message d'accueil")).toBeTruthy();
++    act(() => {
++      vi.advanceTimersByTime(30_000);
++    });
++    expect(nutritionShown()).toBe(false);
++  });
++
++  it('mouvement réduit : texte entier et « C’est parti » d’emblée, sans copie animée', () => {
++    vi.useFakeTimers();
++    phoneSettings(REDUCE);
++    const { container, onStart, onBack } = renderIntro('scribe');
++    expect(typedCopy(container)).toBeNull();
++    expect(readable(COACHES.scribe.intro)).toHaveLength(1);
++    fireEvent.click(button("C'est parti"));
++    expect(onStart).toHaveBeenCalledTimes(1);
++    fireEvent.click(button('Retour'));
++    expect(onBack).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe('textes des coachs (coach-lines)', () => {
++  it('textes écrits à l’avance, mot pour mot', () => {
++    expect(Object.keys(COACHES)).toEqual([...COACH_IDS]);
++    for (const id of COACH_IDS) expect(COACHES[id]).toEqual(TEXTS[id]);
++  });
++
++  it('coachText remplace {pseudo}', () => {
++    expect(coachText('skald', 'ready', 'lea')).toBe('Le prologue est écrit, lea. La saga commence.');
++    expect(coachText('skald', 'sample', 'lea')).toBe(
++      'Chaque saga commence par un premier pas, lea. Je serai là pour la raconter.',
++    );
++    expect(coachText('ombre', 'intro', 'lea')).toBe(TEXTS.ombre.intro);
++  });
++
++  it('ligne du jour : jour civil de Paris modulo 3, {pseudo} et {jours} remplacés', () => {
++    // 2026-10-16 à Paris : jour 20742 depuis le 1970-01-01, 20742 % 3 = 0.
++    const day16 = new Date('2026-10-16T10:00:00Z');
++    expect(coachLine('scribe', 'daily', day16, 'lea', 3)).toBe(
++      'Profil complet, lieu noté, rythme de 3 séances par semaine. Le plan arrivera ici.',
++    );
++    expect(coachLine('skald', 'daily', day16, 'lea', 3)).toBe(
++      "Le premier chapitre de ta saga s'ouvre aujourd'hui, lea. Les grands récits commencent toujours ainsi.",
++    );
++    expect(coachLine('ombre', 'daily', new Date('2026-10-17T10:00:00Z'), 'lea', 3)).toBe(
++      'Une quête attend. Ton rang aussi.',
++    );
++    expect(coachLine('ombre', 'daily', new Date('2026-10-18T10:00:00Z'), 'lea', 3)).toBe(
++      "Pas d'excuse aujourd'hui. Juste la suite.",
++    );
++    expect(coachLine('ombre', 'daily', new Date('2026-10-19T10:00:00Z'), 'lea', 3)).toBe(
++      TEXTS.ombre.daily[0],
++    );
++  });
++
++  it('ligne du jour : jamais le jour UTC (minuit de Paris, heure d’été et d’hiver)', () => {
++    // 2026-10-15 22:30 UTC = 2026-10-16 00:30 à Paris (UTC+2) : jour 0, pas le jour 2 du 15 en UTC.
++    expect(coachLine('scribe', 'daily', new Date('2026-10-15T22:30:00Z'), 'lea', 4)).toBe(
++      'Profil complet, lieu noté, rythme de 4 séances par semaine. Le plan arrivera ici.',
++    );
++    // 2026-10-16 21:59 UTC = 23:59 à Paris, encore le 16 ; 22:00 UTC = minuit, le 17.
++    expect(coachLine('ombre', 'daily', new Date('2026-10-16T21:59:00Z'), 'lea', 3)).toBe(
++      TEXTS.ombre.daily[0],
++    );
++    expect(coachLine('ombre', 'daily', new Date('2026-10-16T22:00:00Z'), 'lea', 3)).toBe(
++      TEXTS.ombre.daily[1],
++    );
++    // 2026-12-31 23:30 UTC = 2027-01-01 00:30 à Paris (UTC+1) : jour 20819, 20819 % 3 = 2.
++    expect(coachLine('ombre', 'daily', new Date('2026-12-31T23:30:00Z'), 'lea', 3)).toBe(
++      TEXTS.ombre.daily[2],
++    );
++  });
++
++  it('ligne du jour du Scribe sans rythme connu : la ligne suivante, jamais « {jours} » ni une valeur inventée', () => {
++    expect(coachLine('scribe', 'daily', new Date('2026-10-16T10:00:00Z'), 'lea', null)).toBe(
++      'Point du jour : ton profil est à jour.',
++    );
++  });
++
++  it('garde-fous : aucun chiffre nutritionnel (kcal, g, kg, %) dans aucune ligne', () => {
++    const lines = COACH_IDS.flatMap((id) => {
++      const c = COACHES[id];
++      return [c.temper, c.sample, c.intro, c.nutri, c.ready, ...c.daily].flatMap((text) =>
++        [2, 3, 4].map((jours) => text.replaceAll('{pseudo}', 'lea').replaceAll('{jours}', String(jours))),
++      );
++    });
++    const days = Array.from({ length: 6 }, (_, i) => new Date(Date.UTC(2026, 9, 16 + i, 10)));
++    lines.push(
++      ...COACH_IDS.flatMap((id) =>
++        days.flatMap((d) => [2, 3, 4].map((n) => coachLine(id, 'daily', d, 'lea', n))),
++      ),
++    );
++    for (const line of lines) {
++      expect(line).not.toMatch(/\d\s*(?:kcal|kg|g)\b|\d\s*%/i);
++      expect(line).not.toMatch(/[{}]/);
++      expect(line).not.toMatch(/[’‘]/);
++    }
++  });
++});
+diff --git a/apps/web/test/onboarding/flow.test.tsx b/apps/web/test/onboarding/flow.test.tsx
+index b755944..e78e696 100644
+--- a/apps/web/test/onboarding/flow.test.tsx
++++ b/apps/web/test/onboarding/flow.test.tsx
+@@ -22,112 +22,117 @@ import { createTestServices, renderApp } from '../support/render';
+ import { until } from '../support/wait';
+ 
+ /** Onboarding dans l'appli (garde comprise), base et faux serveur fournis par le test. */
+ async function openFlow(me = newcomer()) {
+   const db = createTestLocalDb();
+   const api = createFakeApi();
+   const server = serveProfile(api, db, me);
+   return { db, api, me, server, render: () => renderApp({ path: '/onboarding', me, db, api }) };
+ }
+ 
+-const progress = () => screen.getByText(/^Étape \d\/8$/).textContent;
++const progress = () => screen.getByText(/^Étape \d sur 9$/).textContent;
+ /** Le titre de l'écran, nommé avec l'indicateur d'étape, a le focus. */
+ const hasFocus = (name: string) =>
+   screen.queryByRole('heading', { level: 2, name }) === document.activeElement;
+ 
+ describe('OnboardingFlow (R-ONB-1, R-ONB-2)', () => {
+-  it("départ 'goal', « Étape 1/8 », hors de la coquille de l'appli", async () => {
++  it("départ 'coach', « Étape 1 sur 9 », hors de la coquille de l'appli", async () => {
+     const { render } = await openFlow();
+     const { location } = await render();
+-    await until(() => currentStep() === 'goal');
+-    expect(progress()).toBe('Étape 1/8');
++    await until(() => currentStep() === 'coach');
++    expect(progress()).toBe('Étape 1 sur 9');
+     expect(location()).toBe('/onboarding');
+     expect(screen.queryByRole('navigation', { name: 'Navigation principale' })).toBeNull();
+     // La marque ne mène pas hors de l'onboarding (la garde y ramènerait en perdant l'écran).
+     expect(screen.getByText('Rune')).toBeTruthy();
+     expect(screen.queryByRole('link', { name: 'Rune' })).toBeNull();
+   });
+ 
+-  it('changement d’écran : le titre, nommé avec « Étape n/8 », reçoit le focus ; pas au premier affichage', async () => {
++  it('changement d’écran : le titre, nommé avec « Étape n sur 9 », reçoit le focus ; pas au premier affichage', async () => {
+     const t = await openFlow();
++    // Coach déjà choisi : reprise à l'objectif.
++    await seedProfile(t.db);
+     await t.render();
+-    await screen.findByRole('heading', { level: 2, name: 'Étape 1/8 Objectif' });
++    await screen.findByRole('heading', { level: 2, name: 'Étape 2 sur 9 Objectif' });
+     expect(document.activeElement).toBe(document.body);
+     choose('Prendre du muscle');
+     fireEvent.click(button('Suivant'));
+-    await until(() => hasFocus('Étape 2/8 Autre sport'));
++    await until(() => hasFocus('Étape 3 sur 9 Autre sport'));
++    fireEvent.click(button('Retour'));
++    await until(() => hasFocus('Étape 2 sur 9 Objectif'));
+     fireEvent.click(button('Retour'));
+-    await until(() => hasFocus('Étape 1/8 Objectif'));
++    await until(() => hasFocus('Étape 1 sur 9 Choisis ton coach'));
+   });
+ 
+   it('reprise au premier écran incomplet (firstIncompleteStep)', async () => {
+     const t = await openFlow(newcomer({ onboardingStep: 'place' }));
+     await seedProfile(t.db, { goal: 'muscle' });
+     await seedPrimaryGym(t.db);
+     const { services } = await createTestServices({ db: t.db, me: t.me });
+     const expected = firstIncompleteStep(await createRepos(services).profile.onboardingInput());
+     expect(expected).toBe('experience');
+     await t.render();
+     await until(() => currentStep() === 'experience');
+-    expect(progress()).toBe('Étape 5/8');
++    expect(progress()).toBe('Étape 6 sur 9');
+   });
+ 
+   it("santé validée : reprise à 'ready'", async () => {
+     const t = await openFlow(newcomer({ onboardingStep: 'health' }));
+     await seedProfile(t.db, { goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45 });
+     await seedPrimaryGym(t.db);
+     await t.render();
+     await until(() => currentStep() === 'ready');
+-    expect(progress()).toBe('Étape 8/8');
++    expect(progress()).toBe('Étape 9 sur 9');
+   });
+ 
+   it('nouvel appareil : la reprise est recalculée quand la première synchro arrive', async () => {
+     const t = await openFlow(newcomer({ onboardingStep: 'place' }));
+     const { sync } = await t.render();
+-    await until(() => currentStep() === 'goal');
++    // Miroir vide : pas de coach connu, l'étape coach d'abord.
++    await until(() => currentStep() === 'coach');
+     await seedProfile(t.db, { goal: 'muscle' });
+     await seedPrimaryGym(t.db);
+     sync.set({ lastPullOkAt: '2026-10-06T12:00:00.000Z' });
+     await until(() => currentStep() === 'experience');
+-    expect(progress()).toBe('Étape 5/8');
++    expect(progress()).toBe('Étape 6 sur 9');
+   });
+ 
+   it('écran déjà changé par l’utilisateur : une synchro ne le déplace plus', async () => {
+     const t = await openFlow(newcomer({ onboardingStep: 'goal' }));
+     await seedProfile(t.db, { goal: 'muscle' });
+     const { sync } = await t.render();
+     await until(() => currentStep() === 'sport');
+     fireEvent.click(await screen.findByRole('button', { name: 'Retour' }));
+     await until(() => currentStep() === 'goal');
+     sync.set({ lastPullOkAt: '2026-10-06T12:00:00.000Z' });
+     await settle();
+     expect(currentStep()).toBe('goal');
+   });
+ 
+-  it('« Prendre du muscle » + « Suivant » → PATCH, puis « Autre sport » en 2/8 ; « Retour » garde la réponse', async () => {
++  it('« Prendre du muscle » + « Suivant » → PATCH, puis « Autre sport » en 3 sur 9 ; « Retour » garde la réponse', async () => {
+     const t = await openFlow();
++    await seedProfile(t.db);
+     await t.render();
+     await until(() => currentStep() === 'goal');
+     await screen.findByRole('radio', { name: 'Prendre du muscle' });
+     expect(button('Suivant').disabled).toBe(true);
+-    expect(screen.queryByRole('button', { name: 'Retour' })).toBeNull();
+     choose('Prendre du muscle');
+     expect(t.server.patches).toEqual([]);
+     fireEvent.click(button('Suivant'));
+     await until(() => currentStep() === 'sport');
+     expect(t.server.patches).toEqual([{ goal: 'muscle', onboardingStep: 'goal' }]);
+-    expect(progress()).toBe('Étape 2/8');
++    expect(progress()).toBe('Étape 3 sur 9');
+ 
+     fireEvent.click(await screen.findByRole('button', { name: 'Retour' }));
+     await until(() => currentStep() === 'goal');
+     await until(() => isChecked('Prendre du muscle'));
+-    expect(progress()).toBe('Étape 1/8');
++    expect(progress()).toBe('Étape 2 sur 9');
+     expect(t.server.patches).toHaveLength(1);
+   });
+ 
+   it('« Non » au sport enregistré, puis « Retour » depuis le lieu : « Non » toujours coché', async () => {
+     const t = await openFlow(newcomer({ onboardingStep: 'goal' }));
+     await seedProfile(t.db, { goal: 'muscle' });
+     await t.render();
+     await until(() => currentStep() === 'sport');
+     await screen.findByRole('radio', { name: 'Non' });
+     choose('Non');
+@@ -155,21 +160,21 @@ describe('OnboardingFlow (R-ONB-1, R-ONB-2)', () => {
+     await until(() => isChecked('Oui') && isChecked('Course à pied'));
+   });
+ 
+   it("reprise sans lieu principal : 'place_kind', aucun type coché (le choix n'est pas gardé)", async () => {
+     const t = await openFlow(newcomer({ onboardingStep: 'place_kind' }));
+     await seedProfile(t.db, { goal: 'muscle' });
+     await t.render();
+     await until(() => currentStep() === 'place_kind');
+     expect(radio('À la salle').checked).toBe(false);
+     expect(radio('À la maison').checked).toBe(false);
+-    expect(progress()).toBe('Étape 3/8');
++    expect(progress()).toBe('Étape 4 sur 9');
+   });
+ 
+   it("shownStep : 'place' sans type de lieu connu → 'place_kind' ; avec un type → 'place'", () => {
+     expect(shownStep({ step: 'place', kind: null })).toBe('place_kind');
+     expect(shownStep({ step: 'place', kind: 'gym' })).toBe('place');
+     expect(shownStep({ step: 'experience', kind: null })).toBe('experience');
+   });
+ 
+   it('retour depuis le niveau : le lieu principal existant est affiché, rien n’est recréé', async () => {
+     const t = await openFlow(newcomer({ onboardingStep: 'place' }));
+@@ -181,20 +186,21 @@ describe('OnboardingFlow (R-ONB-1, R-ONB-2)', () => {
+     await until(() => currentStep() === 'place');
+     await screen.findByText('Ton lieu principal : Basic Fit');
+     fireEvent.click(button('Suivant'));
+     await until(() => currentStep() === 'experience');
+     expect(writes(t.api)).toEqual(['PATCH /api/me/training-profile']);
+     expect(t.server.patches).toEqual([{ onboardingStep: 'place' }]);
+   });
+ 
+   it('hors ligne : « Nécessite le réseau » en alerte, on reste sur l’objectif', async () => {
+     const t = await openFlow();
++    await seedProfile(t.db);
+     await t.render();
+     await until(() => currentStep() === 'goal');
+     await screen.findByRole('radio', { name: 'Gagner en force' });
+     t.api.setOffline('reject');
+     choose('Gagner en force');
+     fireEvent.click(button('Suivant'));
+     expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
+     expect(currentStep()).toBe('goal');
+     expect(t.server.patches).toEqual([]);
+   });
+diff --git a/apps/web/test/support/onboarding.ts b/apps/web/test/support/onboarding.ts
+index a20b7dd..13382fe 100644
+--- a/apps/web/test/support/onboarding.ts
++++ b/apps/web/test/support/onboarding.ts
+@@ -1,39 +1,46 @@
+ import { defaultLoadSettings, type MeResponse, type TrainingProfilePatch } from '@rune/contracts';
+ import { fireEvent, screen } from '@testing-library/react';
+ import type { AppDb } from '../../src/local-db/db';
+ import type { FakeApi } from './fake-api';
+ import { makeMe } from './render';
+ import { seedMirror } from './seed';
+ 
+ export const PROFILE_PATH = '/api/me/training-profile';
+ 
+-/** Profil d'entraînement d'un nouveau compte : rien n'est encore répondu. */
++/** Profil d'entraînement d'un nouveau compte : rien n'est encore répondu, pas même le coach. */
+ export const EMPTY_PROFILE = {
+   goal: null,
+   experience: null,
+   daysPerWeek: null,
+   sessionMinutes: null,
+   sportCode: null,
+   sportOtherLabel: null,
+   cautiousMode: false,
++  coach: null,
+ };
+ 
+ type ProfileFields = { [K in keyof typeof EMPTY_PROFILE]?: unknown };
+ 
+ /** Membre adulte dont l'onboarding n'est pas terminé (aucun écran validé par défaut). */
+ export function newcomer(o: Partial<MeResponse> = {}): MeResponse {
+   return makeMe({ onboardingCompletedAt: null, onboardingStep: null, ...o });
+ }
+ 
++/**
++ * Profil d'un compte qui a passé la première étape (coach Le Skald), plus `fields` ; `coach: null` pour
++ * un profil sans coach, que la reprise de l'onboarding renvoie à l'étape coach.
++ */
+ export async function seedProfile(db: AppDb, fields: ProfileFields = {}, ownerId = 'u-1'): Promise<void> {
+-  await seedMirror(db, 'training_profile', [{ id: ownerId, ownerId, ...EMPTY_PROFILE, ...fields }]);
++  await seedMirror(db, 'training_profile', [
++    { id: ownerId, ownerId, ...EMPTY_PROFILE, coach: 'skald', ...fields },
++  ]);
+ }
+ 
+ /** Salle « Basic Fit » à Lyon, lieu principal de `ownerId`. */
+ export async function seedPrimaryGym(db: AppDb, ownerId = 'u-1'): Promise<void> {
+   await seedMirror(db, 'gym', [
+     {
+       id: 'g-1',
+       name: 'Basic Fit',
+       nameKey: 'basic fit',
+       city: 'Lyon',

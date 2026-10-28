@@ -1,0 +1,1424 @@
+# Review package: 245c1ef..HEAD
+
+## Commits
+b1da823 feat(web): jetons des 5 thèmes, choix d'apparence par appareil et polices embarquées
+
+## Files changed
+ apps/web/package.json               |   5 +-
+ apps/web/src/main.tsx               |   6 +
+ apps/web/src/ui/theme/fonts.css     |  55 ++++++
+ apps/web/src/ui/theme/theme.ts      | 108 +++++++++++
+ apps/web/src/ui/theme/tokens.css    | 155 +++++++++++++++
+ apps/web/src/ui/ui.module.css       | 125 +++++-------
+ apps/web/test/support/css-blocks.ts |  87 +++++++++
+ apps/web/test/ui/contrast.test.ts   | 111 +++++++++++
+ apps/web/test/ui/theme.test.ts      | 365 ++++++++++++++++++++++++++++++++++++
+ pnpm-lock.yaml                      |  24 +++
+ 10 files changed, 964 insertions(+), 77 deletions(-)
+
+## Diff
+diff --git a/apps/web/package.json b/apps/web/package.json
+index 876b37a..a78f2a1 100644
+--- a/apps/web/package.json
++++ b/apps/web/package.json
+@@ -3,31 +3,34 @@
+   "version": "0.0.0",
+   "private": true,
+   "type": "module",
+   "scripts": {
+     "typecheck": "tsc --noEmit -p tsconfig.json",
+     "test": "vitest run --root ../.. --project web",
+     "test:e2e": "playwright test",
+     "build": "vite build --configLoader runner"
+   },
+   "dependencies": {
++    "@fontsource/barlow": "5.3.0",
++    "@fontsource/chakra-petch": "5.3.0",
++    "@fontsource/newsreader": "5.3.0",
+     "@rune/contracts": "workspace:*",
+     "@rune/domain": "workspace:*",
+     "dexie": "^4.4.6",
+     "react": "^19.3.0",
+     "react-dom": "^19.3.0",
+     "wouter": "^3.13.0",
+     "zod": "^4.6.5"
+   },
+   "devDependencies": {
+-    "@rune/server": "workspace:*",
+     "@playwright/test": "~1.63.0",
++    "@rune/server": "workspace:*",
+     "@testing-library/react": "^16.3.3",
+     "@types/react": "^19.3.0",
+     "@types/react-dom": "^19.3.0",
+     "@vitejs/plugin-react": "^6.1.2",
+     "esbuild": "^0.28.2",
+     "fake-indexeddb": "^6.2.5",
+     "fast-check": "^4.10.2",
+     "happy-dom": "^20",
+     "vite": "^8.3.3"
+   }
+diff --git a/apps/web/src/main.tsx b/apps/web/src/main.tsx
+index fd7153e..9eb4a06 100644
+--- a/apps/web/src/main.tsx
++++ b/apps/web/src/main.tsx
+@@ -1,27 +1,33 @@
++import './ui/theme/tokens.css';
++import './ui/theme/fonts.css';
+ import { createMonotonicUuidV7 } from '@rune/domain';
+ import { StrictMode } from 'react';
+ import { createRoot } from 'react-dom/client';
+ import { Router } from 'wouter';
+ import { navigate } from 'wouter/use-browser-location';
+ import { App } from './App';
+ import { createApiClient } from './api/client';
+ import { type AppServices, handleAccountDeleted, ServicesProvider } from './app-services';
+ import { bootApp } from './boot';
+ import { createAppDb } from './local-db/db';
+ import { reposFor } from './repos';
+ import { probeHealth } from './sw/kill-switch';
+ import { installPersistOnOnboarding } from './sw/persist';
+ import { bootServiceWorker } from './sw/register';
+ import { getSwStatus } from './sw/sw-client';
+ import { createSyncEngine } from './sync/engine';
+ import { browserTransport } from './sync/transport';
++import { applyTheme, readThemeChoice } from './ui/theme/theme';
++
++// Thème gardé sur l'appareil, posé avant tout rendu (spec refonte §4) ; Auto suit la media query CSS.
++applyTheme(readThemeChoice());
+ 
+ const randomBytes = (n: number) => crypto.getRandomValues(new Uint8Array(n));
+ const go = (to: string) => navigate(to, { replace: true });
+ 
+ const db = createAppDb();
+ const transport = browserTransport();
+ const newOpId = createMonotonicUuidV7(Date.now, randomBytes);
+ const sync = createSyncEngine({
+   db,
+   transport,
+diff --git a/apps/web/src/ui/theme/fonts.css b/apps/web/src/ui/theme/fonts.css
+new file mode 100644
+index 0000000..543c91d
+--- /dev/null
++++ b/apps/web/src/ui/theme/fonts.css
+@@ -0,0 +1,55 @@
++/*
++ * Polices embarquées (spec refonte §4, P-LOG-4) : sous-ensemble latin en woff2 des paquets Fontsource,
++ * émis dans dist/assets par Vite, servis par notre serveur et précachés par le SW. Déclarées ici plutôt que
++ * par les feuilles d'entrée Fontsource (`latin-600.css`…), qui ajoutent un repli .woff que Vite émettrait
++ * et que le SW précacherait pour rien.
++ * Chakra Petch : titres, chiffres, rangs, voix du Système. Barlow : le texte. Newsreader : titres du Carnet.
++ */
++
++@font-face {
++  font-family: "Chakra Petch";
++  font-style: normal;
++  font-weight: 600;
++  font-display: swap;
++  src: url("@fontsource/chakra-petch/files/chakra-petch-latin-600-normal.woff2") format("woff2");
++}
++
++@font-face {
++  font-family: "Chakra Petch";
++  font-style: normal;
++  font-weight: 700;
++  font-display: swap;
++  src: url("@fontsource/chakra-petch/files/chakra-petch-latin-700-normal.woff2") format("woff2");
++}
++
++@font-face {
++  font-family: "Barlow";
++  font-style: normal;
++  font-weight: 400;
++  font-display: swap;
++  src: url("@fontsource/barlow/files/barlow-latin-400-normal.woff2") format("woff2");
++}
++
++@font-face {
++  font-family: "Barlow";
++  font-style: normal;
++  font-weight: 500;
++  font-display: swap;
++  src: url("@fontsource/barlow/files/barlow-latin-500-normal.woff2") format("woff2");
++}
++
++@font-face {
++  font-family: "Barlow";
++  font-style: normal;
++  font-weight: 600;
++  font-display: swap;
++  src: url("@fontsource/barlow/files/barlow-latin-600-normal.woff2") format("woff2");
++}
++
++@font-face {
++  font-family: "Newsreader";
++  font-style: normal;
++  font-weight: 600;
++  font-display: swap;
++  src: url("@fontsource/newsreader/files/newsreader-latin-600-normal.woff2") format("woff2");
++}
+diff --git a/apps/web/src/ui/theme/theme.ts b/apps/web/src/ui/theme/theme.ts
+new file mode 100644
+index 0000000..238144f
+--- /dev/null
++++ b/apps/web/src/ui/theme/theme.ts
+@@ -0,0 +1,108 @@
++import { useSyncExternalStore } from 'react';
++
++/**
++ * Apparence choisie dans Profil › Réglages, gardée sur l'appareil (spec refonte §4) : ni synchro, ni
++ * colonne serveur. Auto suit le réglage du téléphone par la media query de tokens.css ; un thème forcé
++ * pose `data-theme` sur la racine et l'emporte toujours sur ce réglage.
++ */
++export type ThemeChoice = 'auto' | 'clair' | 'sombre' | 'carnet' | 'nuit';
++
++export const THEME_CHOICES: readonly ThemeChoice[] = ['auto', 'clair', 'sombre', 'carnet', 'nuit'];
++
++const STORAGE_KEY = 'rune.theme';
++const DARK_QUERY = '(prefers-color-scheme: dark)';
++
++/** Couleur de la barre du navigateur et de l'appli installée : le --bg de chaque thème (tokens.css). */
++const THEME_COLORS: Record<Exclude<ThemeChoice, 'auto'>, string> = {
++  clair: '#F1F3F7',
++  sombre: '#070A12',
++  carnet: '#F2ECDF',
++  nuit: '#05070D',
++};
++
++const isThemeChoice = (value: unknown): value is ThemeChoice =>
++  (THEME_CHOICES as readonly unknown[]).includes(value);
++
++/** Choix gardé, « auto » par défaut, quand la valeur est inconnue ou quand le stockage est bloqué. */
++export function readThemeChoice(): ThemeChoice {
++  try {
++    const stored = localStorage.getItem(STORAGE_KEY);
++    return isThemeChoice(stored) ? stored : 'auto';
++  } catch {
++    return 'auto';
++  }
++}
++
++/** Garde le choix ; si le stockage le refuse, il vaut pour la page ouverte seulement. */
++export function writeThemeChoice(choice: ThemeChoice): void {
++  try {
++    localStorage.setItem(STORAGE_KEY, choice);
++  } catch {
++    // Stockage plein ou bloqué : rien à faire, le thème reste appliqué jusqu'au rechargement.
++  }
++}
++
++/** Composants abonnés au thème appliqué (useThemeChoice). */
++const subscribers = new Set<() => void>();
++/** Écoute du réglage du téléphone, active seulement en Auto. */
++let stopFollowingPhone: (() => void) | null = null;
++
++function setThemeColor(doc: Document, color: string): void {
++  const metas = [...doc.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')];
++  if (metas.length === 0) {
++    const meta = doc.createElement('meta');
++    meta.name = 'theme-color';
++    doc.head.append(meta);
++    metas.push(meta);
++  }
++  for (const meta of metas) meta.content = color;
++}
++
++/**
++ * Applique le choix à `root` : `data-theme` pour un thème forcé, aucun attribut pour Auto (les couleurs
++ * suivent alors la media query CSS). Met à jour `theme-color` ; en Auto, il suit le téléphone à l'appel
++ * puis à chaque changement de son réglage.
++ */
++export function applyTheme(choice: ThemeChoice, root: HTMLElement = document.documentElement): void {
++  stopFollowingPhone?.();
++  stopFollowingPhone = null;
++  const doc = root.ownerDocument;
++  if (choice === 'auto') {
++    root.removeAttribute('data-theme');
++    const query = typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia(DARK_QUERY) : null;
++    const follow = () => setThemeColor(doc, query?.matches ? THEME_COLORS.sombre : THEME_COLORS.clair);
++    follow();
++    // Appelé avant le premier rendu : un navigateur sans écoute de media query garde la couleur du démarrage.
++    if (typeof query?.addEventListener === 'function') {
++      query.addEventListener('change', follow);
++      stopFollowingPhone = () => query.removeEventListener('change', follow);
++    }
++  } else {
++    root.setAttribute('data-theme', choice);
++    setThemeColor(doc, THEME_COLORS[choice]);
++  }
++  for (const notify of subscribers) notify();
++}
++
++const subscribe = (onChange: () => void) => {
++  subscribers.add(onChange);
++  return () => {
++    subscribers.delete(onChange);
++  };
++};
++
++/** Le thème appliqué à la page : ce que l'on voit, posé au démarrage par main.tsx puis par le réglage. */
++const appliedChoice = (): ThemeChoice => {
++  const attr = document.documentElement.getAttribute('data-theme');
++  return isThemeChoice(attr) ? attr : 'auto';
++};
++
++function chooseTheme(choice: ThemeChoice): void {
++  writeThemeChoice(choice);
++  applyTheme(choice);
++}
++
++/** Choix en cours et réglage qui le garde puis l'applique ; tous les composants abonnés suivent. */
++export function useThemeChoice(): [ThemeChoice, (choice: ThemeChoice) => void] {
++  return [useSyncExternalStore(subscribe, appliedChoice), chooseTheme];
++}
+diff --git a/apps/web/src/ui/theme/tokens.css b/apps/web/src/ui/theme/tokens.css
+new file mode 100644
+index 0000000..4496dc9
+--- /dev/null
++++ b/apps/web/src/ui/theme/tokens.css
+@@ -0,0 +1,155 @@
++/*
++ * Jetons de Rune : la seule source des couleurs, rayons et polices (spec refonte §4).
++ * - `:root` porte le thème clair (le mélange en clair) et les jetons communs à tous les thèmes ;
++ * - Auto (aucun data-theme) passe en sombre par la media query, sans script ni flash ;
++ * - un thème forcé (data-theme, posé par applyTheme) l'emporte toujours sur le réglage du téléphone :
++ *   la media query ne vise que `:root:not([data-theme])`.
++ * Clair et sombre : tableau Tokens de GUIDE.md. Carnet : maquette Carnet. Salle de nuit : maquette Main.
++ * Contrastes vérifiés pour chaque thème par test/ui/contrast.test.ts ; theme-color (theme.ts) = --bg.
++ */
++
++:root {
++  color-scheme: light;
++  --bg: #f1f3f7;
++  --surface: #ffffff;
++  --surface-strong: #ffffff;
++  --border: #dce2ea;
++  --text: #10151f;
++  --text-muted: #4f5c6d;
++  --accent: #1c6fb5;
++  --accent-text: #ffffff;
++  --accent-2: #6a48e8;
++  --danger: #c2333f;
++  --success: #1e9e63;
++  --warning-text: #8a5a00;
++  --warning-bg: #fff4dc;
++  --field-bg: #ffffff;
++  --field-border: #ced6e0;
++  --focus: #1c6fb5;
++
++  --radius-card: 18px;
++  --radius-control: 14px;
++  --font-display: "Chakra Petch", system-ui, sans-serif;
++  --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
++  --font-title: var(--font-display);
++
++  --space-1: 4px;
++  --space-2: 8px;
++  --space-3: 12px;
++  --space-4: 16px;
++  --space-6: 24px;
++  --content-width: 40rem;
++}
++
++@media (prefers-color-scheme: dark) {
++  :root:not([data-theme]) {
++    color-scheme: dark;
++    --bg: #070a12;
++    --surface: #0e1424;
++    --surface-strong: #0f1a30;
++    --border: rgb(255 255 255 / 0.06);
++    --text: #eef6fb;
++    --text-muted: #9db0c4;
++    --accent: #5ed8ff;
++    --accent-text: #05070d;
++    --accent-2: #8c6bff;
++    --danger: #ff8a95;
++    --success: #3ddc97;
++    --warning-text: #f5c46b;
++    --warning-bg: #2a2112;
++    --field-bg: #0e1424;
++    --field-border: rgb(255 255 255 / 0.12);
++    --focus: #5ed8ff;
++  }
++}
++
++/* Clair forcé : les valeurs de :root, sans la bascule du téléphone. */
++:root[data-theme="clair"] {
++  color-scheme: light;
++}
++
++/* Sombre forcé : mêmes couleurs que Auto en sombre (vérifié par test). */
++:root[data-theme="sombre"] {
++  color-scheme: dark;
++  --bg: #070a12;
++  --surface: #0e1424;
++  --surface-strong: #0f1a30;
++  --border: rgb(255 255 255 / 0.06);
++  --text: #eef6fb;
++  --text-muted: #9db0c4;
++  --accent: #5ed8ff;
++  --accent-text: #05070d;
++  --accent-2: #8c6bff;
++  --danger: #ff8a95;
++  --success: #3ddc97;
++  --warning-text: #f5c46b;
++  --warning-bg: #2a2112;
++  --field-bg: #0e1424;
++  --field-border: rgb(255 255 255 / 0.12);
++  --focus: #5ed8ff;
++}
++
++/* Carnet : papier crème, encre, bleu de stylo, marge rouge (accent 2) ; titres en Newsreader. */
++:root[data-theme="carnet"] {
++  color-scheme: light;
++  --bg: #f2ecdf;
++  --surface: #fbf8f1;
++  --surface-strong: #fbf8f1;
++  --border: #d3c5ad;
++  --text: #211b16;
++  --text-muted: #5c5044;
++  --accent: #1f5f8b;
++  --accent-text: #fbf8f1;
++  --accent-2: #c45c48;
++  --danger: #a8322a;
++  --success: #2f6b3a;
++  --warning-text: #7a4e00;
++  --warning-bg: #f6e3a8;
++  --field-bg: #fbf8f1;
++  --field-border: #cdbfa6;
++  --focus: #1f5f8b;
++  --radius-card: 4px;
++  --radius-control: 4px;
++  --font-title: "Newsreader", Georgia, serif;
++}
++
++/* Salle de nuit : néon pur sur le fond nuit du logo, cadres plus vifs. */
++:root[data-theme="nuit"] {
++  color-scheme: dark;
++  --bg: #05070d;
++  --surface: #0b1222;
++  --surface-strong: #08101f;
++  --border: #18243b;
++  --text: #f2fdff;
++  --text-muted: #9fb0c6;
++  --accent: #5ed8ff;
++  --accent-text: #05070d;
++  --accent-2: #8c6bff;
++  --danger: #ff8a95;
++  --success: #3ddc97;
++  --warning-text: #f5c46b;
++  --warning-bg: #2a2112;
++  --field-bg: #0b1222;
++  --field-border: #1c2a44;
++  --focus: #5ed8ff;
++  --radius-card: 12px;
++  --radius-control: 8px;
++}
++
++/*
++ * Pont vers les variables du socle encore lues par les écrans pas encore refaits (features/, sw/) :
++ * chacune pointe vers un jeton, donc suit le thème. Une ligne disparaît quand plus aucun module ne la lit.
++ */
++:root {
++  --color-bg: var(--bg);
++  --color-surface: var(--surface);
++  --color-text: var(--text);
++  --color-muted: var(--text-muted);
++  --color-border: var(--border);
++  --color-primary: var(--accent);
++  --color-primary-text: var(--accent-text);
++  --color-danger: var(--danger);
++  --color-info-bg: color-mix(in srgb, var(--accent) 10%, var(--surface));
++  --color-warning-bg: var(--warning-bg);
++  --radius: var(--radius-control);
++}
+diff --git a/apps/web/src/ui/ui.module.css b/apps/web/src/ui/ui.module.css
+index 5438ee7..c19b11b 100644
+--- a/apps/web/src/ui/ui.module.css
++++ b/apps/web/src/ui/ui.module.css
+@@ -1,123 +1,96 @@
+-/* Jetons et composants de base. Polices système uniquement : aucune ressource tierce (P-LOG-4). */
+-:global(:root) {
+-  --color-bg: #f7f7f5;
+-  --color-surface: #ffffff;
+-  --color-text: #1c1c1a;
+-  --color-muted: #5b5b57;
+-  --color-border: #d6d6d1;
+-  --color-primary: #1f5f4a;
+-  --color-primary-text: #ffffff;
+-  --color-danger: #a12a2a;
+-  --color-info-bg: #e8f0fb;
+-  --color-warning-bg: #fdf3dc;
+-  --color-error-bg: #fbe6e6;
+-  --radius: 10px;
+-  --space-1: 4px;
+-  --space-2: 8px;
+-  --space-3: 12px;
+-  --space-4: 16px;
+-  --space-6: 24px;
+-  --content-width: 40rem;
+-  color-scheme: light dark;
+-}
+-
+-@media (prefers-color-scheme: dark) {
+-  :global(:root) {
+-    --color-bg: #151614;
+-    --color-surface: #1f201e;
+-    --color-text: #ecece8;
+-    --color-muted: #a8a8a2;
+-    --color-border: #3a3b37;
+-    --color-primary: #5fbf9a;
+-    --color-primary-text: #0c1f18;
+-    --color-danger: #f08a8a;
+-    --color-info-bg: #1d2a3a;
+-    --color-warning-bg: #3a3018;
+-    --color-error-bg: #3e1f1f;
+-  }
+-}
+-
++/* Base et composants. Jetons (couleurs, rayons, polices) : theme/tokens.css, seule source. */
+ :global(*),
+ :global(*::before),
+ :global(*::after) {
+   box-sizing: border-box;
+ }
+ 
+ :global(body) {
+   margin: 0;
+-  background: var(--color-bg);
+-  color: var(--color-text);
+-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
++  background: var(--bg);
++  color: var(--text);
++  font-family: var(--font-body);
+   font-size: 1rem;
+   line-height: 1.5;
+ }
+ 
++:global(h1),
++:global(h2),
++:global(h3) {
++  font-family: var(--font-title);
++}
++
+ :global(a) {
+-  color: var(--color-primary);
++  color: var(--accent);
++}
++
++:global(:focus-visible) {
++  outline: 2px solid var(--focus);
++  outline-offset: 2px;
+ }
+ 
+ .shell {
+   min-height: 100vh;
+   display: flex;
+   flex-direction: column;
+ }
+ 
+ .header {
+   display: flex;
+   flex-wrap: wrap;
+   align-items: center;
+   gap: var(--space-3);
+   padding: var(--space-3) var(--space-4);
+-  background: var(--color-surface);
+-  border-bottom: 1px solid var(--color-border);
++  background: var(--surface);
++  border-bottom: 1px solid var(--border);
+ }
+ 
+ .brand {
+   font-weight: 700;
+   text-decoration: none;
+-  color: var(--color-text);
++  color: var(--text);
+   margin-right: auto;
+ }
+ 
+ .nav {
+   display: flex;
+   flex-wrap: wrap;
+   gap: var(--space-3);
+ }
+ 
+ .status {
+   flex-basis: 100%;
+   display: flex;
+   flex-wrap: wrap;
+   align-items: center;
+   gap: var(--space-1) var(--space-3);
+   font-size: 0.875rem;
+-  color: var(--color-muted);
++  color: var(--text-muted);
+ }
+ 
+ .main {
+   flex: 1;
+   width: 100%;
+   max-width: var(--content-width);
+   margin: 0 auto;
+   padding: var(--space-4);
+ }
+ 
+ .footer {
+   display: flex;
+   flex-wrap: wrap;
+   justify-content: center;
+   gap: var(--space-4);
+   padding: var(--space-4);
+   font-size: 0.875rem;
+-  color: var(--color-muted);
++  color: var(--text-muted);
+ }
+ 
+ .page {
+   display: flex;
+   flex-direction: column;
+   gap: var(--space-4);
+ }
+ 
+ .page h1 {
+   margin: 0;
+@@ -128,98 +101,98 @@
+ .back {
+   font-size: 0.875rem;
+ }
+ 
+ .button {
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+   min-height: 44px;
+   padding: var(--space-2) var(--space-4);
+-  border-radius: var(--radius);
+-  border: 1px solid var(--color-border);
++  border-radius: var(--radius-control);
++  border: 1px solid var(--field-border);
+   font: inherit;
+   font-weight: 600;
+   cursor: pointer;
+ }
+ 
+ .button:disabled {
+   opacity: 0.6;
+   cursor: not-allowed;
+ }
+ 
+ .primary {
+-  background: var(--color-primary);
+-  border-color: var(--color-primary);
+-  color: var(--color-primary-text);
++  background: var(--accent);
++  border-color: var(--accent);
++  color: var(--accent-text);
+ }
+ 
+ .secondary {
+-  background: var(--color-surface);
+-  color: var(--color-text);
++  background: var(--surface);
++  color: var(--text);
+ }
+ 
+ .danger {
+-  background: var(--color-surface);
+-  border-color: var(--color-danger);
+-  color: var(--color-danger);
++  background: var(--surface);
++  border-color: var(--danger);
++  color: var(--danger);
+ }
+ 
+ .field {
+   display: flex;
+   flex-direction: column;
+   gap: var(--space-1);
+ }
+ 
+ .field input,
+ .field select,
+ .field textarea {
+   min-height: 44px;
+   padding: var(--space-2) var(--space-3);
+-  border: 1px solid var(--color-border);
+-  border-radius: var(--radius);
+-  background: var(--color-surface);
+-  color: var(--color-text);
++  border: 1px solid var(--field-border);
++  border-radius: var(--radius-control);
++  background: var(--field-bg);
++  color: var(--text);
+   font: inherit;
+ }
+ 
+ .label {
+   font-weight: 600;
+ }
+ 
+ .hint {
+   font-size: 0.875rem;
+-  color: var(--color-muted);
++  color: var(--text-muted);
+ }
+ 
+ .fieldError {
+   font-size: 0.875rem;
+-  color: var(--color-danger);
++  color: var(--danger);
+ }
+ 
+ .banner {
+   padding: var(--space-3) var(--space-4);
+-  border-radius: var(--radius);
+-  border: 1px solid var(--color-border);
++  border-radius: var(--radius-control);
++  border: 1px solid var(--border);
+ }
+ 
+ .info {
+-  background: var(--color-info-bg);
++  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+ }
+ 
+ .warning {
+-  background: var(--color-warning-bg);
++  background: var(--warning-bg);
+ }
+ 
+ .error {
+-  background: var(--color-error-bg);
+-  border-color: var(--color-danger);
++  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
++  border-color: var(--danger);
+ }
+ 
+ .backdrop {
+   position: fixed;
+   inset: 0;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   padding: var(--space-4);
+   background: rgb(0 0 0 / 0.45);
+@@ -227,22 +200,22 @@
+ 
+ /*
+  * Jamais plus haut que l'écran (téléphone en paysage, texte agrandi, clavier ouvert) : le titre et
+  * les actions restent visibles, le contenu défile entre les deux.
+  */
+ .dialog {
+   width: 100%;
+   max-width: 28rem;
+   max-height: 100%;
+   padding: var(--space-6);
+-  border-radius: var(--radius);
+-  background: var(--color-surface);
++  border-radius: var(--radius-card);
++  background: var(--surface);
+   display: flex;
+   flex-direction: column;
+   gap: var(--space-4);
+ }
+ 
+ .dialog h2 {
+   flex: none;
+   margin: 0;
+   font-size: 1.25rem;
+ }
+@@ -278,19 +251,19 @@
+   font-weight: 600;
+   margin-bottom: var(--space-2);
+ }
+ 
+ .choice {
+   display: flex;
+   align-items: center;
+   gap: var(--space-3);
+   min-height: 44px;
+   padding: var(--space-2) var(--space-3);
+-  border: 1px solid var(--color-border);
+-  border-radius: var(--radius);
+-  background: var(--color-surface);
++  border: 1px solid var(--field-border);
++  border-radius: var(--radius-control);
++  background: var(--surface);
+ }
+ 
+ .healthWarning {
+   font-size: 0.875rem;
+-  color: var(--color-muted);
++  color: var(--text-muted);
+ }
+diff --git a/apps/web/test/support/css-blocks.ts b/apps/web/test/support/css-blocks.ts
+new file mode 100644
+index 0000000..2b3e0f2
+--- /dev/null
++++ b/apps/web/test/support/css-blocks.ts
+@@ -0,0 +1,87 @@
++/** Une règle CSS lue à plat : sélecteur (ou at-rule), media query englobante, déclarations dans l'ordre. */
++export interface CssBlock {
++  selector: string;
++  media: string | null;
++  declarations: Map<string, string>;
++}
++
++const withoutComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '');
++
++/** Sélecteur comparable : espaces resserrés, guillemets doubles. */
++export const normalizeSelector = (selector: string) =>
++  selector
++    .replace(/\s+/g, ' ')
++    .replace(/'/g, '"')
++    .replace(/\s*,\s*/g, ', ')
++    .trim();
++
++/** `a: b; c: url(x;y)` → paires, sans couper dans les parenthèses ni les chaînes. */
++function parseDeclarations(body: string): Map<string, string> {
++  const out = new Map<string, string>();
++  let depth = 0;
++  let quote: string | null = null;
++  let start = 0;
++  const flush = (end: number) => {
++    const part = body.slice(start, end).trim();
++    const colon = part.indexOf(':');
++    if (colon > 0) out.set(part.slice(0, colon).trim(), part.slice(colon + 1).trim());
++    start = end + 1;
++  };
++  for (let i = 0; i < body.length; i++) {
++    const ch = body[i];
++    if (quote) {
++      if (ch === quote) quote = null;
++    } else if (ch === '"' || ch === "'") quote = ch;
++    else if (ch === '(') depth++;
++    else if (ch === ')') depth--;
++    else if (ch === ';' && depth === 0) flush(i);
++  }
++  flush(body.length);
++  return out;
++}
++
++/** Index de l'accolade fermante qui répond à celle ouverte en `open`. */
++function matchingBrace(css: string, open: number): number {
++  let depth = 0;
++  for (let i = open; i < css.length; i++) {
++    if (css[i] === '{') depth++;
++    else if (css[i] === '}' && --depth === 0) return i;
++  }
++  throw new Error(`accolade non fermée à ${open}`);
++}
++
++function collect(css: string, media: string | null, out: CssBlock[]): void {
++  let pos = 0;
++  for (;;) {
++    const open = css.indexOf('{', pos);
++    if (open < 0) return;
++    const close = matchingBrace(css, open);
++    const prelude = css.slice(pos, open).trim();
++    const body = css.slice(open + 1, close);
++    if (prelude.startsWith('@media')) collect(body, prelude.slice('@media'.length).trim(), out);
++    else out.push({ selector: normalizeSelector(prelude), media, declarations: parseDeclarations(body) });
++    pos = close + 1;
++  }
++}
++
++/** Règles de premier niveau et celles des `@media` (un niveau), commentaires ôtés. */
++export function parseCssBlocks(css: string): CssBlock[] {
++  const out: CssBlock[] = [];
++  collect(withoutComments(css), null, out);
++  return out;
++}
++
++/**
++ * Déclarations de toutes les règles qui ont exactement ce sélecteur dans ce contexte (`media` null : hors
++ * media query), fusionnées dans l'ordre du fichier ; null si aucune règle ne correspond.
++ */
++export function declarationsOf(
++  blocks: readonly CssBlock[],
++  selector: string,
++  media: string | null = null,
++): Map<string, string> | null {
++  const wanted = normalizeSelector(selector);
++  const matching = blocks.filter((b) => b.selector === wanted && b.media === media);
++  if (matching.length === 0) return null;
++  return new Map(matching.flatMap((b) => [...b.declarations]));
++}
+diff --git a/apps/web/test/ui/contrast.test.ts b/apps/web/test/ui/contrast.test.ts
+new file mode 100644
+index 0000000..3aab639
+--- /dev/null
++++ b/apps/web/test/ui/contrast.test.ts
+@@ -0,0 +1,111 @@
++// @vitest-environment node
++import { readFileSync } from 'node:fs';
++import { resolve } from 'node:path';
++import { describe, expect, it } from 'vitest';
++import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
++
++const TOKENS_CSS = resolve(import.meta.dirname, '../../src/ui/theme/tokens.css');
++
++/** Luminance relative WCAG 2.x d'une couleur `#rgb` ou `#rrggbb`. */
++function luminance(hex: string): number {
++  const h = hex.slice(1);
++  const full = h.length === 3 ? [...h].map((c) => c + c).join('') : h;
++  const [r, g, b] = [0, 2, 4].map((i) => {
++    const s = Number.parseInt(full.slice(i, i + 2), 16) / 255;
++    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
++  }) as [number, number, number];
++  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
++}
++
++/** Rapport de contraste WCAG 2.x, de 1 à 21, quel que soit l'ordre des couleurs. */
++function contrastRatio(hexA: string, hexB: string): number {
++  const [hi, lo] = [luminance(hexA), luminance(hexB)].sort((x, y) => y - x) as [number, number];
++  return (hi + 0.05) / (lo + 0.05);
++}
++
++const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
++
++/** Texte courant : 4,5:1 ; grand texte et éléments d'interface (icônes, pastilles, contour du focus) : 3:1. */
++const TEXT = 4.5;
++const UI = 3;
++
++/** Paires déclarées : [premier plan, fond, minimum]. */
++const PAIRS: readonly (readonly [string, string, number])[] = [
++  ['--text', '--bg', TEXT],
++  ['--text', '--surface', TEXT],
++  ['--text', '--surface-strong', TEXT],
++  ['--text', '--field-bg', TEXT],
++  ['--text', '--warning-bg', TEXT],
++  ['--text-muted', '--bg', TEXT],
++  ['--text-muted', '--surface', TEXT],
++  ['--text-muted', '--surface-strong', TEXT],
++  ['--accent-text', '--accent', TEXT],
++  // L'accent colore aussi les liens : texte courant, sur la page comme dans une carte.
++  ['--accent', '--bg', TEXT],
++  ['--accent', '--surface', TEXT],
++  ['--accent-2', '--bg', UI],
++  ['--accent-2', '--surface', UI],
++  ['--danger', '--bg', TEXT],
++  ['--danger', '--surface', TEXT],
++  ['--success', '--bg', UI],
++  ['--success', '--surface', UI],
++  ['--warning-text', '--warning-bg', TEXT],
++  ['--focus', '--bg', UI],
++  ['--focus', '--surface', UI],
++];
++
++const CHECKED_TOKENS = [...new Set([...PAIRS.map(([fg]) => fg), ...PAIRS.map(([, bg]) => bg)])];
++
++/** Les 5 jeux de couleurs : clair (`:root`), Auto en sombre, puis chaque thème forcé. */
++const PALETTES: readonly { name: string; selector: string; media: string | null }[] = [
++  { name: 'clair', selector: ':root', media: null },
++  { name: 'auto en sombre', selector: ':root:not([data-theme])', media: '(prefers-color-scheme: dark)' },
++  { name: 'sombre', selector: ':root[data-theme="sombre"]', media: null },
++  { name: 'carnet', selector: ':root[data-theme="carnet"]', media: null },
++  { name: 'nuit', selector: ':root[data-theme="nuit"]', media: null },
++];
++
++describe('contrastRatio (WCAG 2.x)', () => {
++  it('noir sur blanc vaut 21, une couleur sur elle-même vaut 1, dans les deux sens', () => {
++    expect(contrastRatio('#000000', '#FFFFFF')).toBeCloseTo(21, 5);
++    expect(contrastRatio('#FFFFFF', '#000')).toBeCloseTo(21, 5);
++    expect(contrastRatio('#1C6FB5', '#1C6FB5')).toBe(1);
++  });
++
++  it('#777777 sur blanc reste sous 4,5:1 (4,48), #767676 passe (4,54)', () => {
++    expect(contrastRatio('#777777', '#FFFFFF')).toBeCloseTo(4.48, 2);
++    expect(contrastRatio('#767676', '#FFFFFF')).toBeCloseTo(4.54, 2);
++  });
++});
++
++describe('contrastes des jetons, pour chaque thème', () => {
++  const blocks = parseCssBlocks(readFileSync(TOKENS_CSS, 'utf8'));
++
++  it('les 5 jeux de couleurs sont présents et chacun déclare tous les jetons vérifiés en hexadécimal', () => {
++    expect(PALETTES).toHaveLength(5);
++    for (const { name, selector, media } of PALETTES) {
++      const tokens = declarationsOf(blocks, selector, media);
++      expect(tokens, `bloc ${name} absent de tokens.css`).not.toBeNull();
++      for (const token of CHECKED_TOKENS) {
++        expect(tokens?.get(token), `${token} dans le thème ${name}`).toMatch(HEX);
++      }
++    }
++  });
++
++  for (const { name, selector, media } of PALETTES) {
++    it(`thème ${name} : chaque paire déclarée atteint son minimum`, () => {
++      const tokens = declarationsOf(blocks, selector, media);
++      expect(tokens, `bloc ${name} absent de tokens.css`).not.toBeNull();
++      for (const [fg, bg, min] of PAIRS) {
++        const a = tokens?.get(fg);
++        const b = tokens?.get(bg);
++        expect(a, `${fg} (${name})`).toMatch(HEX);
++        expect(b, `${bg} (${name})`).toMatch(HEX);
++        const ratio = contrastRatio(a as string, b as string);
++        expect(ratio, `${fg} ${a} sur ${bg} ${b} (${name}) : ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
++          min,
++        );
++      }
++    });
++  }
++});
+diff --git a/apps/web/test/ui/theme.test.ts b/apps/web/test/ui/theme.test.ts
+new file mode 100644
+index 0000000..27c6758
+--- /dev/null
++++ b/apps/web/test/ui/theme.test.ts
+@@ -0,0 +1,365 @@
++import { readdirSync, readFileSync } from 'node:fs';
++import { createRequire } from 'node:module';
++import { join, relative, resolve } from 'node:path';
++import { act, renderHook } from '@testing-library/react';
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++import {
++  applyTheme,
++  readThemeChoice,
++  THEME_CHOICES,
++  type ThemeChoice,
++  useThemeChoice,
++  writeThemeChoice,
++} from '../../src/ui/theme/theme';
++import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
++
++const WEB = resolve(import.meta.dirname, '../..');
++const SRC = join(WEB, 'src');
++const THEME_DIR = join(SRC, 'ui/theme');
++const read = (path: string) => readFileSync(path, 'utf8');
++const tokensBlocks = () => parseCssBlocks(read(join(THEME_DIR, 'tokens.css')));
++
++const KEY = 'rune.theme';
++const DARK = '(prefers-color-scheme: dark)';
++const html = () => document.documentElement;
++const themeColors = () =>
++  [...document.querySelectorAll('meta[name="theme-color"]')].map((m) => m.getAttribute('content'));
++
++/** `prefers-color-scheme` du téléphone, réglable pendant le test. */
++function stubColorScheme(dark: boolean) {
++  const listeners = new Set<(e: { matches: boolean }) => void>();
++  const query = {
++    matches: dark,
++    media: DARK,
++    addEventListener: (_type: string, l: (e: { matches: boolean }) => void) => listeners.add(l),
++    removeEventListener: (_type: string, l: (e: { matches: boolean }) => void) => listeners.delete(l),
++  };
++  vi.stubGlobal('matchMedia', (q: string) =>
++    q === DARK
++      ? query
++      : { ...query, matches: false, media: q, addEventListener() {}, removeEventListener() {} },
++  );
++  return {
++    set(next: boolean) {
++      query.matches = next;
++      for (const l of [...listeners]) l({ matches: next });
++    },
++    listeners: () => listeners.size,
++  };
++}
++
++/** Comme index.html : une balise theme-color dans le head. */
++function resetDocument() {
++  html().removeAttribute('data-theme');
++  for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.remove();
++  const meta = document.createElement('meta');
++  meta.name = 'theme-color';
++  meta.content = '#000000';
++  document.head.append(meta);
++}
++
++beforeEach(() => {
++  localStorage.clear();
++  stubColorScheme(false);
++  resetDocument();
++});
++
++afterEach(() => {
++  applyTheme('clair'); // détache l'écoute du mode Auto d'un test à l'autre
++  vi.unstubAllGlobals();
++  vi.restoreAllMocks();
++});
++
++describe('choix de l’apparence, gardé sur l’appareil', () => {
++  it('THEME_CHOICES : Auto puis les 4 thèmes', () => {
++    expect(THEME_CHOICES).toEqual(['auto', 'clair', 'sombre', 'carnet', 'nuit']);
++  });
++
++  it('readThemeChoice : « auto » sans rien en stockage', () => {
++    expect(readThemeChoice()).toBe('auto');
++  });
++
++  it('readThemeChoice : « auto » quand localStorage.getItem lève (stockage bloqué)', () => {
++    const getItem = vi.fn(() => {
++      throw new DOMException('Accès refusé', 'SecurityError');
++    });
++    vi.stubGlobal('localStorage', { getItem, setItem: vi.fn(), removeItem: vi.fn() });
++    expect(readThemeChoice()).toBe('auto');
++    expect(getItem).toHaveBeenCalledWith(KEY);
++  });
++
++  it('readThemeChoice : une valeur inconnue en stockage vaut « auto »', () => {
++    localStorage.setItem(KEY, 'fluo');
++    expect(readThemeChoice()).toBe('auto');
++  });
++
++  it('writeThemeChoice garde chaque choix sous la clé rune.theme, relu tel quel', () => {
++    for (const choice of THEME_CHOICES) {
++      writeThemeChoice(choice);
++      expect(localStorage.getItem(KEY)).toBe(choice);
++      expect(readThemeChoice()).toBe(choice);
++    }
++  });
++
++  it('writeThemeChoice ne lève pas quand le stockage refuse l’écriture', () => {
++    vi.stubGlobal('localStorage', {
++      getItem: () => null,
++      setItem: () => {
++        throw new DOMException('Quota dépassé', 'QuotaExceededError');
++      },
++    });
++    expect(() => writeThemeChoice('carnet')).not.toThrow();
++  });
++});
++
++describe('applyTheme', () => {
++  it('pose data-theme pour un thème forcé, le retire pour Auto', () => {
++    applyTheme('clair');
++    expect(html().getAttribute('data-theme')).toBe('clair');
++    applyTheme('nuit');
++    expect(html().getAttribute('data-theme')).toBe('nuit');
++    applyTheme('auto');
++    expect(html().hasAttribute('data-theme')).toBe(false);
++  });
++
++  it('agit sur la racine donnée', () => {
++    const root = document.createElement('div');
++    applyTheme('carnet', root);
++    expect(root.getAttribute('data-theme')).toBe('carnet');
++    expect(html().hasAttribute('data-theme')).toBe(false);
++  });
++
++  it('theme-color : #F1F3F7 en clair, #070A12 en sombre', () => {
++    applyTheme('clair');
++    expect(themeColors()).toEqual(['#F1F3F7']);
++    applyTheme('sombre');
++    expect(themeColors()).toEqual(['#070A12']);
++  });
++
++  it('theme-color de chaque thème forcé = son --bg dans tokens.css', () => {
++    const blocks = tokensBlocks();
++    const bgOf = (choice: Exclude<ThemeChoice, 'auto'>) =>
++      declarationsOf(blocks, choice === 'clair' ? ':root' : `:root[data-theme="${choice}"]`)?.get('--bg');
++    for (const choice of ['clair', 'sombre', 'carnet', 'nuit'] as const) {
++      applyTheme(choice);
++      const bg = bgOf(choice);
++      expect(bg, `--bg du thème ${choice}`).toMatch(/^#[0-9a-f]{6}$/i);
++      expect(themeColors()[0]?.toUpperCase(), choice).toBe(bg?.toUpperCase());
++    }
++  });
++
++  it('met à jour chaque balise theme-color, et en crée une si la page n’en a pas', () => {
++    const second = document.createElement('meta');
++    second.name = 'theme-color';
++    second.media = DARK;
++    document.head.append(second);
++    applyTheme('sombre');
++    expect(themeColors()).toEqual(['#070A12', '#070A12']);
++    for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.remove();
++    applyTheme('clair');
++    expect(themeColors()).toEqual(['#F1F3F7']);
++  });
++
++  it('Auto : theme-color suit le réglage du téléphone à l’appel puis à chaque changement', () => {
++    const scheme = stubColorScheme(true);
++    applyTheme('auto');
++    expect(themeColors()).toEqual(['#070A12']);
++    scheme.set(false);
++    expect(themeColors()).toEqual(['#F1F3F7']);
++    scheme.set(true);
++    expect(themeColors()).toEqual(['#070A12']);
++  });
++
++  it('un thème forcé cesse de suivre le téléphone ; un second Auto n’empile pas d’écoute', () => {
++    const scheme = stubColorScheme(false);
++    applyTheme('auto');
++    applyTheme('auto');
++    expect(scheme.listeners()).toBe(1);
++    applyTheme('carnet');
++    expect(scheme.listeners()).toBe(0);
++    scheme.set(true);
++    expect(themeColors()).toEqual(['#F2ECDF']);
++    expect(html().getAttribute('data-theme')).toBe('carnet');
++  });
++});
++
++describe('useThemeChoice', () => {
++  it('rend le thème appliqué, « auto » par défaut', () => {
++    const { result } = renderHook(() => useThemeChoice());
++    expect(result.current[0]).toBe('auto');
++  });
++
++  it('le réglage garde le choix, l’applique et met à jour chaque composant abonné', () => {
++    const first = renderHook(() => useThemeChoice());
++    const second = renderHook(() => useThemeChoice());
++    act(() => first.result.current[1]('carnet'));
++    expect(localStorage.getItem(KEY)).toBe('carnet');
++    expect(html().getAttribute('data-theme')).toBe('carnet');
++    expect(first.result.current[0]).toBe('carnet');
++    expect(second.result.current[0]).toBe('carnet');
++    act(() => second.result.current[1]('auto'));
++    expect(localStorage.getItem(KEY)).toBe('auto');
++    expect(html().hasAttribute('data-theme')).toBe(false);
++    expect(first.result.current[0]).toBe('auto');
++  });
++
++  it('suit un thème appliqué au démarrage (main.tsx), même sans appel au réglage', () => {
++    localStorage.setItem(KEY, 'nuit');
++    applyTheme(readThemeChoice());
++    const { result } = renderHook(() => useThemeChoice());
++    expect(result.current[0]).toBe('nuit');
++  });
++});
++
++describe('tokens.css', () => {
++  const COLOR_TOKENS = [
++    '--bg',
++    '--surface',
++    '--surface-strong',
++    '--border',
++    '--text',
++    '--text-muted',
++    '--accent',
++    '--accent-text',
++    '--accent-2',
++    '--danger',
++    '--success',
++    '--warning-text',
++    '--warning-bg',
++    '--field-bg',
++    '--field-border',
++    '--focus',
++  ];
++
++  it('sous prefers-color-scheme: dark, seul :root:not([data-theme]) est redéfini (un thème forcé l’emporte)', () => {
++    const inMedia = tokensBlocks().filter((b) => b.media !== null);
++    expect(inMedia.map((b) => [b.media, b.selector])).toEqual([[DARK, ':root:not([data-theme])']]);
++  });
++
++  it('un bloc par thème forcé, hors media query', () => {
++    const blocks = tokensBlocks();
++    for (const choice of ['clair', 'sombre', 'carnet', 'nuit']) {
++      expect(declarationsOf(blocks, `:root[data-theme="${choice}"]`), choice).not.toBeNull();
++    }
++  });
++
++  it(':root (clair) déclare tous les jetons imposés, rayons 18 et 14 px, titres en --font-display', () => {
++    const root = declarationsOf(tokensBlocks(), ':root');
++    for (const token of [...COLOR_TOKENS, '--font-display', '--font-body', '--font-title']) {
++      expect(root?.get(token), token).toBeTruthy();
++    }
++    expect(root?.get('--radius-card')).toBe('18px');
++    expect(root?.get('--radius-control')).toBe('14px');
++    expect(root?.get('--font-display')).toMatch(/^"Chakra Petch",/);
++    expect(root?.get('--font-body')).toMatch(/^"Barlow",/);
++    expect(root?.get('--font-title')).toBe('var(--font-display)');
++  });
++
++  it('Auto en sombre et Sombre forcé ont exactement les mêmes couleurs', () => {
++    const blocks = tokensBlocks();
++    const auto = declarationsOf(blocks, ':root:not([data-theme])', DARK);
++    const sombre = declarationsOf(blocks, ':root[data-theme="sombre"]');
++    for (const token of COLOR_TOKENS) {
++      expect(auto?.get(token), token).toBeTruthy();
++      expect(auto?.get(token), token).toBe(sombre?.get(token));
++    }
++  });
++
++  it('carnet et nuit redéfinissent toutes les couleurs ; titres du Carnet en Newsreader', () => {
++    const blocks = tokensBlocks();
++    for (const choice of ['carnet', 'nuit']) {
++      const theme = declarationsOf(blocks, `:root[data-theme="${choice}"]`);
++      for (const token of COLOR_TOKENS) expect(theme?.get(token), `${token} (${choice})`).toBeTruthy();
++    }
++    expect(declarationsOf(blocks, ':root[data-theme="carnet"]')?.get('--font-title')).toMatch(
++      /^"Newsreader",/,
++    );
++  });
++});
++
++describe('feuilles de style de src/', () => {
++  function* walk(dir: string): Generator<string> {
++    for (const entry of readdirSync(dir, { withFileTypes: true })) {
++      const full = join(dir, entry.name);
++      if (entry.isDirectory()) yield* walk(full);
++      else if (entry.isFile()) yield full;
++    }
++  }
++  const files = [...walk(SRC)];
++  const cssFiles = files.filter((f) => f.endsWith('.css'));
++  const rel = (f: string) => relative(SRC, f).replaceAll('\\', '/');
++  const declared = (css: string) => new Set([...css.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
++
++  it('chaque var(--…) lue a une définition : jetons, même fichier ou propriété posée par un composant', () => {
++    expect(cssFiles.length).toBeGreaterThan(5);
++    const tokens = declared(read(join(THEME_DIR, 'tokens.css')));
++    const fromComponents = new Set(
++      files
++        .filter((f) => /\.tsx?$/.test(f))
++        .flatMap((f) => [...read(f).matchAll(/['"](--[\w-]+)['"]/g)].map((m) => m[1])),
++    );
++    for (const file of cssFiles) {
++      const css = read(file);
++      const local = declared(css);
++      // Une variable avec repli (`var(--x, 0)`) n'est jamais indéfinie.
++      for (const [, name] of css.matchAll(/var\(\s*(--[\w-]+)\s*\)/g)) {
++        const known = tokens.has(name) || local.has(name) || fromComponents.has(name);
++        expect(known, `${rel(file)} lit ${name}, défini nulle part`).toBe(true);
++      }
++    }
++  });
++
++  it('les jetons n’ont qu’une source : aucune autre feuille ne déclare de variable sur :root', () => {
++    for (const file of cssFiles.filter((f) => rel(f) !== 'ui/theme/tokens.css')) {
++      const rootBlocks = parseCssBlocks(read(file)).filter((b) => /:root/.test(b.selector));
++      const vars = rootBlocks.flatMap((b) => [...b.declarations.keys()].filter((k) => k.startsWith('--')));
++      expect(vars, rel(file)).toEqual([]);
++    }
++  });
++});
++
++describe('polices embarquées', () => {
++  const faces = () =>
++    parseCssBlocks(read(join(THEME_DIR, 'fonts.css')))
++      .filter((b) => b.selector === '@font-face')
++      .map((b) => b.declarations);
++
++  it('Chakra Petch 600/700, Barlow 400/500/600, Newsreader 600, rien d’autre', () => {
++    const list = faces().map((f) => `${f.get('font-family')} ${f.get('font-weight')}`);
++    expect(list).toEqual([
++      '"Chakra Petch" 600',
++      '"Chakra Petch" 700',
++      '"Barlow" 400',
++      '"Barlow" 500',
++      '"Barlow" 600',
++      '"Newsreader" 600',
++    ]);
++  });
++
++  it('chaque police : sous-ensemble latin en woff2 seul, du paquet Fontsource, font-display swap', () => {
++    const require = createRequire(join(WEB, 'package.json'));
++    for (const face of faces()) {
++      expect(face.get('font-display')).toBe('swap');
++      expect(face.get('font-style')).toBe('normal');
++      const src = face.get('src') ?? '';
++      const match =
++        /^url\("(@fontsource\/([\w-]+)\/files\/\2-latin-(\d{3})-normal\.woff2)"\) format\("woff2"\)$/.exec(
++          src,
++        );
++      expect(match, src).not.toBeNull();
++      expect(match?.[3]).toBe(face.get('font-weight'));
++      expect(() => require.resolve(match?.[1] ?? ''), src).not.toThrow();
++    }
++  });
++});
++
++describe('main.tsx', () => {
++  it('charge jetons et polices et applique le thème gardé avant createRoot', () => {
++    const main = read(join(SRC, 'main.tsx'));
++    expect(main).toMatch(/^import '\.\/ui\/theme\/tokens\.css';$/m);
++    expect(main).toMatch(/^import '\.\/ui\/theme\/fonts\.css';$/m);
++    const apply = main.indexOf('applyTheme(readThemeChoice());');
++    expect(apply).toBeGreaterThan(-1);
++    expect(apply).toBeLessThan(main.indexOf('createRoot('));
++  });
++});
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 80352aa..b55b735 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -56,20 +56,29 @@ importers:
+         version: 0.28.2
+       tsx:
+         specifier: ^4.23.15
+         version: 4.23.15
+       yaml:
+         specifier: ^2.9.1
+         version: 2.9.1
+ 
+   apps/web:
+     dependencies:
++      '@fontsource/barlow':
++        specifier: 5.3.0
++        version: 5.3.0
++      '@fontsource/chakra-petch':
++        specifier: 5.3.0
++        version: 5.3.0
++      '@fontsource/newsreader':
++        specifier: 5.3.0
++        version: 5.3.0
+       '@rune/contracts':
+         specifier: workspace:*
+         version: link:../../packages/contracts
+       '@rune/domain':
+         specifier: workspace:*
+         version: link:../../packages/domain
+       dexie:
+         specifier: ^4.4.6
+         version: 4.4.6
+       react:
+@@ -355,20 +364,29 @@ packages:
+     engines: {node: '>=18'}
+     cpu: [ia32]
+     os: [win32]
+ 
+   '@esbuild/win32-x64@0.28.2':
+     resolution: {integrity: sha512-5ebpxr3nWMzrL/rnUI755Jkuee0bHL/Gq0WTF9lvcpv73wAp5eu8MfBUgWK9bhWvZjj7yX8etf/8tI8Ney695g==}
+     engines: {node: '>=18'}
+     cpu: [x64]
+     os: [win32]
+ 
++  '@fontsource/barlow@5.3.0':
++    resolution: {integrity: sha512-tGR0y6QObRtKv71MOth44222+mdNFM/ZWFWDV1VLzNbG4oK9PNRlyJzmkck4vHAi9ibHBXgt4SlY51amFP55CA==}
++
++  '@fontsource/chakra-petch@5.3.0':
++    resolution: {integrity: sha512-QZvbM/q2R6n1pg2x+TJPftZmBNS+ADU37L4Z4L/6UJIz+JZ/SRaEf8usPFRiP7Ht28sIideMu/Bm1SnGlSrwNw==}
++
++  '@fontsource/newsreader@5.3.0':
++    resolution: {integrity: sha512-AFR6ZKY89GNL+9qBI2P2+66NhD5bhOj/v6fsLnFYLM4E0JnMB1yKb+Ro8cA64i1hwAWoBfTq5CHJGWH1toLDkw==}
++
+   '@hono/node-server@2.1.3':
+     resolution: {integrity: sha512-TA//nWMqPhbfdfneACk6t5a9eqbS9lABEPyKn0/xZTah3H3U2XaVg85rJFl0/Fyit0I552YDHgXGVSf3GwqbUw==}
+     engines: {node: '>=20'}
+     peerDependencies:
+       hono: ^4
+ 
+   '@jridgewell/resolve-uri@3.1.2':
+     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
+     engines: {node: '>=6.0.0'}
+ 
+@@ -1209,20 +1227,26 @@ snapshots:
+ 
+   '@esbuild/win32-arm64@0.28.2':
+     optional: true
+ 
+   '@esbuild/win32-ia32@0.28.2':
+     optional: true
+ 
+   '@esbuild/win32-x64@0.28.2':
+     optional: true
+ 
++  '@fontsource/barlow@5.3.0': {}
++
++  '@fontsource/chakra-petch@5.3.0': {}
++
++  '@fontsource/newsreader@5.3.0': {}
++
+   '@hono/node-server@2.1.3(hono@4.13.13)':
+     dependencies:
+       hono: 4.13.13
+ 
+   '@jridgewell/resolve-uri@3.1.2': {}
+ 
+   '@jridgewell/sourcemap-codec@1.6.0': {}
+ 
+   '@jridgewell/trace-mapping@0.3.31':
+     dependencies:

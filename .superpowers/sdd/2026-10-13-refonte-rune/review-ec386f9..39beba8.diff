@@ -1,0 +1,2899 @@
+# Review package: ec386f9..HEAD
+
+## Commits
+39beba8 fix(web): marque une seule fois sur PC, démarrage décidé au montage, titre d'écran de 28 px
+d41cef1 fix(web): pastille et écrans « Nécessite le réseau » sur la même source
+837fadd fix(pwa): interrupteur d'urgence, garde de rechargement levée à la fin de l'incident
+45444de fix(web): barre d'onglets jamais sur le focus ni sur le bas de page, en-tête et libellés qui passent à la ligne, teintes actives à 4,5:1
+23af981 fix(web): retour par la pile, défilement remis en haut, voile du démarrage et entrées d'écran vérifiés
+
+## Files changed
+ apps/web/e2e/boot-splash.spec.ts             |  36 +++
+ apps/web/e2e/offline.spec.ts                 |  18 ++
+ apps/web/e2e/shell.spec.ts                   | 183 ++++++++++++
+ apps/web/e2e/support/flows.ts                |   8 +
+ apps/web/src/api/client.ts                   |  13 +-
+ apps/web/src/app-services.tsx                |  17 +-
+ apps/web/src/main.tsx                        |   7 +-
+ apps/web/src/sw/kill-switch.ts               |  42 ++-
+ apps/web/src/sw/register.ts                  |   5 +-
+ apps/web/src/sync/engine.ts                  |  18 ++
+ apps/web/src/ui/AppShell.tsx                 |  16 +-
+ apps/web/src/ui/BootSplash.tsx               |  31 +-
+ apps/web/src/ui/PageHeader.tsx               |   6 +-
+ apps/web/src/ui/TabBar.tsx                   |  27 +-
+ apps/web/src/ui/screen-transition.ts         |  45 ++-
+ apps/web/src/ui/shell.module.css             |  57 +++-
+ apps/web/src/ui/ui.module.css                |   9 +
+ apps/web/test/app/api-client.test.ts         |  33 ++-
+ apps/web/test/app/connection-source.test.tsx | 107 +++++++
+ apps/web/test/app/shell.test.tsx             | 419 +++++++++++++++++++++++++--
+ apps/web/test/support/fake-api.ts            |   5 +-
+ apps/web/test/support/render.tsx             |   8 +-
+ apps/web/test/sw/kill-switch.test.ts         |  83 ++++--
+ apps/web/test/sw/register.test.ts            |  16 +
+ apps/web/test/sync/engine.test.ts            |  93 ++++++
+ apps/web/test/sync/triggers.test.ts          |   2 +
+ apps/web/test/ui/base-styles.test.ts         |  78 +++++
+ apps/web/test/ui/components.test.tsx         |  15 +
+ apps/web/test/ui/contrast.test.ts            |  35 +++
+ 29 files changed, 1319 insertions(+), 113 deletions(-)
+
+## Diff
+diff --git a/apps/web/e2e/boot-splash.spec.ts b/apps/web/e2e/boot-splash.spec.ts
+new file mode 100644
+index 0000000..e3bb280
+--- /dev/null
++++ b/apps/web/e2e/boot-splash.spec.ts
+@@ -0,0 +1,36 @@
++import { expect, test } from './support/fixtures';
++
++// Spec refonte §7 (le logo se dessine au démarrage) : le voile se pose par-dessus l'écran sans jamais le
++// retarder ni prendre le toucher, puis se retire. Navigateur réel : toBeVisible ignore ce qui recouvre un
++// élément, d'où le test de toucher au centre du bouton.
++
++test('démarrage : le voile laisse toucher l’écran dessous, puis se retire', async ({ server, page }) => {
++  // Dès la réponse : le voile ne dure qu'une seconde et demie, l'événement `load` peut venir après.
++  await page.goto(`${server.url}/login`, { waitUntil: 'commit' });
++
++  await test.step('voile monté : le centre du bouton « Se connecter » touche le bouton', async () => {
++    // Premier affichage de la session : le voile est posé dès le premier rendu.
++    await expect(page.getByTestId('boot-splash')).toBeAttached();
++    const hit = await page.waitForFunction(
++      () => {
++        const veil = document.querySelector('[data-testid="boot-splash"]');
++        const button = [...document.querySelectorAll('button')].find(
++          (b) => b.textContent?.trim() === 'Se connecter',
++        );
++        if (!veil) return { veil: false, hitsButton: false };
++        if (!button) return null;
++        const box = button.getBoundingClientRect();
++        const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
++        return { veil: true, hitsButton: top !== null && button.contains(top) };
++      },
++      undefined,
++      { polling: 'raf' },
++    );
++    // `veil: false` : le voile a disparu (ou n'a jamais été monté) avant que le bouton s'affiche.
++    expect(await hit.jsonValue()).toEqual({ veil: true, hitsButton: true });
++  });
++
++  await test.step('puis retiré du document en moins de 2,5 s', async () => {
++    await expect(page.getByTestId('boot-splash')).toHaveCount(0, { timeout: 2500 });
++  });
++});
+diff --git a/apps/web/e2e/offline.spec.ts b/apps/web/e2e/offline.spec.ts
+index 8185812..eea233e 100644
+--- a/apps/web/e2e/offline.spec.ts
++++ b/apps/web/e2e/offline.spec.ts
+@@ -19,20 +19,38 @@ test('hors ligne : coquille du cache, état de connexion, profil et second appar
+   const connection = page.getByTestId('connection-status');
+   const tab = (name: string) =>
+     page.getByRole('navigation', { name: 'Navigation principale' }).getByRole('link', { name, exact: true });
+   const username = page.getByLabel('Pseudo', { exact: true });
+   const saveUsername = page.getByRole('button', { name: 'Enregistrer le pseudo', exact: true });
+   // Refus de classe E : l'alerte annoncée (`role="alert"`) du formulaire du pseudo, pas un texte quelconque.
+   const usernameAlert = page.locator('form').filter({ has: saveUsername }).getByRole('alert');
+ 
+   // Pas de navigation sous `setOffline` : WebKit y fait échouer même une navigation servie par le SW
+   // (« WebKit encountered an internal error »). Le rechargement à froid hors ligne passe par l'étape suivante.
++  await test.step('refus de classe E : la pastille dit « Hors ligne » sans attendre un cycle', async () => {
++    // Spec refonte §5, une seule source : la dernière synchro a réussi (aucune reprise programmée), l'outbox
++    // est vide (pas de cycle à 60 s), ni premier plan ni événement `offline` n'en lancent ; seul le refus de
++    // classe E peut faire passer la pastille à 'offline'.
++    await expect(connection).toHaveAttribute('data-state', 'online');
++    expect(await idbGetAll(page, 'outbox')).toEqual([]);
++    await tab('Profil').click();
++    await expect(username).toHaveValue('camille');
++    await context.setOffline(true);
++    await username.fill('camille-hors-ligne');
++    await saveUsername.click();
++    await expect(usernameAlert).toHaveText('Nécessite le réseau');
++    await tab('Accueil').click();
++    await expect(connection).toHaveAttribute('data-state', 'offline', { timeout: 5_000 });
++    await context.setOffline(false);
++    await expect(connection).toHaveAttribute('data-state', 'online', { timeout: 15_000 });
++  });
++
+   await test.step('réseau coupé (context.setOffline)', async () => {
+     // Preuve du déclencheur « premier plan » (R-SYN-29) : la dernière synchro a réussi (aucune reprise
+     // programmée), l'outbox est vide (pas de cycle à 60 s) et l'événement `offline` n'en lance pas ;
+     // seul le cycle déclenché ici peut faire passer l'état à 'offline' dans les 5 s.
+     await expect(connection).toHaveAttribute('data-state', 'online');
+     expect(await idbGetAll(page, 'outbox')).toEqual([]);
+     await context.setOffline(true);
+     await triggerForeground(page);
+     await expect(connection).toHaveAttribute('data-state', 'offline', { timeout: 5_000 });
+     await tab('Profil').click();
+diff --git a/apps/web/e2e/shell.spec.ts b/apps/web/e2e/shell.spec.ts
+new file mode 100644
+index 0000000..61ae562
+--- /dev/null
++++ b/apps/web/e2e/shell.spec.ts
+@@ -0,0 +1,183 @@
++import type { Page } from '@playwright/test';
++import { expect, test } from './support/fixtures';
++import { setupOnboardedAdmin } from './support/flows';
++
++// Spec refonte §5 (maquettes MixSombre / MixClair) : sur téléphone, la barre d'onglets flotte en position fixe
++// au-dessus du contenu. Playwright refait défiler la page quand elle intercepte un clic : seul le point
++// réellement touché (elementFromPoint) voit un contrôle resté dessous. Contraintes : cible tactile, WCAG 2.2
++// 2.4.11 (focus jamais caché), 1.4.4 et 1.4.10 (texte à 200 %, 320 px).
++
++/** Fin des animations (entrée d'écran, pastille d'onglet, démarrage) : les boîtes sont à leur place. */
++const settle = (page: Page) =>
++  page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'));
++
++const tab = (page: Page, name: string) =>
++  page.getByTestId('tab-bar').getByRole('link', { name, exact: true });
++
++/** Bas de la page : le centre du dernier contrôle hors de la barre le touche-t-il, ou touche-t-il la barre ? */
++async function lastControlAtBottom(page: Page) {
++  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
++  await settle(page);
++  return page.evaluate(() => {
++    const bar = document.querySelector('[data-testid="tab-bar"]');
++    const controls = [
++      ...document.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea'),
++    ].filter((el) => !bar?.contains(el) && el.getClientRects().length > 0);
++    const last = controls.at(-1);
++    if (!bar || !last) return { name: null, reached: false, underBar: false };
++    const r = last.getBoundingClientRect();
++    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
++    return {
++      name: last.textContent,
++      reached: hit !== null && last.contains(hit),
++      underBar: hit !== null && bar.contains(hit),
++    };
++  });
++}
++
++/**
++ * Pose sous la barre un champ de saisie précédé d'un autre (la tabulation de WebKit ne passe que par les
++ * champs), focus sur le précédent sans défiler ; rend l'identifiant du champ, null si aucun ne s'y prête.
++ */
++async function fieldUnderBar(page: Page): Promise<string | null> {
++  return page.evaluate(() => {
++    const bar = document.querySelector('[data-testid="tab-bar"]')?.getBoundingClientRect();
++    if (!bar) return null;
++    const typing = (el: Element): el is HTMLInputElement =>
++      el instanceof HTMLInputElement &&
++      !el.readOnly &&
++      ['text', 'password'].includes(el.type) &&
++      el.id !== '';
++    const controls = [
++      ...document.querySelectorAll<HTMLElement>('main a[href], main button, main input, main select'),
++    ].filter((el) => el.getClientRects().length > 0 && !el.matches(':disabled'));
++    const max = document.documentElement.scrollHeight - window.innerHeight;
++    for (let i = 1; i < controls.length; i++) {
++      const [previous, field] = [controls[i - 1] as HTMLElement, controls[i] as HTMLElement];
++      if (!typing(previous) || !typing(field)) continue;
++      const r = field.getBoundingClientRect();
++      // Centre du champ sur le centre de la barre : entièrement dessous, mais dans la fenêtre.
++      const scroll = window.scrollY + r.top + r.height / 2 - (bar.top + bar.height / 2);
++      if (scroll < 0 || scroll > max) continue;
++      window.scrollTo(0, scroll);
++      previous.focus({ preventScroll: true });
++      return field.id;
++    }
++    return null;
++  });
++}
++
++/** Le champ a-t-il le focus, et sa boîte finit-elle au-dessus de la barre ? */
++const fieldAboveBar = (page: Page, id: string) =>
++  page.evaluate((fieldId) => {
++    const field = document.getElementById(fieldId);
++    const bar = document.querySelector('[data-testid="tab-bar"]')?.getBoundingClientRect();
++    if (!field || !bar) return { focused: false, bottom: Number.NaN, barTop: Number.NaN };
++    return {
++      focused: document.activeElement === field,
++      bottom: Math.round(field.getBoundingClientRect().bottom),
++      barTop: Math.round(bar.top),
++    };
++  }, id);
++
++/** En-tête de l'accueil et barre : où tombent le texte de la pastille et les libellés des onglets ? */
++const shellLayout = (page: Page) =>
++  page.evaluate(() => {
++    const textRects = (el: Element) =>
++      [...el.childNodes]
++        .filter((n) => n.nodeType === Node.TEXT_NODE)
++        .flatMap((n) => {
++          const range = document.createRange();
++          range.selectNodeContents(n);
++          return [...range.getClientRects()];
++        });
++    const pill = document.querySelector('[data-testid="connection-status"]');
++    const avatar = document.querySelector('a[aria-label="Mon profil"]')?.getBoundingClientRect();
++    const bar = document.querySelector('[data-testid="tab-bar"]')?.getBoundingClientRect();
++    if (!pill || !avatar || !bar) return null;
++    const pillText = textRects(pill);
++    const covers = (a: DOMRect, b: DOMRect) =>
++      Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 &&
++      Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5;
++    return {
++      pillOverAvatar: pillText.some((r) => covers(r, avatar)),
++      pillClipped: pillText.some((r) => r.left < 0 || r.right > window.innerWidth + 0.5),
++      avatarClipped: avatar.left < 0 || avatar.right > window.innerWidth + 0.5,
++      tabsOverflowing: [...document.querySelectorAll('[data-testid="tab-bar"] a')].flatMap((a) => {
++        const cell = a.getBoundingClientRect();
++        const out = textRects(a).some(
++          (r) =>
++            r.left < cell.left - 0.5 ||
++            r.right > cell.right + 0.5 ||
++            r.top < bar.top - 0.5 ||
++            r.bottom > bar.bottom + 0.5,
++        );
++        return out ? [a.textContent] : [];
++      }),
++    };
++  });
++
++test('barre d’onglets : ni sur le dernier contrôle ni sur le focus ; lisible à 320 px, texte à 200 %', async ({
++  server,
++  context,
++}) => {
++  const page = await setupOnboardedAdmin(server, context);
++  // Document neuf : « Commencer » mène encore à l'accueil quand sa requête aboutit, après la redirection de la
++  // garde ; un onglet touché juste après serait annulé (WebKit). Le rechargement coupe cette suite en attente.
++  await page.goto(`${server.url}/profile`);
++  await expect(page.getByRole('heading', { level: 1, name: 'Profil' })).toBeVisible();
++  await expect(tab(page, 'Profil')).toHaveAttribute('aria-current', 'page');
++  await settle(page);
++
++  await test.step('bas de page : le centre du dernier contrôle le touche, pas la barre', async () => {
++    const hit = await lastControlAtBottom(page);
++    expect.soft(hit.underBar, `« ${hit.name} » sous la barre`).toBe(false);
++    expect.soft(hit.reached, `« ${hit.name} » reçoit le toucher`).toBe(true);
++  });
++
++  await test.step('tabulation : le champ atteint finit au-dessus de la barre (2.4.11)', async () => {
++    const id = await fieldUnderBar(page);
++    expect(id, 'un champ de saisie peut passer sous la barre').not.toBeNull();
++    if (!id) return;
++    await page.keyboard.press('Tab');
++    await expect.poll(async () => (await fieldAboveBar(page, id)).focused).toBe(true);
++    const after = await fieldAboveBar(page, id);
++    expect
++      .soft(after.bottom, 'bas du champ atteint par Tab ≤ haut de la barre')
++      .toBeLessThanOrEqual(after.barTop);
++  });
++
++  await test.step('focus() d’un champ (erreur, suppression) : il finit au-dessus de la barre (2.4.11)', async () => {
++    const id = await fieldUnderBar(page);
++    expect(id, 'un champ de saisie peut passer sous la barre').not.toBeNull();
++    if (!id) return;
++    await page.evaluate((fieldId) => document.getElementById(fieldId)?.focus(), id);
++    const after = await fieldAboveBar(page, id);
++    expect.soft(after.focused).toBe(true);
++    expect.soft(after.bottom, 'bas du champ ≤ haut de la barre').toBeLessThanOrEqual(after.barTop);
++  });
++
++  await test.step('320 px, texte à 200 % : pastille, initiale et libellés restent lisibles', async () => {
++    await page.setViewportSize({ width: 320, height: 640 });
++    await page.evaluate(() => {
++      document.documentElement.style.fontSize = '200%';
++    });
++    await tab(page, 'Accueil').click();
++    await page.waitForURL((url) => url.pathname === '/');
++    await expect(page.getByRole('link', { name: 'Mon profil' })).toBeVisible();
++    await settle(page);
++    const layout = await shellLayout(page);
++    expect(layout, 'en-tête de l’accueil et barre d’onglets affichés').not.toBeNull();
++    expect.soft(layout?.pillOverAvatar, 'texte de la pastille sur le rond de l’initiale').toBe(false);
++    expect.soft(layout?.pillClipped, 'texte de la pastille coupé au bord').toBe(false);
++    expect.soft(layout?.avatarClipped, 'rond de l’initiale coupé au bord').toBe(false);
++    expect.soft(layout?.tabsOverflowing, 'libellés hors de leur onglet').toEqual([]);
++
++    await tab(page, 'Profil').click();
++    await page.waitForURL((url) => url.pathname === '/profile');
++    await settle(page);
++    const hit = await lastControlAtBottom(page);
++    expect.soft(hit.underBar, `« ${hit.name} » sous la barre, texte à 200 %`).toBe(false);
++    expect.soft(hit.reached, `« ${hit.name} » reçoit le toucher, texte à 200 %`).toBe(true);
++  });
++});
+diff --git a/apps/web/e2e/support/flows.ts b/apps/web/e2e/support/flows.ts
+index 9d20147..6c27b2b 100644
+--- a/apps/web/e2e/support/flows.ts
++++ b/apps/web/e2e/support/flows.ts
+@@ -1,12 +1,13 @@
+ import { type BrowserContext, expect, type Page } from '@playwright/test';
+ import { EXPERIENCE_LABELS, GOAL_LABELS, PRESETS } from '@rune/contracts';
++import { ONBOARDING_COMPLETED_EVENT } from '../../src/app-events';
+ import { emulateStandalone, requireServiceWorker, waitForController } from './pwa';
+ import { bootstrapAdmin, type E2EServer } from './server';
+ 
+ // Parcours d'écran communs aux E2E, par les libellés exacts des composants (Interfaces §6, `exact: true`).
+ 
+ /** 31 points de code : au-dessus du minimum admin de 14 (R-MDP-1), pas de changement imposé. */
+ export const E2E_PASSWORD = 'cheval agrafe batterie correcte';
+ 
+ const READY_TIMEOUT_MS = 30_000;
+ 
+@@ -63,21 +64,28 @@ export async function completeOnboardingViaUi(
+   await at('availability');
+   await choose('3');
+   await choose('45 min');
+   await next();
+   await at('health');
+   await next();
+   await at('ready');
+   await expect(page.getByTestId('offline-ready')).toHaveAttribute('data-state', 'ready', {
+     timeout: READY_TIMEOUT_MS,
+   });
++  // La garde mène à l'accueil dès la réponse du serveur, mais « Commencer » y mène encore après le pull qui
++  // suit : un geste fait entre les deux serait annulé. L'événement de fin, émis juste avant, marque la fin.
++  await page.evaluate((name) => {
++    const done = () => Object.assign(window, { e2eOnboardingCompleted: true });
++    window.addEventListener(name, done, { once: true });
++  }, ONBOARDING_COMPLETED_EVENT);
+   await button(page, 'Commencer').click();
++  await page.waitForFunction(() => 'e2eOnboardingCompleted' in window, null, { timeout: READY_TIMEOUT_MS });
+   await page.waitForURL((url) => url.pathname === '/');
+ }
+ 
+ /** Administrateur amorcé (lien), compte créé et onboarding fini (maison) dans l'appli installée ; page contrôlée par le SW. */
+ export async function setupOnboardedAdmin(
+   server: E2EServer,
+   context: BrowserContext,
+   username = 'camille',
+ ): Promise<Page> {
+   await emulateStandalone(context);
+diff --git a/apps/web/src/api/client.ts b/apps/web/src/api/client.ts
+index e39ad33..35d35b1 100644
+--- a/apps/web/src/api/client.ts
++++ b/apps/web/src/api/client.ts
+@@ -34,20 +34,27 @@ export interface ApiClient {
+     method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+     path: string,
+     body?: unknown,
+     schema?: z.ZodType<T>,
+   ): Promise<T>;
+ }
+ 
+ export interface ApiHooks {
+   onUnauthenticated(): void;
+   onAccountDeleted(): void;
++  /**
++   * Serveur injoignable ou muet, avant le refus « Nécessite le réseau » : le moteur de synchro le sait
++   * aussitôt, et la pastille dit la même chose que l'écran (spec refonte §5, R-SYN-30).
++   */
++  onOffline?(): void;
++  /** Une réponse HTTP est arrivée, même en erreur : le serveur est joignable. */
++  onReachable?(): void;
+ }
+ 
+ function apiErrorOf(reply: JsonReply): ApiError {
+   const parsed = ApiErrorBody.safeParse(reply.body);
+   if (!parsed.success) return new ApiError(reply.res.status, 'internal', {});
+   return new ApiError(reply.res.status, parsed.data.error, parsed.data);
+ }
+ 
+ /**
+  * Client de l'API en ligne. L'échéance couvre la lecture du corps ; le client agit sur le code
+@@ -58,23 +65,27 @@ export function createApiClient(
+   hooks: ApiHooks,
+   opts: { timeoutMs?: number } = {},
+ ): ApiClient {
+   const timeoutMs = opts.timeoutMs ?? SYNC_TIMEOUT_MS;
+ 
+   async function request<T>(init: RequestInit, path: string, schema?: z.ZodType<T>): Promise<T> {
+     let reply: JsonReply;
+     try {
+       reply = await fetchJsonWithTimeout(t, path, init, timeoutMs);
+     } catch (error) {
+-      if (error instanceof OfflineError) throw new NetworkRequiredError();
++      if (error instanceof OfflineError) {
++        hooks.onOffline?.();
++        throw new NetworkRequiredError();
++      }
+       throw error;
+     }
++    hooks.onReachable?.();
+     if (!reply.res.ok) {
+       const error = apiErrorOf(reply);
+       if (error.code === 'unauthenticated') hooks.onUnauthenticated();
+       if (error.code === 'account_deleted') hooks.onAccountDeleted();
+       throw error;
+     }
+     return (schema ? schema.parse(reply.body) : undefined) as T;
+   }
+ 
+   return {
+diff --git a/apps/web/src/app-services.tsx b/apps/web/src/app-services.tsx
+index e6c9823..8ed9e5c 100644
+--- a/apps/web/src/app-services.tsx
++++ b/apps/web/src/app-services.tsx
+@@ -1,14 +1,14 @@
+ import type { MeResponse } from '@rune/contracts';
+ import { liveQuery } from 'dexie';
+ import { createContext, type ReactNode, useContext, useEffect, useState, useSyncExternalStore } from 'react';
+-import type { ApiClient } from './api/client';
++import type { ApiClient, ApiHooks } from './api/client';
+ import type { AppDb } from './local-db/db';
+ import { getMeta } from './local-db/meta';
+ import { wipeUserData } from './local-db/wipe';
+ import type { SwStatus } from './sw/protocol';
+ import type { SyncEngine, SyncState } from './sync/engine';
+ import type { SyncTransport } from './sync/transport';
+ 
+ /** Dépendances de l'appli, injectées : réelles dans `main.tsx`, factices dans les tests. */
+ export interface AppServices {
+   db: AppDb;
+@@ -148,10 +148,25 @@ export function whenSignedOut(db: AppDb, timeoutMs = SIGNED_OUT_WAIT_MS): Promis
+ export async function handleAccountDeleted(db: AppDb, navigate: (to: string) => void): Promise<void> {
+   try {
+     await wipeUserData(db, { keepOutbox: false });
+     await whenSignedOut(db);
+   } catch {
+     // Base locale inaccessible : le moteur de synchro l'effacera au prochain 410.
+   } finally {
+     navigate('/login?reason=account_deleted');
+   }
+ }
++
++/**
++ * Crochets du client d'API branchés sur le moteur de synchro, les mêmes dans `main.tsx` et dans les tests :
++ * session perdue → un cycle la constate ; compte supprimé → `handleAccountDeleted` ; serveur injoignable ou
++ * joignable sur une requête en ligne → le moteur le sait aussitôt, une seule source pour la pastille et les
++ * écrans « Nécessite le réseau » (spec refonte §5).
++ */
++export function apiHooksFor(sync: SyncEngine, db: AppDb, navigate: (to: string) => void): ApiHooks {
++  return {
++    onUnauthenticated: () => void sync.syncNow('manual'),
++    onAccountDeleted: () => void handleAccountDeleted(db, navigate),
++    onOffline: () => sync.reportOffline(),
++    onReachable: () => sync.reportReachable(),
++  };
++}
+diff --git a/apps/web/src/main.tsx b/apps/web/src/main.tsx
+index dbea839..2372e1a 100644
+--- a/apps/web/src/main.tsx
++++ b/apps/web/src/main.tsx
+@@ -1,20 +1,20 @@
+ import './ui/theme/tokens.css';
+ import './ui/theme/fonts.css';
+ import { createMonotonicUuidV7 } from '@rune/domain';
+ import { StrictMode } from 'react';
+ import { createRoot } from 'react-dom/client';
+ import { Router } from 'wouter';
+ import { navigate } from 'wouter/use-browser-location';
+ import { App } from './App';
+ import { createApiClient } from './api/client';
+-import { type AppServices, handleAccountDeleted, ServicesProvider } from './app-services';
++import { type AppServices, apiHooksFor, ServicesProvider } from './app-services';
+ import { bootApp } from './boot';
+ import { createAppDb } from './local-db/db';
+ import { reposFor } from './repos';
+ import { probeHealth } from './sw/kill-switch';
+ import { installPersistOnOnboarding } from './sw/persist';
+ import { bootServiceWorker } from './sw/register';
+ import { getSwStatus } from './sw/sw-client';
+ import { createSyncEngine } from './sync/engine';
+ import { browserTransport } from './sync/transport';
+ import { BootSplash } from './ui/BootSplash';
+@@ -28,24 +28,21 @@ const go = (to: string) => navigate(to, { replace: true });
+ 
+ const db = createAppDb();
+ const transport = browserTransport();
+ const newOpId = createMonotonicUuidV7(Date.now, randomBytes);
+ const sync = createSyncEngine({
+   db,
+   transport,
+   newOpId,
+   onAccountDeleted: () => go('/login?reason=account_deleted'),
+ });
+-const api = createApiClient(transport, {
+-  onUnauthenticated: () => void sync.syncNow('manual'),
+-  onAccountDeleted: () => void handleAccountDeleted(db, go),
+-});
++const api = createApiClient(transport, apiHooksFor(sync, db, go));
+ // Vite en développement n'enregistre pas de SW : coquille et illustrations réputées en cache.
+ const swStatus: AppServices['swStatus'] = import.meta.env.DEV
+   ? async () => ({ type: 'STATUS', buildHash: 'dev', shellCached: true, illustrationsMissing: 0 })
+   : () => getSwStatus();
+ const services: AppServices = { db, api, sync, transport, now: Date.now, newOpId, swStatus };
+ const repos = reposFor(services);
+ 
+ bootApp(services);
+ // R-SYN-31 : stockage persistant demandé à la fin de l'onboarding, dans l'appli installée.
+ installPersistOnOnboarding(repos.status);
+diff --git a/apps/web/src/sw/kill-switch.ts b/apps/web/src/sw/kill-switch.ts
+index b4af826..54f4ce7 100644
+--- a/apps/web/src/sw/kill-switch.ts
++++ b/apps/web/src/sw/kill-switch.ts
+@@ -31,41 +31,55 @@ export async function probeHealth(transport: SyncTransport): Promise<HealthRespo
+       method: 'GET',
+       cache: 'no-store',
+     });
+     const parsed = HealthResponse.safeParse(body);
+     return parsed.success ? parsed.data : null;
+   } catch {
+     return null;
+   }
+ }
+ 
+-/** Rechargement de l'onglet déjà fait parce qu'il restait contrôlé (garde contre une boucle). */
++/** Rechargement de l'onglet déjà fait, pendant cet incident, parce qu'il restait contrôlé (garde contre une boucle). */
+ const CONTROLLED_RELOAD_KEY = 'rune.kill-switch-reload';
+ /** Repli quand le stockage de session est refusé : une fois par chargement de la page. */
+ let controlledReloadDone = false;
+ 
+ /**
+- * Vrai la première fois seulement, dans cet onglet : le rechargement d'une page encore contrôlée ne se
+- * répète pas, même si un navigateur gardait le SW désenregistré aux commandes après lui.
++ * Vrai la première fois seulement, dans cet onglet et pour cet incident : le rechargement d'une page encore
++ * contrôlée ne se répète pas, même si un navigateur gardait le SW désenregistré aux commandes après lui.
+  */
+ function firstControlledReload(): boolean {
+   try {
+     if (sessionStorage.getItem(CONTROLLED_RELOAD_KEY) === '1') return false;
+     sessionStorage.setItem(CONTROLLED_RELOAD_KEY, '1');
+     return true;
+   } catch {
+     if (controlledReloadDone) return false;
+     controlledReloadDone = true;
+     return true;
+   }
+ }
+ 
++/**
++ * Garde levée quand l'incident est clos (`swKill` faux) ou que la page n'est plus contrôlée (aucune boucle
++ * possible) : un incident suivant, dans la même session de l'onglet ou de l'appli installée, peut de nouveau
++ * recharger une page restée contrôlée.
++ */
++function clearControlledReload(): void {
++  controlledReloadDone = false;
++  try {
++    sessionStorage.removeItem(CONTROLLED_RELOAD_KEY);
++  } catch {
++    // Stockage refusé : le repli en mémoire, remis à zéro, suffit.
++  }
++}
++
+ const doomedCache = (name: string) =>
+   name.startsWith(SHELL_CACHE_PREFIX) || name.startsWith(ILLUSTRATIONS_CACHE_PREFIX);
+ 
+ /** Valeur de `task`, ou `fallback` s'il échoue, même en levant tout de suite. */
+ async function orElse<T>(task: () => Promise<T>, fallback: T): Promise<T> {
+   try {
+     return await task();
+   } catch {
+     return fallback;
+   }
+@@ -75,39 +89,47 @@ async function orElse<T>(task: () => Promise<T>, fallback: T): Promise<T> {
+ async function anyDone(tasks: readonly (() => Promise<boolean>)[]): Promise<boolean> {
+   const results = await Promise.all(tasks.map((task) => orElse(task, false)));
+   return results.includes(true);
+ }
+ 
+ /**
+  * Interrupteur d'urgence côté page (R-PWA-6), au démarrage : si `swKill`, désenregistre tout SW, vide les
+  * caches `shell-*` et `illustrations-*` (ni le marqueur `rune-meta`, ni un cache inconnu, ni jamais
+  * IndexedDB), puis recharge la page depuis le réseau. Recharge une seule fois : si quelque chose a été retiré,
+  * ou si le SW a fait le ménage avant (T36) sans pouvoir recharger cette page, encore contrôlée par lui (une fois
+- * par onglet). La page rechargée ne trouve plus rien et n'est plus contrôlée, ce qui évite la boucle. Rend
+- * `true` si la page est rechargée.
++ * par incident et par onglet). La page rechargée ne trouve plus rien et n'est plus contrôlée, ce qui évite la
++ * boucle. Appelé aussi quand `swKill` est faux, pour clore l'incident. Rend `true` si la page est rechargée.
+  */
+ export async function applyKillSwitchIfNeeded(
+   health: HealthResponse,
+   env: KillSwitchEnv = {},
+ ): Promise<boolean> {
+-  if (!health.swKill) return false;
++  if (!health.swKill) {
++    clearControlledReload();
++    return false;
++  }
+   const serviceWorker = env.serviceWorker ?? browserServiceWorker();
+   const storage = env.caches ?? browserCaches();
+   const reload = env.reload ?? (() => window.location.reload());
+ 
+   const registrations = serviceWorker ? await orElse(() => serviceWorker.getRegistrations(), []) : [];
+   const unregistered = await anyDone(registrations.map((r) => () => r.unregister()));
+   const names = storage ? await orElse(() => storage.keys(), []) : [];
+   const deleted = storage
+     ? await anyDone(names.filter(doomedCache).map((n) => () => storage.delete(n)))
+     : false;
+ 
+-  // Le SW a pu tout retirer pendant la navigation, quand l'ancien document était parti et celui-ci pas encore
+-  // prêt : son rechargement n'a visé aucune fenêtre. Servie par lui (contrôlée), la page resterait sur ce build.
+-  if (!unregistered && !deleted && (serviceWorker?.controller == null || !firstControlledReload())) {
+-    return false;
++  if (!unregistered && !deleted) {
++    // Plus contrôlée (la page rechargée, typiquement) : rien à faire, et la garde est levée.
++    if (serviceWorker?.controller == null) {
++      clearControlledReload();
++      return false;
++    }
++    // Le SW a pu tout retirer pendant la navigation, quand l'ancien document était parti et celui-ci pas encore
++    // prêt : son rechargement n'a visé aucune fenêtre. Servie par lui (contrôlée), la page resterait sur ce build.
++    if (!firstControlledReload()) return false;
+   }
+   // Trace pour le diagnostic sur téléphone (R-TST-4, P8) : sinon ce rechargement unique passe inaperçu.
+   console.info("[rune] interrupteur d'urgence : service worker et caches retirés, rechargement");
+   reload();
+   return true;
+ }
+diff --git a/apps/web/src/sw/register.ts b/apps/web/src/sw/register.ts
+index de53b96..0e314da 100644
+--- a/apps/web/src/sw/register.ts
++++ b/apps/web/src/sw/register.ts
+@@ -411,23 +411,24 @@ export async function bootServiceWorker(o: {
+   await Promise.all([markLocalDb(o.db, env.caches ?? browserCaches()), startWorker(o, env)]);
+ }
+ 
+ async function startWorker(o: Parameters<typeof bootServiceWorker>[0], env: KillSwitchEnv): Promise<void> {
+   let health: HealthResponse | null = null;
+   try {
+     health = await o.fetchHealth();
+   } catch {
+     // Sonde en échec : comme sans réponse, on enregistre.
+   }
+-  if (health?.swKill) {
++  // Toute réponse passe par l'interrupteur : `swKill` faux clôt l'incident et lève sa garde de rechargement.
++  if (health) {
+     await applyKillSwitchIfNeeded(health, { ...env, serviceWorker: env.serviceWorker ?? o.container });
+-    return;
++    if (health.swKill) return;
+   }
+   const container = o.container ?? browserServiceWorker();
+   swControllerStore.set(registerServiceWorker({ db: o.db, sync: o.sync, container, reload: env.reload }));
+   if (!container) return;
+ 
+   async function sendIllustrations(): Promise<void> {
+     if (!container?.controller) return;
+     try {
+       const files = await o.status.illustrationFiles();
+       container.controller?.postMessage({ type: 'SYNC_ILLUSTRATIONS', files });
+diff --git a/apps/web/src/sync/engine.ts b/apps/web/src/sync/engine.ts
+index 7b718a8..d905722 100644
+--- a/apps/web/src/sync/engine.ts
++++ b/apps/web/src/sync/engine.ts
+@@ -66,20 +66,28 @@ export interface SyncEngine {
+   flushBefore(ms: number): Promise<void>;
+   getState(): SyncState;
+   subscribe(fn: (s: SyncState) => void): () => void;
+   start(): void;
+   stop(): void;
+   /**
+    * Session ouverte (connexion, création du compte, réinitialisation) : connexion remise à
+    * 'unknown' tout de suite, reprises à zéro, et fin de la pause d'après un 401 ou un 410.
+    */
+   sessionOpened(): void;
++  /**
++   * Requête en ligne (classe E) sans réponse : 'offline' tout de suite, le même verdict que l'écran qui
++   * répond « Nécessite le réseau » (spec refonte §5), puis un cycle le vérifie et programme les reprises.
++   * Sans effet moteur arrêté, ni sur un état qui demande une action (session perdue, mise à jour).
++   */
++  reportOffline(): void;
++  /** Le serveur a répondu à une requête en ligne : si le moteur le croyait hors ligne, un cycle part aussitôt. */
++  reportReachable(): void;
+ }
+ 
+ export interface SyncEngineDeps {
+   db: AppDb;
+   transport: SyncTransport;
+   now?: () => number;
+   newOpId?: () => string;
+   onAccountDeleted?: () => void;
+   timeoutMs?: number;
+   rules?: EntityRulesMap;
+@@ -516,13 +524,23 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
+       debounceTimer = undefined;
+       const waiters = debounceWaiters;
+       debounceWaiters = [];
+       for (const w of waiters) w();
+     },
+     sessionOpened() {
+       lastUserId = null;
+       failures = 0;
+       setState({ connection: 'unknown' });
+     },
++    reportOffline() {
++      if (!started || stopped) return;
++      // Déjà hors ligne (reprises en cours), ou un état qui demande une action et que la pastille garde.
++      if (state.connection !== 'online' && state.connection !== 'unknown') return;
++      setState({ connection: 'offline' });
++      void enqueue('full');
++    },
++    reportReachable() {
++      if (state.connection === 'offline') void enqueue('full');
++    },
+   };
+   return engine;
+ }
+diff --git a/apps/web/src/ui/AppShell.tsx b/apps/web/src/ui/AppShell.tsx
+index ab7c314..49db012 100644
+--- a/apps/web/src/ui/AppShell.tsx
++++ b/apps/web/src/ui/AppShell.tsx
+@@ -23,47 +23,51 @@ export const WIDE_QUERY = '(min-width: 900px)';
+ export function AppShell(p: { children: ReactNode }) {
+   const [path] = useLocation();
+   const wide = useMediaQuery(WIDE_QUERY);
+   const transition = useScreenTransition(path);
+   const screen = useRef<HTMLElement>(null);
+   useScreenEntrance(screen, path, transition);
+   return (
+     <div className={shell.shell} data-wide={wide ? '' : undefined}>
+       {wide ? <SideNav /> : null}
+       <div className={shell.column}>
+-        {activeTab(path) === '/' ? <HomeHeader /> : null}
++        {activeTab(path) === '/' ? <HomeHeader brand={!wide} /> : null}
+         <div className={shell.bannerSlot}>
+           <UpdateBanner />
+         </div>
+         <main ref={screen} className={shell.main} data-screen-transition={transition}>
+           {p.children}
+         </main>
+         <PublicLinks />
+       </div>
+       {wide ? null : <TabBar />}
+     </div>
+   );
+ }
+ 
+ /**
+  * En-tête de l'accueil (maquettes MixSombre / MixClair) : logo et RUNE vers l'accueil, pastille de connexion,
+  * rond de l'initiale vers le Profil. Les pages internes ont leur Retour et leur titre (`PageHeader`).
++ * `brand` faux sur PC : la navigation latérale porte déjà la marque (une seule annonce, un seul arrêt de
++ * tabulation) ; pastille et initiale restent seules, à droite.
+  */
+-function HomeHeader() {
++function HomeHeader(p: { brand: boolean }) {
+   const me = useMe();
+   const dark = useColorScheme() === 'dark';
+   return (
+     <header className={shell.header}>
+-      <Link href="/" className={shell.brand} aria-label="Rune">
+-        <RuneMark glow={dark} />
+-        <RuneWordmark />
+-      </Link>
++      {p.brand ? (
++        <Link href="/" className={shell.brand} aria-label="Rune">
++          <RuneMark glow={dark} />
++          <RuneWordmark />
++        </Link>
++      ) : null}
+       <div className={shell.headerEnd}>
+         <ConnectionPill />
+         {me ? (
+           <Link href="/profile" aria-label="Mon profil" className={shell.avatar}>
+             <span aria-hidden="true">{me.username.charAt(0).toUpperCase()}</span>
+           </Link>
+         ) : null}
+       </div>
+     </header>
+   );
+diff --git a/apps/web/src/ui/BootSplash.tsx b/apps/web/src/ui/BootSplash.tsx
+index 02f945d..e5c98ca 100644
+--- a/apps/web/src/ui/BootSplash.tsx
++++ b/apps/web/src/ui/BootSplash.tsx
+@@ -1,18 +1,21 @@
+ import { useEffect, useState } from 'react';
+ import { RuneMark } from './Logo';
+ import styles from './shell.module.css';
+ import { useReducedMotion } from './use-reduced-motion';
+ 
+ const SHOWN_KEY = 'rune.boot-splash';
+-/** Filet de sécurité : retiré même si la fin de son animation n'arrive jamais (onglet en arrière-plan). */
+-const MAX_MS = 2000;
++/**
++ * Filet de sécurité : retiré même si la fin de son animation n'arrive jamais (onglet en arrière-plan). Le
++ * voile de shell.module.css s'efface avant (fin à 1,45 s).
++ */
++export const BOOT_SPLASH_MAX_MS = 2000;
+ 
+ /** Repli quand le stockage de session est refusé (navigation privée, données bloquées) : une fois par chargement. */
+ let shownThisPage = false;
+ 
+ function alreadyShown(): boolean {
+   try {
+     return sessionStorage.getItem(SHOWN_KEY) === '1';
+   } catch {
+     return shownThisPage;
+   }
+@@ -24,38 +27,48 @@ function markShown(): void {
+     sessionStorage.setItem(SHOWN_KEY, '1');
+   } catch {
+     // Stockage refusé : le repli du chargement suffit.
+   }
+ }
+ 
+ /**
+  * Démarrage (spec refonte §7) : au premier affichage d'une session, le logo se dessine (moins de 1,2 s) puis
+  * le voile s'efface. Il se pose par-dessus l'écran sans jamais le retarder ni prendre le toucher
+  * (`pointer-events: none`), reste muet pour les lecteurs d'écran, et se retire à la fin de son animation.
+- * Sous mouvement réduit, il ne rend rien.
++ * Sous mouvement réduit, il ne rend rien. Joué ou non, il est décidé une fois, au montage : couper le
++ * mouvement réduit plus tard ne le fait jamais jouer en pleine session, et le demander pendant le dessin le
++ * retire pour de bon.
+  */
+ export function BootSplash() {
+   const reduced = useReducedMotion();
+-  const [show, setShow] = useState(() => !alreadyShown());
+-  const playing = show && !reduced;
++  const [show, setShow] = useState(() => !reduced && !alreadyShown());
+ 
++  // Premier affichage de la session passé, que le logo se soit dessiné ou non (mouvement réduit).
+   useEffect(() => {
+-    if (!playing) return;
+     markShown();
+-    const timer = setTimeout(() => setShow(false), MAX_MS);
++  }, []);
++
++  useEffect(() => {
++    if (!show) return;
++    if (reduced) {
++      setShow(false);
++      return;
++    }
++    const timer = setTimeout(() => setShow(false), BOOT_SPLASH_MAX_MS);
+     return () => clearTimeout(timer);
+-  }, [playing]);
++  }, [show, reduced]);
+ 
+-  if (!playing) return null;
++  if (!show || reduced) return null;
+   return (
+     <div
+       aria-hidden="true"
++      data-testid="boot-splash"
+       className={styles.splash}
+       onAnimationEnd={(e) => {
+         // Les animations du dessin remontent jusqu'ici : seule celle du voile le retire.
+         if (e.target === e.currentTarget) setShow(false);
+       }}
+     >
+       <span className={styles.splashMark}>
+         <RuneMark size={132} />
+       </span>
+     </div>
+diff --git a/apps/web/src/ui/PageHeader.tsx b/apps/web/src/ui/PageHeader.tsx
+index 668543c..765121f 100644
+--- a/apps/web/src/ui/PageHeader.tsx
++++ b/apps/web/src/ui/PageHeader.tsx
+@@ -14,29 +14,31 @@ function ChevronLeft() {
+       strokeLinecap="round"
+       strokeLinejoin="round"
+     >
+       <path d="m15 6-6 6 6 6" />
+     </svg>
+   );
+ }
+ 
+ /**
+  * En-tête d'une page interne : bouton « Retour » de 44 × 44 (un lien vers `back`, ou un bouton qui
+- * appelle `back`), puis le titre de niveau 1. Les onglets de premier niveau n'ont pas de Retour.
++ * appelle `back`), puis le titre de niveau 1 en 24 px. Sans Retour (onglets de premier niveau, écrans
++ * d'entrée), c'est un titre d'écran : 28 px, comme dans les maquettes (GUIDE, Type).
+  */
+ export function PageHeader(p: { title: string; back?: string | (() => void) }) {
+   const { back } = p;
++  const titleClass = back ? styles.pageTitle : `${styles.pageTitle} ${styles.screenTitle}`;
+   return (
+     <header className={styles.pageHeader}>
+       {typeof back === 'string' ? (
+         <Link href={back} aria-label="Retour" className={styles.backButton}>
+           <ChevronLeft />
+         </Link>
+       ) : back ? (
+         <button type="button" aria-label="Retour" onClick={() => back()} className={styles.backButton}>
+           <ChevronLeft />
+         </button>
+       ) : null}
+-      <h1 className={styles.pageTitle}>{p.title}</h1>
++      <h1 className={titleClass}>{p.title}</h1>
+     </header>
+   );
+ }
+diff --git a/apps/web/src/ui/TabBar.tsx b/apps/web/src/ui/TabBar.tsx
+index 5c093b4..9075bf2 100644
+--- a/apps/web/src/ui/TabBar.tsx
++++ b/apps/web/src/ui/TabBar.tsx
+@@ -1,11 +1,11 @@
+-import type { CSSProperties, ReactNode } from 'react';
++import { type CSSProperties, type ReactNode, type RefObject, useEffect, useRef } from 'react';
+ import { Link, useLocation } from 'wouter';
+ import styles from './shell.module.css';
+ 
+ export type TabHref = '/' | '/progression' | '/places' | '/profile';
+ 
+ /** Onglets du socle (spec refonte §5) ; à la brique 5, Nutrition prend la place de Salles. */
+ export const TAB_ITEMS: readonly { href: TabHref; label: string }[] = [
+   { href: '/', label: 'Accueil' },
+   { href: '/progression', label: 'Progression' },
+   { href: '/places', label: 'Salles' },
+@@ -77,22 +77,24 @@ export const TAB_ICONS: Record<TabHref, ReactNode> = {
+ };
+ 
+ /**
+  * Barre d'onglets flottante en pilule, sur téléphone (maquettes MixSombre / MixClair) : l'onglet actif porte
+  * `aria-current="page"` et la pastille glisse jusqu'à lui ; sans onglet actif, elle se cache.
+  */
+ export function TabBar() {
+   const [path] = useLocation();
+   const active = activeTab(path);
+   const index = TAB_ITEMS.findIndex((t) => t.href === active);
++  const bar = useRef<HTMLElement>(null);
++  useFocusAboveBar(bar);
+   return (
+-    <nav aria-label="Navigation principale" data-testid="tab-bar" className={styles.tabBar}>
++    <nav ref={bar} aria-label="Navigation principale" data-testid="tab-bar" className={styles.tabBar}>
+       <span
+         aria-hidden="true"
+         data-tab-pill=""
+         data-index={index < 0 ? undefined : String(index)}
+         hidden={index < 0}
+         className={styles.tabPill}
+         style={{ '--tab-index': Math.max(index, 0) } as CSSProperties}
+       />
+       {TAB_ITEMS.map((t) => (
+         <Link
+@@ -101,10 +103,31 @@ export function TabBar() {
+           aria-current={t.href === active ? 'page' : undefined}
+           className={styles.tab}
+         >
+           {TAB_ICONS[t.href]}
+           {t.label}
+         </Link>
+       ))}
+     </nav>
+   );
+ }
++
++/**
++ * Le focus ne finit jamais sous la barre (WCAG 2.2, 2.4.11). Tabulation et Chromium s'arrêtent déjà au-dessus
++ * grâce à scroll-padding-bottom (shell.module.css), mais WebKit l'ignore pour focus() (retour au bouton
++ * d'origine, champ en erreur) : quand la barre recouvre le centre du contrôle qui prend le focus, il défile au
++ * plus près, ce qui respecte la marge. Une feuille du bas posée par-dessus prend le point : rien ne bouge.
++ */
++function useFocusAboveBar(bar: RefObject<HTMLElement | null>) {
++  useEffect(() => {
++    const onFocus = (event: FocusEvent) => {
++      const nav = bar.current;
++      const target = event.target;
++      if (!nav || !(target instanceof Element) || nav.contains(target)) return;
++      const box = target.getBoundingClientRect();
++      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
++      if (hit && nav.contains(hit)) target.scrollIntoView({ block: 'nearest' });
++    };
++    document.addEventListener('focusin', onFocus);
++    return () => document.removeEventListener('focusin', onFocus);
++  }, [bar]);
++}
+diff --git a/apps/web/src/ui/screen-transition.ts b/apps/web/src/ui/screen-transition.ts
+index a828491..23c2e3a 100644
+--- a/apps/web/src/ui/screen-transition.ts
++++ b/apps/web/src/ui/screen-transition.ts
+@@ -1,43 +1,47 @@
+-import { type RefObject, useLayoutEffect, useState } from 'react';
++import { type RefObject, useLayoutEffect, useRef, useState } from 'react';
+ import { activeTab } from './TabBar';
+ import { useReducedMotion } from './use-reduced-motion';
+ 
+ /** Entrée d'un écran (spec refonte §7) : vers l'avant depuis la droite, retour depuis la gauche, onglet en fondu. */
+ export type ScreenTransition = 'forward' | 'back' | 'tab' | 'none';
+ 
+ const clean = (path: string) => path.toLowerCase().replace(/\/+$/, '') || '/';
+ 
++/** Place de `to` parmi les écrans visités avant l'écran affiché (le dernier de `stack`), -1 s'il n'y est pas. */
++const visitedIndex = (stack: readonly string[], to: string) =>
++  stack.slice(0, -1).findLastIndex((s) => clean(s) === clean(to));
++
+ /**
+  * Transition de `from` vers `to`, d'après la pile des écrans visités dans l'onglet (`stack`, `from` en dernier) :
+- * autre onglet → fondu ; écran parent, ou écran juste avant dans la pile (retour du navigateur) → retour ;
+- * sinon → avant.
++ * autre onglet → fondu ; écran parent, racine de l'onglet, ou écran déjà dans la pile (retour du navigateur,
++ * Retour vers un écran visité plus tôt) → retour ; sinon → avant.
+  */
+ export function screenTransition(from: string, to: string, stack: readonly string[]): ScreenTransition {
+   const a = clean(from);
+   const b = clean(to);
+   if (a === b) return 'none';
+-  if (activeTab(a) !== activeTab(b)) return 'tab';
+-  if (a.startsWith(`${b}/`)) return 'back';
+-  const before = stack.at(-2);
+-  if (before !== undefined && clean(before) === b) return 'back';
++  const tab = activeTab(a);
++  if (tab !== activeTab(b)) return 'tab';
++  if (a.startsWith(`${b}/`) || b === tab || visitedIndex(stack, b) >= 0) return 'back';
+   return 'forward';
+ }
+ 
+-/** Pile après la transition : un onglet repart de son écran, un retour dépile, un écran nouveau s'empile. */
++/**
++ * Pile après la transition : un onglet repart de son écran ; un retour dépile jusqu'à l'écran retrouvé (ou le
++ * met à la place de l'écran quitté s'il n'était pas dans la pile) ; un écran nouveau s'empile.
++ */
+ function nextStack(stack: readonly string[], to: string, transition: ScreenTransition): string[] {
+   if (transition === 'tab') return [to];
+   if (transition === 'back') {
+-    const before = stack.at(-2);
+-    return before !== undefined && clean(before) === clean(to)
+-      ? stack.slice(0, -1)
+-      : [...stack.slice(0, -1), to];
++    const i = visitedIndex(stack, to);
++    return i >= 0 ? stack.slice(0, i + 1) : [...stack.slice(0, -1), to];
+   }
+   return transition === 'none' ? [...stack] : [...stack, to];
+ }
+ 
+ interface NavState {
+   path: string;
+   stack: string[];
+   transition: ScreenTransition;
+ }
+ 
+@@ -50,27 +54,44 @@ export function useScreenTransition(path: string): ScreenTransition {
+   setNav({ path, stack: nextStack(nav.stack, path, transition), transition });
+   return transition;
+ }
+ 
+ const EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
+ const SLIDE = '48px';
+ 
+ /**
+  * Joue l'entrée de l'écran `ref` à chaque changement de `path` (Web Animations : aucun style en ligne, rien
+  * de figé à la fin). Sous mouvement réduit, un simple fondu ; sans `animate` (navigateur ancien), rien.
++ * Avant l'entrée, la page se place : en haut pour un onglet ou un écran suivant (la barre d'onglets se touche
++ * de n'importe où dans la page), à la position quittée pour un retour, en haut si elle n'est pas connue.
+  */
+ export function useScreenEntrance(
+   ref: RefObject<HTMLElement | null>,
+   path: string,
+   transition: ScreenTransition,
+ ) {
+   const reduced = useReducedMotion();
++  /** Dernière position de défilement de chaque écran, tenue à jour tant qu'il est affiché. */
++  const scrolls = useRef(new Map<string, number>());
++
++  // biome-ignore lint/correctness/useExhaustiveDependencies: la page se place à chaque nouvelle adresse.
++  useLayoutEffect(() => {
++    const key = clean(path);
++    const saved = scrolls.current;
++    if (transition !== 'none') window.scrollTo(0, transition === 'back' ? (saved.get(key) ?? 0) : 0);
++    const save = () => saved.set(key, window.scrollY);
++    // Position d'arrivée notée tout de suite : un retour plus tard ne ramène jamais à une position ancienne.
++    save();
++    window.addEventListener('scroll', save, { passive: true });
++    return () => window.removeEventListener('scroll', save);
++  }, [path]);
++
+   // biome-ignore lint/correctness/useExhaustiveDependencies: l'entrée se rejoue à chaque nouvelle adresse.
+   useLayoutEffect(() => {
+     const el = ref.current;
+     if (!el || transition === 'none' || typeof el.animate !== 'function') return;
+     const fade = { opacity: [0, 1] };
+     const keyframes =
+       reduced || transition === 'tab'
+         ? fade
+         : {
+             ...fade,
+diff --git a/apps/web/src/ui/shell.module.css b/apps/web/src/ui/shell.module.css
+index eec1b0e..3023dfd 100644
+--- a/apps/web/src/ui/shell.module.css
++++ b/apps/web/src/ui/shell.module.css
+@@ -1,105 +1,129 @@
+ /*
+  * Coquille des écrans connectés (spec refonte §5, maquettes MixSombre / MixClair) : en-tête de l'accueil,
+  * pastille de connexion, barre d'onglets flottante (téléphone), navigation latérale (≥ 900 px), voile du
+  * démarrage. Couleurs : jetons de theme/tokens.css seulement, donc juste dans les 5 thèmes.
+  */
+ 
+-/* Téléphone : la page garde sous elle la place de la barre flottante (68 px, 16 px au-dessus et en dessous). */
++/*
++ * Téléphone : la page garde sous elle la place de la barre d'onglets flottante, 16 px dessous, la barre, 16 px
++ * dessus, plus l'encoche. La barre fait 68 px mais grandit quand un libellé passe à la ligne (gros texte, écran
++ * étroit) : 16 px de cadre, 23 px d'icône, 2 px d'écart et jusqu'à 3 lignes de libellé de 0,9 rem
++ * (« Progression » à 320 px, texte à 200 %).
++ */
+ .shell {
+   min-height: 100vh;
+   display: flex;
+   flex-direction: column;
+   overflow-x: clip;
+-  padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px));
++  padding-bottom: calc(73px + 2.7rem + env(safe-area-inset-bottom, 0px));
++}
++
++/*
++ * Tant que la barre est là, le focus ne finit jamais dessous (WCAG 2.2, 2.4.11) : tabulation et focus() d'un
++ * champ s'arrêtent au-dessus d'elle. Même place que le bas de .shell (vérifié par test) ; sur PC, pas de barre,
++ * donc rien de retenu.
++ */
++:global(html):has(.tabBar) {
++  scroll-padding-bottom: calc(73px + 2.7rem + env(safe-area-inset-bottom, 0px));
+ }
+ 
+ .column {
+   flex: 1;
+   min-width: 0;
+   display: flex;
+   flex-direction: column;
+ }
+ 
+ .main {
+   flex: 1;
+   width: 100%;
+   max-width: var(--content-width);
+   margin: 0 auto;
+   padding: 18px;
+   padding-inline-start: max(18px, var(--page-inset-start));
+ }
+ 
+-/* En-tête de l'accueil : marque à gauche, pastille et initiale à droite. */
++/*
++ * En-tête de l'accueil : marque à gauche, pastille et initiale à droite. Trop étroit (320 px, gros texte, état
++ * long comme « Mise à jour nécessaire ») : pastille et initiale passent sous la marque, toujours au bout de la
++ * ligne, et le texte de la pastille va à la ligne plutôt que de recouvrir l'initiale.
++ */
+ .header {
+   display: flex;
++  flex-wrap: wrap;
+   align-items: center;
+   justify-content: space-between;
+   gap: var(--space-3);
++  row-gap: 6px;
+   width: 100%;
+   max-width: var(--content-width);
+   margin: 0 auto;
+   padding: 18px 18px 0;
+   padding-inline-start: max(18px, var(--page-inset-start));
+ }
+ 
+ /* Logo et mot RUNE : en clair, cadre du logo à l'accent et rune à l'encre (GUIDE). */
+ .brand {
+   display: flex;
+   align-items: center;
+   gap: 9px;
+   min-height: 44px;
+   color: var(--text);
+   font-size: 1.0625rem;
+   text-decoration: none;
+   --rune-mark-frame: var(--accent);
+ }
+ 
++/* À droite, avec ou sans la marque (sur PC, elle est dans la navigation latérale). */
+ .headerEnd {
+   display: flex;
+   align-items: center;
+   gap: 6px;
+   min-width: 0;
++  margin-inline-start: auto;
+ }
+ 
+-/* Rond de 36 px de l'initiale, dans une cible de 44 × 44. */
++/*
++ * Rond de 36 px de l'initiale, dans une cible de 44 × 44. Teinte d'accent à 10 %, opaque : l'initiale (16 px,
++ * texte courant) y garde 4,5:1 dans les 5 thèmes (4,6:1 en clair ; à 14 %, 4,35:1).
++ */
+ .avatar {
+   flex: none;
+   display: grid;
+   place-items: center;
+   width: 44px;
+   height: 44px;
+   border-radius: 50%;
+   text-decoration: none;
+ }
+ 
+ .avatar > span {
+   display: grid;
+   place-items: center;
+   width: 36px;
+   height: 36px;
+   border-radius: 50%;
+-  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
++  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+   color: var(--accent);
+   font-family: var(--font-display);
+   font-weight: 700;
+ }
+ 
+-/* Pastille de connexion : point de 7 px, texte secondaire en 13 px. */
++/* Pastille de connexion : point de 7 px, texte secondaire en 13 px, qui peut aller à la ligne (en-tête étroit). */
+ .pill {
+   display: inline-flex;
+   align-items: center;
+   gap: 6px;
+   min-width: 0;
+   font-size: 0.8125rem;
+   color: var(--text-muted);
+-  white-space: nowrap;
+ }
+ 
+ .pillDot {
+   flex: none;
+   width: 7px;
+   height: 7px;
+   border-radius: 50%;
+   background: var(--text-muted);
+ }
+ 
+@@ -120,76 +144,86 @@
+   padding-inline-start: max(18px, var(--page-inset-start));
+ }
+ 
+ .bannerSlot:empty {
+   display: none;
+ }
+ 
+ /*
+  * Barre d'onglets en pilule (68 px, rayon 24, 4 colonnes) posée au-dessus du contenu, sous les feuilles du bas
+  * (z-index 100). Fond de la carte presque opaque et flou derrière ; ombre portée des maquettes en clair.
++ * Hauteur minimale : un libellé passé à la ligne la fait grandir vers le haut au lieu de déborder.
+  */
+ .tabBar {
+   position: fixed;
+   left: 14px;
+   right: 14px;
+   bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+   z-index: 50;
+   max-width: 560px;
+-  height: 68px;
++  min-height: 68px;
+   margin: 0 auto;
+   padding: 7px;
+   display: grid;
+   grid-template-columns: repeat(4, minmax(0, 1fr));
+   gap: 4px;
+   border-radius: 24px;
+   border: 1px solid var(--border);
+   background: color-mix(in srgb, var(--surface) 92%, transparent);
+   box-shadow:
+     0 2px 6px rgb(16 21 31 / 0.08),
+     0 12px 30px rgb(16 21 31 / 0.1);
+   -webkit-backdrop-filter: blur(12px);
+   backdrop-filter: blur(12px);
+ }
+ 
+-/* Pastille de l'onglet actif : une colonne de large, elle glisse jusqu'à l'onglet n° --tab-index. */
++/*
++ * Pastille de l'onglet actif : une colonne de large, elle glisse jusqu'à l'onglet n° --tab-index. Teinte
++ * d'accent à 10 %, opaque sur la carte : le libellé actif (12 px) y garde 4,5:1 dans les 5 thèmes (4,6:1 en
++ * clair, où les 12 % de la maquette restaient sous 4,5:1).
++ */
+ .tabPill {
+   position: absolute;
+   left: 7px;
+   top: 7px;
+   bottom: 7px;
+   width: calc((100% - 26px) / 4);
+   border-radius: 17px;
+-  background: color-mix(in srgb, var(--accent) 12%, transparent);
++  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+   transform: translateX(calc(var(--tab-index, 0) * (100% + 4px)));
+   transition: transform var(--dur-screen) var(--ease);
+ }
+ 
+ .tabPill[hidden] {
+   display: none;
+ }
+ 
++/* Libellé coupé (avec un tiret quand la langue le permet) et centré dans sa colonne, jamais sur l'onglet voisin. */
+ .tab {
+   position: relative;
+   z-index: 1;
+   min-width: 0;
+   min-height: 44px;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   justify-content: center;
+   gap: 2px;
+   border-radius: 17px;
+   color: var(--text-muted);
+   font-size: 0.75rem;
+   font-weight: 500;
+   line-height: 1.2;
++  text-align: center;
++  overflow-wrap: anywhere;
++  -webkit-hyphens: auto;
++  hyphens: auto;
+   text-decoration: none;
+   transition: color var(--dur-fast) var(--ease);
+ }
+ 
+ .tab[aria-current="page"] {
+   color: var(--accent);
+   font-weight: 600;
+ }
+ 
+ .tab:focus-visible {
+@@ -230,22 +264,23 @@
+   padding: 0 14px;
+   border-radius: var(--radius-control);
+   color: var(--text-muted);
+   font-weight: 500;
+   text-decoration: none;
+   transition:
+     background-color var(--dur-fast) var(--ease),
+     color var(--dur-fast) var(--ease);
+ }
+ 
++/* Même teinte opaque que la pastille des onglets : 4,5:1 dans les 5 thèmes. */
+ .sideItem[aria-current="page"] {
+-  background: color-mix(in srgb, var(--accent) 12%, transparent);
++  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+   color: var(--accent);
+   font-weight: 600;
+ }
+ 
+ @media (hover: hover) {
+   .sideItem:hover:not([aria-current="page"]) {
+     background: color-mix(in srgb, var(--accent) 6%, transparent);
+     color: var(--text);
+   }
+ }
+diff --git a/apps/web/src/ui/ui.module.css b/apps/web/src/ui/ui.module.css
+index d9137ac..1db0ae1 100644
+--- a/apps/web/src/ui/ui.module.css
++++ b/apps/web/src/ui/ui.module.css
+@@ -1012,20 +1012,29 @@ button.row:focus-visible {
+ }
+ 
+ .pageTitle {
+   margin: 0;
+   min-width: 0;
+   font-size: 1.5rem;
+   font-weight: 700;
+   line-height: 1.2;
+ }
+ 
++/*
++ * Titre d'écran, sans Retour (GUIDE, Type : 28/700 ; maquettes des onglets : 6 px au-dessus). Deux classes :
++ * passe devant `.page h1`.
++ */
++.pageTitle.screenTitle {
++  margin-top: 6px;
++  font-size: 1.75rem;
++}
++
+ .healthWarning {
+   font-size: 0.875rem;
+   color: var(--text-muted);
+ }
+ 
+ /* Mouvement réduit (spec refonte §7) : ni déplacement ni ressort, des fondus simples. */
+ @media (prefers-reduced-motion: reduce) {
+   .button,
+   .switchThumb {
+     transition-property: background-color;
+diff --git a/apps/web/test/app/api-client.test.ts b/apps/web/test/app/api-client.test.ts
+index 2574415..fed335a 100644
+--- a/apps/web/test/app/api-client.test.ts
++++ b/apps/web/test/app/api-client.test.ts
+@@ -1,18 +1,24 @@
+ import { afterEach, describe, expect, it, vi } from 'vitest';
+ import { z } from 'zod';
+ import { ApiError, createApiClient, NetworkRequiredError } from '../../src/api/client';
+ import { createFakeApi, type FakeApi } from '../support/fake-api';
+ 
+-function setup(): { api: FakeApi; hooks: { onUnauthenticated: () => void; onAccountDeleted: () => void } } {
+-  const api = createFakeApi();
+-  return { api, hooks: { onUnauthenticated: vi.fn(), onAccountDeleted: vi.fn() } };
++function setup() {
++  const api: FakeApi = createFakeApi();
++  const hooks = {
++    onUnauthenticated: vi.fn(),
++    onAccountDeleted: vi.fn(),
++    onOffline: vi.fn(),
++    onReachable: vi.fn(),
++  };
++  return { api, hooks };
+ }
+ 
+ const Ok = z.object({ ok: z.literal(true) });
+ 
+ afterEach(() => {
+   vi.useRealTimers();
+ });
+ 
+ describe('createApiClient', () => {
+   it('send POST : JSON, protocole 1, sans Origin, same-origin', async () => {
+@@ -64,31 +70,50 @@ describe('createApiClient', () => {
+       .then(
+         () => {
+           outcome = 'resolved';
+         },
+         (e: unknown) => {
+           outcome = e;
+         },
+       );
+     await vi.advanceTimersByTimeAsync(3999);
+     expect(outcome).toBe('pending');
++    expect(hooks.onOffline).not.toHaveBeenCalled();
+     await vi.advanceTimersByTimeAsync(1);
+     expect(outcome).toBeInstanceOf(NetworkRequiredError);
+     expect((outcome as Error).message).toBe('Nécessite le réseau');
++    // Même verdict pour le moteur de synchro, donc pour la pastille (spec refonte §5).
++    expect(hooks.onOffline).toHaveBeenCalledTimes(1);
++    expect(hooks.onReachable).not.toHaveBeenCalled();
+   });
+ 
+-  it('transport en échec → NetworkRequiredError', async () => {
++  it('transport en échec → onOffline, puis NetworkRequiredError', async () => {
+     const { api, hooks } = setup();
+     api.setOffline('reject');
+     await expect(createApiClient(api.transport, hooks).get('/api/me', Ok)).rejects.toBeInstanceOf(
+       NetworkRequiredError,
+     );
++    expect(hooks.onOffline).toHaveBeenCalledTimes(1);
++    expect(hooks.onReachable).not.toHaveBeenCalled();
++  });
++
++  it('toute réponse HTTP, même en erreur → onReachable (le serveur est joignable), jamais onOffline', async () => {
++    const { api, hooks } = setup();
++    api.on('GET', '/api/good', { status: 200, body: { ok: true } });
++    api.on('PATCH', '/api/me', { status: 409, body: { error: 'username_taken' } });
++    api.on('GET', '/api/broken', { status: 500, body: { error: 'internal' } });
++    const client = createApiClient(api.transport, hooks);
++    await client.get('/api/good', Ok);
++    await expect(client.send('PATCH', '/api/me', { username: 'x' })).rejects.toBeInstanceOf(ApiError);
++    await expect(client.get('/api/broken', Ok)).rejects.toBeInstanceOf(ApiError);
++    expect(hooks.onReachable).toHaveBeenCalledTimes(3);
++    expect(hooks.onOffline).not.toHaveBeenCalled();
+   });
+ 
+   it('410 account_deleted → onAccountDeleted une fois ; 410 watermark_expired → non', async () => {
+     const { api, hooks } = setup();
+     api.on('GET', '/api/gone', { status: 410, body: { error: 'account_deleted' } });
+     api.on('GET', '/api/old', { status: 410, body: { error: 'watermark_expired' } });
+     const client = createApiClient(api.transport, hooks);
+     await expect(client.get('/api/gone', Ok)).rejects.toMatchObject({ status: 410, code: 'account_deleted' });
+     expect(hooks.onAccountDeleted).toHaveBeenCalledTimes(1);
+     await expect(client.get('/api/old', Ok)).rejects.toMatchObject({ code: 'watermark_expired' });
+diff --git a/apps/web/test/app/connection-source.test.tsx b/apps/web/test/app/connection-source.test.tsx
+new file mode 100644
+index 0000000..51f6bcf
+--- /dev/null
++++ b/apps/web/test/app/connection-source.test.tsx
+@@ -0,0 +1,107 @@
++import type { HealthResponse } from '@rune/contracts';
++import { fireEvent, screen, within } from '@testing-library/react';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import type { SyncEngine } from '../../src/sync/engine';
++import { fill } from '../support/auth';
++import { createFakeApi, type FakeApi } from '../support/fake-api';
++import { createTestLocalDb } from '../support/local-db';
++import { button, seedProfile } from '../support/onboarding';
++import { renderApp } from '../support/render';
++import { until } from '../support/wait';
++
++const HEALTH: HealthResponse = {
++  status: 'ok',
++  version: 'test',
++  db: 'ok',
++  protocol: 1,
++  minProtocol: 1,
++  epoch: 'e1',
++  swKill: false,
++};
++
++/** Faux serveur où un cycle de synchro réussit de bout en bout : aucune reprise ne reste programmée. */
++function syncingApi(): FakeApi {
++  return createFakeApi()
++    .on('GET', '/api/health', { status: 200, body: HEALTH })
++    .on('GET', '/api/sync/pull', {
++      status: 200,
++      body: { rows: [], nextWatermark: 'e1:1', hasMore: false, catalogVersion: null },
++    });
++}
++
++let engine: SyncEngine | null = null;
++
++afterEach(() => {
++  engine?.stop();
++  engine = null;
++  vi.useRealTimers();
++  vi.unstubAllGlobals();
++});
++
++/**
++ * Profil avec le moteur réel (comme `bootApp`), sur téléphone : barre d'onglets. `beforeStart` : juste avant
++ * le démarrage du moteur, une fois l'écran affiché.
++ */
++async function openProfile(api: FakeApi, beforeStart: () => void = () => {}): Promise<SyncEngine> {
++  vi.stubGlobal('matchMedia', (query: string) => ({
++    matches: false,
++    media: query,
++    addEventListener: () => {},
++    removeEventListener: () => {},
++  }));
++  const db = createTestLocalDb();
++  await seedProfile(db, { goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45 });
++  const view = await renderApp({ path: '/profile', db, api, realSync: true });
++  engine = view.engine;
++  await until(() => screen.queryByRole('heading', { level: 1, name: 'Profil' }) !== null);
++  beforeStart();
++  engine.start();
++  return view.engine;
++}
++
++const pill = () => screen.queryByTestId('connection-status')?.textContent ?? null;
++const goHome = () =>
++  fireEvent.click(
++    within(screen.getByRole('navigation', { name: 'Navigation principale' })).getByRole('link', {
++      name: 'Accueil',
++    }),
++  );
++const savePseudo = (value: string) => {
++  fill('Pseudo', value);
++  fireEvent.click(button('Enregistrer le pseudo'));
++};
++
++describe('pastille et écrans « Nécessite le réseau » : une seule source (spec refonte §5, R-SYN-30)', () => {
++  it('dernier cycle réussi, outbox vide, réseau perdu : refus de classe E sur Profil, puis « Hors ligne » sur l’accueil', async () => {
++    const api = syncingApi();
++    const sync = await openProfile(api);
++    await until(() => sync.getState().connection === 'online' && !sync.getState().syncing);
++    // Plus aucun cycle ne partirait de lui-même : ni reprise (cycle réussi), ni intervalle (outbox vide).
++    api.setOffline('reject');
++    savePseudo('leo');
++    await until(() => screen.queryByRole('alert')?.textContent === 'Nécessite le réseau');
++    goHome();
++    await until(() => pill() !== null);
++    expect(pill()).toBe('Hors ligne');
++    expect(screen.queryByText('En ligne')).toBeNull();
++  });
++
++  it('moteur hors ligne, le serveur répond à une requête de classe E : un cycle part aussitôt, « En ligne »', async () => {
++    const api = syncingApi();
++    api.setOffline('reject');
++    // Horloge simulée dès le démarrage du moteur : la reprise programmée (+2 s) ne peut pas remettre
++    // « En ligne » à la place du crochet.
++    const sync = await openProfile(api, () =>
++      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] }),
++    );
++    await until(() => sync.getState().connection === 'offline' && !sync.getState().syncing);
++    api.setOffline(false);
++    // Une réponse en erreur prouve aussi que le serveur est joignable ; elle ne lance aucun pull d'elle-même.
++    api.on('PATCH', '/api/me', { status: 409, body: { error: 'username_taken' } });
++    savePseudo('max');
++    await until(() => screen.queryByRole('alert')?.textContent === 'Ce pseudo est déjà pris.');
++    goHome();
++    await until(() => pill() === 'En ligne');
++    expect(api.calls.filter((c) => c.path === '/api/health')).toHaveLength(2);
++  });
++});
+diff --git a/apps/web/test/app/shell.test.tsx b/apps/web/test/app/shell.test.tsx
+index 2fd3dee..f78149b 100644
+--- a/apps/web/test/app/shell.test.tsx
++++ b/apps/web/test/app/shell.test.tsx
+@@ -1,43 +1,150 @@
++import { readFileSync } from 'node:fs';
++import { resolve } from 'node:path';
++import { defaultLoadSettings, type GymDetail } from '@rune/contracts';
+ import { act, fireEvent, render, screen, within } from '@testing-library/react';
+ import { afterEach, describe, expect, it, vi } from 'vitest';
++import { Router } from 'wouter';
++import { App } from '../../src/App';
++import { ServicesProvider } from '../../src/app-services';
+ import { type SwController, swControllerStore, type UpdateState } from '../../src/sw/register';
+ import type { ConnectionState } from '../../src/sync/engine';
+-import { BootSplash } from '../../src/ui/BootSplash';
++import { BOOT_SPLASH_MAX_MS, BootSplash } from '../../src/ui/BootSplash';
+ import { ConnectionPill } from '../../src/ui/ConnectionPill';
+ import { SideNav } from '../../src/ui/SideNav';
+ import { screenTransition } from '../../src/ui/screen-transition';
+ import { activeTab, TAB_ITEMS, TabBar } from '../../src/ui/TabBar';
+-import { createFakeSyncEngine } from '../support/fake-api';
+-import { newcomer } from '../support/onboarding';
+-import { makeMe, renderApp, renderWithServices } from '../support/render';
++import ui from '../../src/ui/ui.module.css';
++import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
++import { createFakeApi, createFakeSyncEngine } from '../support/fake-api';
++import { createTestLocalDb } from '../support/local-db';
++import { newcomer, seedPrimaryGym } from '../support/onboarding';
++import { createTestServices, makeMe, renderApp, renderWithServices } from '../support/render';
+ import { until } from '../support/wait';
+ 
+ const DESKTOP = '(min-width: 900px)';
+ const REDUCED = '(prefers-reduced-motion: reduce)';
++const EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
++
++/** Feuille de la coquille, lue à plat (jetons, media queries d'un niveau). */
++const shellCss = () =>
++  parseCssBlocks(readFileSync(resolve(import.meta.dirname, '../../src/ui/shell.module.css'), 'utf8'));
++
++/** Durée et délai d'une déclaration `animation` (dans cet ordre), en millisecondes. */
++function animationTimes(animation: string | undefined): number[] {
++  return [...(animation ?? '').matchAll(/(\d+(?:\.\d+)?)(ms|s)\b/g)].map(
++    ([, n, unit]) => Number(n) * (unit === 's' ? 1000 : 1),
++  );
++}
+ 
+ /** Réglages du téléphone simulés : les media queries listées répondent vrai, les autres faux. */
+ function media(...matching: string[]) {
+   vi.stubGlobal('matchMedia', (query: string) => ({
+     matches: matching.includes(query),
+     media: query,
+     addEventListener: () => {},
+     removeEventListener: () => {},
+   }));
+ }
+ 
++/** Comme `media`, mais le réglage change en cours de route : `set` prévient les écouteurs, comme le téléphone. */
++function liveMedia(...matching: string[]) {
++  const on = new Set(matching);
++  const listeners = new Map<string, Set<() => void>>();
++  const of = (query: string) => {
++    const known = listeners.get(query);
++    if (known) return known;
++    const created = new Set<() => void>();
++    listeners.set(query, created);
++    return created;
++  };
++  vi.stubGlobal('matchMedia', (query: string) => ({
++    matches: on.has(query),
++    media: query,
++    addEventListener: (_: string, fn: () => void) => of(query).add(fn),
++    removeEventListener: (_: string, fn: () => void) => of(query).delete(fn),
++  }));
++  return {
++    set(query: string, value: boolean) {
++      if (value) on.add(query);
++      else on.delete(query);
++      act(() => {
++        for (const fn of of(query)) fn();
++      });
++    },
++  };
++}
++
+ afterEach(() => {
+   vi.unstubAllGlobals();
++  vi.restoreAllMocks();
+   swControllerStore.set(null);
+   sessionStorage.clear();
++  window.scrollTo(0, 0);
+ });
+ 
++/** Page défilée par la personne : position posée, puis l'événement `scroll` que le navigateur enverrait. */
++function scrollPage(y: number) {
++  act(() => {
++    window.scrollTo(0, y);
++    window.dispatchEvent(new Event('scroll'));
++  });
++}
++
++/**
++ * Espionne `Element.prototype.animate` et rend l'entrée jouée en dernier sur `<main>` : images clés et options
++ * (spec refonte §7 : avant depuis la droite, retour depuis la gauche, onglet en fondu ; fondu seul sous
++ * mouvement réduit).
++ */
++function spyEntrances() {
++  const animate = vi.spyOn(Element.prototype, 'animate');
++  return () => {
++    const main = screen.getByRole('main');
++    const i = animate.mock.contexts.lastIndexOf(main);
++    const call = animate.mock.calls[i];
++    return call ? { keyframes: call[0], options: call[1] } : null;
++  };
++}
++
++/** Salle g-1 « Basic Fit » rendue par GET /api/gyms/:id (fiche minimale). */
++const GYM_DETAIL: GymDetail = {
++  id: 'g-1',
++  name: 'Basic Fit',
++  city: 'Lyon',
++  loadSettings: defaultLoadSettings('gym'),
++  deletedAt: null,
++  equipment: [],
++  canEdit: false,
++  visibleMembers: [],
++  history: [],
++};
++
++/**
++ * L'appli entière, la main sur l'historique en mémoire : `go(to)` change d'adresse comme le bouton retour du
++ * navigateur (ou du téléphone), sans lien ; `location()` est l'adresse affichée.
++ */
++async function renderAppWithHistory(opts: Parameters<typeof createTestServices>[0]) {
++  const { services, memory } = await createTestServices(opts);
++  const view = render(
++    <Router hook={memory.hook} searchHook={memory.searchHook}>
++      <ServicesProvider services={services}>
++        <App />
++      </ServicesProvider>
++    </Router>,
++  );
++  return {
++    ...view,
++    location: () => memory.history.at(-1) ?? '',
++    go: (to: string) => act(() => memory.navigate(to)),
++  };
++}
++
+ const mainNav = () => screen.getByRole('navigation', { name: 'Navigation principale' });
+ const tab = (name: string) => within(mainNav()).getByRole('link', { name });
+ /** En-tête de l'accueil : celui qui porte le rond de l'initiale (les pages ont aussi leur `<header>`). */
+ const homeHeader = async () => {
+   const header = (await screen.findByRole('link', { name: 'Mon profil' })).closest('header');
+   if (!header) throw new Error('en-tête de l’accueil absent');
+   return header;
+ };
+ const current = () =>
+   within(mainNav())
+@@ -137,45 +244,110 @@ describe('TabBar', () => {
+     expect(document.activeElement).toBe(profile);
+   });
+ 
+   it('icônes décoratives : le nom de chaque onglet est son libellé', async () => {
+     const view = await renderWithServices(<TabBar />, { path: '/' });
+     for (const svg of view.container.querySelectorAll('svg'))
+       expect(svg.getAttribute('aria-hidden')).toBe('true');
+   });
+ });
+ 
++// scroll-padding-bottom (shell.module.css) suffit à la tabulation et à Chromium ; WebKit l'ignore pour focus()
++// (retour au bouton d'origine, champ en erreur) et laisse le contrôle sous la barre (e2e/shell.spec.ts).
++describe('TabBar : un contrôle qui prend le focus sous la barre défile au-dessus (WCAG 2.2, 2.4.11)', () => {
++  afterEach(() => vi.restoreAllMocks());
++
++  /** La barre, un bouton de la page et un bouton d'une feuille du bas ; leurs `scrollIntoView` espionnés. */
++  async function setup() {
++    await renderWithServices(
++      <>
++        <button type="button">Enregistrer</button>
++        <div role="dialog" aria-label="Supprimer ?">
++          <button type="button">Annuler</button>
++        </div>
++        <TabBar />
++      </>,
++      { path: '/' },
++    );
++    const scroll = vi.fn();
++    const save = screen.getByRole('button', { name: 'Enregistrer' });
++    const cancel = screen.getByRole('button', { name: 'Annuler' });
++    for (const el of [save, cancel, tab('Salles')]) el.scrollIntoView = scroll;
++    /** Ce que touche le centre du contrôle : la barre, le contrôle lui-même, la feuille par-dessus… */
++    const pointHits = (el: Element | null) => vi.spyOn(document, 'elementFromPoint').mockReturnValue(el);
++    return { save, cancel, scroll, pointHits };
++  }
++
++  it('la barre recouvre le centre du contrôle : il défile au plus près, juste au-dessus d’elle', async () => {
++    const { save, scroll, pointHits } = await setup();
++    pointHits(tab('Salles'));
++    act(() => save.focus());
++    expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: 'nearest' });
++  });
++
++  it('contrôle visible (son centre le touche) ou hors de la fenêtre : rien ne défile', async () => {
++    const { save, scroll, pointHits } = await setup();
++    pointHits(save);
++    act(() => save.focus());
++    act(() => save.blur());
++    pointHits(null);
++    act(() => save.focus());
++    expect(scroll).not.toHaveBeenCalled();
++  });
++
++  it('feuille du bas posée par-dessus la barre, ou onglet de la barre elle-même : rien ne défile', async () => {
++    const { cancel, scroll, pointHits } = await setup();
++    pointHits(cancel);
++    act(() => cancel.focus());
++    pointHits(tab('Salles'));
++    act(() => tab('Salles').focus());
++    expect(scroll).not.toHaveBeenCalled();
++  });
++});
++
+ describe('SideNav (≥ 900 px)', () => {
+   it('mêmes entrées, même onglet actif', async () => {
+     await renderWithServices(<SideNav />, { path: '/gyms/g-1' });
+     expect(
+       within(mainNav())
+         .getAllByRole('link')
+         .map((a) => a.getAttribute('href')),
+     ).toEqual(['/', '/progression', '/places', '/profile']);
+     expect(current()).toEqual(['Salles']);
+   });
+ });
+ 
+ describe('ConnectionPill', () => {
++  // Point vert seulement en ligne : jamais un point vert à côté de « Hors ligne ».
+   it.each([
+-    ['online', 'En ligne'],
+-    ['offline', 'Hors ligne'],
+-    ['unknown', 'Connexion…'],
+-    ['unauthenticated', 'Session expirée'],
+-    ['protocol_unsupported', 'Mise à jour nécessaire'],
+-    ['account_deleted', 'Compte supprimé'],
+-  ] as const)('%s → « %s »', async (state: ConnectionState, label) => {
++    ['online', 'En ligne', 'online'],
++    ['offline', 'Hors ligne', 'muted'],
++    ['unknown', 'Connexion…', 'muted'],
++    ['unauthenticated', 'Session expirée', 'warning'],
++    ['protocol_unsupported', 'Mise à jour nécessaire', 'warning'],
++    ['account_deleted', 'Compte supprimé', 'warning'],
++  ] as const)('%s → « %s », point %s', async (state: ConnectionState, label, tone) => {
+     await renderWithServices(<ConnectionPill />, { sync: createFakeSyncEngine({ connection: state }) });
+     const pill = screen.getByTestId('connection-status');
+     expect(pill.getAttribute('data-state')).toBe(state);
+     expect(pill.textContent).toBe(label);
++    expect(pill.querySelector('[aria-hidden="true"]')?.getAttribute('data-tone')).toBe(tone);
++  });
++
++  it('couleur du point : vert (succès) en ligne, avertissement quand il faut agir, gris sinon', () => {
++    const css = shellCss();
++    expect(declarationsOf(css, '.pillDot')?.get('background')).toBe('var(--text-muted)');
++    expect(declarationsOf(css, '.pillDot[data-tone="online"]')?.get('background')).toBe('var(--success)');
++    expect(declarationsOf(css, '.pillDot[data-tone="warning"]')?.get('background')).toBe(
++      'var(--warning-text)',
++    );
++    expect(declarationsOf(css, '.pillDot[data-tone="muted"]')).toBeNull();
+   });
+ 
+   it('hors ligne : « Hors ligne », jamais « En ligne », et suit le moteur sans rechargement', async () => {
+     const { sync } = await renderWithServices(<ConnectionPill />, {
+       sync: createFakeSyncEngine({ connection: 'offline' }),
+     });
+     expect(screen.getByTestId('connection-status').textContent).toBe('Hors ligne');
+     expect(screen.queryByText('En ligne')).toBeNull();
+     act(() => sync.set({ connection: 'online' }));
+     expect(screen.getByTestId('connection-status').textContent).toBe('En ligne');
+@@ -219,28 +391,51 @@ describe('coquille', () => {
+     const header = await homeHeader();
+     expect(within(header).getByTestId('connection-status').textContent).toBe('Hors ligne');
+     expect(screen.queryByText('En ligne')).toBeNull();
+   });
+ 
+   it('pages internes : pas d’en-tête de l’accueil, un Retour de 44 × 44 et le titre', async () => {
+     media();
+     await renderApp({ path: '/profile/health' });
+     await screen.findByRole('heading', { level: 1, name: 'Santé' });
+     expect(screen.queryByRole('link', { name: 'Mon profil' })).toBeNull();
+-    expect(screen.getByRole('link', { name: 'Retour' }).getAttribute('href')).toBe('/profile');
+-  });
+-
+-  it("l'onglet « Administration » n'existe plus dans la barre, même pour un admin", async () => {
+-    media();
+-    await renderApp({ path: '/', me: makeMe({ role: 'admin' }) });
++    const back = screen.getByRole('link', { name: 'Retour' });
++    expect(back.getAttribute('href')).toBe('/profile');
++    // La taille d'une cible ne se lit que dans la feuille : la classe posée, puis sa règle.
++    expect(ui.backButton).toBeTruthy();
++    expect(back.classList.contains(ui.backButton as string)).toBe(true);
++    const rule = declarationsOf(
++      parseCssBlocks(readFileSync(resolve(import.meta.dirname, '../../src/ui/ui.module.css'), 'utf8')),
++      '.backButton',
++    );
++    expect(rule?.get('width')).toBe('44px');
++    expect(rule?.get('height')).toBe('44px');
++  });
++
++  // L'admin passe par Profil : ni onglet « Administration », ni aucun lien /admin, quel que soit son libellé.
++  it.each([
++    ['téléphone, barre d’onglets', [], 'tab-bar'],
++    ['≥ 900 px, navigation latérale', [DESKTOP], 'side-nav'],
++  ] as const)('admin, %s : les 4 onglets de TAB_ITEMS, aucun lien vers /admin', async (_, queries, nav) => {
++    media(...queries);
++    const view = await renderApp({ path: '/', me: makeMe({ role: 'admin' }) });
+     await screen.findByText('Bonjour lea');
+-    expect(within(mainNav()).queryByRole('link', { name: 'Administration' })).toBeNull();
++    expect(screen.getByTestId(nav)).toBeTruthy();
++    const hrefs = within(mainNav())
++      .getAllByRole('link')
++      .map((a) => a.getAttribute('href'));
++    expect(hrefs).toEqual(TAB_ITEMS.map((t) => t.href));
++    const toAdmin = (href: string | null) => href?.toLowerCase().startsWith('/admin') ?? false;
++    expect(hrefs.filter(toAdmin)).toEqual([]);
++    expect([...view.container.querySelectorAll('a')].filter((a) => toAdmin(a.getAttribute('href')))).toEqual(
++      [],
++    );
+     expect(screen.queryByRole('link', { name: 'Administration' })).toBeNull();
+   });
+ 
+   it('les pages /admin restent servies à un admin', async () => {
+     media();
+     await renderApp({ path: '/admin/members', me: makeMe({ role: 'admin' }) });
+     expect(await screen.findByRole('heading', { level: 1, name: 'Membres' })).toBeTruthy();
+     expect(current()).toEqual(['Profil']);
+   });
+ 
+@@ -253,20 +448,33 @@ describe('coquille', () => {
+     expect(screen.queryByTestId('side-nav')).toBeNull();
+     phone.unmount();
+     media(DESKTOP);
+     await renderApp({ path: '/' });
+     await screen.findByText('Bonjour lea');
+     expect(screen.getAllByRole('navigation', { name: 'Navigation principale' })).toHaveLength(1);
+     expect(screen.getByTestId('side-nav')).toBeTruthy();
+     expect(screen.queryByTestId('tab-bar')).toBeNull();
+   });
+ 
++  it('≥ 900 px, accueil : la marque une seule fois (navigation latérale), l’en-tête garde pastille et initiale à droite', async () => {
++    media(DESKTOP);
++    await renderApp({ path: '/' });
++    const header = await homeHeader();
++    expect(screen.getAllByRole('link', { name: 'Rune' })).toHaveLength(1);
++    expect(within(screen.getByTestId('side-nav')).getByRole('link', { name: 'Rune' })).toBeTruthy();
++    expect(within(header).queryByRole('link', { name: 'Rune' })).toBeNull();
++    expect(within(header).getByTestId('connection-status').textContent).toBe('En ligne');
++    expect(within(header).getByRole('link', { name: 'Mon profil' }).getAttribute('href')).toBe('/profile');
++    // Seuls à droite de l'en-tête, sans la marque pour les y pousser.
++    expect(declarationsOf(shellCss(), '.headerEnd')?.get('margin-inline-start')).toBe('auto');
++  });
++
+   it('onboarding : ni barre d’onglets ni pastille', async () => {
+     media();
+     await renderApp({ path: '/onboarding', me: newcomer() });
+     await screen.findByTestId('onboarding-step');
+     expect(screen.queryByRole('navigation', { name: 'Navigation principale' })).toBeNull();
+     expect(screen.queryByTestId('connection-status')).toBeNull();
+   });
+ 
+   it('/progression : page provisoire, titre « Progression », onglet actif', async () => {
+     media();
+@@ -301,83 +509,244 @@ describe('coquille', () => {
+     media();
+     swControllerStore.set(fakeController({ available: true, forced: false }));
+     await renderApp({ path: '/' });
+     const banner = await screen.findByTestId('update-banner');
+     const header = await homeHeader();
+     const main = screen.getByRole('main');
+     expect(header.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+     expect(banner.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+   });
+ 
+-  it("changement d'écran : la transition est posée selon l'historique (onglet, avant, retour)", async () => {
++  it("changement d'écran : onglet en fondu, avant depuis la droite, retour depuis la gauche", async () => {
+     media();
++    const entrance = spyEntrances();
+     const view = await renderApp({ path: '/' });
+     await screen.findByText('Bonjour lea');
+     const screenEl = () => view.container.querySelector('[data-screen-transition]');
+     fireEvent.click(tab('Profil'));
+     await screen.findByRole('heading', { level: 1, name: 'Profil' });
+     expect(screenEl()?.getAttribute('data-screen-transition')).toBe('tab');
++    expect(entrance()).toEqual({ keyframes: { opacity: [0, 1] }, options: { duration: 300, easing: EASE } });
+     fireEvent.click(screen.getByRole('link', { name: 'Santé' }));
+     await screen.findByRole('heading', { level: 1, name: 'Santé' });
+     expect(screenEl()?.getAttribute('data-screen-transition')).toBe('forward');
++    expect(entrance()).toEqual({
++      keyframes: { opacity: [0, 1], transform: ['translateX(48px)', 'none'] },
++      options: { duration: 380, easing: EASE },
++    });
+     fireEvent.click(screen.getByRole('link', { name: 'Retour' }));
+     await screen.findByRole('heading', { level: 1, name: 'Profil' });
+     expect(screenEl()?.getAttribute('data-screen-transition')).toBe('back');
++    expect(entrance()).toEqual({
++      keyframes: { opacity: [0, 1], transform: ['translateX(-48px)', 'none'] },
++      options: { duration: 380, easing: EASE },
++    });
++  });
++
++  it('mouvement réduit : chaque changement d’écran est un fondu simple de 200 ms, sans balayage', async () => {
++    media(REDUCED);
++    const entrance = spyEntrances();
++    await renderApp({ path: '/' });
++    await screen.findByText('Bonjour lea');
++    const fade = { keyframes: { opacity: [0, 1] }, options: { duration: 200, easing: EASE } };
++    fireEvent.click(tab('Profil'));
++    await screen.findByRole('heading', { level: 1, name: 'Profil' });
++    expect(entrance()).toEqual(fade);
++    fireEvent.click(screen.getByRole('link', { name: 'Santé' }));
++    await screen.findByRole('heading', { level: 1, name: 'Santé' });
++    expect(entrance()).toEqual(fade);
++    fireEvent.click(screen.getByRole('link', { name: 'Retour' }));
++    await screen.findByRole('heading', { level: 1, name: 'Profil' });
++    expect(entrance()).toEqual(fade);
++  });
++
++  it('mouvement réduit : la pastille de la barre change d’onglet sans glisser', () => {
++    expect(declarationsOf(shellCss(), '.tabPill', REDUCED)?.get('transition')).toBe('none');
++  });
++
++  it("changement d'écran : onglet et écran suivant repartent du haut, le retour retrouve la position quittée", async () => {
++    media();
++    await renderApp({ path: '/' });
++    await screen.findByText('Bonjour lea');
++    scrollPage(900);
++    fireEvent.click(tab('Profil'));
++    await screen.findByRole('heading', { level: 1, name: 'Profil' });
++    expect(window.scrollY).toBe(0);
++    scrollPage(420);
++    fireEvent.click(screen.getByRole('link', { name: 'Santé' }));
++    await screen.findByRole('heading', { level: 1, name: 'Santé' });
++    expect(window.scrollY).toBe(0);
++    scrollPage(150);
++    fireEvent.click(screen.getByRole('link', { name: 'Retour' }));
++    await screen.findByRole('heading', { level: 1, name: 'Profil' });
++    expect(window.scrollY).toBe(420);
++    // Revenu en haut par l'onglet, puis de nouveau en avant et en arrière : la position retrouvée est la
++    // dernière quittée, pas une ancienne.
++    fireEvent.click(tab('Accueil'));
++    await screen.findByText('Bonjour lea');
++    expect(window.scrollY).toBe(0);
++    fireEvent.click(tab('Profil'));
++    await screen.findByRole('heading', { level: 1, name: 'Profil' });
++    fireEvent.click(screen.getByRole('link', { name: 'Santé' }));
++    await screen.findByRole('heading', { level: 1, name: 'Santé' });
++    fireEvent.click(screen.getByRole('link', { name: 'Retour' }));
++    await screen.findByRole('heading', { level: 1, name: 'Profil' });
++    expect(window.scrollY).toBe(0);
++  });
++
++  it('Retour vers un écran qui n’est ni le parent ni le précédent : entrée par la gauche, pile suivie', async () => {
++    media();
++    const db = createTestLocalDb();
++    await seedPrimaryGym(db);
++    const api = createFakeApi();
++    api.on('GET', '/api/gyms/:id', { status: 200, body: GYM_DETAIL });
++    const view = await renderAppWithHistory({ path: '/places', db, api });
++    const transition = () =>
++      view.container.querySelector('[data-screen-transition]')?.getAttribute('data-screen-transition');
++    fireEvent.click(await screen.findByRole('link', { name: 'Basic Fit' }));
++    fireEvent.click(await screen.findByRole('link', { name: 'Voir la salle' }));
++    expect(view.location()).toBe('/gyms/g-1');
++    expect(transition()).toBe('forward');
++    // Retour du navigateur vers le lieu : l'écran d'avant dans la pile.
++    view.go('/places/p-1');
++    expect(transition()).toBe('back');
++    fireEvent.click(await screen.findByRole('link', { name: 'Voir la salle' }));
++    expect(transition()).toBe('forward');
++    await screen.findByRole('heading', { level: 1, name: 'Basic Fit' });
++    // Retour de la salle vers la liste des lieux : ni son parent d'adresse, ni l'écran juste avant.
++    fireEvent.click(screen.getByRole('link', { name: 'Retour' }));
++    expect(view.location()).toBe('/places');
++    expect(transition()).toBe('back');
++    await screen.findByRole('heading', { level: 1, name: 'Lieux' });
++    // Pile repartie de la liste : le lieu est de nouveau un écran suivant.
++    fireEvent.click(await screen.findByRole('link', { name: 'Basic Fit' }));
++    expect(transition()).toBe('forward');
+   });
+ });
+ 
+ describe('screenTransition', () => {
+   it.each([
+     ['/', '/', [], 'none'],
+     ['/', '/profile', ['/'], 'tab'],
+     ['/places/p-1', '/profile', ['/places', '/places/p-1'], 'tab'],
+     ['/profile', '/profile/health', ['/profile'], 'forward'],
+     ['/places', '/places/p-1', ['/places'], 'forward'],
+     ['/profile/health', '/profile', ['/profile', '/profile/health'], 'back'],
+     // Retour du navigateur vers une page sœur visitée juste avant.
+     ['/profile/privacy', '/profile/health', ['/profile/health', '/profile/privacy'], 'back'],
+     ['/places/p-1', '/places', [], 'back'],
+     ['/places/p-1', '/gyms/g-1', ['/places/p-1'], 'forward'],
++    // Retour vers un écran déjà dans la pile, plus loin que le précédent.
++    ['/gyms/g-1', '/places', ['/places', '/places/p-1', '/gyms/g-1'], 'back'],
++    ['/admin/gyms', '/settings', ['/profile', '/settings', '/admin', '/admin/gyms'], 'back'],
++    // Racine de l'onglet depuis un écran plus profond, sans historique (lien direct, rechargement).
++    ['/settings', '/profile', ['/settings'], 'back'],
++    ['/gyms/g-1', '/places', ['/gyms/g-1'], 'back'],
++    // Un écran jamais visité, hors de l'adresse courante, reste un écran suivant.
++    ['/gyms/g-1', '/places/p-1', ['/gyms/g-1'], 'forward'],
+   ] as const)('%s → %s', (from, to, history, expected) => {
+     expect(screenTransition(from, to, history)).toBe(expected);
+   });
+ });
+ 
+ describe('BootSplash', () => {
+   it('sous mouvement réduit, ne rend rien', () => {
+     media(REDUCED);
+     const { container } = render(<BootSplash />);
+     expect(container.innerHTML).toBe('');
+   });
+ 
+-  it('sinon : le logo se dessine par-dessus, décoratif, sans jamais prendre le toucher, puis se retire', () => {
++  it('sinon : le logo se dessine par-dessus, décoratif et muet, puis se retire à la fin du voile seulement', () => {
+     media();
+     const { container } = render(<BootSplash />);
+-    const splash = container.firstElementChild as HTMLElement | null;
++    const splash = container.firstElementChild as HTMLElement;
+     expect(splash).not.toBeNull();
+-    expect(splash?.getAttribute('aria-hidden')).toBe('true');
+-    expect(splash?.querySelector('svg')).not.toBeNull();
+-    expect(splash?.textContent).toBe('');
+-    if (!splash) return;
++    expect(splash.getAttribute('aria-hidden')).toBe('true');
++    expect(splash.getAttribute('data-testid')).toBe('boot-splash');
++    expect(splash.querySelector('svg')).not.toBeNull();
++    expect(splash.textContent).toBe('');
++    // Le dessin du cadre finit avant l'effacement : son `animationend` remonte, le voile reste.
++    const frame = splash.querySelector('path');
++    if (!frame) throw new Error('cadre du logo absent');
++    fireEvent.animationEnd(frame);
++    expect(container.firstElementChild).toBe(splash);
+     fireEvent.animationEnd(splash);
+     expect(container.innerHTML).toBe('');
+   });
+ 
++  it('filet de sécurité : retiré au bout de 2 s même si la fin de son animation n’arrive jamais', () => {
++    vi.useFakeTimers();
++    try {
++      media();
++      const { container } = render(<BootSplash />);
++      expect(container.firstElementChild).not.toBeNull();
++      act(() => vi.advanceTimersByTime(BOOT_SPLASH_MAX_MS - 1));
++      expect(container.firstElementChild).not.toBeNull();
++      act(() => vi.advanceTimersByTime(1));
++      expect(container.innerHTML).toBe('');
++    } finally {
++      vi.useRealTimers();
++    }
++  });
++
++  it('voile : ne prend jamais le toucher, dessin en 1,2 s au plus, effacé avant le filet de sécurité', () => {
++    expect(BOOT_SPLASH_MAX_MS).toBe(2000);
++    const css = shellCss();
++    const splash = declarationsOf(css, '.splash');
++    expect(splash?.get('pointer-events')).toBe('none');
++    expect(splash?.get('animation')).toMatch(/^splash-out\s.*\bforwards$/);
++    const [outDuration = 0, outDelay = 0] = animationTimes(splash?.get('animation'));
++    expect(outDuration).toBeGreaterThan(0);
++    expect(outDelay + outDuration).toBeLessThan(BOOT_SPLASH_MAX_MS);
++    const draw = declarationsOf(css, '.splashMark g > path:first-child')?.get('animation');
++    expect(draw).toMatch(/^splash-draw\s/);
++    const [drawDuration = 0, drawDelay = 0] = animationTimes(draw);
++    expect(drawDelay + drawDuration).toBeLessThanOrEqual(1200);
++    expect(outDelay).toBeGreaterThanOrEqual(drawDelay + drawDuration);
++  });
++
+   it('une seule fois par session : un second montage ne rend rien', () => {
+     media();
+     const first = render(<BootSplash />);
+     const splash = first.container.firstElementChild;
++    expect(splash).not.toBeNull();
+     if (splash) fireEvent.animationEnd(splash);
+     first.unmount();
+     const { container } = render(<BootSplash />);
+     expect(container.innerHTML).toBe('');
+   });
++
++  it('mouvement réduit coupé en cours de session : rien ne se joue par-dessus l’écran', () => {
++    const phone = liveMedia(REDUCED);
++    const { container } = render(<BootSplash />);
++    expect(container.innerHTML).toBe('');
++    phone.set(REDUCED, false);
++    expect(container.innerHTML).toBe('');
++  });
++
++  it('premier montage sous mouvement réduit : la session est marquée, un montage plus tard sans lui ne rend rien', () => {
++    media(REDUCED);
++    render(<BootSplash />).unmount();
++    media();
++    const { container } = render(<BootSplash />);
++    expect(container.innerHTML).toBe('');
++  });
++
++  it('mouvement réduit demandé pendant le dessin : retiré, et ne revient pas quand il est coupé', () => {
++    const phone = liveMedia();
++    const { container } = render(<BootSplash />);
++    expect(container.firstElementChild).not.toBeNull();
++    phone.set(REDUCED, true);
++    expect(container.innerHTML).toBe('');
++    phone.set(REDUCED, false);
++    expect(container.innerHTML).toBe('');
++  });
+ });
+ 
+ /** Contrôleur factice d'une version en attente (comme dans UpdateBanner.test.tsx). */
+ function fakeController(initial: Omit<UpdateState, 'dismissed'>): SwController {
+   const state: UpdateState = { ...initial, dismissed: false };
+   return {
+     getState: () => state,
+     subscribe: () => () => {},
+     checkForUpdate: async () => {},
+     applyUpdate: async () => {},
+diff --git a/apps/web/test/support/fake-api.ts b/apps/web/test/support/fake-api.ts
+index d3499d7..76c849a 100644
+--- a/apps/web/test/support/fake-api.ts
++++ b/apps/web/test/support/fake-api.ts
+@@ -96,21 +96,22 @@ export type FakeSyncEngine = SyncEngine & {
+   set(p: Partial<SyncState>): void;
+   triggers: SyncTrigger[];
+   pullCount: number;
+   started: boolean;
+   /** Appels à `sessionOpened()`. */
+   sessionsOpened: number;
+ };
+ 
+ /**
+  * Moteur de synchro factice : enregistre les déclencheurs, état modifiable par `set`.
+- * `sessionOpened()` remet `connection` à 'unknown', comme le moteur réel.
++ * `sessionOpened()` remet `connection` à 'unknown', comme le moteur réel ; `reportOffline()` et
++ * `reportReachable()` n'y changent rien (le test pilote l'état ; le moteur réel est vu avec `realSync`).
+  */
+ export function createFakeSyncEngine(initial: Partial<SyncState> = {}): FakeSyncEngine {
+   let state: SyncState = {
+     connection: 'online',
+     pending: 0,
+     rejected: 0,
+     lastPullOkAt: null,
+     syncing: false,
+     serverEpoch: null,
+     ...initial,
+@@ -145,13 +146,15 @@ export function createFakeSyncEngine(initial: Partial<SyncState> = {}): FakeSync
+       engine.started = true;
+       engine.triggers.push('launch');
+     },
+     stop() {
+       engine.started = false;
+     },
+     sessionOpened() {
+       engine.sessionsOpened += 1;
+       engine.set({ connection: 'unknown' });
+     },
++    reportOffline() {},
++    reportReachable() {},
+   };
+   return engine;
+ }
+diff --git a/apps/web/test/support/render.tsx b/apps/web/test/support/render.tsx
+index ef293bd..1a8365a 100644
+--- a/apps/web/test/support/render.tsx
++++ b/apps/web/test/support/render.tsx
+@@ -1,19 +1,19 @@
+ import type { MeResponse } from '@rune/contracts';
+ import { createMonotonicUuidV7 } from '@rune/domain';
+ import { type RenderResult, render } from '@testing-library/react';
+ import type { ReactElement } from 'react';
+ import { Router } from 'wouter';
+ import { memoryLocation } from 'wouter/memory-location';
+ import { App } from '../../src/App';
+ import { createApiClient } from '../../src/api/client';
+-import { type AppServices, handleAccountDeleted, ServicesProvider } from '../../src/app-services';
++import { type AppServices, apiHooksFor, ServicesProvider } from '../../src/app-services';
+ import type { AppDb } from '../../src/local-db/db';
+ import { setMeta } from '../../src/local-db/meta';
+ import type { SwStatus } from '../../src/sw/protocol';
+ import { createSyncEngine, type SyncEngine } from '../../src/sync/engine';
+ import { createFakeApi, createFakeSyncEngine, type FakeApi, type FakeSyncEngine } from './fake-api';
+ import { createTestLocalDb } from './local-db';
+ 
+ export const DEFAULT_NOW = Date.parse('2026-10-06T12:00:00.000Z');
+ 
+ /** Membre adulte actif, onboardé, sans consentement actif. */
+@@ -109,24 +109,22 @@ export async function createTestServices(opts: RenderAppOptions = {}): Promise<T
+   const engine: SyncEngine = opts.realSync
+     ? createSyncEngine({
+         db,
+         transport: api.transport,
+         now: () => nowMs,
+         onAccountDeleted: () => go('/login?reason=account_deleted', true),
+       })
+     : sync;
+   const services: AppServices = {
+     db,
+-    api: createApiClient(api.transport, {
+-      onUnauthenticated: () => void engine.syncNow('manual'),
+-      onAccountDeleted: () => void handleAccountDeleted(db, (to) => go(to)),
+-    }),
++    // Mêmes crochets que main.tsx (session perdue, compte supprimé, réseau absent ou retrouvé).
++    api: createApiClient(api.transport, apiHooksFor(engine, db, go)),
+     sync: engine,
+     transport: api.transport,
+     now: () => nowMs,
+     newOpId: createMonotonicUuidV7(
+       () => nowMs,
+       (n) => crypto.getRandomValues(new Uint8Array(n)),
+     ),
+     swStatus: async () => swStatus,
+   };
+   return { services, api, sync, engine, db, memory, visits };
+diff --git a/apps/web/test/sw/kill-switch.test.ts b/apps/web/test/sw/kill-switch.test.ts
+index 6373f41..b314f62 100644
+--- a/apps/web/test/sw/kill-switch.test.ts
++++ b/apps/web/test/sw/kill-switch.test.ts
+@@ -39,23 +39,50 @@ async function seededCaches(o: Parameters<typeof createFakeCacheStorage>[0] = {}
+ /** Trace console du rechargement (diagnostic sur téléphone, P8) : attendue, gardée hors de la sortie des tests. */
+ let info: MockInstance<typeof console.info>;
+ 
+ beforeEach(() => {
+   info = vi.spyOn(console, 'info').mockImplementation(() => {});
+ });
+ 
+ afterEach(() => {
+   vi.useRealTimers();
+   vi.restoreAllMocks();
++  vi.unstubAllGlobals();
+   sessionStorage.clear();
+ });
+ 
++/** Module neuf : son repli en mémoire (stockage de session refusé) ne passe pas d'un test à l'autre. */
++async function freshKillSwitch(): Promise<typeof applyKillSwitchIfNeeded> {
++  vi.resetModules();
++  return (await import('../../src/sw/kill-switch')).applyKillSwitchIfNeeded;
++}
++
++/**
++ * Stockage de session refusé (navigation privée, données bloquées) : lecture, écriture et retrait lèvent.
++ * Le global est remplacé : happy-dom garde les méthodes du stockage déjà lues, un espion posé sur
++ * `Storage.prototype` après un premier accès ne serait jamais appelé.
++ */
++function refuseSessionStorage(): void {
++  const refused = () => {
++    throw new DOMException('refusé', 'SecurityError');
++  };
++  vi.stubGlobal('sessionStorage', { getItem: refused, setItem: refused, removeItem: refused });
++}
++
++/** Page encore contrôlée par un SW qui a déjà tout retiré (la course de l'E2E kill-switch). */
++function controlledAfterCleanup() {
++  const f = createFakeSwContainer({ registrations: 0 });
++  f.setController(true);
++  const reload = vi.fn();
++  return { f, reload, env: { serviceWorker: f.container, caches: createFakeCacheStorage(), reload } };
++}
++
+ describe('applyKillSwitchIfNeeded (R-PWA-6)', () => {
+   it('swKill faux → false, rien touché', async () => {
+     const f = createFakeSwContainer();
+     const caches = await seededCaches();
+     const reload = vi.fn();
+     expect(await applyKillSwitchIfNeeded(HEALTH, { serviceWorker: f.container, caches, reload })).toBe(false);
+     expect(f.unregisterCalls).toBe(0);
+     expect(await caches.keys()).toHaveLength(6);
+     expect(reload).not.toHaveBeenCalled();
+   });
+@@ -99,40 +126,62 @@ describe('applyKillSwitchIfNeeded (R-PWA-6)', () => {
+     const reload = vi.fn();
+     const env = { serviceWorker: f.container, caches, reload };
+     expect(await applyKillSwitchIfNeeded(KILL, env)).toBe(true);
+     expect(reload).toHaveBeenCalledTimes(1);
+     expect(info).toHaveBeenCalledTimes(1);
+     // Même onglet, toujours contrôlé (navigateur qui garderait le SW désenregistré) : pas de second rechargement.
+     expect(await applyKillSwitchIfNeeded(KILL, env)).toBe(false);
+     expect(reload).toHaveBeenCalledTimes(1);
+   });
+ 
+-  it('page contrôlée, stockage de session refusé → rechargée une fois quand même', async () => {
+-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+-      throw new Error('refusé');
+-    });
+-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+-      throw new Error('refusé');
+-    });
+-    const f = createFakeSwContainer({ registrations: 0 });
+-    f.setController(true);
+-    const reload = vi.fn();
+-    expect(
+-      await applyKillSwitchIfNeeded(KILL, {
+-        serviceWorker: f.container,
+-        caches: createFakeCacheStorage(),
+-        reload,
+-      }),
+-    ).toBe(true);
++  it('page contrôlée, stockage de session refusé → rechargée une fois quand même, jamais deux', async () => {
++    const apply = await freshKillSwitch();
++    refuseSessionStorage();
++    expect(() => sessionStorage.getItem('x')).toThrow();
++    const { reload, env } = controlledAfterCleanup();
++    expect(await apply(KILL, env)).toBe(true);
++    expect(reload).toHaveBeenCalledTimes(1);
++    // Même chargement, toujours contrôlée : le repli en mémoire tient lieu de garde.
++    expect(await apply(KILL, env)).toBe(false);
+     expect(reload).toHaveBeenCalledTimes(1);
+   });
+ 
++  it('interrupteur levé puis remis dans le même onglet → la page encore contrôlée se recharge de nouveau', async () => {
++    const { reload, env } = controlledAfterCleanup();
++    expect(await applyKillSwitchIfNeeded(KILL, env)).toBe(true);
++    // Incident clos (swKill faux), SW de nouveau enregistré, puis nouvel incident dans la même session.
++    expect(await applyKillSwitchIfNeeded(HEALTH, env)).toBe(false);
++    expect(await applyKillSwitchIfNeeded(KILL, env)).toBe(true);
++    expect(reload).toHaveBeenCalledTimes(2);
++  });
++
++  it('page rechargée et plus contrôlée → garde levée : contrôlée de nouveau plus tard, elle se recharge encore', async () => {
++    const { f, reload, env } = controlledAfterCleanup();
++    expect(await applyKillSwitchIfNeeded(KILL, env)).toBe(true);
++    f.setController(false);
++    expect(await applyKillSwitchIfNeeded(KILL, env)).toBe(false);
++    // Un SW enregistré entre-temps (sonde sans réponse au démarrage) reprend la page.
++    f.setController(true);
++    expect(await applyKillSwitchIfNeeded(KILL, env)).toBe(true);
++    expect(reload).toHaveBeenCalledTimes(2);
++  });
++
++  it('stockage de session refusé : interrupteur levé puis remis → rechargée de nouveau', async () => {
++    const apply = await freshKillSwitch();
++    refuseSessionStorage();
++    const { reload, env } = controlledAfterCleanup();
++    expect(await apply(KILL, env)).toBe(true);
++    expect(await apply(HEALTH, env)).toBe(false);
++    expect(await apply(KILL, env)).toBe(true);
++    expect(reload).toHaveBeenCalledTimes(2);
++  });
++
+   it('deuxième passage après le rechargement → plus rien à faire, pas de boucle', async () => {
+     const f = createFakeSwContainer({ registrations: 2 });
+     const caches = await seededCaches();
+     const reload = vi.fn();
+     const env = { serviceWorker: f.container, caches, reload };
+     expect(await applyKillSwitchIfNeeded(KILL, env)).toBe(true);
+     expect(f.unregisterCalls).toBe(2);
+     expect(await applyKillSwitchIfNeeded(KILL, env)).toBe(false);
+     expect(reload).toHaveBeenCalledTimes(1);
+   });
+diff --git a/apps/web/test/sw/register.test.ts b/apps/web/test/sw/register.test.ts
+index be9b172..c38002a 100644
+--- a/apps/web/test/sw/register.test.ts
++++ b/apps/web/test/sw/register.test.ts
+@@ -607,20 +607,36 @@ describe('bootServiceWorker', () => {
+     await settled();
+     expect(registerSpy).not.toHaveBeenCalled();
+     expect(swControllerStore.get()).toBeNull();
+     expect(f.unregisterCalls).toBe(0);
+     // Triées des deux côtés : on vérifie quels caches restent, pas l'ordre de leurs noms.
+     expect((await caches.keys()).sort()).toEqual(['autre', LOCAL_DB_MARKER_CACHE].sort());
+     expect(reload).not.toHaveBeenCalled();
+     expect(f.controllerMessages).toEqual([]);
+   });
+ 
++  it('incident clos (swKill faux) puis rouvert dans le même onglet → la page encore contrôlée se recharge les deux fois', async () => {
++    vi.spyOn(console, 'info').mockImplementation(() => {});
++    // Le SW a déjà tout retiré à chaque incident ; la page reste contrôlée (la course de l'E2E kill-switch).
++    const f = createFakeSwContainer({ registrations: 0, controller: true });
++    try {
++      await boot(f, health(true));
++      expect(reload).toHaveBeenCalledTimes(1);
++      await boot(f, health(false));
++      expect(swControllerStore.get()).not.toBeNull();
++      await boot(f, health(true));
++      expect(reload).toHaveBeenCalledTimes(2);
++    } finally {
++      sessionStorage.clear();
++    }
++  });
++
+   it('426 déjà reçu par la synchro au démarrage (avant la fin de la sonde) → contrôleur publié forced', async () => {
+     sync = createFakeSyncEngine({ connection: 'protocol_unsupported' });
+     const f = createFakeSwContainer({ controller: true });
+     await boot(f, health(false));
+     expect(swControllerStore.get()?.getState()).toEqual({ available: false, forced: true, dismissed: false });
+     await until(() => f.registration.updateCalls === 2);
+   });
+ 
+   it.each([
+     ['sonde sans réponse (null)', null],
+diff --git a/apps/web/test/sync/engine.test.ts b/apps/web/test/sync/engine.test.ts
+index 6e4c83b..39453bd 100644
+--- a/apps/web/test/sync/engine.test.ts
++++ b/apps/web/test/sync/engine.test.ts
+@@ -489,20 +489,113 @@ describe('session perdue : synchro en pause jusqu’à une nouvelle session (R-S
+     engine.start();
+     await until(() => count('GET /api/health') === 4);
+     await idle();
+     await vi.advanceTimersByTimeAsync(1999);
+     expect(count('GET /api/health')).toBe(4);
+     await vi.advanceTimersByTimeAsync(1);
+     await until(() => count('GET /api/health') === 5);
+   });
+ });
+ 
++describe('requêtes en ligne (classe E) : même verdict que les écrans « Nécessite le réseau » (spec refonte §5)', () => {
++  it('reportOffline : « offline » tout de suite, puis une sonde le confirme et programme les reprises', async () => {
++    makeEngine().start();
++    await idle();
++    expect(engine.getState().connection).toBe('online');
++    server.fault = 'hang';
++    engine.reportOffline();
++    expect(engine.getState().connection).toBe('offline');
++    await until(() => count('GET /api/health') === 2);
++    await vi.advanceTimersByTimeAsync(4000);
++    await idle();
++    expect(engine.getState().connection).toBe('offline');
++    await vi.advanceTimersByTimeAsync(1999);
++    expect(count('GET /api/health')).toBe(2);
++    await vi.advanceTimersByTimeAsync(1);
++    await until(() => count('GET /api/health') === 3);
++  });
++
++  it('reportOffline alors que le serveur répond : la sonde rétablit « online »', async () => {
++    makeEngine().start();
++    await idle();
++    const seen: SyncState['connection'][] = [];
++    engine.subscribe((s) => seen.push(s.connection));
++    engine.reportOffline();
++    await until(() => count('GET /api/health') === 2);
++    await idle();
++    expect(seen[0]).toBe('offline');
++    expect(engine.getState().connection).toBe('online');
++  });
++
++  it('déjà hors ligne : rien de plus, les reprises gardent leur rythme', async () => {
++    server.fault = 'offline';
++    makeEngine().start();
++    await idle();
++    expect(engine.getState().connection).toBe('offline');
++    engine.reportOffline();
++    await vi.advanceTimersByTimeAsync(1999);
++    expect(count('GET /api/health')).toBe(1);
++    await vi.advanceTimersByTimeAsync(1);
++    await until(() => count('GET /api/health') === 2);
++  });
++
++  it.each([
++    ['unauthenticated', () => server.json(401, { error: 'unauthenticated' })],
++    [
++      'protocol_unsupported',
++      () => server.json(426, { error: 'protocol_unsupported', serverProtocol: 2, minProtocol: 2 }),
++    ],
++  ] as const)('%s : gardé (il demande une action), aucune requête en plus', async (state, reply) => {
++    server.on('GET /api/health', reply);
++    makeEngine().start();
++    await idle();
++    expect(engine.getState().connection).toBe(state);
++    engine.reportOffline();
++    await idle();
++    expect(engine.getState().connection).toBe(state);
++    expect(count('GET /api/health')).toBe(1);
++  });
++
++  it('moteur pas encore démarré ou arrêté : reportOffline ne change rien', async () => {
++    makeEngine();
++    engine.reportOffline();
++    expect(engine.getState().connection).toBe('unknown');
++    engine.start();
++    await idle();
++    engine.stop();
++    engine.reportOffline();
++    expect(engine.getState().connection).toBe('online');
++    expect(count('GET /api/health')).toBe(1);
++  });
++
++  it('reportReachable : hors ligne pour le moteur, le serveur a répondu → un cycle tout de suite, « online »', async () => {
++    server.fault = 'offline';
++    makeEngine().start();
++    await idle();
++    expect(engine.getState().connection).toBe('offline');
++    server.fault = null;
++    engine.reportReachable();
++    await until(() => count('GET /api/health') === 2);
++    await idle();
++    expect(engine.getState().connection).toBe('online');
++  });
++
++  it('reportReachable en ligne : aucun cycle', async () => {
++    makeEngine().start();
++    await idle();
++    engine.reportReachable();
++    expect(engine.getState().syncing).toBe(false);
++    await vi.advanceTimersByTimeAsync(600_000);
++    expect(count('GET /api/health')).toBe(1);
++  });
++});
++
+ describe('pull', () => {
+   it('watermark, lastPullOkAt, serverCatalogVersion ; hasMore enchaîne', async () => {
+     await setMeta(db, 'watermark', 'E1:10');
+     server.on('GET /api/sync/pull', (req) =>
+       req.query.get('since') === 'E1:10'
+         ? server.json(200, { rows: [], nextWatermark: 'E1:20', hasMore: true, catalogVersion: 'cat-2' })
+         : server.json(200, { rows: [], nextWatermark: 'E1:30', hasMore: false, catalogVersion: 'cat-2' }),
+     );
+     await makeEngine().syncNow('manual');
+     expect(pullSince()).toEqual(['E1:10', 'E1:20']);
+diff --git a/apps/web/test/sync/triggers.test.ts b/apps/web/test/sync/triggers.test.ts
+index dba60b2..1ca3f9e 100644
+--- a/apps/web/test/sync/triggers.test.ts
++++ b/apps/web/test/sync/triggers.test.ts
+@@ -23,20 +23,22 @@ beforeEach(() => {
+   });
+   engine = {
+     syncNow: vi.fn(async () => {}),
+     pullNow: vi.fn(async () => {}),
+     flushBefore: vi.fn(async () => {}),
+     getState: state,
+     subscribe: () => () => {},
+     start: () => {},
+     stop: () => {},
+     sessionOpened: () => {},
++    reportOffline: () => {},
++    reportReachable: () => {},
+   };
+ });
+ afterEach(() => {
+   expect(onLine).not.toHaveBeenCalled();
+   vi.restoreAllMocks();
+   vi.useRealTimers();
+ });
+ 
+ describe('installSyncTriggers', () => {
+   it('retour au premier plan → syncNow(foreground) ; caché → rien', () => {
+diff --git a/apps/web/test/ui/base-styles.test.ts b/apps/web/test/ui/base-styles.test.ts
+index be76bb8..3437f74 100644
+--- a/apps/web/test/ui/base-styles.test.ts
++++ b/apps/web/test/ui/base-styles.test.ts
+@@ -4,21 +4,34 @@ import { resolve } from 'node:path';
+ import { describe, expect, it } from 'vitest';
+ import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
+ 
+ const UI = resolve(import.meta.dirname, '../../src/ui');
+ const read = (path: string) => readFileSync(resolve(UI, path), 'utf8');
+ const tokens = () => parseCssBlocks(read('theme/tokens.css'));
+ const base = () => parseCssBlocks(read('ui.module.css'));
+ const rootTokens = () => declarationsOf(tokens(), ':root');
+ const themeTokens = (choice: string) => declarationsOf(tokens(), `:root[data-theme="${choice}"]`);
+ const rule = (selector: string) => declarationsOf(base(), selector);
++const shell = (selector: string, media: string | null = null) =>
++  declarationsOf(parseCssBlocks(read('shell.module.css')), selector, media);
+ const px = (value: string | undefined) => Number.parseFloat(value ?? '');
++/**
++ * Longueur en px d'une somme `calc(a + b + env(…))` de px et de rem, pour une taille de texte `rem` (16 par
++ * défaut, 32 à 200 %) ; env() compte pour 0 (l'encoche est vérifiée à part, des deux côtés de la comparaison).
++ */
++function lengthAt(value: string | undefined, rem: number): number {
++  const sum = (value ?? '').replace(/env\([^)]*\)/g, '');
++  expect(sum, `${value} : une somme de px et de rem`).not.toMatch(/\s[-*/]\s|max\(|min\(|var\(/);
++  const terms = [...sum.matchAll(/(\d+(?:\.\d+)?)(px|rem)\b/g)];
++  expect(terms.length, `${value} : au moins une longueur`).toBeGreaterThan(0);
++  return terms.reduce((total, [, n, unit]) => total + Number(n) * (unit === 'rem' ? rem : 1), 0);
++}
+ /** Valeur sur une ligne, telle que l'écrit la maquette, quel que soit le découpage du formateur. */
+ const flat = (value: string | undefined) =>
+   (value ?? '').replace(/\s+/g, ' ').replace(/\( /g, '(').replace(/ \)/g, ')');
+ 
+ describe('feuille de base (ui.module.css) : rien que des jetons', () => {
+   it('aucune couleur écrite en dur : chaque couleur vient de tokens.css', () => {
+     const css = read('ui.module.css').replace(/\/\*[\s\S]*?\*\//g, '');
+     const literals = css.match(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(/gi) ?? [];
+     expect(literals).toEqual([]);
+   });
+@@ -121,10 +134,75 @@ describe('composants de base : tailles d’écran, gros texte, contraste élevé
+     // Bordure prise sur le rembourrage (border-box) : le bouton de 24 px tient toujours dans le rail.
+     expect(forced('.switchTrack')?.get('padding')).toBe('2px');
+     expect(forced('.switchThumb')?.get('forced-color-adjust')).toBe('none');
+     expect(forced('.switchThumb')?.get('background')).toBe('ButtonText');
+     const onTrack = forced('.switch[aria-checked="true"] .switchTrack');
+     expect(onTrack?.get('forced-color-adjust')).toBe('none');
+     expect(onTrack?.get('background')).toBe('Highlight');
+     expect(forced('.switch[aria-checked="true"] .switchThumb')?.get('background')).toBe('HighlightText');
+   });
+ });
++
++describe('coquille (shell.module.css) : cibles, place de la barre d’onglets, focus jamais caché', () => {
++  it('cibles d’au moins 44 px : onglet, rond de l’initiale (44 × 44), marque, entrée latérale', () => {
++    expect(px(shell('.tab')?.get('min-height'))).toBeGreaterThanOrEqual(44);
++    expect(px(shell('.avatar')?.get('width'))).toBe(44);
++    expect(px(shell('.avatar')?.get('height'))).toBe(44);
++    expect(px(shell('.brand')?.get('min-height'))).toBeGreaterThanOrEqual(44);
++    expect(px(shell('.sideItem')?.get('min-height'))).toBeGreaterThanOrEqual(44);
++  });
++
++  // La barre est fixe : sans cette place, le bas de la page (dernier contrôle, liens du pied) reste dessous.
++  it('la page garde sous elle la place de la barre, encoche comprise, même avec des libellés sur 3 lignes', () => {
++    const space = shell('.shell')?.get('padding-bottom');
++    expect(space).toContain('env(safe-area-inset-bottom');
++    const bar = shell('.tabBar');
++    const tab = shell('.tab');
++    expect(bar?.get('bottom')).toContain('env(safe-area-inset-bottom');
++    // Hauteur minimale, pas fixe : la barre grandit quand un libellé passe à la ligne au lieu de le laisser déborder.
++    expect(bar?.has('height')).toBe(false);
++    const icon = Number(/width="(\d+)"/.exec(read('TabBar.tsx'))?.[1]);
++    expect(icon).toBeGreaterThan(0);
++    for (const rem of [16, 32]) {
++      for (const lines of [1, 2, 3]) {
++        const label = lines * Number(tab?.get('line-height')) * lengthAt(tab?.get('font-size'), rem);
++        const content =
++          2 * px(bar?.get('padding')) + 2 * px(bar?.get('border')) + icon + px(tab?.get('gap')) + label;
++        const footprint = lengthAt(bar?.get('bottom'), rem) + Math.max(px(bar?.get('min-height')), content);
++        expect(
++          lengthAt(space, rem),
++          `libellés sur ${lines} ligne(s), texte à ${(rem / 16) * 100} % : la barre occupe ${footprint.toFixed(1)} px`,
++        ).toBeGreaterThan(footprint);
++      }
++    }
++  });
++
++  it('PC (≥ 900 px) : plus de barre, plus de place gardée en bas', () => {
++    expect(shell('.shell[data-wide]', '(min-width: 900px)')?.get('padding-bottom')).toBe('0');
++  });
++
++  // Tabulation, focus() d'un champ en erreur ou après une suppression : le défilement s'arrête au-dessus de la
++  // barre. Seulement quand elle est là (téléphone) : sans barre, rien n'est retenu.
++  it('focus jamais caché sous la barre (WCAG 2.2, 2.4.11) : la racine garde la même place en bas', () => {
++    const space = shell('.shell')?.get('padding-bottom');
++    expect(space).toBeTruthy();
++    expect(shell(':global(html):has(.tabBar)')?.get('scroll-padding-bottom')).toBe(space);
++    expect(shell(':global(html)')?.has('scroll-padding-bottom') ?? false).toBe(false);
++  });
++
++  // Gros texte ou 320 px : la pastille passe sous la marque au lieu de recouvrir l'initiale ou d'être coupée.
++  it('en-tête de l’accueil : passe à la ligne, la pastille et l’initiale restent au bout de la ligne', () => {
++    const header = shell('.header');
++    expect(header?.get('flex-wrap')).toBe('wrap');
++    expect(px(header?.get('row-gap'))).toBeGreaterThan(0);
++    expect(shell('.headerEnd')?.get('margin-inline-start')).toBe('auto');
++    expect(shell('.pill')?.get('white-space')).toBeUndefined();
++  });
++
++  it('libellés d’onglet : coupés dans leur colonne et centrés, jamais par-dessus l’onglet voisin', () => {
++    const tab = shell('.tab');
++    expect(tab?.get('overflow-wrap')).toBe('anywhere');
++    expect(tab?.get('hyphens')).toBe('auto');
++    expect(tab?.get('text-align')).toBe('center');
++    expect(px(shell('.tabBar')?.get('min-height'))).toBe(68);
++  });
++});
+diff --git a/apps/web/test/ui/components.test.tsx b/apps/web/test/ui/components.test.tsx
+index 107ab48..406962b 100644
+--- a/apps/web/test/ui/components.test.tsx
++++ b/apps/web/test/ui/components.test.tsx
+@@ -553,20 +553,35 @@ describe('PageHeader', () => {
+ 
+   it('back fonction : bouton « Retour » qui l’appelle ; sans back, pas de Retour', () => {
+     const back = vi.fn();
+     const { rerender } = render(<PageHeader title="Mon coach" back={back} />);
+     fireEvent.click(screen.getByRole('button', { name: 'Retour' }));
+     expect(back).toHaveBeenCalledTimes(1);
+     rerender(<PageHeader title="Profil" />);
+     expect(screen.queryByRole('button', { name: 'Retour' })).toBeNull();
+     expect(screen.queryByRole('link', { name: 'Retour' })).toBeNull();
+   });
++
++  it('sans Retour (onglet, écran) : titre d’écran 28 px, 6 px au-dessus ; avec Retour : titre de page interne 24 px', () => {
++    const { rerender } = render(<PageHeader title="Réglages" back="/profile" />);
++    const inner = screen.getByRole('heading', { level: 1, name: 'Réglages' });
++    expect(inner.classList.contains(cls('pageTitle'))).toBe(true);
++    expect(inner.classList.contains(cls('screenTitle'))).toBe(false);
++    expect(rule('.pageTitle')?.get('font-size')).toBe('1.5rem');
++    rerender(<PageHeader title="Progression" />);
++    const top = screen.getByRole('heading', { level: 1, name: 'Progression' });
++    expect(top.classList.contains(cls('pageTitle'))).toBe(true);
++    expect(top.classList.contains(cls('screenTitle'))).toBe(true);
++    // Deux classes : la règle l'emporte sur `.page h1` (une classe et un élément) quel que soit son rang.
++    expect(rule('.pageTitle.screenTitle')?.get('font-size')).toBe('1.75rem');
++    expect(rule('.pageTitle.screenTitle')?.get('margin-top')).toBe('6px');
++  });
+ });
+ 
+ describe('Banner', () => {
+   it('erreur annoncée tout de suite (alert), le reste poliment (status) ; icône décorative', () => {
+     render(
+       <>
+         <Banner tone="error">Connexion impossible.</Banner>
+         <Banner tone="warning">Nécessite le réseau.</Banner>
+         <Banner tone="info">Nouvelle version disponible</Banner>
+       </>,
+diff --git a/apps/web/test/ui/contrast.test.ts b/apps/web/test/ui/contrast.test.ts
+index 86b7887..c6320b3 100644
+--- a/apps/web/test/ui/contrast.test.ts
++++ b/apps/web/test/ui/contrast.test.ts
+@@ -1,19 +1,20 @@
+ // @vitest-environment node
+ import { readFileSync } from 'node:fs';
+ import { resolve } from 'node:path';
+ import { describe, expect, it } from 'vitest';
+ import { THEME_CHOICES, type ThemeChoice } from '../../src/ui/theme/theme';
+ import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
+ 
+ const TOKENS_CSS = resolve(import.meta.dirname, '../../src/ui/theme/tokens.css');
+ const VOICE_CSS = resolve(import.meta.dirname, '../../src/ui/voice.module.css');
++const SHELL_CSS = resolve(import.meta.dirname, '../../src/ui/shell.module.css');
+ const DARK = '(prefers-color-scheme: dark)';
+ 
+ /** `#rgb` ou `#rrggbb` → [r, g, b] de 0 à 255. */
+ function hexToRgb(hex: string): number[] {
+   const h = hex.slice(1);
+   const full = h.length === 3 ? [...h].map((c) => c + c).join('') : h;
+   return [0, 2, 4].map((i) => Number.parseInt(full.slice(i, i + 2), 16));
+ }
+ 
+ /** Luminance relative WCAG 2.x d'une couleur `#rgb` ou `#rrggbb`. */
+@@ -76,20 +77,30 @@ const BRIDGE_PAIRS: readonly (readonly [string, string, number])[] = [
+   ['--color-text', '--color-warning-bg', TEXT],
+   ['--color-muted', '--color-bg', TEXT],
+   ['--color-muted', '--color-surface', TEXT],
+   ['--color-primary-text', '--color-primary', TEXT],
+   ['--color-danger', '--color-bg', TEXT],
+   ['--color-danger', '--color-surface', TEXT],
+   ['--color-primary', '--color-bg', UI],
+   ['--color-primary', '--color-surface', UI],
+ ];
+ 
++/**
++ * Libellés actifs de la coquille, texte courant (12 à 16 px), sur leur teinte d'accent : [nom, règle qui
++ * colore le texte, règle qui pose le fond]. La teinte est opaque, mélangée à --surface : le calcul la lit.
++ */
++const SHELL_PAIRS: readonly (readonly [string, string, string])[] = [
++  ['onglet actif', '.tab[aria-current="page"]', '.tabPill'],
++  ['entrée latérale active', '.sideItem[aria-current="page"]', '.sideItem[aria-current="page"]'],
++  ['initiale du profil', '.avatar > span', '.avatar > span'],
++];
++
+ const rgbToHex = (rgb: number[]) =>
+   `#${rgb.map((c) => Math.round(c).toString(16).padStart(2, '0')).join('')}`;
+ 
+ /**
+  * Couleur calculée d'une variable comme le navigateur la lit : suit les `var(--x)` et calcule
+  * `color-mix(in srgb, var(--a) N%, var(--b))` ; null si la valeur n'aboutit pas à un hexadécimal.
+  */
+ function resolveColor(name: string, vars: ReadonlyMap<string, string>, depth = 0): string | null {
+   const value = vars.get(name);
+   if (value === undefined || depth > 8) return null;
+@@ -162,20 +173,21 @@ describe('contrastRatio (WCAG 2.x)', () => {
+ 
+   it('#777777 sur blanc reste sous 4,5:1 (4,48), #767676 passe (4,54)', () => {
+     expect(contrastRatio('#777777', '#FFFFFF')).toBeCloseTo(4.48, 2);
+     expect(contrastRatio('#767676', '#FFFFFF')).toBeCloseTo(4.54, 2);
+   });
+ });
+ 
+ describe('contrastes des jetons, pour chaque thème', () => {
+   const blocks = parseCssBlocks(readFileSync(TOKENS_CSS, 'utf8'));
+   const voice = parseCssBlocks(readFileSync(VOICE_CSS, 'utf8'));
++  const shell = parseCssBlocks(readFileSync(SHELL_CSS, 'utf8'));
+   const root = declarationsOf(blocks, ':root');
+   const own = (p: Palette) => declarationsOf(blocks, p.selector, p.media);
+   /** Ce que voit la page dans ce rendu : `:root`, puis le bloc du thème par-dessus (la cascade). */
+   const seen = (p: Palette) => {
+     const block = own(p);
+     return root && block ? new Map([...root, ...block]) : null;
+   };
+ 
+   it('un bloc :root[data-theme] pour chaque thème forcé de THEME_CHOICES, et aucun autre', () => {
+     const themed = blocks
+@@ -234,20 +246,43 @@ describe('contrastes des jetons, pour chaque thème', () => {
+             const b = vars.get(bg) as string;
+             const ratio = contrastRatio(fg as string, b);
+             expect(
+               ratio,
+               `étiquette ${fg} (${tone}) sur ${bg} ${b} (${p.name}) : ${ratio.toFixed(2)}:1`,
+             ).toBeGreaterThanOrEqual(TEXT);
+           }
+         }
+       });
+ 
++      it('coquille : onglet actif, entrée latérale active et initiale atteignent 4,5:1 sur leur teinte', () => {
++        const tokens = seen(p);
++        expect(tokens, `bloc ${p.selector} absent de tokens.css`).not.toBeNull();
++        for (const [name, text, tint] of SHELL_PAIRS) {
++          const color = declarationsOf(shell, text)?.get('color');
++          const background = declarationsOf(shell, tint)?.get('background');
++          const vars = new Map([
++            ...(tokens ?? []),
++            ['--pair-text', color ?? ''],
++            ['--pair-tint', background ?? ''],
++          ]);
++          const fg = resolveColor('--pair-text', vars);
++          const bg = resolveColor('--pair-tint', vars);
++          // Une teinte qui laisse voir dessous (transparent) ne se calcule pas : elle échoue ici, lisiblement.
++          expect(fg ?? '', `${name} : couleur ${color} (${p.name})`).toMatch(HEX);
++          expect(bg ?? '', `${name} : fond ${background} (${p.name})`).toMatch(HEX);
++          const ratio = contrastRatio(fg as string, bg as string);
++          expect(ratio, `${name} ${fg} sur ${bg} (${p.name}) : ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
++            TEXT,
++          );
++        }
++      });
++
+       // Le pont est déclaré sur :root ; le bloc du thème, plus spécifique, l'emporte pour les jetons.
+       it('à travers le pont --color-* : chaque paire lue par les écrans atteint son minimum', () => {
+         const vars = seen(p);
+         expect(vars, `bloc ${p.selector} absent de tokens.css`).not.toBeNull();
+         for (const [fg, bg, min] of BRIDGE_PAIRS) {
+           const a = resolveColor(fg, vars ?? new Map());
+           const b = resolveColor(bg, vars ?? new Map());
+           expect(a, `${fg} → ${vars?.get(fg)} (${p.name})`).toMatch(HEX);
+           expect(b, `${bg} → ${vars?.get(bg)} (${p.name})`).toMatch(HEX);
+           const ratio = contrastRatio(a as string, b as string);

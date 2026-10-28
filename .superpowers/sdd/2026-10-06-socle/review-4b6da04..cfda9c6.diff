@@ -1,0 +1,1382 @@
+# Review package: 4b6da04..HEAD
+
+## Commits
+cfda9c6 test(pwa): état du contrôleur avec dismissed dans les tests fusionnés
+3e56df5 test(pwa): couvrir séance terminée, 426 avant abonnement, minuterie horaire, swKill sans nettoyage et liste fraîche
+f3036ed test(pwa): bandeau de mise à jour, séance et onboarding vérifiés sans dépendre du délai
+9da8224 fix(pwa): SKIP_WAITING au seul SW encore en attente et traces console du démarrage
+f952e08 fix(pwa): « Plus tard » gardé par le contrôleur, lié au SW proposé
+e4fd1a6 test(pwa): SW en attente sans localDbVersion jamais proposé (R-DEP-4)
+
+## Files changed
+ apps/web/src/sw/UpdateBanner.tsx           |  14 +-
+ apps/web/src/sw/kill-switch.ts             |   2 +
+ apps/web/src/sw/register.ts                |  80 ++++++--
+ apps/web/test/support/fake-sw-container.ts |  36 +++-
+ apps/web/test/sw/UpdateBanner.test.tsx     | 172 ++++++++++++++---
+ apps/web/test/sw/kill-switch.test.ts       |  12 +-
+ apps/web/test/sw/register.test.ts          | 285 ++++++++++++++++++++++++++++-
+ 7 files changed, 546 insertions(+), 55 deletions(-)
+
+## Diff
+diff --git a/apps/web/src/sw/UpdateBanner.tsx b/apps/web/src/sw/UpdateBanner.tsx
+index b1ce1dc..c57c7db 100644
+--- a/apps/web/src/sw/UpdateBanner.tsx
++++ b/apps/web/src/sw/UpdateBanner.tsx
+@@ -1,11 +1,11 @@
+-import { useCallback, useState, useSyncExternalStore } from 'react';
++import { useCallback, useSyncExternalStore } from 'react';
+ import { useLive, useMe } from '../app-services';
+ import { useRepos } from '../repos';
+ import { Button } from '../ui/Button';
+ import {
+   NO_UPDATE,
+   type SwController,
+   shouldShowUpdateBanner,
+   swControllerStore,
+   type UpdateState,
+ } from './register';
+@@ -48,35 +48,35 @@ export function UpdateBannerView(p: {
+ function useUpdateState(controller: SwController | null): UpdateState {
+   const subscribe = useCallback(
+     (onChange: () => void) => (controller ? controller.subscribe(onChange) : () => {}),
+     [controller],
+   );
+   const getSnapshot = useCallback(() => controller?.getState() ?? NO_UPDATE, [controller]);
+   return useSyncExternalStore(subscribe, getSnapshot);
+ }
+ 
+ /**
+- * Bandeau du cadre connecté, piloté par le contrôleur publié (`swControllerStore`). « Plus tard » le
+- * masque jusqu'au prochain lancement, sauf après un 426. Sans version en attente, rien n'est lu dans la
+- * base locale.
++ * Bandeau du cadre connecté, piloté par le contrôleur publié (`swControllerStore`). « Plus tard » est
++ * gardé par le contrôleur : la version proposée reste masquée jusqu'au prochain lancement, même si le
++ * cadre est démonté puis remonté, sauf après un 426 ou si une autre version est trouvée. Sans version en
++ * attente, rien n'est lu dans la base locale.
+  */
+ export function UpdateBanner() {
+   const controller = useSyncExternalStore(swControllerStore.subscribe, swControllerStore.get);
+   const update = useUpdateState(controller);
+-  const [dismissed, setDismissed] = useState(false);
+   if (!controller || !update.available) return null;
+   return (
+     <AvailableUpdateBanner
+       forced={update.forced}
+-      dismissed={dismissed}
++      dismissed={update.dismissed}
+       onUpdate={() => void controller.applyUpdate()}
+-      onDismiss={() => setDismissed(true)}
++      onDismiss={() => controller.dismiss()}
+     />
+   );
+ }
+ 
+ /**
+  * Version en attente : jamais pendant une séance (`activeSessionId`, rien tant qu'il n'est pas lu) ni
+  * pendant l'onboarding (R-PWA-3), même forcé (R-PWA-5).
+  */
+ function AvailableUpdateBanner(p: {
+   forced: boolean;
+diff --git a/apps/web/src/sw/kill-switch.ts b/apps/web/src/sw/kill-switch.ts
+index de89ddf..815b19f 100644
+--- a/apps/web/src/sw/kill-switch.ts
++++ b/apps/web/src/sw/kill-switch.ts
+@@ -73,13 +73,15 @@ export async function applyKillSwitchIfNeeded(
+   const reload = env.reload ?? (() => window.location.reload());
+ 
+   const registrations = serviceWorker ? await orElse(() => serviceWorker.getRegistrations(), []) : [];
+   const unregistered = await anyDone(registrations.map((r) => () => r.unregister()));
+   const names = storage ? await orElse(() => storage.keys(), []) : [];
+   const deleted = storage
+     ? await anyDone(names.filter(doomedCache).map((n) => () => storage.delete(n)))
+     : false;
+ 
+   if (!unregistered && !deleted) return false;
++  // Trace pour le diagnostic sur téléphone (R-TST-4, P8) : sinon ce rechargement unique passe inaperçu.
++  console.info("[appsport] interrupteur d'urgence : service worker et caches retirés, rechargement");
+   reload();
+   return true;
+ }
+diff --git a/apps/web/src/sw/register.ts b/apps/web/src/sw/register.ts
+index a8cd546..851f033 100644
+--- a/apps/web/src/sw/register.ts
++++ b/apps/web/src/sw/register.ts
+@@ -33,42 +33,51 @@ export interface SwRegistrationLike {
+ }
+ 
+ /** `navigator.serviceWorker` vu de la page ; le vrai par défaut, factice dans les tests. */
+ export interface SwContainerLike {
+   readonly controller: { postMessage(m: PageToSw): void } | null;
+   register(url: string, o: { scope: string; updateViaCache: 'none' }): Promise<SwRegistrationLike>;
+   getRegistrations(): Promise<readonly { unregister(): Promise<boolean> }[]>;
+   addEventListener(t: 'controllerchange', fn: () => void): void;
+ }
+ 
+-/** `available` : une version plus récente attend le clic ; `forced` : un 426 a été reçu (R-PWA-5). */
++/**
++ * `available` : une version plus récente attend le clic ; `forced` : un 426 a été reçu (R-PWA-5) ;
++ * `dismissed` : « Plus tard » sur la version proposée, jamais vrai une fois forcé.
++ */
+ export interface UpdateState {
+   available: boolean;
+   forced: boolean;
++  dismissed: boolean;
+ }
+ 
+ export interface SwController {
+   getState(): UpdateState;
+   /** Appelé à chaque changement d'état seulement. */
+   subscribe(fn: (s: UpdateState) => void): () => void;
+   checkForUpdate(): Promise<void>;
+   applyUpdate(): Promise<void>;
+   markForced(): void;
++  /**
++   * « Plus tard » : masque la version proposée jusqu'au prochain lancement, quel que soit l'écran ; une
++   * version différente trouvée ensuite, ou un 426, la repropose.
++   */
++  dismiss(): void;
+ }
+ 
+ export const SW_URL = '/sw.js';
+ /** Recherche de mise à jour périodique, quand la page est visible (R-PWA-2). */
+ export const UPDATE_INTERVAL_MS = 3_600_000;
+ /** Délai de réponse du SW en attente à GET_STATUS (ADR 0001 décision 5). */
+ const WAITING_STATUS_TIMEOUT_MS = 1000;
+ 
+-export const NO_UPDATE: UpdateState = Object.freeze({ available: false, forced: false });
++export const NO_UPDATE: UpdateState = Object.freeze({ available: false, forced: false, dismissed: false });
+ 
+ /**
+  * Bandeau de mise à jour (R-PWA-2, R-PWA-3, R-PWA-5) : jamais pendant une séance ni pendant l'onboarding,
+  * même après un 426 ; fermable tant qu'aucun 426 n'a été reçu.
+  */
+ export function shouldShowUpdateBanner(i: {
+   available: boolean;
+   forced: boolean;
+   activeSessionId: string | null;
+   onboardingInProgress: boolean;
+@@ -91,43 +100,54 @@ export const swControllerStore = {
+     for (const fn of [...storeListeners]) fn();
+   },
+   subscribe(fn: () => void): () => void {
+     storeListeners.add(fn);
+     return () => {
+       storeListeners.delete(fn);
+     };
+   },
+ };
+ 
++/** Nom d'une erreur (`SecurityError`, `TypeError`…), sans son message. */
++function errorName(error: unknown): string {
++  const name = (error as { name?: unknown } | null)?.name;
++  return typeof name === 'string' && name !== '' ? name : typeof error;
++}
++
+ /** Navigateur sans service worker (contexte non sécurisé, navigateur ancien) : jamais de mise à jour. */
+ function inertController(): SwController {
+   return {
+     getState: () => NO_UPDATE,
+     subscribe: () => () => {},
+     checkForUpdate: async () => {},
+     applyUpdate: async () => {},
+     markForced: () => {},
++    dismiss: () => {},
+   };
+ }
+ 
+ /**
+  * Enregistre `/sw.js` en mode prompt (R-PWA-2) et cherche une mise à jour au lancement, au retour au premier
+  * plan, puis `intervalMs` après la dernière recherche tant que la page reste visible.
+  *
+  * Un SW en attente n'est proposé (`available`) que si la page est contrôlée et qu'il a répondu lui-même à
+  * GET_STATUS en 1 s avec un `localDbVersion` au moins égal à celui de la page (R-PWA-9, ADR 0001
+  * décision 5) : un SW muet ou de schéma plus ancien ne reçoit jamais SKIP_WAITING (R-DEP-4). Un SW muet est
+  * redemandé à la recherche suivante.
+  *
+- * `applyUpdate` (R-PWA-4) envoie un seul SKIP_WAITING au SW proposé, sauf pendant une séance (R-PWA-3), et
+- * la page ne se recharge qu'au `controllerchange` qui suit, une seule fois. Un `controllerchange` sans
+- * clic (première installation, clic dans une autre fenêtre) ne recharge jamais.
++ * `applyUpdate` (R-PWA-4) envoie un seul SKIP_WAITING au SW proposé s'il attend encore, sauf pendant une
++ * séance (R-PWA-3), et la page ne se recharge qu'au `controllerchange` qui suit, une seule fois. Un
++ * `controllerchange` sans clic (première installation, clic dans une autre fenêtre) ne recharge jamais. Si
++ * le SW visé est remplacé avant de s'activer, le clic suivant vise le nouveau.
++ *
++ * « Plus tard » (`dismiss`) est gardé ici et non dans le bandeau : il survit au démontage du cadre connecté
++ * (pages publiques, gardes) jusqu'au prochain lancement, et ne vaut que pour le SW proposé à ce moment-là.
+  *
+  * Un 426 (`protocol_unsupported`, R-VER-2) rend le bandeau non fermable et relance une recherche ; l'outbox
+  * n'est pas touchée.
+  */
+ export function registerServiceWorker(opts: {
+   db: AppDb;
+   sync: SyncEngine;
+   intervalMs?: number;
+   container?: SwContainerLike;
+   reload?: () => void;
+@@ -137,40 +157,62 @@ export function registerServiceWorker(opts: {
+   if (!container) return inertController();
+   const { db, sync } = opts;
+   const intervalMs = opts.intervalMs ?? UPDATE_INTERVAL_MS;
+   const doc = opts.doc ?? document;
+   const reload = opts.reload ?? (() => window.location.reload());
+ 
+   let state: UpdateState = NO_UPDATE;
+   const listeners = new Set<(s: UpdateState) => void>();
+   /** Seul destinataire possible de SKIP_WAITING : le SW en attente qui a répondu. */
+   let offered: SwWorkerLike | null = null;
++  /** SW en attente écarté par « Plus tard » ; un autre SW proposé ensuite ne l'est pas. */
++  let dismissedWorker: SwWorkerLike | null = null;
+   let reloading = false;
+   let reloaded = false;
++  /** SW qui a reçu SKIP_WAITING, tant que son `controllerchange` n'est pas arrivé. */
++  let skipTarget: SwWorkerLike | null = null;
+   let evaluation = 0;
+   let timer: ReturnType<typeof setTimeout> | undefined;
+   /** Réponse de chaque SW en attente : true (proposable), false (schéma plus ancien), null (muet). */
+   const verdicts = new WeakMap<SwWorkerLike, Promise<boolean | null>>();
+   const watched = new WeakSet<SwWorkerLike>();
+ 
+-  function setState(patch: Partial<UpdateState>): void {
+-    const next = { ...state, ...patch };
+-    if (next.available === state.available && next.forced === state.forced) return;
++  /** `dismissed` est déduit : la version proposée est celle écartée, et aucun 426 (R-PWA-5). */
++  function setState(patch: Partial<Omit<UpdateState, 'dismissed'>>): void {
++    const available = patch.available ?? state.available;
++    const forced = patch.forced ?? state.forced;
++    const dismissed = available && !forced && offered !== null && offered === dismissedWorker;
++    const next: UpdateState = { available, forced, dismissed };
++    if (
++      next.available === state.available &&
++      next.forced === state.forced &&
++      next.dismissed === state.dismissed
++    ) {
++      return;
++    }
+     state = next;
+     for (const fn of [...listeners]) fn(state);
+   }
+ 
+   /** Tout changement d'état d'un SW (installé, remplacé, activé ailleurs) fait réévaluer l'attente. */
+   function watch(worker: SwWorkerLike): void {
+     if (watched.has(worker)) return;
+     watched.add(worker);
+-    worker.addEventListener('statechange', () => void reevaluate());
++    worker.addEventListener('statechange', () => {
++      // SW visé remplacé par une version plus récente avant son activation : aucun controllerchange ne
++      // viendra, le clic suivant doit pouvoir viser le nouveau (R-PWA-4).
++      if (worker === skipTarget && worker.state === 'redundant' && !reloaded) {
++        skipTarget = null;
++        reloading = false;
++      }
++      void reevaluate();
++    });
+   }
+ 
+   function verdictOf(worker: SwWorkerLike): Promise<boolean | null> {
+     const known = verdicts.get(worker);
+     if (known) return known;
+     const verdict = requestSwStatus(worker, WAITING_STATUS_TIMEOUT_MS).then((status) =>
+       status === null
+         ? null
+         : typeof status.localDbVersion === 'number' && status.localDbVersion >= LOCAL_DB_VERSION,
+     );
+@@ -199,22 +241,27 @@ export function registerServiceWorker(opts: {
+ 
+   const registration: Promise<SwRegistrationLike | null> = Promise.resolve()
+     .then(() => container.register(SW_URL, { scope: '/', updateViaCache: 'none' }))
+     .then(
+       (reg) => {
+         reg.addEventListener('updatefound', () => {
+           if (reg.installing) watch(reg.installing);
+         });
+         return reg;
+       },
+-      // sw.js introuvable ou refusé : pas de mise à jour proposée, l'appli tourne quand même.
+-      () => null,
++      // sw.js introuvable ou refusé (type MIME, CSP) : pas de mise à jour proposée, l'appli tourne quand même.
++      // Trace pour le diagnostic sur téléphone (R-TST-4, P8) : le nom de l'erreur seul, jamais son message
++      // (il peut porter l'URL).
++      (error: unknown) => {
++        console.warn('[appsport] enregistrement du service worker refusé :', errorName(error));
++        return null;
++      },
+     );
+ 
+   async function reevaluate(): Promise<void> {
+     const reg = await registration;
+     if (reg) await evaluate(reg);
+   }
+ 
+   function scheduleNext(): void {
+     clearTimeout(timer);
+     timer =
+@@ -238,40 +285,51 @@ export function registerServiceWorker(opts: {
+   }
+ 
+   async function applyUpdate(): Promise<void> {
+     const target = offered;
+     if (reloading || !target) return;
+     // R-PWA-3 : jamais pendant une séance, même avec le bandeau déjà affiché ; base illisible → rien.
+     const inSession = await getMeta(db, 'activeSessionId').then(
+       (id) => (id ?? null) !== null,
+       () => true,
+     );
++    const reg = await registration;
+     if (inSession || reloading || offered !== target) return;
++    // Le SW proposé a pu être remplacé (ou activé ailleurs) avant que sa réévaluation n'aboutisse, jusqu'à
++    // 1 s : seul celui qui attend encore reçoit SKIP_WAITING, sans quoi le bouton resterait sans effet.
++    if (target.state !== 'installed' || reg?.waiting !== target) return;
+     reloading = true;
++    skipTarget = target;
+     try {
+       target.postMessage({ type: 'SKIP_WAITING' });
+     } catch {
+       reloading = false;
++      skipTarget = null;
+     }
+   }
+ 
+   const controller: SwController = {
+     getState: () => state,
+     subscribe(fn) {
+       listeners.add(fn);
+       return () => {
+         listeners.delete(fn);
+       };
+     },
+     checkForUpdate,
+     applyUpdate,
+     markForced: () => setState({ forced: true }),
++    dismiss() {
++      if (!offered || state.forced) return;
++      dismissedWorker = offered;
++      setState({});
++    },
+   };
+ 
+   container.addEventListener('controllerchange', () => {
+     if (reloading) {
+       if (!reloaded) {
+         reloaded = true;
+         reload();
+       }
+       return;
+     }
+diff --git a/apps/web/test/support/fake-sw-container.ts b/apps/web/test/support/fake-sw-container.ts
+index e5b260f..e340d6e 100644
+--- a/apps/web/test/support/fake-sw-container.ts
++++ b/apps/web/test/support/fake-sw-container.ts
+@@ -8,58 +8,68 @@ import type { SwContainerLike, SwRegistrationLike, SwWorkerLike } from '../../sr
+ export interface FakeSwWorker extends SwWorkerLike {
+   /** Messages reçus de la page, dans l'ordre. */
+   messages: PageToSw[];
+   /** Vrai : ne répond pas à GET_STATUS (SW lent à réveiller ou en panne) ; modifiable en cours de test. */
+   silent: boolean;
+ }
+ 
+ export interface FakeSwContainer {
+   container: SwContainerLike;
+   registration: SwRegistrationLike & { updateCalls: number };
+-  /** Contrôleur présent (`true`) ou absent ; ses messages vont dans `controllerMessages`. */
++  /**
++   * Contrôleur présent (`true`, un nouvel objet à chaque appel) ou absent ; ses messages vont dans
++   * `controllerMessages` (tous contrôleurs confondus) et dans sa propre entrée de `controllerHistory`.
++   */
+   setController(on: boolean): void;
+   controllerMessages: PageToSw[];
++  /** Messages reçus par chaque contrôleur, dans l'ordre où ils ont été installés. */
++  controllerHistory: PageToSw[][];
+   /**
+    * Nouvelle version trouvée : `updatefound` avec le SW en `installing`, puis le SW passe en attente
+    * (`installed`, `statechange`) ; l'ancien SW en attente devient `redundant`.
+-   * `localDbVersion` : LOCAL_DB_VERSION par défaut ; `silent` : ne répond pas à GET_STATUS (voir
+-   * `FakeSwWorker.silent`).
++   * `localDbVersion` : LOCAL_DB_VERSION par défaut, `null` pour un SW antérieur au champ (réponse à
++   * GET_STATUS sans `localDbVersion`) ; `silent` : ne répond pas à GET_STATUS (voir `FakeSwWorker.silent`).
+    */
+-  installUpdate(o?: { localDbVersion?: number; silent?: boolean }): FakeSwWorker;
++  installUpdate(o?: FakeWorkerOptions): FakeSwWorker;
+   fireControllerChange(): void;
+   /**
+    * Le SW en attente est activé par une autre fenêtre (clic sur « Mettre à jour ») : il quitte l'attente
+    * (`activating`) et prend le contrôle de la page (`controllerchange`).
+    */
+   activateWaiting(): void;
+   /** Appels à `unregister()` sur les enregistrements rendus par `getRegistrations()`. */
+   unregisterCalls: number;
+ }
+ 
+-function createWorker(state: string, o: { localDbVersion?: number; silent?: boolean } = {}) {
++interface FakeWorkerOptions {
++  localDbVersion?: number | null;
++  silent?: boolean;
++}
++
++function createWorker(state: string, o: FakeWorkerOptions = {}) {
+   const listeners: (() => void)[] = [];
+   const worker: FakeSwWorker & { setState(s: string): void } = {
+     state,
+     messages: [],
+     silent: o.silent ?? false,
+     postMessage(m, transfer) {
+       worker.messages.push(m);
+       if (m.type !== 'GET_STATUS' || worker.silent) return;
+       const port = transfer?.[0] as MessagePort | undefined;
+       const status: SwStatus = {
+         type: 'STATUS',
+         buildHash: 'bbbbbbbbbbbb',
+         shellCached: true,
+         illustrationsMissing: 0,
+         illustrationsReferenced: null,
+-        localDbVersion: o.localDbVersion ?? LOCAL_DB_VERSION,
+       };
++      if (o.localDbVersion !== null) status.localDbVersion = o.localDbVersion ?? LOCAL_DB_VERSION;
+       port?.postMessage(status);
+     },
+     addEventListener(_type, fn) {
+       listeners.push(fn);
+     },
+     setState(s) {
+       worker.state = s;
+       for (const fn of listeners) fn();
+     },
+   };
+@@ -110,22 +120,34 @@ export function createFakeSwContainer(
+         return controller;
+       },
+       register: async () => registration,
+       getRegistrations: async () => [...registrations],
+       addEventListener(_type, fn) {
+         controllerChange.push(fn);
+       },
+     },
+     registration,
+     controllerMessages: [],
++    controllerHistory: [],
+     setController(on) {
+-      controller = on ? { postMessage: (m) => fake.controllerMessages.push(m) } : null;
++      if (!on) {
++        controller = null;
++        return;
++      }
++      const own: PageToSw[] = [];
++      fake.controllerHistory.push(own);
++      controller = {
++        postMessage: (m) => {
++          own.push(m);
++          fake.controllerMessages.push(m);
++        },
++      };
+     },
+     installUpdate(opts = {}) {
+       const worker = createWorker('installing', opts);
+       registration.installing = worker;
+       for (const fn of updateFound) fn();
+       const previous = waiting;
+       registration.installing = null;
+       waiting = worker;
+       worker.setState('installed');
+       previous?.setState('redundant');
+diff --git a/apps/web/test/sw/UpdateBanner.test.tsx b/apps/web/test/sw/UpdateBanner.test.tsx
+index 2e57f59..3e0d09a 100644
+--- a/apps/web/test/sw/UpdateBanner.test.tsx
++++ b/apps/web/test/sw/UpdateBanner.test.tsx
+@@ -1,50 +1,110 @@
+-import { act, fireEvent, render, screen } from '@testing-library/react';
++import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
++import { liveQuery } from 'dexie';
+ import { afterEach, describe, expect, it, vi } from 'vitest';
+-import { setMeta } from '../../src/local-db/meta';
++import type { AppDb } from '../../src/local-db/db';
++import { getMeta, setMeta } from '../../src/local-db/meta';
+ import { type SwController, swControllerStore, type UpdateState } from '../../src/sw/register';
+ import { UpdateBanner, UpdateBannerView } from '../../src/sw/UpdateBanner';
+ import { settle } from '../support/auth';
++import { createTestLocalDb } from '../support/local-db';
+ import { makeMe, renderApp, renderWithServices } from '../support/render';
+ 
+ const TITLE = 'Nouvelle version disponible';
+ const FORCED = "Mets à jour l'appli pour reprendre la synchronisation.";
+ 
+-/** Contrôleur factice : état posé par le test, applyUpdate compté. */
+-function fakeController(initial: UpdateState): SwController & { set(s: Partial<UpdateState>): void } {
+-  let state = initial;
++/**
++ * Contrôleur factice : état posé par le test, applyUpdate compté. Comme le vrai, « Plus tard » (`dismiss`)
++ * est gardé par le contrôleur et ignoré une fois forcé.
++ */
++function fakeController(
++  initial: Omit<UpdateState, 'dismissed'>,
++): SwController & { set(s: Partial<UpdateState>): void } {
++  let state: UpdateState = { ...initial, dismissed: false };
+   const listeners = new Set<(s: UpdateState) => void>();
+   return {
+     getState: () => state,
+     subscribe(fn) {
+       listeners.add(fn);
+       return () => {
+         listeners.delete(fn);
+       };
+     },
+     checkForUpdate: async () => {},
+     applyUpdate: vi.fn(async () => {}),
+     markForced() {
+-      this.set({ forced: true });
++      this.set({ forced: true, dismissed: false });
++    },
++    dismiss() {
++      if (!state.forced) this.set({ dismissed: true });
+     },
+     set(patch) {
+       state = { ...state, ...patch };
+       for (const fn of listeners) fn(state);
+     },
+   };
+ }
+ 
++const BANNER = '[data-testid="update-banner"]';
+ const banner = () => screen.queryByTestId('update-banner');
+ const button = (name: string) => screen.queryByRole('button', { name });
+ 
++const watchers: MutationObserver[] = [];
++
++/**
++ * Compte les apparitions du bandeau dans le document à partir de maintenant (avant le rendu) : un
++ * bandeau affiché un instant puis retiré compte (son ajout ou son retrait est observé).
++ */
++function watchBanner(): { seen(): number } {
++  let seen = 0;
++  const hit = (n: Node) => n instanceof Element && (n.matches(BANNER) || n.querySelector(BANNER) !== null);
++  const count = (records: MutationRecord[]) => {
++    for (const r of records) for (const n of [...r.addedNodes, ...r.removedNodes]) if (hit(n)) seen++;
++  };
++  const observer = new MutationObserver(count);
++  observer.observe(document.body, { childList: true, subtree: true });
++  watchers.push(observer);
++  return {
++    seen() {
++      count(observer.takeRecords());
++      return seen;
++    },
++  };
++}
++
++/** Premier résultat d'une lecture observée (liveQuery), comme celles de `useLive` et `useMe`. */
++function firstLive(query: () => Promise<unknown>): Promise<void> {
++  return new Promise<void>((resolve) => {
++    const subscription = liveQuery(query).subscribe({
++      next: () => {
++        resolve();
++        queueMicrotask(() => subscription.unsubscribe());
++      },
++    });
++  });
++}
++
++/**
++ * Attend que les lectures observées du bandeau (séance en cours, utilisateur) aient répondu : les
++ * mêmes lectures, ouvertes après les siennes, ont répondu, puis React a rendu. Une absence constatée
++ * ensuite est une décision du bandeau, pas une base encore muette.
++ */
++async function liveReadsDone(db: AppDb): Promise<void> {
++  await act(async () => {
++    await Promise.all([firstLive(() => getMeta(db, 'activeSessionId')), firstLive(() => getMeta(db, 'me'))]);
++  });
++  await settle();
++}
++
+ afterEach(() => {
+   swControllerStore.set(null);
++  for (const observer of watchers.splice(0)) observer.disconnect();
+ });
+ 
+ describe('UpdateBannerView', () => {
+   const noop = () => {};
+ 
+   it('show faux → rien', () => {
+     const { container } = render(
+       <UpdateBannerView show={false} dismissible onUpdate={noop} onDismiss={noop} />,
+     );
+     expect(container.innerHTML).toBe('');
+@@ -93,62 +153,132 @@ describe('UpdateBanner (R-PWA-2, R-PWA-3, R-PWA-5)', () => {
+     await renderWithServices(<UpdateBanner />);
+     await settle();
+     const controller = fakeController({ available: false, forced: false });
+     act(() => swControllerStore.set(controller));
+     await settle();
+     expect(banner()).toBeNull();
+     act(() => controller.set({ available: true }));
+     await screen.findByTestId('update-banner');
+   });
+ 
+-  it('SW en attente pendant une séance (activeSessionId "s1") → rien, puis bandeau à la fin de la séance', async () => {
++  it('SW en attente : une séance qui commence (activeSessionId "s1") masque le bandeau, même forcé ; il revient à la fin', async () => {
+     swControllerStore.set(fakeController({ available: true, forced: true }));
+-    const { db } = await renderWithServices(<UpdateBanner />, {});
++    const { db } = await renderWithServices(<UpdateBanner />);
++    await screen.findByTestId('update-banner');
+     await act(() => setMeta(db, 'activeSessionId', 's1'));
+-    await settle();
+-    expect(banner()).toBeNull();
++    await waitFor(() => expect(banner()).toBeNull());
+     await act(() => setMeta(db, 'activeSessionId', null));
+     await screen.findByTestId('update-banner');
+   });
+ 
+-  it('SW en attente pendant l’onboarding → rien, même forcé', async () => {
++  it('SW en attente, séance déjà en cours au montage (activeSessionId "s1") → aucun bandeau, pas même un instant', async () => {
+     swControllerStore.set(fakeController({ available: true, forced: true }));
+-    await renderWithServices(<UpdateBanner />, { me: makeMe({ onboardingCompletedAt: null }) });
+-    await settle();
+-    expect(banner()).toBeNull();
++    const db = createTestLocalDb();
++    await setMeta(db, 'activeSessionId', 's1');
++    const watch = watchBanner();
++    await renderWithServices(<UpdateBanner />, { db });
++    await liveReadsDone(db);
++    expect(watch.seen()).toBe(0);
++    // Contrôle positif : la même base, séance finie, affiche le bandeau.
++    await act(() => setMeta(db, 'activeSessionId', null));
++    await screen.findByTestId('update-banner');
++  });
++
++  it('SW en attente : un membre en onboarding ne voit pas le bandeau, même forcé', async () => {
++    swControllerStore.set(fakeController({ available: true, forced: true }));
++    const { db } = await renderWithServices(<UpdateBanner />);
++    await screen.findByTestId('update-banner');
++    await act(() => setMeta(db, 'me', makeMe({ onboardingCompletedAt: null })));
++    await waitFor(() => expect(banner()).toBeNull());
++  });
++
++  it('SW en attente, onboarding en cours au montage → aucun bandeau, pas même un instant, même forcé', async () => {
++    swControllerStore.set(fakeController({ available: true, forced: true }));
++    const watch = watchBanner();
++    const { db } = await renderWithServices(<UpdateBanner />, {
++      me: makeMe({ onboardingCompletedAt: null }),
++    });
++    await liveReadsDone(db);
++    expect(watch.seen()).toBe(0);
++    // Contrôle positif : onboarding fini, le bandeau paraît.
++    await act(() => setMeta(db, 'me', makeMe()));
++    await screen.findByTestId('update-banner');
+   });
+ 
+   it('« Plus tard » masque le bandeau ; un 426 ensuite le rend non fermable', async () => {
+     const controller = fakeController({ available: true, forced: false });
+     swControllerStore.set(controller);
+     await renderWithServices(<UpdateBanner />);
+     await screen.findByTestId('update-banner');
+     fireEvent.click(screen.getByRole('button', { name: 'Plus tard' }));
+     expect(banner()).toBeNull();
+     act(() => controller.markForced());
+     expect(banner()?.getAttribute('data-dismissible')).toBe('false');
+     expect(button('Plus tard')).toBeNull();
+     expect(banner()?.textContent).toContain(FORCED);
+   });
++
++  it('« Plus tard » tient au contrôleur : un bandeau remonté reste masqué', async () => {
++    const controller = fakeController({ available: true, forced: false });
++    swControllerStore.set(controller);
++    const first = await renderWithServices(<UpdateBanner />);
++    await screen.findByTestId('update-banner');
++    fireEvent.click(screen.getByRole('button', { name: 'Plus tard' }));
++    expect(controller.getState().dismissed).toBe(true);
++    first.unmount();
++    await renderWithServices(<UpdateBanner />);
++    await settle();
++    expect(banner()).toBeNull();
++  });
+ });
+ 
+ describe('cadres (AppShell, PublicShell)', () => {
++  it('« Plus tard » sur /, passage par /help (PublicShell) puis retour : toujours masqué ; un 426 le rend', async () => {
++    const controller = fakeController({ available: true, forced: false });
++    swControllerStore.set(controller);
++    await renderApp({ path: '/' });
++    await screen.findByTestId('update-banner');
++    fireEvent.click(screen.getByRole('button', { name: 'Plus tard' }));
++    expect(banner()).toBeNull();
++    fireEvent.click(screen.getByRole('link', { name: 'Aide' }));
++    await screen.findByRole('heading', { level: 1, name: 'Aide' });
++    fireEvent.click(screen.getByRole('link', { name: 'appsport' }));
++    await screen.findByRole('navigation', { name: 'Navigation principale' });
++    await settle();
++    expect(banner()).toBeNull();
++    act(() => controller.markForced());
++    const shown = await screen.findByTestId('update-banner');
++    expect(shown.getAttribute('data-dismissible')).toBe('false');
++  });
++
+   it('AppShell : le bandeau en premier', async () => {
+     swControllerStore.set(fakeController({ available: true, forced: false }));
+     await renderApp({ path: '/' });
+     const shown = await screen.findByTestId('update-banner');
+     expect(shown.parentElement?.firstElementChild).toBe(shown);
+     expect(shown.parentElement?.querySelector('header')).not.toBeNull();
+   });
+ 
+-  it.each([
+-    ['onboarding', '/onboarding', makeMe({ onboardingCompletedAt: null })],
+-    ['page publique', '/privacy', null],
+-  ])('PublicShell (%s) : aucun bandeau', async (_, path, me) => {
++  // Membre onboardé, hors séance, version en attente : seul le cadre décide. (Un membre en onboarding
++  // ne prouverait rien sur PublicShell : la règle masquerait le bandeau de toute façon.)
++  it('PublicShell (page publique, membre onboardé) : aucun bandeau ; puis AppShell : bandeau', async () => {
+     swControllerStore.set(fakeController({ available: true, forced: true }));
+-    await renderApp({ path, me });
++    const watch = watchBanner();
++    const { db } = await renderApp({ path: '/privacy' });
+     // Le cadre est rendu (en-tête) : l'absence du bandeau n'est pas celle d'une page encore vide.
+     await screen.findAllByRole('banner');
+-    await settle();
+-    expect(banner()).toBeNull();
++    await liveReadsDone(db);
++    expect(watch.seen()).toBe(0);
++    // Contrôle positif : même membre, même contrôleur, cadre connecté.
++    fireEvent.click(screen.getByRole('link', { name: 'appsport' }));
++    await screen.findByTestId('update-banner');
++  });
++
++  it('PublicShell (page publique, sans session) : aucun bandeau', async () => {
++    swControllerStore.set(fakeController({ available: true, forced: true }));
++    const watch = watchBanner();
++    const { db } = await renderApp({ path: '/privacy', me: null });
++    await screen.findAllByRole('banner');
++    await liveReadsDone(db);
++    expect(watch.seen()).toBe(0);
+   });
+ });
+diff --git a/apps/web/test/sw/kill-switch.test.ts b/apps/web/test/sw/kill-switch.test.ts
+index 6a3bce1..32c592d 100644
+--- a/apps/web/test/sw/kill-switch.test.ts
++++ b/apps/web/test/sw/kill-switch.test.ts
+@@ -1,12 +1,12 @@
+ import type { HealthResponse } from '@appsport/contracts';
+-import { afterEach, describe, expect, it, vi } from 'vitest';
++import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
+ import { getMeta, setMeta } from '../../src/local-db/meta';
+ import { applyKillSwitchIfNeeded, probeHealth } from '../../src/sw/kill-switch';
+ import { LOCAL_DB_MARKER_CACHE, LOCAL_DB_MARKER_KEY } from '../../src/sw/precache-manifest';
+ import { createFakeApi } from '../support/fake-api';
+ import { createFakeSwContainer } from '../support/fake-sw-container';
+ import { createFakeCacheStorage } from '../support/fake-sw-scope';
+ import { createTestLocalDb } from '../support/local-db';
+ import { until } from '../support/wait';
+ 
+ const HEALTH: HealthResponse = {
+@@ -29,20 +29,27 @@ async function seededCaches(o: Parameters<typeof createFakeCacheStorage>[0] = {}
+     'illustrations-v1',
+     'shell-bbbbbbbbbbbb',
+     'illustrations-v0',
+     'autre',
+   ]) {
+     await caches.open(name);
+   }
+   return caches;
+ }
+ 
++/** Trace console du rechargement (diagnostic sur téléphone, P8) : attendue, gardée hors de la sortie des tests. */
++let info: MockInstance<typeof console.info>;
++
++beforeEach(() => {
++  info = vi.spyOn(console, 'info').mockImplementation(() => {});
++});
++
+ afterEach(() => {
+   vi.useRealTimers();
+   vi.restoreAllMocks();
+ });
+ 
+ describe('applyKillSwitchIfNeeded (R-PWA-6)', () => {
+   it('swKill faux → false, rien touché', async () => {
+     const f = createFakeSwContainer();
+     const caches = await seededCaches();
+     const reload = vi.fn();
+@@ -57,32 +64,35 @@ describe('applyKillSwitchIfNeeded (R-PWA-6)', () => {
+     await setMeta(db, 'userId', 'u1');
+     const deleteDatabase = vi.spyOn(indexedDB, 'deleteDatabase');
+     const f = createFakeSwContainer({ registrations: 1 });
+     const caches = await seededCaches();
+     const reload = vi.fn();
+     expect(await applyKillSwitchIfNeeded(KILL, { serviceWorker: f.container, caches, reload })).toBe(true);
+     expect(f.unregisterCalls).toBe(1);
+     expect(await caches.keys()).toEqual([LOCAL_DB_MARKER_CACHE, 'autre']);
+     expect(await caches.match(LOCAL_DB_MARKER_KEY, { cacheName: LOCAL_DB_MARKER_CACHE })).toBeDefined();
+     expect(reload).toHaveBeenCalledTimes(1);
++    expect(info).toHaveBeenCalledTimes(1);
++    expect(info.mock.invocationCallOrder[0]).toBeLessThan(reload.mock.invocationCallOrder[0] ?? 0);
+     expect(deleteDatabase).not.toHaveBeenCalled();
+     expect(await getMeta(db, 'userId')).toBe('u1');
+   });
+ 
+   it('swKill vrai sans rien à nettoyer (le SW a déjà fait le ménage) → false, pas de rechargement', async () => {
+     const f = createFakeSwContainer({ registrations: 0 });
+     const caches = createFakeCacheStorage();
+     await caches.open(LOCAL_DB_MARKER_CACHE);
+     await caches.open('autre');
+     const reload = vi.fn();
+     expect(await applyKillSwitchIfNeeded(KILL, { serviceWorker: f.container, caches, reload })).toBe(false);
+     expect(reload).not.toHaveBeenCalled();
++    expect(info).not.toHaveBeenCalled();
+   });
+ 
+   it('deuxième passage après le rechargement → plus rien à faire, pas de boucle', async () => {
+     const f = createFakeSwContainer({ registrations: 2 });
+     const caches = await seededCaches();
+     const reload = vi.fn();
+     const env = { serviceWorker: f.container, caches, reload };
+     expect(await applyKillSwitchIfNeeded(KILL, env)).toBe(true);
+     expect(f.unregisterCalls).toBe(2);
+     expect(await applyKillSwitchIfNeeded(KILL, env)).toBe(false);
+diff --git a/apps/web/test/sw/register.test.ts b/apps/web/test/sw/register.test.ts
+index 07030a8..f25eb33 100644
+--- a/apps/web/test/sw/register.test.ts
++++ b/apps/web/test/sw/register.test.ts
+@@ -1,11 +1,12 @@
+ import type { HealthResponse } from '@appsport/contracts';
++import { makeOp } from '@appsport/server/testing';
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+ import { type AppDb, LOCAL_DB_VERSION } from '../../src/local-db/db';
+ import { setMeta } from '../../src/local-db/meta';
+ import { LOCAL_DB_MARKER_CACHE, LOCAL_DB_MARKER_KEY } from '../../src/sw/precache-manifest';
+ import type { PageToSw } from '../../src/sw/protocol';
+ import {
+   bootServiceWorker,
+   raiseLocalDbMarker,
+   registerServiceWorker,
+   type SwController,
+@@ -15,20 +16,21 @@ import { createFakeSyncEngine, type FakeSyncEngine } from '../support/fake-api';
+ import { createFakeSwContainer, type FakeSwContainer, type FakeSwWorker } from '../support/fake-sw-container';
+ import { createFakeCacheStorage, quotaExceeded } from '../support/fake-sw-scope';
+ import { createTestLocalDb } from '../support/local-db';
+ import { until } from '../support/wait';
+ 
+ const HOUR_MS = 3_600_000;
+ const SKIP_WAITING: PageToSw = { type: 'SKIP_WAITING' };
+ const GET_STATUS: PageToSw = { type: 'GET_STATUS' };
+ const FILES = ['a.11111111.svg'];
+ const SYNC_ILLUSTRATIONS: PageToSw = { type: 'SYNC_ILLUSTRATIONS', files: FILES };
++const NOTE_ID = '01920000-0000-7000-8000-000000000001';
+ 
+ interface FakeDoc {
+   doc: Pick<Document, 'visibilityState' | 'addEventListener'>;
+   show(): void;
+   hide(): void;
+ }
+ 
+ /** Document factice : visible au départ ; `show` et `hide` émettent `visibilitychange`. */
+ function createFakeDoc(): FakeDoc {
+   const listeners: (() => void)[] = [];
+@@ -114,57 +116,94 @@ describe('registerServiceWorker : recherche de mise à jour (R-PWA-2)', () => {
+     page.hide();
+     await settled();
+     expect(f.registration.updateCalls).toBe(1);
+     page.show();
+     await until(() => f.registration.updateCalls === 2);
+     await vi.advanceTimersByTimeAsync(HOUR_MS - 1000);
+     await turns();
+     expect(f.registration.updateCalls).toBe(2);
+     await vi.advanceTimersByTimeAsync(1000);
+     await until(() => f.registration.updateCalls === 3);
++    await vi.advanceTimersByTimeAsync(HOUR_MS);
++    await until(() => f.registration.updateCalls === 4);
+     page.hide();
+     await vi.advanceTimersByTimeAsync(HOUR_MS);
+     await settled();
+-    expect(f.registration.updateCalls).toBe(3);
++    expect(f.registration.updateCalls).toBe(4);
++  });
++
++  it('page restée visible depuis le lancement → une recherche par heure, minuterie réarmée à chaque fois', async () => {
++    const f = createFakeSwContainer({ controller: true });
++    start(f);
++    await until(() => f.registration.updateCalls === 1);
++    await vi.advanceTimersByTimeAsync(HOUR_MS - 1);
++    await turns();
++    expect(f.registration.updateCalls).toBe(1);
++    await vi.advanceTimersByTimeAsync(1);
++    await until(() => f.registration.updateCalls === 2);
++    await vi.advanceTimersByTimeAsync(HOUR_MS);
++    await until(() => f.registration.updateCalls === 3);
++    await vi.advanceTimersByTimeAsync(HOUR_MS);
++    await until(() => f.registration.updateCalls === 4);
++    await settled();
++    expect(f.registration.updateCalls).toBe(4);
++  });
++
++  it("register refusé (sw.js absent, type MIME, CSP) → un avertissement console, nom de l'erreur seulement", async () => {
++    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
++    const f = createFakeSwContainer({ controller: true });
++    vi.spyOn(f.container, 'register').mockRejectedValue(
++      new DOMException('Failed to register a ServiceWorker: https://x.test/sw.js?build=1', 'SecurityError'),
++    );
++    const c = start(f);
++    await until(() => warn.mock.calls.length > 0);
++    await settled();
++    expect(warn).toHaveBeenCalledTimes(1);
++    const logged = (warn.mock.calls[0] ?? []).map(String).join(' ');
++    expect(logged).toContain('SecurityError');
++    expect(logged).not.toContain('x.test');
++    expect(logged).not.toContain('build=1');
++    expect(f.registration.updateCalls).toBe(0);
++    expect(c.getState()).toEqual({ available: false, forced: false, dismissed: false });
+   });
+ });
+ 
+ describe('registerServiceWorker : version disponible (R-PWA-2, R-PWA-9, R-DEP-4)', () => {
+   it('SW déjà en attente et page contrôlée → available, après la réponse du SW en attente', async () => {
+     const f = createFakeSwContainer({ controller: true, waiting: true });
+     const c = start(f);
+     await until(() => c.getState().available);
+-    expect(c.getState()).toEqual({ available: true, forced: false });
++    expect(c.getState()).toEqual({ available: true, forced: false, dismissed: false });
+     const waiting = f.registration.waiting as FakeSwWorker;
+     expect(waiting.messages).toContainEqual(GET_STATUS);
+     expect(f.controllerMessages).not.toContainEqual(GET_STATUS);
+   });
+ 
+   it('première installation (sans contrôleur) → jamais available', async () => {
+     const f = createFakeSwContainer({ controller: false });
+     const c = start(f);
+     await settled();
+     f.installUpdate();
+     await settled();
+-    expect(c.getState()).toEqual({ available: false, forced: false });
++    expect(c.getState()).toEqual({ available: false, forced: false, dismissed: false });
+   });
+ 
+   it('installUpdate() → { available: true, forced: false }, abonnés prévenus', async () => {
+     const f = createFakeSwContainer({ controller: true });
+     const c = start(f);
+     const seen: boolean[] = [];
+     c.subscribe((s) => seen.push(s.available));
+     await settled();
+     expect(c.getState().available).toBe(false);
+     const worker = f.installUpdate();
+     await until(() => c.getState().available);
+-    expect(c.getState()).toEqual({ available: true, forced: false });
++    expect(c.getState()).toEqual({ available: true, forced: false, dismissed: false });
+     expect(seen).toEqual([true]);
+     expect(worker.messages).toEqual([GET_STATUS]);
+   });
+ 
+   it('version de base locale supérieure → proposée', async () => {
+     const f = createFakeSwContainer({ controller: true });
+     const c = start(f);
+     await settled();
+     f.installUpdate({ localDbVersion: LOCAL_DB_VERSION + 1 });
+     await until(() => c.getState().available);
+@@ -177,20 +216,34 @@ describe('registerServiceWorker : version disponible (R-PWA-2, R-PWA-9, R-DEP-4)
+     const worker = f.installUpdate({ localDbVersion: LOCAL_DB_VERSION - 1 });
+     await until(() => worker.messages.length > 0);
+     await settled();
+     expect(worker.messages).toEqual([GET_STATUS]);
+     expect(c.getState().available).toBe(false);
+     await c.applyUpdate();
+     expect(skipWaitings(worker)).toEqual([]);
+     expect(f.controllerMessages).toEqual([]);
+   });
+ 
++  it('R-DEP-4 : réponse sans localDbVersion (SW antérieur au champ) → jamais proposé, pas de SKIP_WAITING', async () => {
++    const f = createFakeSwContainer({ controller: true });
++    const c = start(f);
++    await settled();
++    const worker = f.installUpdate({ localDbVersion: null });
++    await until(() => worker.messages.length > 0);
++    await settled();
++    expect(worker.messages).toEqual([GET_STATUS]);
++    expect(c.getState().available).toBe(false);
++    await c.applyUpdate();
++    expect(skipWaitings(worker)).toEqual([]);
++    expect(f.controllerMessages).toEqual([]);
++  });
++
+   it("SW en attente muet → false après 1 s, applyUpdate n'envoie pas SKIP_WAITING", async () => {
+     const f = createFakeSwContainer({ controller: true });
+     const c = start(f);
+     await settled();
+     const worker = f.installUpdate({ silent: true });
+     await until(() => worker.messages.length > 0);
+     await settled();
+     expect(c.getState().available).toBe(false);
+     await c.applyUpdate();
+     expect(skipWaitings(worker)).toEqual([]);
+@@ -232,37 +285,141 @@ describe('registerServiceWorker : version disponible (R-PWA-2, R-PWA-9, R-DEP-4)
+     const second = f.installUpdate();
+     await until(() => second.messages.length > 0);
+     await settled();
+     expect(c.getState().available).toBe(true);
+     await c.applyUpdate();
+     expect(skipWaitings(first)).toEqual([]);
+     expect(skipWaitings(second)).toEqual([SKIP_WAITING]);
+   });
+ });
+ 
++describe('registerServiceWorker : « Plus tard » (dismiss)', () => {
++  it('masque la version proposée pour ce lancement ; « Mettre à jour » reste possible', async () => {
++    const f = createFakeSwContainer({ controller: true });
++    const c = start(f);
++    const worker = f.installUpdate();
++    await until(() => c.getState().available);
++    const seen: boolean[] = [];
++    c.subscribe((s) => seen.push(s.dismissed));
++    c.dismiss();
++    expect(c.getState()).toEqual({ available: true, forced: false, dismissed: true });
++    expect(seen).toEqual([true]);
++    // Une recherche qui retrouve le même SW en attente ne le repropose pas.
++    page.hide();
++    page.show();
++    await until(() => f.registration.updateCalls === 2);
++    await settled();
++    expect(c.getState().dismissed).toBe(true);
++    await c.applyUpdate();
++    expect(skipWaitings(worker)).toEqual([SKIP_WAITING]);
++  });
++
++  it('une version plus récente trouvée ensuite est proposée de nouveau', async () => {
++    const f = createFakeSwContainer({ controller: true });
++    const c = start(f);
++    f.installUpdate();
++    await until(() => c.getState().available);
++    c.dismiss();
++    const second = f.installUpdate();
++    await until(() => !c.getState().dismissed);
++    expect(c.getState()).toEqual({ available: true, forced: false, dismissed: false });
++    await c.applyUpdate();
++    expect(skipWaitings(second)).toEqual([SKIP_WAITING]);
++  });
++
++  it('un 426 annule « Plus tard », et « Plus tard » est ignoré une fois forcé (R-PWA-5)', async () => {
++    const f = createFakeSwContainer({ controller: true });
++    const c = start(f);
++    f.installUpdate();
++    await until(() => c.getState().available);
++    c.dismiss();
++    expect(c.getState().dismissed).toBe(true);
++    sync.set({ connection: 'protocol_unsupported' });
++    expect(c.getState()).toEqual({ available: true, forced: true, dismissed: false });
++    c.dismiss();
++    expect(c.getState().dismissed).toBe(false);
++  });
++
++  it('sans version proposée → sans effet, la version trouvée ensuite est proposée', async () => {
++    const f = createFakeSwContainer({ controller: true });
++    const c = start(f);
++    await settled();
++    c.dismiss();
++    expect(c.getState().dismissed).toBe(false);
++    f.installUpdate();
++    await until(() => c.getState().available);
++    expect(c.getState().dismissed).toBe(false);
++  });
++});
++
+ describe('registerServiceWorker : applyUpdate (R-PWA-4, R-PWA-3)', () => {
+   it('un seul SKIP_WAITING au SW en attente, rechargement au controllerchange, une seule fois', async () => {
+     const f = createFakeSwContainer({ controller: true });
+     const c = start(f);
+     const worker = f.installUpdate();
+     await until(() => c.getState().available);
+     await Promise.all([c.applyUpdate(), c.applyUpdate()]);
+     await c.applyUpdate();
+     expect(skipWaitings(worker)).toEqual([SKIP_WAITING]);
+     expect(f.controllerMessages).toEqual([]);
+     expect(reload).not.toHaveBeenCalled();
+     f.fireControllerChange();
+     expect(reload).toHaveBeenCalledTimes(1);
+     f.fireControllerChange();
+     expect(reload).toHaveBeenCalledTimes(1);
+   });
+ 
++  it('clic avant la réponse de la version suivante → rien au SW remplacé ; le clic suivant va au nouveau', async () => {
++    const f = createFakeSwContainer({ controller: true });
++    const c = start(f);
++    await settled();
++    const first = f.installUpdate();
++    await until(() => c.getState().available);
++    // La nouvelle version n'a pas encore répondu à GET_STATUS : `first`, remplacé, est encore le dernier proposé.
++    const second = f.installUpdate({ silent: true });
++    await until(() => second.messages.length > 0);
++    await c.applyUpdate();
++    expect(skipWaitings(first)).toEqual([]);
++    expect(skipWaitings(second)).toEqual([]);
++    await settled();
++    second.silent = false;
++    page.hide();
++    page.show();
++    await until(() => c.getState().available);
++    await c.applyUpdate();
++    expect(skipWaitings(second)).toEqual([SKIP_WAITING]);
++    expect(skipWaitings(first)).toEqual([]);
++    f.fireControllerChange();
++    expect(reload).toHaveBeenCalledTimes(1);
++  });
++
++  it('SW visé remplacé avant son activation (sans controllerchange) → le clic suivant va au nouveau', async () => {
++    const f = createFakeSwContainer({ controller: true });
++    const c = start(f);
++    await settled();
++    const first = f.installUpdate();
++    await until(() => c.getState().available);
++    await c.applyUpdate();
++    expect(skipWaitings(first)).toEqual([SKIP_WAITING]);
++    const second = f.installUpdate();
++    await until(() => second.messages.length > 0);
++    await settled();
++    expect(c.getState().available).toBe(true);
++    await c.applyUpdate();
++    expect(skipWaitings(second)).toEqual([SKIP_WAITING]);
++    expect(skipWaitings(first)).toEqual([SKIP_WAITING]);
++    expect(reload).not.toHaveBeenCalled();
++    f.fireControllerChange();
++    f.fireControllerChange();
++    expect(reload).toHaveBeenCalledTimes(1);
++  });
++
+   it('controllerchange sans applyUpdate (clients.claim de la première installation) → pas de rechargement', async () => {
+     const f = createFakeSwContainer({ controller: false });
+     start(f);
+     await settled();
+     f.setController(true);
+     f.fireControllerChange();
+     await settled();
+     expect(reload).not.toHaveBeenCalled();
+   });
+ 
+@@ -271,64 +428,125 @@ describe('registerServiceWorker : applyUpdate (R-PWA-4, R-PWA-3)', () => {
+     const f = createFakeSwContainer({ controller: true });
+     const c = start(f);
+     const worker = f.installUpdate();
+     await until(() => c.getState().available);
+     await c.applyUpdate();
+     expect(skipWaitings(worker)).toEqual([]);
+     f.fireControllerChange();
+     expect(reload).not.toHaveBeenCalled();
+   });
+ 
++  it('séance terminée (meta.activeSessionId remis à null) → un seul SKIP_WAITING au SW proposé', async () => {
++    await setMeta(db, 'activeSessionId', 's1');
++    await setMeta(db, 'activeSessionId', null);
++    const f = createFakeSwContainer({ controller: true });
++    const c = start(f);
++    const worker = f.installUpdate();
++    await until(() => c.getState().available);
++    await c.applyUpdate();
++    expect(skipWaitings(worker)).toEqual([SKIP_WAITING]);
++    f.fireControllerChange();
++    expect(reload).toHaveBeenCalledTimes(1);
++  });
++
+   it('sans SW en attente → rien, sans erreur', async () => {
+     const f = createFakeSwContainer({ controller: true });
+     const c = start(f);
+     await settled();
+     await c.applyUpdate();
+     f.fireControllerChange();
+     expect(reload).not.toHaveBeenCalled();
+   });
+ });
+ 
+ describe('registerServiceWorker : 426 (R-PWA-5, R-VER-2)', () => {
+   it('connexion protocol_unsupported → forced et nouvelle recherche, une fois par passage', async () => {
+     const f = createFakeSwContainer({ controller: true });
+     const c = start(f);
+     await until(() => f.registration.updateCalls === 1);
+     expect(c.getState().forced).toBe(false);
+     sync.set({ connection: 'protocol_unsupported' });
+-    expect(c.getState()).toEqual({ available: false, forced: true });
++    expect(c.getState()).toEqual({ available: false, forced: true, dismissed: false });
+     await until(() => f.registration.updateCalls === 2);
+     sync.set({ pending: 3 });
+     await settled();
+     expect(f.registration.updateCalls).toBe(2);
+     expect(c.getState().forced).toBe(true);
+   });
+ 
++  it('426 reçu avant la création du contrôleur (pendant la sonde) → forced tout de suite et recherche en plus', async () => {
++    sync = createFakeSyncEngine({ connection: 'protocol_unsupported' });
++    const f = createFakeSwContainer({ controller: true });
++    const c = start(f);
++    expect(c.getState()).toEqual({ available: false, forced: true, dismissed: false });
++    await until(() => f.registration.updateCalls === 2);
++    await settled();
++    expect(f.registration.updateCalls).toBe(2);
++  });
++
++  it('nouveau passage à protocol_unsupported après un retour en ligne → nouvelle recherche', async () => {
++    const f = createFakeSwContainer({ controller: true });
++    const c = start(f);
++    await until(() => f.registration.updateCalls === 1);
++    sync.set({ connection: 'protocol_unsupported' });
++    await until(() => f.registration.updateCalls === 2);
++    sync.set({ connection: 'online' });
++    await settled();
++    expect(f.registration.updateCalls).toBe(2);
++    expect(c.getState().forced).toBe(true);
++    sync.set({ connection: 'protocol_unsupported' });
++    await until(() => f.registration.updateCalls === 3);
++    await settled();
++    expect(f.registration.updateCalls).toBe(3);
++    expect(c.getState().forced).toBe(true);
++  });
++
++  it('426 → outbox intacte', async () => {
++    const op = makeOp({
++      userId: 'u1',
++      entity: 'fixture_note',
++      id: NOTE_ID,
++      kind: 'create',
++      fields: { title: 't' },
++    });
++    await db.outbox.add(op);
++    const before = await db.outbox.toArray();
++    const f = createFakeSwContainer({ controller: true });
++    const c = start(f);
++    await settled();
++    sync.set({ connection: 'protocol_unsupported' });
++    f.installUpdate();
++    await until(() => c.getState().available);
++    await settled();
++    expect(await db.outbox.toArray()).toEqual(before);
++  });
++
+   it('426 puis nouvelle version trouvée → available et forced', async () => {
+     const f = createFakeSwContainer({ controller: true });
+     const c = start(f);
+     await settled();
+     sync.set({ connection: 'protocol_unsupported' });
+     f.installUpdate();
+     await until(() => c.getState().available);
+-    expect(c.getState()).toEqual({ available: true, forced: true });
++    expect(c.getState()).toEqual({ available: true, forced: true, dismissed: false });
+   });
+ 
+   it('sans service worker → contrôleur inerte { available: false, forced: false }', async () => {
+     expect('serviceWorker' in navigator).toBe(false);
+     const c = registerServiceWorker({ db, sync, doc: page.doc, reload });
+-    expect(c.getState()).toEqual({ available: false, forced: false });
++    expect(c.getState()).toEqual({ available: false, forced: false, dismissed: false });
+     await c.checkForUpdate();
+     await c.applyUpdate();
++    c.dismiss();
+     c.markForced();
+     sync.set({ connection: 'protocol_unsupported' });
+-    expect(c.getState()).toEqual({ available: false, forced: false });
++    expect(c.getState()).toEqual({ available: false, forced: false, dismissed: false });
+     expect(reload).not.toHaveBeenCalled();
+   });
+ });
+ 
+ describe('raiseLocalDbMarker (ADR 0001 décision 5)', () => {
+   const readMarker = async (caches: CacheStorage) =>
+     (await caches.match(LOCAL_DB_MARKER_KEY, { cacheName: LOCAL_DB_MARKER_CACHE }))?.text();
+ 
+   it('marqueur absent → LOCAL_DB_VERSION', async () => {
+     const caches = createFakeCacheStorage();
+@@ -357,33 +575,59 @@ describe('bootServiceWorker', () => {
+       db,
+       status,
+       sync,
+       fetchHealth: async () => probe,
+       container: f.container,
+       killEnv: { serviceWorker: f.container, caches, reload },
+     });
+   }
+ 
+   it('swKill vrai → interrupteur appliqué, aucun enregistrement, aucun contrôleur publié', async () => {
++    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+     const f = createFakeSwContainer({ controller: true });
+     const registerSpy = vi.spyOn(f.container, 'register');
+     const caches = createFakeCacheStorage();
+     await caches.open('shell-aaaaaaaaaaaa');
+     await boot(f, health(true), caches);
+     expect(registerSpy).not.toHaveBeenCalled();
+     expect(swControllerStore.get()).toBeNull();
+     expect(f.unregisterCalls).toBe(1);
+     expect(await caches.keys()).toEqual([LOCAL_DB_MARKER_CACHE]);
+     expect(reload).toHaveBeenCalledTimes(1);
++    expect(info).toHaveBeenCalledTimes(1);
++    expect(f.controllerMessages).toEqual([]);
++  });
++
++  it('swKill vrai sans rien à nettoyer (incident en cours, déjà nettoyé) → toujours aucun enregistrement', async () => {
++    const f = createFakeSwContainer({ registrations: 0 });
++    const registerSpy = vi.spyOn(f.container, 'register');
++    const caches = createFakeCacheStorage();
++    await caches.open(LOCAL_DB_MARKER_CACHE);
++    await caches.open('autre');
++    await boot(f, health(true), caches);
++    await settled();
++    expect(registerSpy).not.toHaveBeenCalled();
++    expect(swControllerStore.get()).toBeNull();
++    expect(f.unregisterCalls).toBe(0);
++    expect((await caches.keys()).sort()).toEqual([LOCAL_DB_MARKER_CACHE, 'autre']);
++    expect(reload).not.toHaveBeenCalled();
+     expect(f.controllerMessages).toEqual([]);
+   });
+ 
++  it('426 déjà reçu par la synchro au démarrage (avant la fin de la sonde) → contrôleur publié forced', async () => {
++    sync = createFakeSyncEngine({ connection: 'protocol_unsupported' });
++    const f = createFakeSwContainer({ controller: true });
++    await boot(f, health(false));
++    expect(swControllerStore.get()?.getState()).toEqual({ available: false, forced: true, dismissed: false });
++    await until(() => f.registration.updateCalls === 2);
++  });
++
+   it.each([
+     ['sonde sans réponse (null)', null],
+     ['swKill faux', health(false)],
+   ])('%s → enregistrement et contrôleur publié', async (_, probe) => {
+     const f = createFakeSwContainer({ controller: true });
+     const registerSpy = vi.spyOn(f.container, 'register');
+     await boot(f, probe);
+     expect(registerSpy).toHaveBeenCalledWith('/sw.js', { scope: '/', updateViaCache: 'none' });
+     expect(swControllerStore.get()).not.toBeNull();
+     expect(f.unregisterCalls).toBe(0);
+@@ -408,20 +652,45 @@ describe('bootServiceWorker', () => {
+     await boot(f, health(false));
+     expect(f.controllerMessages).toEqual([SYNC_ILLUSTRATIONS]);
+     f.fireControllerChange();
+     await until(() => f.controllerMessages.length === 2);
+     f.fireControllerChange();
+     await until(() => f.controllerMessages.length === 3);
+     expect(f.controllerMessages).toEqual([SYNC_ILLUSTRATIONS, SYNC_ILLUSTRATIONS, SYNC_ILLUSTRATIONS]);
+     expect(reload).not.toHaveBeenCalled();
+   });
+ 
++  it('R-SYN-32 : liste relue à chaque controllerchange et envoyée au nouveau contrôleur', async () => {
++    const later = ['a.11111111.svg', 'b.22222222.svg'];
++    const illustrationFiles = vi
++      .fn<() => Promise<string[]>>()
++      .mockResolvedValueOnce([...FILES])
++      .mockResolvedValueOnce(later);
++    const f = createFakeSwContainer({ controller: true });
++    await bootServiceWorker({
++      db,
++      status: { illustrationFiles },
++      sync,
++      fetchHealth: async () => health(false),
++      container: f.container,
++      killEnv: { serviceWorker: f.container, caches: createFakeCacheStorage(), reload },
++    });
++    f.setController(true);
++    f.fireControllerChange();
++    await until(() => f.controllerMessages.length === 2);
++    expect(illustrationFiles).toHaveBeenCalledTimes(2);
++    expect(f.controllerHistory).toEqual([
++      [SYNC_ILLUSTRATIONS],
++      [{ type: 'SYNC_ILLUSTRATIONS', files: later }],
++    ]);
++  });
++
+   it("sans contrôleur → rien ; envoyé dès qu'un contrôleur apparaît (première installation)", async () => {
+     const f = createFakeSwContainer({ controller: false });
+     await boot(f, health(false));
+     await turns();
+     expect(f.controllerMessages).toEqual([]);
+     f.setController(true);
+     f.fireControllerChange();
+     await until(() => f.controllerMessages.length === 1);
+     expect(f.controllerMessages).toEqual([SYNC_ILLUSTRATIONS]);
+     expect(reload).not.toHaveBeenCalled();

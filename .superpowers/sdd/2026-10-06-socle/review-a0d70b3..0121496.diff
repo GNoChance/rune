@@ -1,0 +1,3263 @@
+# Review package: a0d70b3..HEAD
+
+## Commits
+0121496 feat(web): coquille de l'appli, client API et pages publiques
+
+## Files changed
+ apps/web/index.html                             |  13 ++
+ apps/web/package.json                           |  10 +-
+ apps/web/src/App.tsx                            | 106 ++++++++++
+ apps/web/src/api/client.ts                      | 101 +++++++++
+ apps/web/src/app-services.tsx                   |  67 ++++++
+ apps/web/src/boot.ts                            |  10 +
+ apps/web/src/features/home/HomePage.tsx         |  16 ++
+ apps/web/src/features/home/home.module.css      |   4 +
+ apps/web/src/features/public/CreditsPage.tsx    |  18 ++
+ apps/web/src/features/public/HelpPage.tsx       |  38 ++++
+ apps/web/src/features/public/NotFound.tsx       |  11 +
+ apps/web/src/features/public/PrivacyPage.tsx    |  22 ++
+ apps/web/src/features/public/privacy-content.ts | 106 ++++++++++
+ apps/web/src/features/public/public.module.css  |  50 +++++
+ apps/web/src/main.tsx                           |  44 ++++
+ apps/web/src/ui/AppShell.tsx                    |  51 +++++
+ apps/web/src/ui/Banner.tsx                      |  11 +
+ apps/web/src/ui/Button.tsx                      |  17 ++
+ apps/web/src/ui/ChoiceList.tsx                  |  29 +++
+ apps/web/src/ui/CopyButton.tsx                  |  22 ++
+ apps/web/src/ui/Dialog.tsx                      |  43 ++++
+ apps/web/src/ui/Field.tsx                       |  35 +++
+ apps/web/src/ui/HealthWarning.tsx               |   8 +
+ apps/web/src/ui/Page.tsx                        |  18 ++
+ apps/web/src/ui/errors.ts                       |  48 +++++
+ apps/web/src/ui/format.ts                       |  45 ++++
+ apps/web/src/ui/index.ts                        |  12 ++
+ apps/web/src/ui/ui.module.css                   | 269 ++++++++++++++++++++++++
+ apps/web/src/ui/use-action.ts                   |  55 +++++
+ apps/web/src/vite-env.d.ts                      |  10 +
+ apps/web/test/app/api-client.test.ts            | 121 +++++++++++
+ apps/web/test/app/boot.test.ts                  |  51 +++++
+ apps/web/test/app/guard.test.tsx                |  88 ++++++++
+ apps/web/test/app/public-pages.test.tsx         |  58 +++++
+ apps/web/test/app/static-rules.test.ts          |  47 +++++
+ apps/web/test/app/ui-format.test.ts             |  56 +++++
+ apps/web/test/app/ui.test.tsx                   |  56 +++++
+ apps/web/test/setup.ts                          |   8 +
+ apps/web/test/support/fake-api.ts               | 147 +++++++++++++
+ apps/web/test/support/render.tsx                | 105 +++++++++
+ apps/web/vite.config.ts                         |  18 ++
+ packages/contracts/src/help-resources.ts        |  62 ++++++
+ packages/contracts/src/index.ts                 |   1 +
+ packages/contracts/test/help-resources.test.ts  |  54 +++++
+ pnpm-lock.yaml                                  | 236 +++++++++++++++++++++
+ vitest.config.ts                                |   2 +-
+ 46 files changed, 2397 insertions(+), 2 deletions(-)
+
+## Diff
+diff --git a/apps/web/index.html b/apps/web/index.html
+new file mode 100644
+index 0000000..1c7028b
+--- /dev/null
++++ b/apps/web/index.html
+@@ -0,0 +1,13 @@
++<!doctype html>
++<html lang="fr">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
++    <meta name="referrer" content="no-referrer" />
++    <title>appsport</title>
++  </head>
++  <body>
++    <div id="root"></div>
++    <script type="module" src="/src/main.tsx"></script>
++  </body>
++</html>
+diff --git a/apps/web/package.json b/apps/web/package.json
+index 9506950..2b24c31 100644
+--- a/apps/web/package.json
++++ b/apps/web/package.json
+@@ -4,19 +4,27 @@
+   "private": true,
+   "type": "module",
+   "scripts": {
+     "typecheck": "tsc --noEmit -p tsconfig.json",
+     "test": "vitest run --root ../.. --project web"
+   },
+   "dependencies": {
+     "@appsport/contracts": "workspace:*",
+     "@appsport/domain": "workspace:*",
+     "dexie": "^4.4.6",
++    "react": "^19.3.0",
++    "react-dom": "^19.3.0",
++    "wouter": "^3.13.0",
+     "zod": "^4.6.5"
+   },
+   "devDependencies": {
+     "@appsport/server": "workspace:*",
++    "@testing-library/react": "^16.3.3",
++    "@types/react": "^19.3.0",
++    "@types/react-dom": "^19.3.0",
++    "@vitejs/plugin-react": "^6.1.2",
+     "fake-indexeddb": "^6.2.5",
+     "fast-check": "^4.10.2",
+-    "happy-dom": "^20"
++    "happy-dom": "^20",
++    "vite": "^8.3.3"
+   }
+ }
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+new file mode 100644
+index 0000000..c0755dc
+--- /dev/null
++++ b/apps/web/src/App.tsx
+@@ -0,0 +1,106 @@
++import type { MeResponse } from '@appsport/contracts';
++import { Redirect, Route, Switch, useLocation } from 'wouter';
++import { useMeState, useSyncState } from './app-services';
++import { HomePage } from './features/home/HomePage';
++import { CreditsPage } from './features/public/CreditsPage';
++import { HelpPage } from './features/public/HelpPage';
++import { NotFound } from './features/public/NotFound';
++import { PrivacyPage } from './features/public/PrivacyPage';
++import type { ConnectionState } from './sync/engine';
++import { AppShell, PublicShell } from './ui';
++
++/** Pages lisibles sans session (03 §13 : Confidentialité, Crédits, Aide) et parcours d'accès. */
++export const PUBLIC_PATHS: readonly string[] = [
++  '/login',
++  '/invite',
++  '/reset',
++  '/privacy',
++  '/credits',
++  '/help',
++];
++
++export type GuardResult =
++  | { kind: 'render' }
++  | { kind: 'wait' }
++  | { kind: 'redirect'; to: string }
++  | { kind: 'not_found' };
++
++const LOST_SESSION: readonly ConnectionState[] = ['unauthenticated', 'account_deleted'];
++
++const isAdminPath = (path: string) => path === '/admin' || path.startsWith('/admin/');
++
++/**
++ * Garde des routes, dans l'ordre : chemin public ; base locale pas encore lue ; session absente ou
++ * refusée par le serveur ; mot de passe à changer (R-MDP-1) ; onboarding ; rôle admin (R-ROLE-1).
++ */
++export function resolveGuard(i: {
++  path: string;
++  loaded: boolean;
++  me: MeResponse | null;
++  connection: ConnectionState;
++}): GuardResult {
++  const sessionValid = i.me !== null && !LOST_SESSION.includes(i.connection);
++  if (PUBLIC_PATHS.includes(i.path)) {
++    return i.path === '/login' && sessionValid ? { kind: 'redirect', to: '/' } : { kind: 'render' };
++  }
++  if (!i.loaded) return { kind: 'wait' };
++  if (!i.me || !sessionValid) return { kind: 'redirect', to: '/login' };
++  if (i.me.mustChangePassword) {
++    return i.path === '/profile' ? { kind: 'render' } : { kind: 'redirect', to: '/profile' };
++  }
++  const onboarded = i.me.onboardingCompletedAt !== null;
++  if (!onboarded && i.path !== '/onboarding') return { kind: 'redirect', to: '/onboarding' };
++  if (onboarded && i.path === '/onboarding') return { kind: 'redirect', to: '/' };
++  if (isAdminPath(i.path) && i.me.role !== 'admin') return { kind: 'not_found' };
++  return { kind: 'render' };
++}
++
++function PublicRoutes() {
++  return (
++    <Switch>
++      <Route path="/privacy" component={PrivacyPage} />
++      <Route path="/credits" component={CreditsPage} />
++      <Route path="/help" component={HelpPage} />
++      <Route component={NotFound} />
++    </Switch>
++  );
++}
++
++function ConnectedRoutes() {
++  return (
++    <Switch>
++      <Route path="/" component={HomePage} />
++      <Route component={NotFound} />
++    </Switch>
++  );
++}
++
++export function App() {
++  const [path] = useLocation();
++  const { loaded, me } = useMeState();
++  const { connection } = useSyncState();
++  const guard = resolveGuard({ path, loaded, me, connection });
++
++  switch (guard.kind) {
++    case 'wait':
++      return null;
++    case 'redirect':
++      return <Redirect to={guard.to} replace />;
++    case 'not_found':
++      return (
++        <AppShell>
++          <NotFound />
++        </AppShell>
++      );
++    case 'render':
++      return PUBLIC_PATHS.includes(path) ? (
++        <PublicShell>
++          <PublicRoutes />
++        </PublicShell>
++      ) : (
++        <AppShell>
++          <ConnectedRoutes />
++        </AppShell>
++      );
++  }
++}
+diff --git a/apps/web/src/api/client.ts b/apps/web/src/api/client.ts
+new file mode 100644
+index 0000000..f57daee
+--- /dev/null
++++ b/apps/web/src/api/client.ts
+@@ -0,0 +1,101 @@
++import {
++  ApiErrorBody,
++  type ApiErrorCode,
++  PROTOCOL_HEADER,
++  SYNC_PROTOCOL,
++  SYNC_TIMEOUT_MS,
++} from '@appsport/contracts';
++import type { z } from 'zod';
++import { fetchJsonWithTimeout, type JsonReply, OfflineError, type SyncTransport } from '../sync/transport';
++
++/** Réponse HTTP en erreur ; `code` = champ `error` du corps (`internal` s'il est illisible). */
++export class ApiError extends Error {
++  constructor(
++    readonly status: number,
++    readonly code: ApiErrorCode,
++    readonly body: Record<string, unknown>,
++  ) {
++    super(code);
++    this.name = 'ApiError';
++  }
++}
++
++/** Serveur injoignable ou muet : une action de classe E (API en ligne) n'est pas possible. */
++export class NetworkRequiredError extends Error {
++  constructor() {
++    super('Nécessite le réseau');
++    this.name = 'NetworkRequiredError';
++  }
++}
++
++export interface ApiClient {
++  get<T>(path: string, schema: z.ZodType<T>): Promise<T>;
++  send<T = void>(
++    method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
++    path: string,
++    body?: unknown,
++    schema?: z.ZodType<T>,
++  ): Promise<T>;
++}
++
++export interface ApiHooks {
++  onUnauthenticated(): void;
++  onAccountDeleted(): void;
++}
++
++function apiErrorOf(reply: JsonReply): ApiError {
++  const parsed = ApiErrorBody.safeParse(reply.body);
++  if (!parsed.success) return new ApiError(reply.res.status, 'internal', {});
++  return new ApiError(reply.res.status, parsed.data.error, parsed.data);
++}
++
++/**
++ * Client de l'API en ligne. L'échéance couvre la lecture du corps ; le client agit sur le code
++ * `error`, jamais sur le seul statut (`401 invalid_credentials` n'est pas une session perdue).
++ */
++export function createApiClient(
++  t: SyncTransport,
++  hooks: ApiHooks,
++  opts: { timeoutMs?: number } = {},
++): ApiClient {
++  const timeoutMs = opts.timeoutMs ?? SYNC_TIMEOUT_MS;
++
++  async function request<T>(init: RequestInit, path: string, schema?: z.ZodType<T>): Promise<T> {
++    let reply: JsonReply;
++    try {
++      reply = await fetchJsonWithTimeout(t, path, init, timeoutMs);
++    } catch (error) {
++      if (error instanceof OfflineError) throw new NetworkRequiredError();
++      throw error;
++    }
++    if (!reply.res.ok) {
++      const error = apiErrorOf(reply);
++      if (error.code === 'unauthenticated') hooks.onUnauthenticated();
++      if (error.code === 'account_deleted') hooks.onAccountDeleted();
++      throw error;
++    }
++    return (schema ? schema.parse(reply.body) : undefined) as T;
++  }
++
++  return {
++    get(path, schema) {
++      return request(
++        { method: 'GET', credentials: 'same-origin', headers: { [PROTOCOL_HEADER]: String(SYNC_PROTOCOL) } },
++        path,
++        schema,
++      );
++    },
++    send(method, path, body, schema) {
++      return request(
++        {
++          method,
++          credentials: 'same-origin',
++          headers: { [PROTOCOL_HEADER]: String(SYNC_PROTOCOL), 'Content-Type': 'application/json' },
++          body: JSON.stringify(body ?? {}),
++        },
++        path,
++        schema,
++      );
++    },
++  };
++}
+diff --git a/apps/web/src/app-services.tsx b/apps/web/src/app-services.tsx
+new file mode 100644
+index 0000000..54222f9
+--- /dev/null
++++ b/apps/web/src/app-services.tsx
+@@ -0,0 +1,67 @@
++import type { MeResponse } from '@appsport/contracts';
++import { liveQuery } from 'dexie';
++import { createContext, type ReactNode, useContext, useEffect, useState, useSyncExternalStore } from 'react';
++import type { ApiClient } from './api/client';
++import type { AppDb } from './local-db/db';
++import { getMeta } from './local-db/meta';
++import { wipeUserData } from './local-db/wipe';
++import type { SyncEngine, SyncState } from './sync/engine';
++import type { SyncTransport } from './sync/transport';
++
++/** Dépendances de l'appli, injectées : réelles dans `main.tsx`, factices dans les tests. */
++export interface AppServices {
++  db: AppDb;
++  api: ApiClient;
++  sync: SyncEngine;
++  transport: SyncTransport;
++  now(): number;
++  newOpId(): string;
++}
++
++const ServicesContext = createContext<AppServices | null>(null);
++
++export function ServicesProvider(p: { services: AppServices; children: ReactNode }) {
++  return <ServicesContext.Provider value={p.services}>{p.children}</ServicesContext.Provider>;
++}
++
++export function useServices(): AppServices {
++  const services = useContext(ServicesContext);
++  if (!services) throw new Error('useServices hors de ServicesProvider');
++  return services;
++}
++
++export function useSyncState(): SyncState {
++  const { sync } = useServices();
++  return useSyncExternalStore(sync.subscribe, sync.getState);
++}
++
++/** Requête Dexie observée : `undefined` tant que le premier résultat n'est pas arrivé. */
++export function useLive<T>(query: () => Promise<T>, deps: readonly unknown[]): T | undefined {
++  const [value, setValue] = useState<T | undefined>(undefined);
++  useEffect(
++    () => {
++      const subscription = liveQuery(query).subscribe({ next: setValue, error: () => {} });
++      return () => subscription.unsubscribe();
++    },
++    // biome-ignore lint/correctness/useExhaustiveDependencies: dépendances de la requête fournies par l'appelant
++    deps,
++  );
++  return value;
++}
++
++/** Utilisateur connu de l'appareil (`meta.me`) ; `loaded` faux tant que la base n'a pas répondu. */
++export function useMeState(): { loaded: boolean; me: MeResponse | null } {
++  const { db } = useServices();
++  const state = useLive(async () => ({ me: (await getMeta(db, 'me')) ?? null }), [db]);
++  return state ? { loaded: true, me: state.me } : { loaded: false, me: null };
++}
++
++export function useMe(): MeResponse | null {
++  return useMeState().me;
++}
++
++/** `410 account_deleted` (P-DRT-4) : base locale effacée, file comprise, puis écran de connexion. */
++export async function handleAccountDeleted(db: AppDb, navigate: (to: string) => void): Promise<void> {
++  await wipeUserData(db, { keepOutbox: false });
++  navigate('/login?reason=account_deleted');
++}
+diff --git a/apps/web/src/boot.ts b/apps/web/src/boot.ts
+new file mode 100644
+index 0000000..7163032
+--- /dev/null
++++ b/apps/web/src/boot.ts
+@@ -0,0 +1,10 @@
++import type { AppServices } from './app-services';
++
++/**
++ * Démarrage de l'appli : le moteur pose ses déclencheurs (premier plan, `online`, intervalle) puis
++ * lance la synchro de lancement (R-SYN-29). Rend la fonction d'arrêt.
++ */
++export function bootApp(s: AppServices): () => void {
++  s.sync.start();
++  return () => s.sync.stop();
++}
+diff --git a/apps/web/src/features/home/HomePage.tsx b/apps/web/src/features/home/HomePage.tsx
+new file mode 100644
+index 0000000..0e64f9c
+--- /dev/null
++++ b/apps/web/src/features/home/HomePage.tsx
+@@ -0,0 +1,16 @@
++import { useMe } from '../../app-services';
++import { Banner, Page } from '../../ui';
++import styles from './home.module.css';
++
++export function HomePage() {
++  const me = useMe();
++  if (!me) return null;
++  return (
++    <Page title={`Bonjour ${me.username}`}>
++      {me.passwordReminderDue ? (
++        <Banner tone="warning">Pense à changer ton mot de passe (rappel annuel).</Banner>
++      ) : null}
++      <p className={styles.lead}>Tes programmes et tes séances arriveront ici.</p>
++    </Page>
++  );
++}
+diff --git a/apps/web/src/features/home/home.module.css b/apps/web/src/features/home/home.module.css
+new file mode 100644
+index 0000000..7f75de4
+--- /dev/null
++++ b/apps/web/src/features/home/home.module.css
+@@ -0,0 +1,4 @@
++.lead {
++  margin: 0;
++  color: var(--color-muted);
++}
+diff --git a/apps/web/src/features/public/CreditsPage.tsx b/apps/web/src/features/public/CreditsPage.tsx
+new file mode 100644
+index 0000000..67a2364
+--- /dev/null
++++ b/apps/web/src/features/public/CreditsPage.tsx
+@@ -0,0 +1,18 @@
++import { Page } from '../../ui';
++import styles from './public.module.css';
++
++/**
++ * Statique au socle, sans requête : la brique 2 y ajoute l'auteur, la licence et la source de
++ * chaque illustration, depuis une source publique (`/api/catalog` exige une session).
++ */
++export function CreditsPage() {
++  return (
++    <Page title="Crédits">
++      <p>Aucune illustration pour le moment.</p>
++      <p className={styles.muted}>
++        Chaque illustration ajoutée portera ici son auteur, sa licence, sa source et la mention « modifié » le
++        cas échéant.
++      </p>
++    </Page>
++  );
++}
+diff --git a/apps/web/src/features/public/HelpPage.tsx b/apps/web/src/features/public/HelpPage.tsx
+new file mode 100644
+index 0000000..08a6c65
+--- /dev/null
++++ b/apps/web/src/features/public/HelpPage.tsx
+@@ -0,0 +1,38 @@
++import { HELP_RESOURCES } from '@appsport/contracts';
++import { formatDate, Page } from '../../ui';
++import styles from './public.module.css';
++
++/** '15 / 112' → ['15', '112'] : chaque numéro tel qu'affiché. */
++const numbers = (phone: string): string[] => phone.split('/').map((p) => p.trim());
++
++export function HelpPage() {
++  const verifiedOn = HELP_RESOURCES.map((r) => r.verifiedOn).sort()[0];
++  return (
++    <Page title="Aide">
++      <p>En cas d'urgence, appelle le 15 ou le 112. Ces services sont gratuits et confidentiels.</p>
++      <ul className={styles.resources}>
++        {HELP_RESOURCES.map((r) => (
++          <li key={r.id} className={styles.resource}>
++            <span>{r.label}</span>
++            {r.phone ? (
++              <span className={styles.phones}>
++                {numbers(r.phone).map((n) => (
++                  <a key={n} href={`tel:${n.replace(/\s/g, '')}`}>
++                    {n}
++                  </a>
++                ))}
++              </span>
++            ) : null}
++            {r.hours ? <span className={styles.muted}>Horaires : {r.hours}</span> : null}
++            {r.sourceUrl ? (
++              <a className={styles.muted} href={r.sourceUrl} rel="noreferrer" target="_blank">
++                Source
++              </a>
++            ) : null}
++          </li>
++        ))}
++      </ul>
++      {verifiedOn ? <p className={styles.muted}>Numéros vérifiés le {formatDate(verifiedOn)}</p> : null}
++    </Page>
++  );
++}
+diff --git a/apps/web/src/features/public/NotFound.tsx b/apps/web/src/features/public/NotFound.tsx
+new file mode 100644
+index 0000000..147c6a7
+--- /dev/null
++++ b/apps/web/src/features/public/NotFound.tsx
+@@ -0,0 +1,11 @@
++import { Link } from 'wouter';
++import { Page } from '../../ui';
++
++export function NotFound() {
++  return (
++    <Page title="Page introuvable">
++      <p>Cette page n'existe pas ou n'est pas encore disponible.</p>
++      <Link href="/">Retour à l'accueil</Link>
++    </Page>
++  );
++}
+diff --git a/apps/web/src/features/public/PrivacyPage.tsx b/apps/web/src/features/public/PrivacyPage.tsx
+new file mode 100644
+index 0000000..025d31e
+--- /dev/null
++++ b/apps/web/src/features/public/PrivacyPage.tsx
+@@ -0,0 +1,22 @@
++import { PRIVACY_POLICY_VERSION } from '@appsport/contracts';
++import { Page } from '../../ui';
++import { PRIVACY_SECTIONS } from './privacy-content';
++import styles from './public.module.css';
++
++export function PrivacyPage() {
++  return (
++    <Page title="Confidentialité et règles">
++      <p className={styles.version}>Version {PRIVACY_POLICY_VERSION}</p>
++      {PRIVACY_SECTIONS.map((section) => (
++        <section key={section.title} className={styles.section}>
++          <h2>{section.title}</h2>
++          <ul>
++            {section.items.map((item) => (
++              <li key={item}>{item}</li>
++            ))}
++          </ul>
++        </section>
++      ))}
++    </Page>
++  );
++}
+diff --git a/apps/web/src/features/public/privacy-content.ts b/apps/web/src/features/public/privacy-content.ts
+new file mode 100644
+index 0000000..85ceb83
+--- /dev/null
++++ b/apps/web/src/features/public/privacy-content.ts
+@@ -0,0 +1,106 @@
++import { HEALTH_WARNING_TEXT } from '../../ui/HealthWarning';
++
++/** Prénom du porteur (variable de build), sinon « l'administrateur ». */
++export const OWNER_FIRST_NAME: string = import.meta.env.VITE_OWNER_FIRST_NAME?.trim() || "l'administrateur";
++
++export interface PrivacySection {
++  title: string;
++  items: readonly string[];
++}
++
++/**
++ * Page « Confidentialité et règles » (03 §13.5), tirée de la fiche de traitement. Toute
++ * modification de fond change `PRIVACY_POLICY_VERSION`.
++ */
++export const PRIVACY_SECTIONS: readonly PrivacySection[] = [
++  {
++    title: 'Qui est responsable',
++    items: [
++      `appsport est un outil de suivi entre proches, hébergé chez ${OWNER_FIRST_NAME}. Ce n'est pas un service médical.`,
++      "Le responsable des données est l'administrateur du cercle, qui héberge le serveur chez lui, à titre personnel et sans but lucratif. Toute question ou demande lui est adressée directement.",
++    ],
++  },
++  {
++    title: 'Données collectées et pourquoi',
++    items: [
++      "Compte : pseudo, rôle, date de naissance saisie par l'administrateur (c'est la vérification de l'âge), état de tes accords. Ils servent à te connecter et à appliquer les règles d'âge.",
++      "Données personnelles : profil d'entraînement, lieux et matériel, mode prudent, séances et réglages, historique de tes accords. Elles servent à construire et suivre ton entraînement, et toi seul y accèdes.",
++      'Données de santé, seulement avec ton accord santé : indicateur de prudence issu du questionnaire, limitations et zones sensibles, douleurs signalées, mesures et nutrition. Elles servent uniquement à adapter tes séances et tes repères.',
++      'Échanges avec le coach, seulement avec ton accord coach (brique 4) : conversations et signalements.',
++      "Commun au cercle : salles partagées et leur historique, pseudos rendus visibles, fiches d'exercices.",
++      "Aucune statistique, aucun traceur ni service tiers dans l'appli : pas de bandeau cookies.",
++    ],
++  },
++  {
++    title: 'Où sont les données',
++    items: [
++      'Sur un serveur à domicile en France, chiffré au repos, joignable seulement par le réseau privé Tailscale du cercle, jamais depuis Internet.',
++      "Aux États-Unis pour le coach (brique 4) : avec ton accord coach seulement, tes messages et les informations utiles sont envoyés à Anthropic, qui fournit l'IA Claude.",
++      "Dans des sauvegardes chiffrées hors du domicile (Backblaze), chiffrées avant de quitter le serveur ; seul l'administrateur en détient les clés.",
++      "Sur ton téléphone : une copie de tes données, pour utiliser l'appli sans réseau.",
++    ],
++  },
++  {
++    title: 'Durées de conservation',
++    items: [
++      'Compte et données personnelles : tant que le compte existe.',
++      "Données de santé : tant que le compte existe et que l'accord santé est actif ; elles sont supprimées dès le retrait de l'accord.",
++      'Conversations du coach : 90 jours après le dernier message, et suppression possible à tout moment ; signalements : 90 jours au plus.',
++      "Journal d'usage du coach, sans contenu : 12 mois. Côté Anthropic : 30 jours au plus, 2 ans au plus si un échange est signalé par ses filtres.",
++      'Sessions de connexion : 90 jours sans usage, 365 jours au maximum ; les sessions fermées sont purgées 30 jours après.',
++      'Invitations et liens de réinitialisation : 7 jours et 24 h, usage unique ; purgés 30 jours après.',
++      'Journal de sécurité : 12 mois. Journaux techniques : 90 jours au plus.',
++      'Marques de suppression de la synchronisation : 90 jours.',
++      'Sauvegardes : 30 jours au plus.',
++      "Données du téléphone : jusqu'à la déconnexion, au retrait d'un accord pour les données concernées, ou à la suppression du compte.",
++    ],
++  },
++  {
++    title: "Ce que l'administrateur voit et ne voit pas",
++    items: [
++      'Il voit les informations de compte : pseudo, rôle, statut, date de naissance, mineur ou non, création et dernière connexion, état des accords, nombre de sessions actives. Il gère les invitations, les salles et le journal de sécurité.',
++      "Il ne voit pas dans l'appli ton profil, tes séances, tes lieux, tes données de santé ni tes conversations avec le coach. Il ne peut ni se connecter à ta place, ni exporter tes données, ni connaître ton mot de passe.",
++      'Il lit un échange avec le coach seulement si tu le signales toi-même.',
++      "L'administrateur a la main sur le serveur et peut techniquement lire la base. Il s'engage à ne faire aucune requête manuelle sur les données d'une personne sans son accord.",
++      "L'administrateur voit l'adresse de ton compte Tailscale, une information gérée par Tailscale.",
++    ],
++  },
++  {
++    title: 'Tes droits et comment les exercer',
++    items: [
++      'Export : Profil, puis Confidentialité, puis « Télécharger mes données » (fichier JSON).',
++      "Rectification : tout ce que tu saisis est modifiable, sauf ta date de naissance, que l'administrateur corrige à ta demande.",
++      "Retrait d'un accord : à tout moment, depuis ton profil ; les données concernées sont effacées immédiatement.",
++      "Suppression du compte : depuis ton profil, ou par l'administrateur à ta demande ; tout est effacé en une fois.",
++      "Pour toute autre demande, adresse-toi à l'administrateur.",
++    ],
++  },
++  {
++    title: 'Règles pour les 16-17 ans',
++    items: [
++      "appsport est réservé aux 16 ans et plus. Ta date de naissance est saisie par l'administrateur et tu ne peux pas la modifier.",
++      "Dès 15 ans, tu donnes seul tes accords : aucun accord parental n'est demandé.",
++      "La progression prudente s'applique jusqu'à 18 ans.",
++      'Ta présence dans « qui va à cette salle » est désactivée par défaut, lieu par lieu.',
++      'Nutrition : ni cible chiffrée, ni déficit, ni pesée.',
++      "À 18 ans, rien ne s'active tout seul : un message t'indique ce que tu peux activer.",
++    ],
++  },
++  {
++    title: 'Pas un avis médical',
++    items: [
++      HEALTH_WARNING_TEXT,
++      "En cas d'urgence, appelle le 15 ou le 112. Les numéros utiles sont sur la page Aide.",
++    ],
++  },
++  {
++    title: 'Coach et mineurs',
++    items: [
++      "Le coach (brique 4) est une IA, annoncée au début de chaque conversation. Il est ouvert aux 16-17 ans avec des garde-fous : le mode mineur est décidé par le serveur d'après ta tranche d'âge.",
++      "Envoyés : ta tranche d'âge (jamais ton âge exact), ton niveau, ton objectif, ton matériel, ton programme et ton historique récent ; tes données de santé seulement si les accords santé et coach sont actifs.",
++      'Jamais envoyés : ton pseudo, ta date de naissance, ton identifiant, le nom de ta salle, les autres membres.',
++      "Pour un mineur : consignes dédiées, aucun chiffre nutritionnel, réponses contrôlées par l'appli.",
++      "Un bouton « Signaler » accompagne chaque réponse : l'échange signalé devient lisible par l'administrateur, puis il est supprimé à son classement ou au plus tard après 90 jours.",
++    ],
++  },
++];
+diff --git a/apps/web/src/features/public/public.module.css b/apps/web/src/features/public/public.module.css
+new file mode 100644
+index 0000000..567a496
+--- /dev/null
++++ b/apps/web/src/features/public/public.module.css
+@@ -0,0 +1,50 @@
++.version {
++  margin: 0;
++  color: var(--color-muted);
++  font-size: 0.875rem;
++}
++
++.section h2 {
++  margin: var(--space-4) 0 var(--space-2);
++  font-size: 1.125rem;
++}
++
++.section ul {
++  margin: 0;
++  padding-left: var(--space-6);
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-2);
++}
++
++.resources {
++  list-style: none;
++  margin: 0;
++  padding: 0;
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-3);
++}
++
++.resource {
++  padding: var(--space-3) var(--space-4);
++  border: 1px solid var(--color-border);
++  border-radius: var(--radius);
++  background: var(--color-surface);
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-1);
++}
++
++.phones {
++  display: flex;
++  flex-wrap: wrap;
++  gap: var(--space-3);
++  font-size: 1.25rem;
++  font-weight: 700;
++}
++
++.muted {
++  color: var(--color-muted);
++  font-size: 0.875rem;
++}
+diff --git a/apps/web/src/main.tsx b/apps/web/src/main.tsx
+new file mode 100644
+index 0000000..d5bda35
+--- /dev/null
++++ b/apps/web/src/main.tsx
+@@ -0,0 +1,44 @@
++import { createMonotonicUuidV7 } from '@appsport/domain';
++import { StrictMode } from 'react';
++import { createRoot } from 'react-dom/client';
++import { Router } from 'wouter';
++import { navigate } from 'wouter/use-browser-location';
++import { App } from './App';
++import { createApiClient } from './api/client';
++import { type AppServices, handleAccountDeleted, ServicesProvider } from './app-services';
++import { bootApp } from './boot';
++import { createAppDb } from './local-db/db';
++import { createSyncEngine } from './sync/engine';
++import { browserTransport } from './sync/transport';
++
++const randomBytes = (n: number) => crypto.getRandomValues(new Uint8Array(n));
++const go = (to: string) => navigate(to, { replace: true });
++
++const db = createAppDb();
++const transport = browserTransport();
++const newOpId = createMonotonicUuidV7(Date.now, randomBytes);
++const sync = createSyncEngine({
++  db,
++  transport,
++  newOpId,
++  onAccountDeleted: () => go('/login?reason=account_deleted'),
++});
++const api = createApiClient(transport, {
++  onUnauthenticated: () => void sync.syncNow('manual'),
++  onAccountDeleted: () => void handleAccountDeleted(db, go),
++});
++const services: AppServices = { db, api, sync, transport, now: Date.now, newOpId };
++
++bootApp(services);
++
++const root = document.getElementById('root');
++if (!root) throw new Error('#root absent de index.html');
++createRoot(root).render(
++  <StrictMode>
++    <Router>
++      <ServicesProvider services={services}>
++        <App />
++      </ServicesProvider>
++    </Router>
++  </StrictMode>,
++);
+diff --git a/apps/web/src/ui/AppShell.tsx b/apps/web/src/ui/AppShell.tsx
+new file mode 100644
+index 0000000..01bc854
+--- /dev/null
++++ b/apps/web/src/ui/AppShell.tsx
+@@ -0,0 +1,51 @@
++import type { ReactNode } from 'react';
++import { Link } from 'wouter';
++import { useMe } from '../app-services';
++import styles from './ui.module.css';
++
++/** Cadre des écrans connectés : navigation, liens vers les pages publiques. */
++export function AppShell(p: { children: ReactNode }) {
++  const me = useMe();
++  return (
++    <div className={styles.shell}>
++      <header className={styles.header}>
++        <Link href="/" className={styles.brand}>
++          appsport
++        </Link>
++        <nav aria-label="Navigation principale" className={styles.nav}>
++          <Link href="/">Accueil</Link>
++          <Link href="/profile">Profil</Link>
++          {me?.role === 'admin' ? <Link href="/admin/members">Administration</Link> : null}
++        </nav>
++      </header>
++      <main className={styles.main}>{p.children}</main>
++      <PublicLinks />
++    </div>
++  );
++}
++
++/** Cadre des pages publiques, lisibles sans session : pas de navigation de compte. */
++export function PublicShell(p: { children: ReactNode }) {
++  return (
++    <div className={styles.shell}>
++      <header className={styles.header}>
++        <Link href="/" className={styles.brand}>
++          appsport
++        </Link>
++      </header>
++      <main className={styles.main}>{p.children}</main>
++      <PublicLinks />
++    </div>
++  );
++}
++
++/** Liens vers les pages lisibles sans compte (03 §13). */
++export function PublicLinks() {
++  return (
++    <footer className={styles.footer}>
++      <Link href="/privacy">Confidentialité et règles</Link>
++      <Link href="/help">Aide</Link>
++      <Link href="/credits">Crédits</Link>
++    </footer>
++  );
++}
+diff --git a/apps/web/src/ui/Banner.tsx b/apps/web/src/ui/Banner.tsx
+new file mode 100644
+index 0000000..8fa932f
+--- /dev/null
++++ b/apps/web/src/ui/Banner.tsx
+@@ -0,0 +1,11 @@
++import type { ReactNode } from 'react';
++import styles from './ui.module.css';
++
++/** Bandeau : une erreur est annoncée tout de suite (`alert`), le reste poliment (`status`). */
++export function Banner(p: { tone: 'info' | 'warning' | 'error'; children: ReactNode }) {
++  return (
++    <div role={p.tone === 'error' ? 'alert' : 'status'} className={`${styles.banner} ${styles[p.tone]}`}>
++      {p.children}
++    </div>
++  );
++}
+diff --git a/apps/web/src/ui/Button.tsx b/apps/web/src/ui/Button.tsx
+new file mode 100644
+index 0000000..f221365
+--- /dev/null
++++ b/apps/web/src/ui/Button.tsx
+@@ -0,0 +1,17 @@
++import type { ButtonHTMLAttributes } from 'react';
++import styles from './ui.module.css';
++
++export function Button({
++  variant = 'primary',
++  className,
++  type = 'button',
++  ...rest
++}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' }) {
++  return (
++    <button
++      type={type}
++      className={[styles.button, styles[variant], className].filter(Boolean).join(' ')}
++      {...rest}
++    />
++  );
++}
+diff --git a/apps/web/src/ui/ChoiceList.tsx b/apps/web/src/ui/ChoiceList.tsx
+new file mode 100644
+index 0000000..e8fad7d
+--- /dev/null
++++ b/apps/web/src/ui/ChoiceList.tsx
+@@ -0,0 +1,29 @@
++import styles from './ui.module.css';
++
++/** Groupe de boutons radio sous une légende. */
++export function ChoiceList<T extends string | number>(p: {
++  name: string;
++  legend: string;
++  value: T | null;
++  onChange(v: T): void;
++  options: readonly { value: T; label: string; disabled?: boolean }[];
++}) {
++  return (
++    <fieldset className={styles.choices}>
++      <legend>{p.legend}</legend>
++      {p.options.map((o) => (
++        <label key={String(o.value)} className={styles.choice}>
++          <input
++            type="radio"
++            name={p.name}
++            value={String(o.value)}
++            checked={p.value === o.value}
++            disabled={o.disabled}
++            onChange={() => p.onChange(o.value)}
++          />
++          {o.label}
++        </label>
++      ))}
++    </fieldset>
++  );
++}
+diff --git a/apps/web/src/ui/CopyButton.tsx b/apps/web/src/ui/CopyButton.tsx
+new file mode 100644
+index 0000000..12bd6ef
+--- /dev/null
++++ b/apps/web/src/ui/CopyButton.tsx
+@@ -0,0 +1,22 @@
++import { useState } from 'react';
++import { Button } from './Button';
++
++/** Copie `text` dans le presse-papiers ; le libellé confirme la copie. */
++export function CopyButton(p: { text: string; label?: string }) {
++  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
++  const copy = async () => {
++    try {
++      await navigator.clipboard.writeText(p.text);
++      setState('copied');
++    } catch {
++      setState('failed');
++    }
++  };
++  const label =
++    state === 'copied' ? 'Copié' : state === 'failed' ? 'Copie impossible' : (p.label ?? 'Copier');
++  return (
++    <Button variant="secondary" onClick={() => void copy()}>
++      {label}
++    </Button>
++  );
++}
+diff --git a/apps/web/src/ui/Dialog.tsx b/apps/web/src/ui/Dialog.tsx
+new file mode 100644
+index 0000000..c4acdc2
+--- /dev/null
++++ b/apps/web/src/ui/Dialog.tsx
+@@ -0,0 +1,43 @@
++import { type ReactNode, useEffect, useId, useRef } from 'react';
++import styles from './ui.module.css';
++
++/** Fenêtre modale nommée par son titre ; Échap la ferme ; le focus y entre à l'ouverture. */
++export function Dialog(p: {
++  open: boolean;
++  title: string;
++  onClose(): void;
++  actions: ReactNode;
++  children: ReactNode;
++}) {
++  const titleId = useId();
++  const ref = useRef<HTMLDivElement>(null);
++  const { open, onClose } = p;
++
++  useEffect(() => {
++    if (!open) return;
++    ref.current?.focus();
++    const onKey = (e: KeyboardEvent) => {
++      if (e.key === 'Escape') onClose();
++    };
++    document.addEventListener('keydown', onKey);
++    return () => document.removeEventListener('keydown', onKey);
++  }, [open, onClose]);
++
++  if (!open) return null;
++  return (
++    <div className={styles.backdrop}>
++      <div
++        ref={ref}
++        role="dialog"
++        aria-modal="true"
++        aria-labelledby={titleId}
++        tabIndex={-1}
++        className={styles.dialog}
++      >
++        <h2 id={titleId}>{p.title}</h2>
++        <div>{p.children}</div>
++        <div className={styles.actions}>{p.actions}</div>
++      </div>
++    </div>
++  );
++}
+diff --git a/apps/web/src/ui/Field.tsx b/apps/web/src/ui/Field.tsx
+new file mode 100644
+index 0000000..5d82e65
+--- /dev/null
++++ b/apps/web/src/ui/Field.tsx
+@@ -0,0 +1,35 @@
++import { cloneElement, type ReactElement, useId } from 'react';
++import styles from './ui.module.css';
++
++type ControlProps = { id?: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean };
++
++/** Champ libellé : le contrôle enfant reçoit l'`id` du libellé, l'aide et l'erreur en description. */
++export function Field(p: { label: string; hint?: string; error?: string | null; children: ReactElement }) {
++  const id = useId();
++  const hintId = `${id}-hint`;
++  const errorId = `${id}-error`;
++  const describedBy = [p.hint ? hintId : null, p.error ? errorId : null].filter(Boolean).join(' ');
++  const control = cloneElement(p.children as ReactElement<ControlProps>, {
++    id,
++    'aria-describedby': describedBy || undefined,
++    'aria-invalid': p.error ? true : undefined,
++  });
++  return (
++    <div className={styles.field}>
++      <label className={styles.label} htmlFor={id}>
++        {p.label}
++      </label>
++      {control}
++      {p.hint ? (
++        <span id={hintId} className={styles.hint}>
++          {p.hint}
++        </span>
++      ) : null}
++      {p.error ? (
++        <span id={errorId} className={styles.fieldError}>
++          {p.error}
++        </span>
++      ) : null}
++    </div>
++  );
++}
+diff --git a/apps/web/src/ui/HealthWarning.tsx b/apps/web/src/ui/HealthWarning.tsx
+new file mode 100644
+index 0000000..5afccf1
+--- /dev/null
++++ b/apps/web/src/ui/HealthWarning.tsx
+@@ -0,0 +1,8 @@
++import styles from './ui.module.css';
++
++export const HEALTH_WARNING_TEXT =
++  'appsport ne remplace pas un avis médical. Consultez un médecin avant de reprendre une activité si vous avez un problème de santé, et arrêtez en cas de douleur.';
++
++export function HealthWarning() {
++  return <p className={styles.healthWarning}>{HEALTH_WARNING_TEXT}</p>;
++}
+diff --git a/apps/web/src/ui/Page.tsx b/apps/web/src/ui/Page.tsx
+new file mode 100644
+index 0000000..e333549
+--- /dev/null
++++ b/apps/web/src/ui/Page.tsx
+@@ -0,0 +1,18 @@
++import type { ReactNode } from 'react';
++import { Link } from 'wouter';
++import styles from './ui.module.css';
++
++/** Page d'écran : un seul titre de niveau 1, lien de retour facultatif. */
++export function Page(p: { title: string; back?: string; children: ReactNode }) {
++  return (
++    <section className={styles.page}>
++      {p.back ? (
++        <Link href={p.back} className={styles.back}>
++          Retour
++        </Link>
++      ) : null}
++      <h1>{p.title}</h1>
++      {p.children}
++    </section>
++  );
++}
+diff --git a/apps/web/src/ui/errors.ts b/apps/web/src/ui/errors.ts
+new file mode 100644
+index 0000000..7ca5e46
+--- /dev/null
++++ b/apps/web/src/ui/errors.ts
+@@ -0,0 +1,48 @@
++import type { ApiErrorCode } from '@appsport/contracts';
++import { ApiError, NetworkRequiredError } from '../api/client';
++
++/** Message affiché pour chaque code d'erreur de l'API ; un écran peut en préciser certains. */
++export const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
++  validation: 'Certaines valeurs ne sont pas valides.',
++  unauthenticated: 'Ta session a expiré. Reconnecte-toi.',
++  invalid_credentials: 'Pseudo ou mot de passe incorrect',
++  forbidden: "Cette action n'est pas autorisée.",
++  origin_mismatch: "Requête refusée : recharge l'appli.",
++  unsupported_media_type: "Requête refusée : recharge l'appli.",
++  account_disabled: "Compte désactivé, contacte l'administrateur",
++  password_change_required: "Change d'abord ton mot de passe.",
++  health_consent_required: 'Cette action demande ton accord santé.',
++  reset_self_forbidden: 'Tu ne peux pas réinitialiser ton propre mot de passe ici.',
++  not_found: 'Élément introuvable.',
++  conflict: "L'élément a changé entre-temps. Recharge et réessaie.",
++  username_taken: 'Ce pseudo est déjà pris.',
++  last_admin: 'Il doit rester au moins un administrateur actif.',
++  gym_duplicate: 'Cette salle existe déjà.',
++  gym_in_use: 'Cette salle est encore utilisée.',
++  place_exists: 'Ce lieu existe déjà.',
++  last_place: 'Il te faut au moins un lieu.',
++  primary_required: 'Choisis un lieu principal.',
++  onboarding_incomplete: "Termine d'abord ta prise en main.",
++  password_rejected: 'Ce mot de passe ne convient pas.',
++  username_invalid: "Ce pseudo n'est pas valide.",
++  under_min_age: 'appsport est réservé aux 16 ans et plus',
++  invitation_expired: 'Cette invitation a expiré.',
++  invitation_used: 'Cette invitation a déjà servi.',
++  invitation_revoked: 'Cette invitation a été révoquée.',
++  invitation_unknown: 'Invitation introuvable. Vérifie le lien ou le code.',
++  reset_invalid: "Ce lien de réinitialisation n'est plus valable.",
++  account_deleted: 'Ce compte a été supprimé',
++  watermark_expired: 'Synchronisation à reprendre.',
++  protocol_unsupported: "Mets à jour l'appli pour continuer.",
++  rate_limited: "Trop d'essais. Réessaie plus tard.",
++  internal: 'Le serveur a rencontré une erreur.',
++};
++
++export const NETWORK_REQUIRED_MESSAGE = 'Nécessite le réseau';
++export const UNEXPECTED_ERROR_MESSAGE = 'Une erreur inattendue est survenue.';
++
++export function errorMessage(e: unknown, overrides: Partial<Record<ApiErrorCode, string>> = {}): string {
++  if (e instanceof NetworkRequiredError) return NETWORK_REQUIRED_MESSAGE;
++  if (e instanceof ApiError) return overrides[e.code] ?? ERROR_MESSAGES[e.code];
++  return UNEXPECTED_ERROR_MESSAGE;
++}
+diff --git a/apps/web/src/ui/format.ts b/apps/web/src/ui/format.ts
+new file mode 100644
+index 0000000..64aaf4a
+--- /dev/null
++++ b/apps/web/src/ui/format.ts
+@@ -0,0 +1,45 @@
++const TIME_ZONE = 'Europe/Paris';
++
++const dateFormat = new Intl.DateTimeFormat('fr-FR', {
++  timeZone: TIME_ZONE,
++  day: '2-digit',
++  month: '2-digit',
++  year: 'numeric',
++});
++const timeFormat = new Intl.DateTimeFormat('fr-FR', {
++  timeZone: TIME_ZONE,
++  hour: '2-digit',
++  minute: '2-digit',
++  hourCycle: 'h23',
++});
++
++const CIVIL_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
++
++/** `JJ/MM/AAAA` : une date civile telle quelle, un horodatage à l'heure de Paris. */
++export function formatDate(isoOrDate: string): string {
++  const civil = CIVIL_DATE.exec(isoOrDate);
++  if (civil) return `${civil[3]}/${civil[2]}/${civil[1]}`;
++  return dateFormat.format(new Date(isoOrDate));
++}
++
++/** `JJ/MM/AAAA à HH:MM`, à l'heure de Paris. */
++export function formatDateTime(iso: string): string {
++  const date = new Date(iso);
++  return `${dateFormat.format(date)} à ${timeFormat.format(date)}`;
++}
++
++/** Ancienneté relative : « à l'instant », « il y a 3 min », « il y a 5 h », « il y a 2 j ». */
++export function formatAge(iso: string, nowMs: number): string {
++  const seconds = Math.max(0, Math.floor((nowMs - Date.parse(iso)) / 1000));
++  if (seconds < 60) return "à l'instant";
++  const minutes = Math.floor(seconds / 60);
++  if (minutes < 60) return `il y a ${minutes} min`;
++  const hours = Math.floor(minutes / 60);
++  if (hours < 24) return `il y a ${hours} h`;
++  return `il y a ${Math.floor(hours / 24)} j`;
++}
++
++/** Forme du mot selon `n` (singulier pour 0 et 1, usage français). */
++export function plural(n: number, one: string, many: string): string {
++  return Math.abs(n) < 2 ? one : many;
++}
+diff --git a/apps/web/src/ui/index.ts b/apps/web/src/ui/index.ts
+new file mode 100644
+index 0000000..d8f8026
+--- /dev/null
++++ b/apps/web/src/ui/index.ts
+@@ -0,0 +1,12 @@
++export * from './AppShell';
++export * from './Banner';
++export * from './Button';
++export * from './ChoiceList';
++export * from './CopyButton';
++export * from './Dialog';
++export * from './errors';
++export * from './Field';
++export * from './format';
++export * from './HealthWarning';
++export * from './Page';
++export * from './use-action';
+diff --git a/apps/web/src/ui/ui.module.css b/apps/web/src/ui/ui.module.css
+new file mode 100644
+index 0000000..df9697e
+--- /dev/null
++++ b/apps/web/src/ui/ui.module.css
+@@ -0,0 +1,269 @@
++/* Jetons et composants de base. Polices système uniquement : aucune ressource tierce (P-LOG-4). */
++:global(:root) {
++  --color-bg: #f7f7f5;
++  --color-surface: #ffffff;
++  --color-text: #1c1c1a;
++  --color-muted: #5b5b57;
++  --color-border: #d6d6d1;
++  --color-primary: #1f5f4a;
++  --color-primary-text: #ffffff;
++  --color-danger: #a12a2a;
++  --color-info-bg: #e8f0fb;
++  --color-warning-bg: #fdf3dc;
++  --color-error-bg: #fbe6e6;
++  --radius: 10px;
++  --space-1: 4px;
++  --space-2: 8px;
++  --space-3: 12px;
++  --space-4: 16px;
++  --space-6: 24px;
++  --content-width: 40rem;
++  color-scheme: light dark;
++}
++
++@media (prefers-color-scheme: dark) {
++  :global(:root) {
++    --color-bg: #151614;
++    --color-surface: #1f201e;
++    --color-text: #ecece8;
++    --color-muted: #a8a8a2;
++    --color-border: #3a3b37;
++    --color-primary: #5fbf9a;
++    --color-primary-text: #0c1f18;
++    --color-danger: #f08a8a;
++    --color-info-bg: #1d2a3a;
++    --color-warning-bg: #3a3018;
++    --color-error-bg: #3e1f1f;
++  }
++}
++
++:global(*),
++:global(*::before),
++:global(*::after) {
++  box-sizing: border-box;
++}
++
++:global(body) {
++  margin: 0;
++  background: var(--color-bg);
++  color: var(--color-text);
++  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
++  font-size: 1rem;
++  line-height: 1.5;
++}
++
++:global(a) {
++  color: var(--color-primary);
++}
++
++.shell {
++  min-height: 100vh;
++  display: flex;
++  flex-direction: column;
++}
++
++.header {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: var(--space-3);
++  padding: var(--space-3) var(--space-4);
++  background: var(--color-surface);
++  border-bottom: 1px solid var(--color-border);
++}
++
++.brand {
++  font-weight: 700;
++  text-decoration: none;
++  color: var(--color-text);
++  margin-right: auto;
++}
++
++.nav {
++  display: flex;
++  flex-wrap: wrap;
++  gap: var(--space-3);
++}
++
++.main {
++  flex: 1;
++  width: 100%;
++  max-width: var(--content-width);
++  margin: 0 auto;
++  padding: var(--space-4);
++}
++
++.footer {
++  display: flex;
++  flex-wrap: wrap;
++  justify-content: center;
++  gap: var(--space-4);
++  padding: var(--space-4);
++  font-size: 0.875rem;
++  color: var(--color-muted);
++}
++
++.page {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-4);
++}
++
++.page h1 {
++  margin: 0;
++  font-size: 1.5rem;
++  line-height: 1.25;
++}
++
++.back {
++  font-size: 0.875rem;
++}
++
++.button {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  min-height: 44px;
++  padding: var(--space-2) var(--space-4);
++  border-radius: var(--radius);
++  border: 1px solid var(--color-border);
++  font: inherit;
++  font-weight: 600;
++  cursor: pointer;
++}
++
++.button:disabled {
++  opacity: 0.6;
++  cursor: not-allowed;
++}
++
++.primary {
++  background: var(--color-primary);
++  border-color: var(--color-primary);
++  color: var(--color-primary-text);
++}
++
++.secondary {
++  background: var(--color-surface);
++  color: var(--color-text);
++}
++
++.danger {
++  background: var(--color-surface);
++  border-color: var(--color-danger);
++  color: var(--color-danger);
++}
++
++.field {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-1);
++}
++
++.field input,
++.field select,
++.field textarea {
++  min-height: 44px;
++  padding: var(--space-2) var(--space-3);
++  border: 1px solid var(--color-border);
++  border-radius: var(--radius);
++  background: var(--color-surface);
++  color: var(--color-text);
++  font: inherit;
++}
++
++.label {
++  font-weight: 600;
++}
++
++.hint {
++  font-size: 0.875rem;
++  color: var(--color-muted);
++}
++
++.fieldError {
++  font-size: 0.875rem;
++  color: var(--color-danger);
++}
++
++.banner {
++  padding: var(--space-3) var(--space-4);
++  border-radius: var(--radius);
++  border: 1px solid var(--color-border);
++}
++
++.info {
++  background: var(--color-info-bg);
++}
++
++.warning {
++  background: var(--color-warning-bg);
++}
++
++.error {
++  background: var(--color-error-bg);
++  border-color: var(--color-danger);
++}
++
++.backdrop {
++  position: fixed;
++  inset: 0;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  padding: var(--space-4);
++  background: rgb(0 0 0 / 0.45);
++}
++
++.dialog {
++  width: 100%;
++  max-width: 28rem;
++  padding: var(--space-6);
++  border-radius: var(--radius);
++  background: var(--color-surface);
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-4);
++}
++
++.dialog h2 {
++  margin: 0;
++  font-size: 1.25rem;
++}
++
++.actions {
++  display: flex;
++  flex-wrap: wrap;
++  justify-content: flex-end;
++  gap: var(--space-2);
++}
++
++.choices {
++  border: 0;
++  margin: 0;
++  padding: 0;
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-2);
++}
++
++.choices legend {
++  font-weight: 600;
++  margin-bottom: var(--space-2);
++}
++
++.choice {
++  display: flex;
++  align-items: center;
++  gap: var(--space-3);
++  min-height: 44px;
++  padding: var(--space-2) var(--space-3);
++  border: 1px solid var(--color-border);
++  border-radius: var(--radius);
++  background: var(--color-surface);
++}
++
++.healthWarning {
++  font-size: 0.875rem;
++  color: var(--color-muted);
++}
+diff --git a/apps/web/src/ui/use-action.ts b/apps/web/src/ui/use-action.ts
+new file mode 100644
+index 0000000..2757087
+--- /dev/null
++++ b/apps/web/src/ui/use-action.ts
+@@ -0,0 +1,55 @@
++import type { ApiErrorCode } from '@appsport/contracts';
++import { useCallback, useEffect, useRef, useState } from 'react';
++import { ApiError, NetworkRequiredError } from '../api/client';
++import { errorMessage } from './errors';
++
++type ActionCode = ApiErrorCode | 'network' | 'unknown';
++
++/** Action asynchrone d'un écran : état « en cours », message d'erreur traduit et code. */
++export function useAction<A extends unknown[], R>(
++  fn: (...a: A) => Promise<R>,
++  overrides?: Partial<Record<ApiErrorCode, string>>,
++): {
++  run(...a: A): Promise<R | undefined>;
++  pending: boolean;
++  error: string | null;
++  code: ActionCode | null;
++  reset(): void;
++} {
++  const [pending, setPending] = useState(false);
++  const [error, setError] = useState<string | null>(null);
++  const [code, setCode] = useState<ActionCode | null>(null);
++  const latest = useRef({ fn, overrides });
++  latest.current = { fn, overrides };
++  const mounted = useRef(true);
++  useEffect(() => {
++    mounted.current = true;
++    return () => {
++      mounted.current = false;
++    };
++  }, []);
++
++  const reset = useCallback(() => {
++    setError(null);
++    setCode(null);
++  }, []);
++
++  const run = useCallback(async (...a: A): Promise<R | undefined> => {
++    setPending(true);
++    setError(null);
++    setCode(null);
++    try {
++      return await latest.current.fn(...a);
++    } catch (e) {
++      if (mounted.current) {
++        setError(errorMessage(e, latest.current.overrides));
++        setCode(e instanceof ApiError ? e.code : e instanceof NetworkRequiredError ? 'network' : 'unknown');
++      }
++      return undefined;
++    } finally {
++      if (mounted.current) setPending(false);
++    }
++  }, []);
++
++  return { run, pending, error, code, reset };
++}
+diff --git a/apps/web/src/vite-env.d.ts b/apps/web/src/vite-env.d.ts
+new file mode 100644
+index 0000000..5ce4733
+--- /dev/null
++++ b/apps/web/src/vite-env.d.ts
+@@ -0,0 +1,10 @@
++/// <reference types="vite/client" />
++
++interface ImportMetaEnv {
++  /** Prénom du porteur, affiché dans « hébergé chez <prénom> » (03 §13.1). */
++  readonly VITE_OWNER_FIRST_NAME?: string;
++}
++
++interface ImportMeta {
++  readonly env: ImportMetaEnv;
++}
+diff --git a/apps/web/test/app/api-client.test.ts b/apps/web/test/app/api-client.test.ts
+new file mode 100644
+index 0000000..488bd4e
+--- /dev/null
++++ b/apps/web/test/app/api-client.test.ts
+@@ -0,0 +1,121 @@
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { z } from 'zod';
++import { ApiError, createApiClient, NetworkRequiredError } from '../../src/api/client';
++import { createFakeApi, type FakeApi } from '../support/fake-api';
++
++function setup(): { api: FakeApi; hooks: { onUnauthenticated: () => void; onAccountDeleted: () => void } } {
++  const api = createFakeApi();
++  return { api, hooks: { onUnauthenticated: vi.fn(), onAccountDeleted: vi.fn() } };
++}
++
++const Ok = z.object({ ok: z.literal(true) });
++
++afterEach(() => {
++  vi.useRealTimers();
++});
++
++describe('createApiClient', () => {
++  it('send POST : JSON, protocole 1, sans Origin, same-origin', async () => {
++    const { api, hooks } = setup();
++    api.on('POST', '/api/things', { status: 200, body: { ok: true } });
++    const client = createApiClient(api.transport, hooks);
++    await expect(client.send('POST', '/api/things', { a: 1 }, Ok)).resolves.toEqual({ ok: true });
++    const [call] = api.calls;
++    expect(call?.headers.get('Content-Type')).toBe('application/json');
++    expect(call?.headers.get('X-Appsport-Protocol')).toBe('1');
++    expect(call?.headers.has('Origin')).toBe(false);
++    expect(call?.init.credentials).toBe('same-origin');
++    expect(call?.body).toEqual({ a: 1 });
++  });
++
++  it('send sans corps envoie {}', async () => {
++    const { api, hooks } = setup();
++    api.on('POST', '/api/logout', { status: 204 });
++    await createApiClient(api.transport, hooks).send('POST', '/api/logout');
++    expect(api.calls[0]?.init.body).toBe('{}');
++  });
++
++  it('get valide la réponse ; hors schéma → rejet', async () => {
++    const { api, hooks } = setup();
++    api.on('GET', '/api/good', { status: 200, body: { ok: true } });
++    api.on('GET', '/api/bad', { status: 200, body: { ok: 'oui' } });
++    const client = createApiClient(api.transport, hooks);
++    await expect(client.get('/api/good', Ok)).resolves.toEqual({ ok: true });
++    await expect(client.get('/api/bad', Ok)).rejects.toThrow();
++  });
++
++  it('409 username_taken → ApiError { status, code, body }', async () => {
++    const { api, hooks } = setup();
++    api.on('PATCH', '/api/me', { status: 409, body: { error: 'username_taken' } });
++    const error = await createApiClient(api.transport, hooks)
++      .send('PATCH', '/api/me', { username: 'x' })
++      .catch((e: unknown) => e);
++    expect(error).toBeInstanceOf(ApiError);
++    expect(error).toMatchObject({ status: 409, code: 'username_taken', body: { error: 'username_taken' } });
++  });
++
++  it('transport muet : rien à 3999 ms, NetworkRequiredError à 4000 ms', async () => {
++    vi.useFakeTimers();
++    const { api, hooks } = setup();
++    api.setOffline('hang');
++    let outcome: unknown = 'pending';
++    void createApiClient(api.transport, hooks)
++      .get('/api/me', Ok)
++      .then(
++        () => {
++          outcome = 'resolved';
++        },
++        (e: unknown) => {
++          outcome = e;
++        },
++      );
++    await vi.advanceTimersByTimeAsync(3999);
++    expect(outcome).toBe('pending');
++    await vi.advanceTimersByTimeAsync(1);
++    expect(outcome).toBeInstanceOf(NetworkRequiredError);
++    expect((outcome as Error).message).toBe('Nécessite le réseau');
++  });
++
++  it('transport en échec → NetworkRequiredError', async () => {
++    const { api, hooks } = setup();
++    api.setOffline('reject');
++    await expect(createApiClient(api.transport, hooks).get('/api/me', Ok)).rejects.toBeInstanceOf(
++      NetworkRequiredError,
++    );
++  });
++
++  it('410 account_deleted → onAccountDeleted une fois ; 410 watermark_expired → non', async () => {
++    const { api, hooks } = setup();
++    api.on('GET', '/api/gone', { status: 410, body: { error: 'account_deleted' } });
++    api.on('GET', '/api/old', { status: 410, body: { error: 'watermark_expired' } });
++    const client = createApiClient(api.transport, hooks);
++    await expect(client.get('/api/gone', Ok)).rejects.toMatchObject({ status: 410, code: 'account_deleted' });
++    expect(hooks.onAccountDeleted).toHaveBeenCalledTimes(1);
++    await expect(client.get('/api/old', Ok)).rejects.toMatchObject({ code: 'watermark_expired' });
++    expect(hooks.onAccountDeleted).toHaveBeenCalledTimes(1);
++    expect(hooks.onUnauthenticated).not.toHaveBeenCalled();
++  });
++
++  it('401 unauthenticated → onUnauthenticated une fois', async () => {
++    const { api, hooks } = setup();
++    api.on('GET', '/api/me', { status: 401, body: { error: 'unauthenticated' } });
++    await expect(createApiClient(api.transport, hooks).get('/api/me', Ok)).rejects.toMatchObject({
++      status: 401,
++      code: 'unauthenticated',
++    });
++    expect(hooks.onUnauthenticated).toHaveBeenCalledTimes(1);
++    expect(hooks.onAccountDeleted).not.toHaveBeenCalled();
++  });
++
++  it('401 invalid_credentials → ApiError seule, aucun hook', async () => {
++    const { api, hooks } = setup();
++    api.on('POST', '/api/auth/login', { status: 401, body: { error: 'invalid_credentials' } });
++    const error = await createApiClient(api.transport, hooks)
++      .send('POST', '/api/auth/login', { username: 'a', password: 'b' })
++      .catch((e: unknown) => e);
++    expect(error).toBeInstanceOf(ApiError);
++    expect(error).toMatchObject({ status: 401, code: 'invalid_credentials' });
++    expect(hooks.onUnauthenticated).not.toHaveBeenCalled();
++    expect(hooks.onAccountDeleted).not.toHaveBeenCalled();
++  });
++});
+diff --git a/apps/web/test/app/boot.test.ts b/apps/web/test/app/boot.test.ts
+new file mode 100644
+index 0000000..d56dd7f
+--- /dev/null
++++ b/apps/web/test/app/boot.test.ts
+@@ -0,0 +1,51 @@
++import { describe, expect, it } from 'vitest';
++import { createApiClient } from '../../src/api/client';
++import type { AppServices } from '../../src/app-services';
++import { bootApp } from '../../src/boot';
++import { setMeta } from '../../src/local-db/meta';
++import { createSyncEngine, type SyncEngine } from '../../src/sync/engine';
++import { createFakeApi, createFakeSyncEngine, type FakeApi } from '../support/fake-api';
++import { createTestLocalDb } from '../support/local-db';
++import { DEFAULT_NOW } from '../support/render';
++import { until } from '../support/wait';
++
++function services(api: FakeApi, sync: SyncEngine, db = createTestLocalDb()): AppServices {
++  return {
++    db,
++    api: createApiClient(api.transport, { onUnauthenticated: () => {}, onAccountDeleted: () => {} }),
++    sync,
++    transport: api.transport,
++    now: () => DEFAULT_NOW,
++    newOpId: () => crypto.randomUUID(),
++  };
++}
++
++describe('bootApp', () => {
++  it("démarre le moteur et rend de quoi l'arrêter", () => {
++    const api = createFakeApi();
++    const sync = createFakeSyncEngine();
++    const stop = bootApp(services(api, sync));
++    expect(sync.started).toBe(true);
++    stop();
++    expect(sync.started).toBe(false);
++  });
++
++  it('moteur réel : synchro au lancement, puis au retour au premier plan (R-SYN-29)', async () => {
++    const api = createFakeApi();
++    api.on('GET', '/api/health', { status: 200, body: { ok: true }, headers: { 'X-Appsport-Epoch': 'E1' } });
++    const db = createTestLocalDb();
++    await setMeta(db, 'userId', 'u-1');
++    const sync = createSyncEngine({ db, transport: api.transport, now: () => DEFAULT_NOW });
++    const health = () => api.calls.filter((c) => c.method === 'GET' && c.path === '/api/health').length;
++    const stop = bootApp(services(api, sync, db));
++    try {
++      await until(() => api.calls.length > 0 && !sync.getState().syncing);
++      expect(`${api.calls[0]?.method} ${api.calls[0]?.path}`).toBe('GET /api/health');
++      expect(health()).toBe(1);
++      document.dispatchEvent(new Event('visibilitychange'));
++      await until(() => health() === 2);
++    } finally {
++      stop();
++    }
++  });
++});
+diff --git a/apps/web/test/app/guard.test.tsx b/apps/web/test/app/guard.test.tsx
+new file mode 100644
+index 0000000..d1c578b
+--- /dev/null
++++ b/apps/web/test/app/guard.test.tsx
+@@ -0,0 +1,88 @@
++import type { MeResponse } from '@appsport/contracts';
++import { screen } from '@testing-library/react';
++import { describe, expect, it } from 'vitest';
++import { type GuardResult, resolveGuard } from '../../src/App';
++import type { ConnectionState } from '../../src/sync/engine';
++import { createFakeSyncEngine } from '../support/fake-api';
++import { makeMe, renderApp } from '../support/render';
++import { until } from '../support/wait';
++
++const notOnboarded = (o: Partial<MeResponse> = {}) =>
++  makeMe({ onboardingCompletedAt: null, onboardingStep: 'goal', ...o });
++const admin = (o: Partial<MeResponse> = {}) => makeMe({ role: 'admin', ...o });
++
++type Row = [
++  path: string,
++  loaded: boolean,
++  me: MeResponse | null,
++  connection: ConnectionState,
++  expected: GuardResult,
++];
++const RENDER: GuardResult = { kind: 'render' };
++const to = (path: string): GuardResult => ({ kind: 'redirect', to: path });
++
++const ROWS: Row[] = [
++  ['/privacy', false, null, 'online', RENDER],
++  ['/help', true, null, 'offline', RENDER],
++  ['/invite', true, makeMe(), 'online', RENDER],
++  ['/login', true, makeMe(), 'unauthenticated', RENDER],
++  ['/profile', false, null, 'unknown', { kind: 'wait' }],
++  ['/profile', true, null, 'online', to('/login')],
++  ['/profile', true, makeMe(), 'unauthenticated', to('/login')],
++  ['/profile', true, makeMe(), 'account_deleted', to('/login')],
++  ['/', true, notOnboarded(), 'online', to('/onboarding')],
++  ['/admin/members', true, admin({ onboardingCompletedAt: null }), 'online', to('/onboarding')],
++  ['/onboarding', true, makeMe(), 'online', to('/')],
++  ['/onboarding', true, notOnboarded(), 'online', RENDER],
++  ['/profile', true, makeMe({ mustChangePassword: true }), 'online', RENDER],
++  ['/', true, makeMe({ mustChangePassword: true }), 'online', to('/profile')],
++  ['/login', true, makeMe(), 'online', to('/')],
++  ['/admin/members', true, makeMe(), 'online', { kind: 'not_found' }],
++  ['/admin/members', true, admin(), 'online', RENDER],
++];
++
++describe('resolveGuard', () => {
++  it.each(ROWS)('%s, chargé %s, connexion %s', (path, loaded, me, connection, expected) => {
++    expect(resolveGuard({ path, loaded, me, connection })).toEqual(expected);
++  });
++});
++
++describe('App', () => {
++  it('/privacy sans session', async () => {
++    await renderApp({ path: '/privacy', me: null });
++    expect((await screen.findByRole('heading', { level: 1 })).textContent).toBe('Confidentialité et règles');
++  });
++
++  it('/profile sans session → /login', async () => {
++    const { location } = await renderApp({ path: '/profile', me: null });
++    await until(() => location() === '/login');
++  });
++
++  it('non onboardé sur / → /onboarding', async () => {
++    const { location } = await renderApp({ path: '/', me: notOnboarded() });
++    await until(() => location() === '/onboarding');
++  });
++
++  it('session refusée par le serveur → /login', async () => {
++    const sync = createFakeSyncEngine({ connection: 'unauthenticated' });
++    const { location } = await renderApp({ path: '/', sync });
++    await until(() => location() === '/login');
++  });
++
++  it("lien 'Administration' pour un admin seulement", async () => {
++    const first = await renderApp({ path: '/', me: admin() });
++    const link = await screen.findByRole('link', { name: 'Administration' });
++    expect(link.getAttribute('href')).toBe('/admin/members');
++    first.unmount();
++    await renderApp({ path: '/', me: makeMe() });
++    await screen.findByText('Bonjour lea');
++    expect(screen.queryByRole('link', { name: 'Administration' })).toBeNull();
++  });
++
++  it('rappel annuel du mot de passe pour un admin', async () => {
++    await renderApp({ path: '/', me: admin({ passwordReminderDue: true }) });
++    expect((await screen.findByText(/Pense à changer ton mot de passe/)).textContent).toBe(
++      'Pense à changer ton mot de passe (rappel annuel).',
++    );
++  });
++});
+diff --git a/apps/web/test/app/public-pages.test.tsx b/apps/web/test/app/public-pages.test.tsx
+new file mode 100644
+index 0000000..91435b3
+--- /dev/null
++++ b/apps/web/test/app/public-pages.test.tsx
+@@ -0,0 +1,58 @@
++import { screen } from '@testing-library/react';
++import { describe, expect, it } from 'vitest';
++import { renderApp } from '../support/render';
++
++describe('pages publiques', () => {
++  it('/privacy reprend la fiche de traitement', async () => {
++    await renderApp({ path: '/privacy', me: null });
++    await screen.findByRole('heading', { level: 1, name: 'Confidentialité et règles' });
++    const text = document.body.textContent ?? '';
++    for (const expected of [
++      'Version 1.0',
++      'peut techniquement lire la base',
++      "aucune requête manuelle sur les données d'une personne sans son accord",
++      "l'adresse de ton compte Tailscale",
++      '90 jours sans usage',
++      '365 jours au maximum',
++      '12 mois',
++      '30 jours au plus',
++      '7 jours',
++      '24 h',
++      '90 jours',
++      'ne remplace pas un avis médical',
++      'serveur à domicile en France',
++      'États-Unis',
++      'sauvegardes chiffrées hors du domicile',
++    ]) {
++      expect(text, expected).toContain(expected);
++    }
++    expect(screen.getByRole('heading', { name: 'Règles pour les 16-17 ans' })).toBeTruthy();
++    expect(screen.getByRole('heading', { name: 'Coach et mineurs' })).toBeTruthy();
++    expect(text).not.toMatch(/’/);
++  });
++
++  it('/help : numéros cliquables et date de vérification', async () => {
++    await renderApp({ path: '/help', me: null });
++    await screen.findByRole('heading', { level: 1 });
++    const tel = screen
++      .getAllByRole('link')
++      .map((a) => a.getAttribute('href') ?? '')
++      .filter((h) => h.startsWith('tel:'));
++    expect(tel).toEqual(['tel:15', 'tel:112', 'tel:0969325900', 'tel:0800152000', 'tel:3114']);
++    const text = document.body.textContent ?? '';
++    expect(text).toContain('Numéros vérifiés le 06/10/2026');
++    expect(text.split('Horaires :').length - 1).toBe(1);
++  });
++
++  it('/credits statique, sans requête', async () => {
++    const { api } = await renderApp({ path: '/credits', me: null });
++    await screen.findByRole('heading', { level: 1, name: 'Crédits' });
++    expect(screen.getByText('Aucune illustration pour le moment.')).toBeTruthy();
++    expect(api.calls).toEqual([]);
++  });
++
++  it('route inconnue → Page introuvable', async () => {
++    await renderApp({ path: '/nulle-part' });
++    await screen.findByText('Page introuvable');
++  });
++});
+diff --git a/apps/web/test/app/static-rules.test.ts b/apps/web/test/app/static-rules.test.ts
+new file mode 100644
+index 0000000..36c8717
+--- /dev/null
++++ b/apps/web/test/app/static-rules.test.ts
+@@ -0,0 +1,47 @@
++import { readdirSync, readFileSync } from 'node:fs';
++import { join, resolve } from 'node:path';
++import { describe, expect, it } from 'vitest';
++
++const WEB = resolve(import.meta.dirname, '../..');
++
++function* walk(dir: string): Generator<string> {
++  for (const entry of readdirSync(dir, { withFileTypes: true })) {
++    const full = join(dir, entry.name);
++    if (entry.isDirectory()) yield* walk(full);
++    else if (entry.isFile()) yield full;
++  }
++}
++
++const srcFiles = () => [...walk(join(WEB, 'src'))];
++
++describe('règles statiques (P-LOG-4, R-PWA-7)', () => {
++  const html = readFileSync(join(WEB, 'index.html'), 'utf8');
++
++  it("index.html : aucun script en ligne, aucune URL absolue, aucun style en ligne, lang='fr'", () => {
++    const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
++    expect(scripts.length).toBeGreaterThan(0);
++    for (const [, attrs, body] of scripts) {
++      expect(attrs).toMatch(/\ssrc="[^"]+"/);
++      expect(body?.trim()).toBe('');
++    }
++    expect(html).not.toMatch(/https?:\/\//);
++    expect(html).not.toMatch(/style=/);
++    expect(html).toMatch(/<html[^>]*\slang="fr"/);
++  });
++
++  it('aucune CSS de src/ ne charge un domaine tiers', () => {
++    const css = srcFiles().filter((f) => f.endsWith('.css'));
++    expect(css.length).toBeGreaterThan(0);
++    for (const file of css) {
++      const text = readFileSync(file, 'utf8');
++      expect(text, file).not.toMatch(/https?:\/\/|url\(\s*['"]?\/\//);
++      expect(text, file).not.toMatch(/@import/);
++    }
++  });
++
++  it('aucun fichier de src/ ne cite une origine (ts.net, localhost:port)', () => {
++    for (const file of srcFiles()) {
++      expect(readFileSync(file, 'utf8'), file).not.toMatch(/ts\.net|localhost:\d+/);
++    }
++  });
++});
+diff --git a/apps/web/test/app/ui-format.test.ts b/apps/web/test/app/ui-format.test.ts
+new file mode 100644
+index 0000000..52b7dd4
+--- /dev/null
++++ b/apps/web/test/app/ui-format.test.ts
+@@ -0,0 +1,56 @@
++import { describe, expect, it } from 'vitest';
++import { ApiError, NetworkRequiredError } from '../../src/api/client';
++import { ERROR_MESSAGES, errorMessage } from '../../src/ui/errors';
++import { formatAge, formatDate, formatDateTime, plural } from '../../src/ui/format';
++
++const NOW = Date.parse('2026-10-06T12:00:00.000Z');
++const ago = (ms: number) => new Date(NOW - ms).toISOString();
++
++describe('format', () => {
++  it("formatDate : date civile telle quelle, horodatage à l'heure de Paris", () => {
++    expect(formatDate('2008-03-01')).toBe('01/03/2008');
++    expect(formatDate('2026-10-05T23:30:00.000Z')).toBe('06/10/2026');
++  });
++
++  it("formatDateTime à l'heure de Paris", () => {
++    expect(formatDateTime('2026-10-06T12:05:00.000Z')).toBe('06/10/2026 à 14:05');
++  });
++
++  it('formatAge', () => {
++    expect(formatAge(ago(30_000), NOW)).toBe("à l'instant");
++    expect(formatAge(ago(3 * 60_000), NOW)).toBe('il y a 3 min');
++    expect(formatAge(ago(5 * 3_600_000), NOW)).toBe('il y a 5 h');
++    expect(formatAge(ago(2 * 86_400_000), NOW)).toBe('il y a 2 j');
++  });
++
++  it('plural : singulier pour 0 et 1', () => {
++    expect(plural(0, 'envoi', 'envois')).toBe('envoi');
++    expect(plural(1, 'envoi', 'envois')).toBe('envoi');
++    expect(plural(2, 'envoi', 'envois')).toBe('envois');
++  });
++});
++
++describe('errorMessage', () => {
++  it('traduit chaque cas', () => {
++    expect(errorMessage(new NetworkRequiredError())).toBe('Nécessite le réseau');
++    expect(errorMessage(new ApiError(409, 'username_taken', {}))).toBe('Ce pseudo est déjà pris.');
++    expect(errorMessage(new ApiError(409, 'last_place', {}), { last_place: 'X' })).toBe('X');
++    expect(errorMessage(new Error('boom'))).toBe('Une erreur inattendue est survenue.');
++  });
++
++  it('textes imposés', () => {
++    expect(ERROR_MESSAGES).toMatchObject({
++      invalid_credentials: 'Pseudo ou mot de passe incorrect',
++      account_disabled: "Compte désactivé, contacte l'administrateur",
++      under_min_age: 'appsport est réservé aux 16 ans et plus',
++      last_admin: 'Il doit rester au moins un administrateur actif.',
++      health_consent_required: 'Cette action demande ton accord santé.',
++      rate_limited: "Trop d'essais. Réessaie plus tard.",
++      internal: 'Le serveur a rencontré une erreur.',
++    });
++    for (const text of Object.values(ERROR_MESSAGES)) {
++      expect(text).not.toBe('');
++      expect(text).not.toMatch(/’/);
++    }
++  });
++});
+diff --git a/apps/web/test/app/ui.test.tsx b/apps/web/test/app/ui.test.tsx
+new file mode 100644
+index 0000000..63c92ac
+--- /dev/null
++++ b/apps/web/test/app/ui.test.tsx
+@@ -0,0 +1,56 @@
++import { render, screen } from '@testing-library/react';
++import { describe, expect, it } from 'vitest';
++import { Banner, Dialog, Field, HEALTH_WARNING_TEXT, HealthWarning } from '../../src/ui';
++
++describe('ui', () => {
++  it('Field associe son libellé au champ (useId, htmlFor)', () => {
++    render(
++      <Field label="Pseudo" hint="3 à 24 caractères" error="Trop court">
++        <input type="text" />
++      </Field>,
++    );
++    const input = screen.getByLabelText('Pseudo');
++    expect(input.tagName).toBe('INPUT');
++    expect(input.id).not.toBe('');
++    expect(input.getAttribute('aria-invalid')).toBe('true');
++    const described = (input.getAttribute('aria-describedby') ?? '').split(' ');
++    const texts = described.map((id) => document.getElementById(id)?.textContent);
++    expect(texts).toEqual(expect.arrayContaining(['3 à 24 caractères', 'Trop court']));
++  });
++
++  it('Dialog : role dialog, modal, nommé par son titre ; rien quand fermé', () => {
++    const { rerender } = render(
++      <Dialog open title="Se déconnecter ?" onClose={() => {}} actions={<button type="button">OK</button>}>
++        <p>Contenu</p>
++      </Dialog>,
++    );
++    const dialog = screen.getByRole('dialog', { name: 'Se déconnecter ?' });
++    expect(dialog.getAttribute('aria-modal')).toBe('true');
++    rerender(
++      <Dialog open={false} title="Se déconnecter ?" onClose={() => {}} actions={null}>
++        <p>Contenu</p>
++      </Dialog>,
++    );
++    expect(screen.queryByRole('dialog')).toBeNull();
++  });
++
++  it('Banner : role alert pour une erreur, status sinon', () => {
++    render(
++      <>
++        <Banner tone="error">Erreur</Banner>
++        <Banner tone="warning">Attention</Banner>
++        <Banner tone="info">Info</Banner>
++      </>,
++    );
++    expect(screen.getByRole('alert').textContent).toBe('Erreur');
++    expect(screen.getAllByRole('status').map((b) => b.textContent)).toEqual(['Attention', 'Info']);
++  });
++
++  it("HealthWarning affiche l'avertissement santé", () => {
++    expect(HEALTH_WARNING_TEXT).toBe(
++      'appsport ne remplace pas un avis médical. Consultez un médecin avant de reprendre une activité si vous avez un problème de santé, et arrêtez en cas de douleur.',
++    );
++    render(<HealthWarning />);
++    expect(screen.getByText(HEALTH_WARNING_TEXT)).toBeTruthy();
++  });
++});
+diff --git a/apps/web/test/setup.ts b/apps/web/test/setup.ts
+new file mode 100644
+index 0000000..135d3a6
+--- /dev/null
++++ b/apps/web/test/setup.ts
+@@ -0,0 +1,8 @@
++import 'fake-indexeddb/auto';
++import { cleanup } from '@testing-library/react';
++import { afterEach } from 'vitest';
++
++// `globals: false` : Testing Library ne peut pas enregistrer son nettoyage lui-même.
++afterEach(() => {
++  cleanup();
++});
+diff --git a/apps/web/test/support/fake-api.ts b/apps/web/test/support/fake-api.ts
+new file mode 100644
+index 0000000..3f92100
+--- /dev/null
++++ b/apps/web/test/support/fake-api.ts
+@@ -0,0 +1,147 @@
++import type { SyncEngine, SyncState, SyncTrigger } from '../../src/sync/engine';
++import type { SyncTransport } from '../../src/sync/transport';
++
++export interface FakeRequest {
++  method: string;
++  path: string;
++  query: URLSearchParams;
++  body: unknown;
++  headers: Headers;
++  init: RequestInit;
++}
++
++export type FakeReply = { status: number; body?: unknown; headers?: Record<string, string> };
++type FakeHandler = ((r: FakeRequest) => FakeReply | Promise<FakeReply>) | FakeReply;
++
++export interface FakeApi {
++  transport: SyncTransport;
++  calls: FakeRequest[];
++  on(method: string, pattern: string /* '/api/gyms/:id' */, h: FakeHandler): FakeApi;
++  setOffline(mode: false | 'reject' | 'hang'): void;
++}
++
++interface Route {
++  method: string;
++  regex: RegExp;
++  handler: FakeHandler;
++}
++
++function patternToRegex(pattern: string): RegExp {
++  const escaped = pattern
++    .split('/')
++    .map((seg) => (seg.startsWith(':') ? '[^/]+' : seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
++    .join('/');
++  return new RegExp(`^${escaped}$`);
++}
++
++/** Faux serveur HTTP : routes déclarées par les tests ; route inconnue → 404 { error: 'not_found' }. */
++export function createFakeApi(): FakeApi {
++  const routes: Route[] = [];
++  const calls: FakeRequest[] = [];
++  let offline: false | 'reject' | 'hang' = false;
++
++  const transport: SyncTransport = {
++    async fetch(url, init) {
++      const [path = '', qs = ''] = url.split('?');
++      const method = init.method ?? 'GET';
++      let body: unknown;
++      if (typeof init.body === 'string') {
++        try {
++          body = JSON.parse(init.body);
++        } catch {
++          body = init.body;
++        }
++      }
++      const req: FakeRequest = {
++        method,
++        path,
++        query: new URLSearchParams(qs),
++        body,
++        headers: new Headers(init.headers),
++        init,
++      };
++      calls.push(req);
++      if (offline === 'hang') return new Promise<Response>(() => {});
++      if (offline === 'reject') throw new TypeError('Failed to fetch');
++      // Dernière déclaration prioritaire : un test peut remplacer une route.
++      const route = [...routes].reverse().find((r) => r.method === method && r.regex.test(path));
++      const reply: FakeReply = route
++        ? typeof route.handler === 'function'
++          ? await route.handler(req)
++          : route.handler
++        : { status: 404, body: { error: 'not_found' } };
++      const hasBody = reply.body !== undefined && reply.status !== 204 && reply.status !== 304;
++      return new Response(hasBody ? JSON.stringify(reply.body) : null, {
++        status: reply.status,
++        headers: { ...(hasBody ? { 'Content-Type': 'application/json' } : {}), ...reply.headers },
++      });
++    },
++  };
++
++  const api: FakeApi = {
++    transport,
++    calls,
++    on(method, pattern, handler) {
++      routes.push({ method, regex: patternToRegex(pattern), handler });
++      return api;
++    },
++    setOffline(mode) {
++      offline = mode;
++    },
++  };
++  return api;
++}
++
++export type FakeSyncEngine = SyncEngine & {
++  set(p: Partial<SyncState>): void;
++  triggers: SyncTrigger[];
++  pullCount: number;
++  started: boolean;
++};
++
++/** Moteur de synchro factice : enregistre les déclencheurs, état modifiable par `set`. */
++export function createFakeSyncEngine(initial: Partial<SyncState> = {}): FakeSyncEngine {
++  let state: SyncState = {
++    connection: 'online',
++    pending: 0,
++    rejected: 0,
++    lastPullOkAt: null,
++    syncing: false,
++    serverEpoch: null,
++    ...initial,
++  };
++  const listeners = new Set<(s: SyncState) => void>();
++  const engine: FakeSyncEngine = {
++    triggers: [],
++    pullCount: 0,
++    started: false,
++    set(p) {
++      state = { ...state, ...p };
++      for (const fn of listeners) fn(state);
++    },
++    async syncNow(t) {
++      engine.triggers.push(t);
++    },
++    async pullNow() {
++      engine.pullCount += 1;
++    },
++    async flushBefore() {
++      engine.triggers.push('coach');
++    },
++    getState: () => state,
++    subscribe(fn) {
++      listeners.add(fn);
++      return () => {
++        listeners.delete(fn);
++      };
++    },
++    start() {
++      engine.started = true;
++      engine.triggers.push('launch');
++    },
++    stop() {
++      engine.started = false;
++    },
++  };
++  return engine;
++}
+diff --git a/apps/web/test/support/render.tsx b/apps/web/test/support/render.tsx
+new file mode 100644
+index 0000000..78f891f
+--- /dev/null
++++ b/apps/web/test/support/render.tsx
+@@ -0,0 +1,105 @@
++import type { MeResponse } from '@appsport/contracts';
++import { createMonotonicUuidV7 } from '@appsport/domain';
++import { type RenderResult, render } from '@testing-library/react';
++import type { ReactElement } from 'react';
++import { Router } from 'wouter';
++import { memoryLocation } from 'wouter/memory-location';
++import { App } from '../../src/App';
++import { createApiClient } from '../../src/api/client';
++import { type AppServices, handleAccountDeleted, ServicesProvider } from '../../src/app-services';
++import type { AppDb } from '../../src/local-db/db';
++import { setMeta } from '../../src/local-db/meta';
++import { createFakeApi, createFakeSyncEngine, type FakeApi, type FakeSyncEngine } from './fake-api';
++import { createTestLocalDb } from './local-db';
++
++export const DEFAULT_NOW = Date.parse('2026-10-06T12:00:00.000Z');
++
++/** Membre adulte actif, onboardé, sans consentement actif. */
++export function makeMe(o: Partial<MeResponse> = {}): MeResponse {
++  return {
++    id: 'u-1',
++    username: 'lea',
++    role: 'member',
++    status: 'active',
++    birthDate: '1990-01-01',
++    ageBand: 'adult',
++    cautious: false,
++    mustChangePassword: false,
++    passwordReminderDue: false,
++    onboardingStep: null,
++    onboardingCompletedAt: '2026-10-01T10:00:00.000Z',
++    termsVersion: '1.0',
++    consents: {
++      health: { active: false, textVersion: null, at: null },
++      aiCoach: { active: false, textVersion: null, at: null },
++    },
++    ...o,
++  };
++}
++
++export interface RenderAppOptions {
++  path?: string;
++  /** Utilisateur en session ; `null` : aucune session ; absent : `makeMe()`. */
++  me?: MeResponse | null;
++  api?: FakeApi;
++  sync?: FakeSyncEngine;
++  db?: AppDb;
++  now?: number;
++}
++
++export interface RenderAppResult extends RenderResult {
++  services: AppServices;
++  api: FakeApi;
++  sync: FakeSyncEngine;
++  db: AppDb;
++  location(): string;
++}
++
++/** Rend `ui` avec des services de test, dans un routeur en mémoire (wouter). */
++export async function renderWithServices(
++  ui: ReactElement,
++  opts: RenderAppOptions = {},
++): Promise<RenderAppResult> {
++  const api = opts.api ?? createFakeApi();
++  const sync = opts.sync ?? createFakeSyncEngine();
++  const db = opts.db ?? createTestLocalDb();
++  const nowMs = opts.now ?? DEFAULT_NOW;
++  const me = opts.me === undefined ? makeMe() : opts.me;
++  if (me) {
++    await setMeta(db, 'userId', me.id);
++    await setMeta(db, 'me', me);
++  }
++  const memory = memoryLocation({ path: opts.path ?? '/', record: true });
++  const services: AppServices = {
++    db,
++    api: createApiClient(api.transport, {
++      onUnauthenticated: () => void sync.syncNow('manual'),
++      onAccountDeleted: () => void handleAccountDeleted(db, memory.navigate),
++    }),
++    sync,
++    transport: api.transport,
++    now: () => nowMs,
++    newOpId: createMonotonicUuidV7(
++      () => nowMs,
++      (n) => crypto.getRandomValues(new Uint8Array(n)),
++    ),
++  };
++  const result = render(
++    <Router hook={memory.hook} searchHook={memory.searchHook}>
++      <ServicesProvider services={services}>{ui}</ServicesProvider>
++    </Router>,
++  );
++  return {
++    ...result,
++    services,
++    api,
++    sync,
++    db,
++    location: () => memory.history.at(-1) ?? '',
++  };
++}
++
++/** Rend l'appli entière (garde et routes) au chemin `path`. */
++export function renderApp(opts: RenderAppOptions = {}): Promise<RenderAppResult> {
++  return renderWithServices(<App />, opts);
++}
+diff --git a/apps/web/vite.config.ts b/apps/web/vite.config.ts
+new file mode 100644
+index 0000000..4028741
+--- /dev/null
++++ b/apps/web/vite.config.ts
+@@ -0,0 +1,18 @@
++import react from '@vitejs/plugin-react';
++import { defineConfig } from 'vite';
++
++// En développement, le serveur tourne à part sur le port 3000 avec APP_ORIGIN=http://localhost:5173 :
++// le proxy rend l'API et les illustrations même origine que la page (cookie de session, en-tête Origin).
++const API_SERVER = 'http://localhost:3000';
++
++export default defineConfig({
++  plugins: [react()],
++  server: {
++    port: 5173,
++    strictPort: true,
++    proxy: {
++      '/api': { target: API_SERVER },
++      '/illustrations': { target: API_SERVER },
++    },
++  },
++});
+diff --git a/packages/contracts/src/help-resources.ts b/packages/contracts/src/help-resources.ts
+new file mode 100644
+index 0000000..1de2775
+--- /dev/null
++++ b/packages/contracts/src/help-resources.ts
+@@ -0,0 +1,62 @@
++export type HelpResourceId = 'emergency' | 'pain' | 'eating_disorder' | 'doping' | 'pregnancy' | 'distress';
++
++export interface HelpResource {
++  id: HelpResourceId;
++  label: string;
++  phone: string | null;
++  hours: string | null;
++  sourceUrl: string | null;
++  verifiedOn: string;
++}
++
++/** Page Aide (03 §13.7, 07 §5.11) : numéros revérifiés avant chaque mise en production. */
++export const HELP_RESOURCES: readonly HelpResource[] = [
++  {
++    id: 'emergency',
++    label: 'Urgence vitale (SAMU 15, numéro européen 112)',
++    phone: '15 / 112',
++    hours: null,
++    sourceUrl: null,
++    verifiedOn: '2026-10-06',
++  },
++  {
++    id: 'pain',
++    label: 'Douleur : consulte un médecin ou un kinésithérapeute',
++    phone: null,
++    hours: null,
++    sourceUrl: null,
++    verifiedOn: '2026-10-06',
++  },
++  {
++    id: 'eating_disorder',
++    label: 'Anorexie Boulimie Info Écoute (FFAB), appel non surtaxé',
++    phone: '09 69 325 900',
++    hours: null,
++    sourceUrl: 'https://www.ffab.fr/500-ligne-tca-nouveau-numero',
++    verifiedOn: '2026-10-06',
++  },
++  {
++    id: 'doping',
++    label: 'Écoute Dopage',
++    phone: '0 800 15 2000',
++    hours: null,
++    sourceUrl: 'https://lannuaire.service-public.gouv.fr/centres-contact/R20697',
++    verifiedOn: '2026-10-06',
++  },
++  {
++    id: 'pregnancy',
++    label: 'Grossesse ou allaitement : demande conseil à ton médecin ou à une sage-femme',
++    phone: null,
++    hours: null,
++    sourceUrl: null,
++    verifiedOn: '2026-10-06',
++  },
++  {
++    id: 'distress',
++    label: 'Prévention du suicide',
++    phone: '3114',
++    hours: '24 h/24, gratuit',
++    sourceUrl: 'https://3114.fr/',
++    verifiedOn: '2026-10-06',
++  },
++];
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index 9e9184b..4985c68 100644
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -4,17 +4,18 @@ export * from './api/consent';
+ export * from './api/errors';
+ export * from './api/export';
+ export * from './api/health';
+ export * from './api/places';
+ export * from './api/profile';
+ export * from './auth-constants';
+ export * from './case';
+ export * from './catalog';
+ export * from './constants';
+ export * from './entity-rules';
++export * from './help-resources';
+ export * from './load-settings';
+ export * from './ops';
+ export * from './presets';
+ export * from './sports';
+ export * from './sync';
+ export * from './taxonomy';
+ export * from './texts';
+diff --git a/packages/contracts/test/help-resources.test.ts b/packages/contracts/test/help-resources.test.ts
+new file mode 100644
+index 0000000..fd72a1b
+--- /dev/null
++++ b/packages/contracts/test/help-resources.test.ts
+@@ -0,0 +1,54 @@
++import { readdirSync, readFileSync } from 'node:fs';
++import { join, resolve } from 'node:path';
++import { describe, expect, it } from 'vitest';
++import { HELP_RESOURCES } from '../src/help-resources';
++
++const REPO = resolve(import.meta.dirname, '../../..');
++const SKIPPED = new Set(['node_modules', 'dist', '.e2e-data', '.superpowers']);
++
++function* walk(dir: string): Generator<string> {
++  for (const entry of readdirSync(dir, { withFileTypes: true })) {
++    if (SKIPPED.has(entry.name)) continue;
++    const full = join(dir, entry.name);
++    if (entry.isDirectory()) yield* walk(full);
++    else if (entry.isFile()) yield full;
++  }
++}
++
++describe('HELP_RESOURCES', () => {
++  it("liste les ressources dans l'ordre", () => {
++    expect(HELP_RESOURCES.map((r) => r.id)).toEqual([
++      'emergency',
++      'pain',
++      'eating_disorder',
++      'doping',
++      'pregnancy',
++      'distress',
++    ]);
++  });
++
++  it('porte les numéros vérifiés, seule la détresse a des horaires', () => {
++    const phone = Object.fromEntries(HELP_RESOURCES.map((r) => [r.id, r.phone]));
++    expect(phone).toEqual({
++      emergency: '15 / 112',
++      pain: null,
++      eating_disorder: '09 69 325 900',
++      doping: '0 800 15 2000',
++      pregnancy: null,
++      distress: '3114',
++    });
++    for (const r of HELP_RESOURCES) expect(r.verifiedOn).toBe('2026-10-06');
++    expect(HELP_RESOURCES.filter((r) => r.hours !== null).map((r) => r.id)).toEqual(['distress']);
++  });
++
++  it("l'ancien numéro TCA n'apparaît dans aucun fichier de apps/, packages/, data/", () => {
++    const old = ['0810', '037', '037'].join(' ');
++    const hits: string[] = [];
++    for (const top of ['apps', 'packages', 'data']) {
++      for (const file of walk(join(REPO, top))) {
++        if (readFileSync(file).toString('utf8').includes(old)) hits.push(file);
++      }
++    }
++    expect(hits).toEqual([]);
++  });
++});
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 4e22125..e38e71f 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -56,55 +56,91 @@ importers:
+     dependencies:
+       '@appsport/contracts':
+         specifier: workspace:*
+         version: link:../../packages/contracts
+       '@appsport/domain':
+         specifier: workspace:*
+         version: link:../../packages/domain
+       dexie:
+         specifier: ^4.4.6
+         version: 4.4.6
++      react:
++        specifier: ^19.3.0
++        version: 19.3.0
++      react-dom:
++        specifier: ^19.3.0
++        version: 19.3.0(react@19.3.0)
++      wouter:
++        specifier: ^3.13.0
++        version: 3.13.0(react@19.3.0)
+       zod:
+         specifier: ^4.6.5
+         version: 4.6.5
+     devDependencies:
+       '@appsport/server':
+         specifier: workspace:*
+         version: link:../server
++      '@testing-library/react':
++        specifier: ^16.3.3
++        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
++      '@types/react':
++        specifier: ^19.3.0
++        version: 19.3.0
++      '@types/react-dom':
++        specifier: ^19.3.0
++        version: 19.3.0(@types/react@19.3.0)
++      '@vitejs/plugin-react':
++        specifier: ^6.1.2
++        version: 6.1.2(vite@8.3.3(@types/node@24.19.1)(esbuild@0.28.2)(tsx@4.23.15))
+       fake-indexeddb:
+         specifier: ^6.2.5
+         version: 6.2.5
+       fast-check:
+         specifier: ^4.10.2
+         version: 4.10.2
+       happy-dom:
+         specifier: ^20
+         version: 20.14.5
++      vite:
++        specifier: ^8.3.3
++        version: 8.3.3(@types/node@24.19.1)(esbuild@0.28.2)(tsx@4.23.15)
+ 
+   packages/contracts:
+     dependencies:
+       zod:
+         specifier: ^4.6.5
+         version: 4.6.5
+ 
+   packages/domain:
+     dependencies:
+       '@appsport/contracts':
+         specifier: workspace:*
+         version: link:../contracts
+     devDependencies:
+       fast-check:
+         specifier: ^4.10.2
+         version: 4.10.2
+ 
+ packages:
+ 
++  '@babel/code-frame@7.29.7':
++    resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
++    engines: {node: '>=6.9.0'}
++
++  '@babel/helper-validator-identifier@7.29.7':
++    resolution: {integrity: sha512-qehxGkRj55h/ff8EMaJ+cYhyaKlHIxqYDn682wQD7RNp9UujOQsHog2uS0r2vzr4pW+sXf90NeeayjcNaX3fFg==}
++    engines: {node: '>=6.9.0'}
++
++  '@babel/runtime@7.29.10':
++    resolution: {integrity: sha512-NpugTzbKgGrNe45Ui32cN8vCFFMxVtP/9rtfwv0nP5FRDAjvYBxJcLVpYA9mr1jxP6cnIT7x9LUzuDTbWYYNRA==}
++    engines: {node: '>=6.9.0'}
++
+   '@biomejs/biome@2.5.15':
+     resolution: {integrity: sha512-WZTW4slm/pdkh92K6t/3aEN++44JD1PQ7squ7RCMLI1flHGl43DVOIGXvCjHiZgBMO1V4uYxoFNtqrIA4qGuIQ==}
+     engines: {node: '>=14.21.3'}
+     hasBin: true
+ 
+   '@biomejs/cli-darwin-arm64@2.5.15':
+     resolution: {integrity: sha512-BZVzFhJ/mUvTLMYbc9x6el0o2Uv5zP7bACYyhFb6fSc1giroXm7PL0a5KqMJ9F+/BnkYRjagD/ROSDVOZ6eapg==}
+     engines: {node: '>=14.21.3'}
+     cpu: [arm64]
+     os: [darwin]
+@@ -422,35 +458,65 @@ packages:
+ 
+   '@rolldown/binding-win32-x64-msvc@1.2.12':
+     resolution: {integrity: sha512-WIw2haVKwjuYdXkHaoC0mF8Le71TuCBxjrdKqLbJGctbBABj+ClfmNvtbOnzpq3RokNo5+V1qhtSzJyXorsklQ==}
+     engines: {node: ^20.19.0 || >=22.12.0}
+     cpu: [x64]
+     os: [win32]
+ 
+   '@rolldown/pluginutils@1.0.1':
+     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
+ 
++  '@testing-library/dom@10.4.2':
++    resolution: {integrity: sha512-yzr2S9HyAIdhz2/6qHgbs665Q7PKVcDF05vsOlHPxG1mo36gKVesdYVeDLnXgfjJ03CrKRk08knc6+E/9m8v2Q==}
++    engines: {node: '>=18'}
++
++  '@testing-library/react@16.3.3':
++    resolution: {integrity: sha512-Uo193NgQbPMz6lrrhtRQQFcMC6Re/ELLFbbuVL30WDlZxlpZf9/lMHTAVxPRLw1q1iu9OJmR1c2BLiENRstdBg==}
++    engines: {node: '>=18'}
++    peerDependencies:
++      '@testing-library/dom': ^10.0.0
++      '@types/react': ^18.0.0 || ^19.0.0
++      '@types/react-dom': ^18.0.0 || ^19.0.0
++      react: ^18.0.0 || ^19.0.0
++      react-dom: ^18.0.0 || ^19.0.0
++    peerDependenciesMeta:
++      '@types/react':
++        optional: true
++      '@types/react-dom':
++        optional: true
++
++  '@types/aria-query@5.0.4':
++    resolution: {integrity: sha512-rfT93uj5s0PRL7EzccGMs3brplhcrghnDoV26NqKhCAS1hVo+WdNsPvE/yb6ilfr5hi2MEk6d5EWJTKdxg8jVw==}
++
+   '@types/better-sqlite3@9.6.0':
+     resolution: {integrity: sha512-ZEEwBSgMu7GYJOynoagg5X9JbxfL6dTJDsgViJIqh67jV44kyOr9RXfmFjLK5rzC4MWssP06t9hu/JwGDnUbCg==}
+ 
+   '@types/chai@5.2.3':
+     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
+ 
+   '@types/deep-eql@4.0.2':
+     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
+ 
+   '@types/estree@1.0.9':
+     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
+ 
+   '@types/node@24.19.1':
+     resolution: {integrity: sha512-aS3/DG0oM05K0RIXXP+hKjinGG5IgSSVGzswZxW3O0sS3pH4/fycXundUC9XsszgKCk4gHXylTEK6hyFxVxnoQ==}
+ 
++  '@types/react-dom@19.3.0':
++    resolution: {integrity: sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q==}
++    peerDependencies:
++      '@types/react': ^19.3.0
++
++  '@types/react@19.3.0':
++    resolution: {integrity: sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg==}
++
+   '@types/whatwg-mimetype@3.0.2':
+     resolution: {integrity: sha512-c2AKvDT8ToxLIOUlN51gTiHXflsfIFisS4pO7pDPoKouJCESkhZnEy623gwP9laCy5lnLDAw1vAzu2vM2YLOrA==}
+ 
+   '@types/ws@8.18.2':
+     resolution: {integrity: sha512-67MQl+fpWKVTT1NYdnmo3U4sc/xPo/zQBncVnI74qmQa0z/b+1g6iYqNmGCPbxO+zz2aklb08a0oHfegiVd0/w==}
+ 
+   '@typescript/typescript-aix-ppc64@7.0.2':
+     resolution: {integrity: sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==}
+     engines: {node: '>=16.20.0'}
+     cpu: [ppc64]
+@@ -563,57 +629,94 @@ packages:
+     engines: {node: '>=16.20.0'}
+     cpu: [arm64]
+     os: [win32]
+ 
+   '@typescript/typescript-win32-x64@7.0.2':
+     resolution: {integrity: sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g==}
+     engines: {node: '>=16.20.0'}
+     cpu: [x64]
+     os: [win32]
+ 
++  '@vitejs/plugin-react@6.1.2':
++    resolution: {integrity: sha512-fhJNGUdscQa4HkI0xFxwonWyhnVReCPDbXI7FH7jmzpnVCrFQI7PRrhWecO263610vOrs9tr2Y4xcf8uAdFxbw==}
++    engines: {node: ^20.19.0 || >=22.12.0}
++    peerDependencies:
++      '@rolldown/plugin-babel': ^0.1.7 || ^0.2.0
++      babel-plugin-react-compiler: ^1.0.0
++      oxc-transform-react: ^0.152.0
++      vite: ^8.0.0
++    peerDependenciesMeta:
++      '@rolldown/plugin-babel':
++        optional: true
++      babel-plugin-react-compiler:
++        optional: true
++      oxc-transform-react:
++        optional: true
++
+   '@vitest/mocker@5.0.3':
+     resolution: {integrity: sha512-T8sWAIbkSyAjkwTcaEc3Iu0o9A27X1/kdXrizhZkGuSKScRQtRzclfAMpOTcGdXCsqxeWlpGy3XjqaW8CpLORg==}
+     peerDependencies:
+       msw: ^2.4.9
+       vite: ^6.0.0 || ^7.0.0 || ^8.0.0
+     peerDependenciesMeta:
+       msw:
+         optional: true
+       vite:
+         optional: true
+ 
+   '@vitest/spy@5.0.3':
+     resolution: {integrity: sha512-XhFysQTB8AZ+P4gMi+Lpo99vg2AZi0qKpaB9yXQl37+CaMEAPO3iH/wGVnSyL5MPERiLezpqTVtrR6UZH5GCXg==}
+ 
++  ansi-regex@5.0.1:
++    resolution: {integrity: sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==}
++    engines: {node: '>=8'}
++
++  ansi-styles@5.2.0:
++    resolution: {integrity: sha512-Cxwpt2SfTzTtXcfOlzGEee8O+c+MmUgGrNiBcXnuWxuFJHe6a5Hz7qwhwe5OgaSYI0IJvkLqWX1ASG+cJOkEiA==}
++    engines: {node: '>=10'}
++
++  aria-query@5.3.0:
++    resolution: {integrity: sha512-b0P0sZPKtyu8HkeRAfCq0IfURZK+SuwMjY1UXGBU27wpAiTwQAIlq56IbIO+ytk/JjS1fMR14ee5WBBfKi5J6A==}
++
+   assertion-error@2.0.1:
+     resolution: {integrity: sha512-Izi8RQcffqCeNVgFigKli1ssklIbpHnCYc6AknXGYoB6grJqyeby7jv12JUQgmTAnIDnbck1uxksT4dzN3PWBA==}
+     engines: {node: '>=12'}
+ 
+   better-sqlite3@13.0.3:
+     resolution: {integrity: sha512-RbOBxmLBG8uvFUc15X9+9SFemKcQ0WBuISBVkpuiaUB2qblC8UWlHEjdWVoZ8AdhSwmoEgsiXKfopX0CQxaACQ==}
+     engines: {node: '>=22'}
+ 
+   buffer-image-size@0.6.4:
+     resolution: {integrity: sha512-nEh+kZOPY1w+gcCMobZ6ETUp9WfibndnosbpwB1iJk/8Gt5ZF2bhS6+B6bPYz424KtwsR6Rflc3tCz1/ghX2dQ==}
+     engines: {node: '>=4.0'}
+ 
+   chai@6.3.0:
+     resolution: {integrity: sha512-XWAtwJ6OHO+tj0EKCs0Y2UamnyOxseZWltU4x2U2wh8g4AigdjwvtUjvLP2tqkA/avxHEtzxNaqGq/YGNwckKg==}
+     engines: {node: '>=18'}
+ 
++  csstype@3.2.3:
++    resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
++
++  dequal@2.0.3:
++    resolution: {integrity: sha512-0je+qPKHEMohvfRTCEo3CrPG6cAzAYgmzKyxRiYSSDkS6eGJdyVJm7WaYA5ECaAD9wLB2T4EEeymA5aFVcYXCA==}
++    engines: {node: '>=6'}
++
+   detect-libc@2.1.2:
+     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
+     engines: {node: '>=8'}
+ 
+   dexie@4.4.6:
+     resolution: {integrity: sha512-hJP/BO6mjB+tX6hToIO1kmxYLNmun90wYbfcoAoLpKEyDYal/k33dg0TAfoUe2TDsbbLoVIzljJ3BN2UbR5EOg==}
+ 
++  dom-accessibility-api@0.5.16:
++    resolution: {integrity: sha512-X7BJ2yElsnOJ30pZF4uIIDfBEVgF4XEBxL9Bxhy6dnrm5hkzqmsWHGTiHqRiITNhMyFLyAiWndIJP7Z1NTteDg==}
++
+   entities@7.0.1:
+     resolution: {integrity: sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA==}
+     engines: {node: '>=0.12'}
+ 
+   es-module-lexer@2.3.2:
+     resolution: {integrity: sha512-poHGpORABojJJucnV9KbOavETW8lBVnphkW77ER5/BQ5Fz7oXSoCNek7IH3vR5nRjdsEz926ibFYX8KtLQmdyw==}
+ 
+   esbuild@0.28.2:
+     resolution: {integrity: sha512-HKVLS8dvII+xoKW9kmqxbRKrnWEXfJJr/FZhhJmiqIB0e053QNYFqOBouTMO/k5sID4MvCiUCvv8b9M4h32wIA==}
+     engines: {node: '>=18'}
+@@ -649,20 +752,23 @@ packages:
+     os: [darwin]
+ 
+   happy-dom@20.14.5:
+     resolution: {integrity: sha512-x/RzkpWO40bTjIoT30iQtt64FLLmH/iRcUCN2X//bLx7H3ifkdfPXyqsro/OYtqzIAhiLMMA7mmiOR9C3NOKjQ==}
+     engines: {node: '>=20.0.0'}
+ 
+   hono@4.13.13:
+     resolution: {integrity: sha512-CQ46U0ZkAGmbT/4UxdzzGJpacP2IeKgY4a5/tOI9AABbpOMfK739wfDXmv1usCk+3RkKj1hQy4/fjhiwa2xlrA==}
+     engines: {node: '>=16.9.0'}
+ 
++  js-tokens@4.0.0:
++    resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
++
+   kysely@0.29.6:
+     resolution: {integrity: sha512-hHaB8C/rfzDDtr/t8YZwxAuPJTT0zHyaPoVzcXwDYhYNAgH/4sIfVhi/XLLIY+bL/FqaIJnjATDbi8ObSELmxg==}
+     engines: {node: '>=22.0.0'}
+ 
+   lightningcss-android-arm64@1.33.0:
+     resolution: {integrity: sha512-gEpRTalKdosp4Bb8qWtc2iOgE5SeIHlpS1up9bFq2wAyYhl1UdTObYiHe98zEM9SQvSoqQZ1IQD0JNpg3Ml5pg==}
+     engines: {node: '>= 12.0.0'}
+     cpu: [arm64]
+     os: [android]
+ 
+@@ -727,20 +833,24 @@ packages:
+   lightningcss-win32-x64-msvc@1.33.0:
+     resolution: {integrity: sha512-OlEICDx/Xl0FqSp4bry8zFnCvGpig3Gl4gCquvYwHuqJKEC1+n9NgDniFvqHGmMv1ZkqDJrDqKKSykTDX+ehuA==}
+     engines: {node: '>= 12.0.0'}
+     cpu: [x64]
+     os: [win32]
+ 
+   lightningcss@1.33.0:
+     resolution: {integrity: sha512-WkUDrojuJs0xkgGf2udWxa3yGBRxPtxUkB79i6aCZLRgc7PM8fZe9TosfPDcvEpQZbuFASnHYmRLBLUbmLOIIA==}
+     engines: {node: '>= 12.0.0'}
+ 
++  lz-string@1.5.0:
++    resolution: {integrity: sha512-h5bgJWpxJNswbU7qCrV0tIKQCaS3blPDrqKWx+QxzuzL1zGUzij9XCWLrSLsJPu5t+eWA/ycetzYAO5IOMcWAQ==}
++    hasBin: true
++
+   magic-string@1.4.3:
+     resolution: {integrity: sha512-z12OxmaPGE0F4xlpGdjuAUckipLpQlTAuAmyGhNoD7ODpYUzvDfvtxUbjM/jwznyP178oju/KDdyi220wNJ0RQ==}
+ 
+   nanoid@3.3.20:
+     resolution: {integrity: sha512-uKdg2G3GNCKQn9byYOpxbGqrT2fGO5KRt5J/8b3pok8rT6qxGWF6hxMyJiEYtAf+FVyYuD9hRaDqX5uPFYJ4ZQ==}
+     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
+     hasBin: true
+ 
+   node-addon-api@8.9.2:
+     resolution: {integrity: sha512-VijLXbi3UACN69I0JVXJsX4tjACjNoQDgv2gTF6sx2wWEi8tkSg2eX8p5gSIFi8z2+DL3oHmY6OyKce38SDolg==}
+@@ -754,28 +864,51 @@ packages:
+     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
+ 
+   picomatch@4.0.7:
+     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
+     engines: {node: '>=12'}
+ 
+   postcss@8.5.29:
+     resolution: {integrity: sha512-49cGhUbXj8Qenv0iTMxA1cFBzxXoctpC9Ujd77t1WcbJIr6nF/eI7g/8MgxrYldFRuAXvja7xQRwavoW7kgrxQ==}
+     engines: {node: ^10 || ^12 || >=14}
+ 
++  pretty-format@27.5.1:
++    resolution: {integrity: sha512-Qb1gy5OrP5+zDf2Bvnzdl3jsTf1qXVMazbvCoKhtKqVs4/YK4ozX4gKQJJVyNe+cajNPn0KoC0MC3FUmaHWEmQ==}
++    engines: {node: ^10.13.0 || ^12.13.0 || ^14.15.0 || >=15.0.0}
++
+   pure-rand@8.4.2:
+     resolution: {integrity: sha512-vvuOGgcuPJAirlHvuQw1TrOiw7ptaIXXmIbNuiNOY6lNGJJH49PQ1Kj4nd783nPdQhQdicgOjVI2yI/9BD6/Ng==}
+ 
++  react-dom@19.3.0:
++    resolution: {integrity: sha512-JDk8dgif51OjFoDE70+OT9ICyYr+69HlmihNwp1+Nsfbna3t5sIiCa9ZJktDmQ4/1b/rn26hIAR2uYXDMr5r0Q==}
++    peerDependencies:
++      react: ^19.3.0
++
++  react-is@17.0.2:
++    resolution: {integrity: sha512-w2GsyukL62IJnlaff/nRegPQR94C/XXamvMWmSHRJ4y7Ts/4ocGRmTHvOs8PSE6pB3dWOrD/nueuU5sduBsQ4w==}
++
++  react@19.3.0:
++    resolution: {integrity: sha512-E8LUcbtBWt20bbl2YoHfx4ZDBdxVTfOKtCZn9cDSJ4l6/nuoApcpIBcj47t2wZoVX8g2ZHuMHbiShgCR1T5Sog==}
++    engines: {node: '>=0.10.0'}
++
++  regexparam@3.0.0:
++    resolution: {integrity: sha512-RSYAtP31mvYLkAHrOlh25pCNQ5hWnT106VukGaaFfuJrZFkGRX5GhUAdPqpSDXxOhA2c4akmRuplv1mRqnBn6Q==}
++    engines: {node: '>=8'}
++
+   rolldown@1.2.12:
+     resolution: {integrity: sha512-8wafseiaG80xmXSfqidUNqZcylTlhmPZZt+za2m+js2sFZ8dTNlhIOV2WcbIPx2hgwPBJpEUGFAMZ9bgBBLTSQ==}
+     engines: {node: ^20.19.0 || >=22.12.0}
+     hasBin: true
+ 
++  scheduler@0.28.0:
++    resolution: {integrity: sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw==}
++
+   source-map-js@1.2.2:
+     resolution: {integrity: sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==}
+     engines: {node: '>=0.10.0'}
+ 
+   std-env@4.3.0:
+     resolution: {integrity: sha512-OtU/EgQ1kIm5KwqQpBC6ZEMXrZRui11w8zgfTWp8cdO9B8OaPsbA8bTHO2P+HNo1VlUTGMVBwPhydu6poeXiag==}
+ 
+   tinybench@6.2.1:
+     resolution: {integrity: sha512-IAbQaPJIIdhVxi0mqy9lez1wEwje0UQf9F1vwtbelEG5Nbgn0nPOxCvU+mNeNS9gyJTAhrHp74CbUaSynQpZcQ==}
+     engines: {node: '>=20.0.0'}
+@@ -794,20 +927,25 @@ packages:
+     hasBin: true
+ 
+   typescript@7.0.2:
+     resolution: {integrity: sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==}
+     engines: {node: '>=16.20.0'}
+     hasBin: true
+ 
+   undici-types@7.24.6:
+     resolution: {integrity: sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg==}
+ 
++  use-sync-external-store@1.7.0:
++    resolution: {integrity: sha512-6L+EeigHMQhdaIPNIFUKwfWJSwWFQ8gJbJ2DLOs5sDIegTwR9fRxvnM3uciHKjIZhFz+KAv2emhWMRvDmMcY8A==}
++    peerDependencies:
++      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
++
+   vite@8.3.3:
+     resolution: {integrity: sha512-cTAldKPImjg6c+gk48U19POPn3GCBzZwpdsN8ZMEEcbpes+6/wvfqUd0C2y3qYY4wsj8PwgFwrZ/1jBPVttMSg==}
+     engines: {node: ^20.19.0 || >=22.12.0}
+     hasBin: true
+     peerDependencies:
+       '@types/node': ^20.19.0 || >=22.12.0
+       '@vitejs/devtools': ^0.7.1
+       esbuild: ^0.27.0 || ^0.28.0
+       jiti: '>=1.21.0'
+       less: ^4.0.0
+@@ -887,37 +1025,52 @@ packages:
+ 
+   whatwg-mimetype@3.0.0:
+     resolution: {integrity: sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==}
+     engines: {node: '>=12'}
+ 
+   why-is-node-running@3.2.1:
+     resolution: {integrity: sha512-Tb2FUhB4vUsGQlfSquQLYkApkuPAFQXGFzxWKHHumVz2dK+X1RUm/HnID4+TfIGYJ1kTcwOaCk/buYCEJr6YjQ==}
+     engines: {node: '>=20.11'}
+     hasBin: true
+ 
++  wouter@3.13.0:
++    resolution: {integrity: sha512-p1RoCuVyxwb3X5jLjDdkwDzlXj+/UGZqZb+806uaJOVEHvNfGkjET0KiQ/CGiDKC90rLsALMgMj4onNVKxgNdQ==}
++    peerDependencies:
++      react: '>=16.8.0'
++
+   ws@8.22.0:
+     resolution: {integrity: sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg==}
+     engines: {node: '>=10.0.0'}
+     peerDependencies:
+       bufferutil: ^4.0.1
+       utf-8-validate: '>=5.0.2'
+     peerDependenciesMeta:
+       bufferutil:
+         optional: true
+       utf-8-validate:
+         optional: true
+ 
+   zod@4.6.5:
+     resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
+ 
+ snapshots:
+ 
++  '@babel/code-frame@7.29.7':
++    dependencies:
++      '@babel/helper-validator-identifier': 7.29.7
++      js-tokens: 4.0.0
++      picocolors: 1.1.1
++
++  '@babel/helper-validator-identifier@7.29.7': {}
++
++  '@babel/runtime@7.29.10': {}
++
+   '@biomejs/biome@2.5.15':
+     optionalDependencies:
+       '@biomejs/cli-darwin-arm64': 2.5.15
+       '@biomejs/cli-darwin-x64': 2.5.15
+       '@biomejs/cli-linux-arm64': 2.5.15
+       '@biomejs/cli-linux-arm64-musl': 2.5.15
+       '@biomejs/cli-linux-x64': 2.5.15
+       '@biomejs/cli-linux-x64-musl': 2.5.15
+       '@biomejs/cli-win32-arm64': 2.5.15
+       '@biomejs/cli-win32-x64': 2.5.15
+@@ -1079,37 +1232,68 @@ snapshots:
+     optional: true
+ 
+   '@rolldown/binding-win32-arm64-msvc@1.2.12':
+     optional: true
+ 
+   '@rolldown/binding-win32-x64-msvc@1.2.12':
+     optional: true
+ 
+   '@rolldown/pluginutils@1.0.1': {}
+ 
++  '@testing-library/dom@10.4.2':
++    dependencies:
++      '@babel/code-frame': 7.29.7
++      '@babel/runtime': 7.29.10
++      '@types/aria-query': 5.0.4
++      aria-query: 5.3.0
++      dom-accessibility-api: 0.5.16
++      lz-string: 1.5.0
++      picocolors: 1.1.1
++      pretty-format: 27.5.1
++
++  '@testing-library/react@16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
++    dependencies:
++      '@babel/runtime': 7.29.10
++      '@testing-library/dom': 10.4.2
++      react: 19.3.0
++      react-dom: 19.3.0(react@19.3.0)
++    optionalDependencies:
++      '@types/react': 19.3.0
++      '@types/react-dom': 19.3.0(@types/react@19.3.0)
++
++  '@types/aria-query@5.0.4': {}
++
+   '@types/better-sqlite3@9.6.0':
+     dependencies:
+       '@types/node': 24.19.1
+ 
+   '@types/chai@5.2.3':
+     dependencies:
+       '@types/deep-eql': 4.0.2
+       assertion-error: 2.0.1
+ 
+   '@types/deep-eql@4.0.2': {}
+ 
+   '@types/estree@1.0.9': {}
+ 
+   '@types/node@24.19.1':
+     dependencies:
+       undici-types: 7.24.6
+ 
++  '@types/react-dom@19.3.0(@types/react@19.3.0)':
++    dependencies:
++      '@types/react': 19.3.0
++
++  '@types/react@19.3.0':
++    dependencies:
++      csstype: 3.2.3
++
+   '@types/whatwg-mimetype@3.0.2': {}
+ 
+   '@types/ws@8.18.2':
+     dependencies:
+       '@types/node': 24.19.1
+ 
+   '@typescript/typescript-aix-ppc64@7.0.2':
+     optional: true
+ 
+   '@typescript/typescript-darwin-arm64@7.0.2':
+@@ -1162,47 +1346,66 @@ snapshots:
+ 
+   '@typescript/typescript-sunos-x64@7.0.2':
+     optional: true
+ 
+   '@typescript/typescript-win32-arm64@7.0.2':
+     optional: true
+ 
+   '@typescript/typescript-win32-x64@7.0.2':
+     optional: true
+ 
++  '@vitejs/plugin-react@6.1.2(vite@8.3.3(@types/node@24.19.1)(esbuild@0.28.2)(tsx@4.23.15))':
++    dependencies:
++      '@rolldown/pluginutils': 1.0.1
++      vite: 8.3.3(@types/node@24.19.1)(esbuild@0.28.2)(tsx@4.23.15)
++
+   '@vitest/mocker@5.0.3(vite@8.3.3(@types/node@24.19.1)(esbuild@0.28.2)(tsx@4.23.15))':
+     dependencies:
+       '@jridgewell/trace-mapping': 0.3.31
+       '@vitest/spy': 5.0.3
+       estree-walker: 3.0.3
+       magic-string: 1.4.3
+     optionalDependencies:
+       vite: 8.3.3(@types/node@24.19.1)(esbuild@0.28.2)(tsx@4.23.15)
+ 
+   '@vitest/spy@5.0.3': {}
+ 
++  ansi-regex@5.0.1: {}
++
++  ansi-styles@5.2.0: {}
++
++  aria-query@5.3.0:
++    dependencies:
++      dequal: 2.0.3
++
+   assertion-error@2.0.1: {}
+ 
+   better-sqlite3@13.0.3:
+     dependencies:
+       node-addon-api: 8.9.2
+ 
+   buffer-image-size@0.6.4:
+     dependencies:
+       '@types/node': 24.19.1
+ 
+   chai@6.3.0: {}
+ 
++  csstype@3.2.3: {}
++
++  dequal@2.0.3: {}
++
+   detect-libc@2.1.2: {}
+ 
+   dexie@4.4.6: {}
+ 
++  dom-accessibility-api@0.5.16: {}
++
+   entities@7.0.1: {}
+ 
+   es-module-lexer@2.3.2: {}
+ 
+   esbuild@0.28.2:
+     optionalDependencies:
+       '@esbuild/aix-ppc64': 0.28.2
+       '@esbuild/android-arm': 0.28.2
+       '@esbuild/android-arm64': 0.28.2
+       '@esbuild/android-x64': 0.28.2
+@@ -1256,20 +1459,22 @@ snapshots:
+       buffer-image-size: 0.6.4
+       entities: 7.0.1
+       whatwg-mimetype: 3.0.0
+       ws: 8.22.0
+     transitivePeerDependencies:
+       - bufferutil
+       - utf-8-validate
+ 
+   hono@4.13.13: {}
+ 
++  js-tokens@4.0.0: {}
++
+   kysely@0.29.6: {}
+ 
+   lightningcss-android-arm64@1.33.0:
+     optional: true
+ 
+   lightningcss-darwin-arm64@1.33.0:
+     optional: true
+ 
+   lightningcss-darwin-x64@1.33.0:
+     optional: true
+@@ -1307,42 +1512,61 @@ snapshots:
+       lightningcss-darwin-x64: 1.33.0
+       lightningcss-freebsd-x64: 1.33.0
+       lightningcss-linux-arm-gnueabihf: 1.33.0
+       lightningcss-linux-arm64-gnu: 1.33.0
+       lightningcss-linux-arm64-musl: 1.33.0
+       lightningcss-linux-x64-gnu: 1.33.0
+       lightningcss-linux-x64-musl: 1.33.0
+       lightningcss-win32-arm64-msvc: 1.33.0
+       lightningcss-win32-x64-msvc: 1.33.0
+ 
++  lz-string@1.5.0: {}
++
+   magic-string@1.4.3:
+     dependencies:
+       '@jridgewell/sourcemap-codec': 1.6.0
+ 
+   nanoid@3.3.20: {}
+ 
+   node-addon-api@8.9.2: {}
+ 
+   obug@2.2.1: {}
+ 
+   picocolors@1.1.1: {}
+ 
+   picomatch@4.0.7: {}
+ 
+   postcss@8.5.29:
+     dependencies:
+       nanoid: 3.3.20
+       picocolors: 1.1.1
+       source-map-js: 1.2.2
+ 
++  pretty-format@27.5.1:
++    dependencies:
++      ansi-regex: 5.0.1
++      ansi-styles: 5.2.0
++      react-is: 17.0.2
++
+   pure-rand@8.4.2: {}
+ 
++  react-dom@19.3.0(react@19.3.0):
++    dependencies:
++      react: 19.3.0
++      scheduler: 0.28.0
++
++  react-is@17.0.2: {}
++
++  react@19.3.0: {}
++
++  regexparam@3.0.0: {}
++
+   rolldown@1.2.12:
+     dependencies:
+       '@oxc-project/types': 0.152.0
+       '@rolldown/pluginutils': 1.0.1
+     optionalDependencies:
+       '@rolldown/binding-android-arm-eabi': 1.2.12
+       '@rolldown/binding-android-arm64': 1.2.12
+       '@rolldown/binding-darwin-arm64': 1.2.12
+       '@rolldown/binding-darwin-x64': 1.2.12
+       '@rolldown/binding-freebsd-x64': 1.2.12
+@@ -1350,20 +1574,22 @@ snapshots:
+       '@rolldown/binding-linux-arm64-gnu': 1.2.12
+       '@rolldown/binding-linux-arm64-musl': 1.2.12
+       '@rolldown/binding-linux-ppc64-gnu': 1.2.12
+       '@rolldown/binding-linux-s390x-gnu': 1.2.12
+       '@rolldown/binding-linux-x64-gnu': 1.2.12
+       '@rolldown/binding-linux-x64-musl': 1.2.12
+       '@rolldown/binding-openharmony-arm64': 1.2.12
+       '@rolldown/binding-win32-arm64-msvc': 1.2.12
+       '@rolldown/binding-win32-x64-msvc': 1.2.12
+ 
++  scheduler@0.28.0: {}
++
+   source-map-js@1.2.2: {}
+ 
+   std-env@4.3.0: {}
+ 
+   tinybench@6.2.1: {}
+ 
+   tinyexec@1.3.1: {}
+ 
+   tinyglobby@0.2.17:
+     dependencies:
+@@ -1394,20 +1620,24 @@ snapshots:
+       '@typescript/typescript-netbsd-arm64': 7.0.2
+       '@typescript/typescript-netbsd-x64': 7.0.2
+       '@typescript/typescript-openbsd-arm64': 7.0.2
+       '@typescript/typescript-openbsd-x64': 7.0.2
+       '@typescript/typescript-sunos-x64': 7.0.2
+       '@typescript/typescript-win32-arm64': 7.0.2
+       '@typescript/typescript-win32-x64': 7.0.2
+ 
+   undici-types@7.24.6: {}
+ 
++  use-sync-external-store@1.7.0(react@19.3.0):
++    dependencies:
++      react: 19.3.0
++
+   vite@8.3.3(@types/node@24.19.1)(esbuild@0.28.2)(tsx@4.23.15):
+     dependencies:
+       lightningcss: 1.33.0
+       picomatch: 4.0.7
+       postcss: 8.5.29
+       rolldown: 1.2.12
+       tinyglobby: 0.2.17
+     optionalDependencies:
+       '@types/node': 24.19.1
+       esbuild: 0.28.2
+@@ -1433,13 +1663,19 @@ snapshots:
+     optionalDependencies:
+       '@types/node': 24.19.1
+       happy-dom: 20.14.5
+     transitivePeerDependencies:
+       - msw
+ 
+   whatwg-mimetype@3.0.0: {}
+ 
+   why-is-node-running@3.2.1: {}
+ 
++  wouter@3.13.0(react@19.3.0):
++    dependencies:
++      react: 19.3.0
++      regexparam: 3.0.0
++      use-sync-external-store: 1.7.0(react@19.3.0)
++
+   ws@8.22.0: {}
+ 
+   zod@4.6.5: {}
+diff --git a/vitest.config.ts b/vitest.config.ts
+index 226f00d..93ad98f 100644
+--- a/vitest.config.ts
++++ b/vitest.config.ts
+@@ -6,18 +6,18 @@ export default defineConfig({
+     globals: false,
+     projects: [
+       { test: { name: 'contracts', root: 'packages/contracts', environment: 'node' } },
+       { test: { name: 'domain', root: 'packages/domain', environment: 'node' } },
+       { test: { name: 'server', root: 'apps/server', environment: 'node' } },
+       {
+         test: {
+           name: 'web',
+           root: 'apps/web',
+           environment: 'happy-dom',
+-          setupFiles: ['fake-indexeddb/auto'],
++          setupFiles: ['test/setup.ts'],
+           include: ['test/**/*.test.{ts,tsx}', 'src/**/*.test.{ts,tsx}'],
+           exclude: ['e2e/**', '**/node_modules/**'],
+         },
+       },
+     ],
+   },
+ });

@@ -1,0 +1,3007 @@
+# Review package: 2db68ca..HEAD
+
+## Commits
+49621b3 feat(web): dépôts d'accès aux données et voyant Prêt hors ligne
+
+## Files changed
+ apps/web/src/App.tsx                               |  12 +
+ apps/web/src/app-services.tsx                      |   3 +
+ apps/web/src/features/home/HomePage.tsx            |  21 +-
+ apps/web/src/features/home/home.module.css         |   4 +
+ .../src/features/status/OfflineReadyIndicator.tsx  |  52 ++++
+ apps/web/src/features/status/readiness.ts          |  45 ++++
+ apps/web/src/features/status/status.module.css     |  43 ++++
+ apps/web/src/features/status/use-readiness.ts      |  56 +++++
+ apps/web/src/local-db/meta.ts                      |   5 +-
+ apps/web/src/main.tsx                              |   7 +-
+ apps/web/src/repos/admin-repo.ts                   |  59 +++++
+ apps/web/src/repos/consent-repo.ts                 | 110 +++++++++
+ apps/web/src/repos/gyms-repo.ts                    |  75 ++++++
+ apps/web/src/repos/index.ts                        |  60 +++++
+ apps/web/src/repos/me-repo.ts                      | 148 ++++++++++++
+ apps/web/src/repos/places-repo.ts                  | 109 +++++++++
+ apps/web/src/repos/profile-repo.ts                 |  76 ++++++
+ apps/web/src/repos/rejections-repo.ts              | 108 +++++++++
+ apps/web/src/repos/rows.ts                         |  55 +++++
+ apps/web/src/repos/status-repo.ts                  |  79 ++++++
+ apps/web/src/sw/protocol.ts                        |  10 +
+ apps/web/src/sw/sw-client.ts                       |  45 +++-
+ apps/web/test/app/boot.test.ts                     |   1 +
+ apps/web/test/architecture.test.ts                 |  61 +++++
+ apps/web/test/home/adult-notice.test.tsx           |  44 ++++
+ apps/web/test/repos/admin-rejections.test.ts       | 165 +++++++++++++
+ apps/web/test/repos/consent-repo.test.ts           | 136 +++++++++++
+ apps/web/test/repos/me-repo.test.ts                | 229 ++++++++++++++++++
+ apps/web/test/repos/offline-mutations.test.ts      |  33 +++
+ apps/web/test/repos/profile-places-gyms.test.ts    | 266 +++++++++++++++++++++
+ apps/web/test/repos/status-repo.test.ts            |  96 ++++++++
+ apps/web/test/status/offline-ready.test.tsx        |  90 +++++++
+ apps/web/test/status/readiness.test.ts             |  64 +++++
+ apps/web/test/status/sw-client.test.ts             |  42 ++++
+ apps/web/test/support/render.tsx                   |  36 ++-
+ apps/web/test/support/seed.ts                      |  46 ++++
+ 36 files changed, 2480 insertions(+), 11 deletions(-)
+
+## Diff
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+index 45e3c97..2fd0d15 100644
+--- a/apps/web/src/App.tsx
++++ b/apps/web/src/App.tsx
+@@ -1,18 +1,20 @@
+ import type { MeResponse } from '@appsport/contracts';
++import { useEffect, useRef } from 'react';
+ import { Redirect, Route, Switch, useLocation } from 'wouter';
+ import { useMeState, useSyncState } from './app-services';
+ import { HomePage } from './features/home/HomePage';
+ import { CreditsPage } from './features/public/CreditsPage';
+ import { HelpPage } from './features/public/HelpPage';
+ import { NotFound } from './features/public/NotFound';
+ import { PrivacyPage } from './features/public/PrivacyPage';
++import { useRepos } from './repos';
+ import type { ConnectionState } from './sync/engine';
+ import { AppShell, PublicShell } from './ui';
+ 
+ /** Pages lisibles sans session (03 §13 : Confidentialité, Crédits, Aide) et parcours d'accès. */
+ export const PUBLIC_PATHS: readonly string[] = [
+   '/login',
+   '/invite',
+   '/reset',
+   '/privacy',
+   '/credits',
+@@ -76,20 +78,30 @@ function ConnectedRoutes() {
+       <Route path="/" component={HomePage} />
+       <Route component={NotFound} />
+     </Switch>
+   );
+ }
+ 
+ export function App() {
+   const [path] = useLocation();
+   const { loaded, me } = useMeState();
+   const { connection } = useSyncState();
++  const repos = useRepos();
++  const knownUser = loaded && me !== null;
++  const refreshed = useRef(false);
++  // Profil frais au lancement si l'appareil connaît une session (ageBand, consentements, mot de
++  // passe à changer) ; hors ligne : cache. Sans session connue, aucune requête (pages publiques).
++  useEffect(() => {
++    if (!knownUser || refreshed.current) return;
++    refreshed.current = true;
++    repos.me.refresh().catch(() => {});
++  }, [repos, knownUser]);
+   const guard = resolveGuard({ path, loaded, me, connection });
+ 
+   switch (guard.kind) {
+     case 'wait':
+       return null;
+     case 'redirect':
+       return <Redirect to={guard.to} replace />;
+     case 'not_found':
+       return (
+         <AppShell>
+diff --git a/apps/web/src/app-services.tsx b/apps/web/src/app-services.tsx
+index 052535d..c02fbd2 100644
+--- a/apps/web/src/app-services.tsx
++++ b/apps/web/src/app-services.tsx
+@@ -1,28 +1,31 @@
+ import type { MeResponse } from '@appsport/contracts';
+ import { liveQuery } from 'dexie';
+ import { createContext, type ReactNode, useContext, useEffect, useState, useSyncExternalStore } from 'react';
+ import type { ApiClient } from './api/client';
+ import type { AppDb } from './local-db/db';
+ import { getMeta } from './local-db/meta';
+ import { wipeUserData } from './local-db/wipe';
++import type { SwStatus } from './sw/protocol';
+ import type { SyncEngine, SyncState } from './sync/engine';
+ import type { SyncTransport } from './sync/transport';
+ 
+ /** Dépendances de l'appli, injectées : réelles dans `main.tsx`, factices dans les tests. */
+ export interface AppServices {
+   db: AppDb;
+   api: ApiClient;
+   sync: SyncEngine;
+   transport: SyncTransport;
+   now(): number;
+   newOpId(): string;
++  /** État du service worker (voyant « Prêt hors ligne ») ; null sans SW ou sans réponse. */
++  swStatus(): Promise<SwStatus | null>;
+ }
+ 
+ const ServicesContext = createContext<AppServices | null>(null);
+ 
+ export function ServicesProvider(p: { services: AppServices; children: ReactNode }) {
+   return <ServicesContext.Provider value={p.services}>{p.children}</ServicesContext.Provider>;
+ }
+ 
+ export function useServices(): AppServices {
+   const services = useContext(ServicesContext);
+diff --git a/apps/web/src/features/home/HomePage.tsx b/apps/web/src/features/home/HomePage.tsx
+index 0e64f9c..f32bc39 100644
+--- a/apps/web/src/features/home/HomePage.tsx
++++ b/apps/web/src/features/home/HomePage.tsx
+@@ -1,16 +1,33 @@
+-import { useMe } from '../../app-services';
+-import { Banner, Page } from '../../ui';
++import { useLive, useMe } from '../../app-services';
++import { useRepos } from '../../repos';
++import { Banner, Button, Page } from '../../ui';
++import { OfflineReadyIndicator } from '../status/OfflineReadyIndicator';
+ import styles from './home.module.css';
+ 
++/** R-AGE-6 : affiché une fois par appareil, au passage de mineur à adulte. */
++export const ADULT_NOTICE_TEXT =
++  "Tu as 18 ans : tu peux désormais choisir l'objectif « Perdre du gras » dans ton profil.";
++
+ export function HomePage() {
+   const me = useMe();
++  const repos = useRepos();
++  const adultNotice = useLive(() => repos.me.adultNotice(), [repos]);
+   if (!me) return null;
+   return (
+     <Page title={`Bonjour ${me.username}`}>
+       {me.passwordReminderDue ? (
+         <Banner tone="warning">Pense à changer ton mot de passe (rappel annuel).</Banner>
+       ) : null}
++      {adultNotice ? (
++        <Banner tone="info">
++          <p className={styles.notice}>{ADULT_NOTICE_TEXT}</p>
++          <Button variant="secondary" onClick={() => void repos.me.dismissAdultNotice()}>
++            J'ai compris
++          </Button>
++        </Banner>
++      ) : null}
+       <p className={styles.lead}>Tes programmes et tes séances arriveront ici.</p>
++      <OfflineReadyIndicator />
+     </Page>
+   );
+ }
+diff --git a/apps/web/src/features/home/home.module.css b/apps/web/src/features/home/home.module.css
+index 7f75de4..762c42e 100644
+--- a/apps/web/src/features/home/home.module.css
++++ b/apps/web/src/features/home/home.module.css
+@@ -1,4 +1,8 @@
+ .lead {
+   margin: 0;
+   color: var(--color-muted);
+ }
++
++.notice {
++  margin: 0 0 var(--space-2);
++}
+diff --git a/apps/web/src/features/status/OfflineReadyIndicator.tsx b/apps/web/src/features/status/OfflineReadyIndicator.tsx
+new file mode 100644
+index 0000000..29df2b9
+--- /dev/null
++++ b/apps/web/src/features/status/OfflineReadyIndicator.tsx
+@@ -0,0 +1,52 @@
++import { useState } from 'react';
++import { Button } from '../../ui';
++import { READINESS_FAILURES, type Readiness, type ReadinessCheck } from './readiness';
++import styles from './status.module.css';
++import { useReadiness } from './use-readiness';
++
++const CHECKS = Object.keys(READINESS_FAILURES) as ReadinessCheck[];
++
++function IndicatorView(p: { readiness: Readiness; onRetry?: () => void; retrying?: boolean }) {
++  const { ready, checks } = p.readiness;
++  const failing = CHECKS.filter((c) => !checks[c]);
++  return (
++    <section
++      data-testid="offline-ready"
++      data-state={ready ? 'ready' : 'not-ready'}
++      className={`${styles.indicator} ${ready ? styles.ready : styles.notReady}`}
++      aria-live="polite"
++    >
++      <p className={styles.title}>
++        <span className={styles.dot} aria-hidden="true" />
++        {ready ? 'Prêt hors ligne' : 'Pas encore prêt hors ligne'}
++      </p>
++      {failing.length > 0 ? (
++        <ul className={styles.failures}>
++          {failing.map((c) => (
++            <li key={c}>{READINESS_FAILURES[c]}</li>
++          ))}
++        </ul>
++      ) : null}
++      {!ready && p.onRetry ? (
++        <Button variant="secondary" onClick={p.onRetry} disabled={p.retrying}>
++          Réessayer
++        </Button>
++      ) : null}
++    </section>
++  );
++}
++
++function LiveIndicator() {
++  const { readiness, retry } = useReadiness();
++  const [retrying, setRetrying] = useState(false);
++  const onRetry = () => {
++    setRetrying(true);
++    void retry().finally(() => setRetrying(false));
++  };
++  return <IndicatorView readiness={readiness} onRetry={onRetry} retrying={retrying} />;
++}
++
++/** Voyant « Prêt hors ligne » : état fourni, ou calculé en direct (`useReadiness`). */
++export function OfflineReadyIndicator(p: { readiness?: Readiness }) {
++  return p.readiness ? <IndicatorView readiness={p.readiness} /> : <LiveIndicator />;
++}
+diff --git a/apps/web/src/features/status/readiness.ts b/apps/web/src/features/status/readiness.ts
+new file mode 100644
+index 0000000..4b608dd
+--- /dev/null
++++ b/apps/web/src/features/status/readiness.ts
+@@ -0,0 +1,45 @@
++import type { SwStatus } from '../../sw/protocol';
++
++/** Dernier pull réussi : récent s'il date de moins de 24 h. */
++export const RECENT_PULL_MS = 86_400_000;
++
++export interface Readiness {
++  ready: boolean;
++  checks: { shell: boolean; catalog: boolean; illustrations: boolean; recentPull: boolean };
++}
++
++export type ReadinessCheck = keyof Readiness['checks'];
++
++/** Libellé de chaque vérification en échec, dans l'ordre d'affichage. */
++export const READINESS_FAILURES: Record<ReadinessCheck, string> = {
++  shell: "Appli pas encore enregistrée sur l'appareil",
++  catalog: 'Catalogue à télécharger',
++  illustrations: 'Illustrations à télécharger',
++  recentPull: 'Pas de synchronisation depuis plus de 24 h',
++};
++
++export const NOT_READY: Readiness = {
++  ready: false,
++  checks: { shell: false, catalog: false, illustrations: false, recentPull: false },
++};
++
++/**
++ * « Prêt hors ligne » si et seulement si : coquille du build courant en précache, catalogue local
++ * à la dernière version connue du serveur, illustrations en cache, pull réussi il y a moins de 24 h.
++ */
++export function computeReadiness(i: {
++  sw: SwStatus | null;
++  catalogVersion: string | null;
++  serverCatalogVersion: string | null;
++  lastPullOkAt: string | null;
++  now: number;
++}): Readiness {
++  const pulledAt = i.lastPullOkAt === null ? Number.NaN : Date.parse(i.lastPullOkAt);
++  const checks = {
++    shell: i.sw?.shellCached === true,
++    catalog: i.catalogVersion !== null && i.catalogVersion === i.serverCatalogVersion,
++    illustrations: i.sw !== null && i.sw.illustrationsMissing === 0,
++    recentPull: !Number.isNaN(pulledAt) && i.now - pulledAt < RECENT_PULL_MS,
++  };
++  return { ready: checks.shell && checks.catalog && checks.illustrations && checks.recentPull, checks };
++}
+diff --git a/apps/web/src/features/status/status.module.css b/apps/web/src/features/status/status.module.css
+new file mode 100644
+index 0000000..80514dd
+--- /dev/null
++++ b/apps/web/src/features/status/status.module.css
+@@ -0,0 +1,43 @@
++.indicator {
++  display: grid;
++  gap: var(--space-2);
++  padding: var(--space-3) var(--space-4);
++  border: 1px solid var(--color-border);
++  border-radius: var(--radius);
++  background: var(--color-surface);
++}
++
++.title {
++  display: flex;
++  align-items: center;
++  gap: var(--space-2);
++  margin: 0;
++  font-weight: 600;
++}
++
++.dot {
++  width: 0.625rem;
++  height: 0.625rem;
++  border-radius: 50%;
++  background: var(--color-muted);
++  flex: none;
++}
++
++.ready .dot {
++  background: var(--color-primary);
++}
++
++.notReady .dot {
++  background: transparent;
++  border: 2px solid var(--color-muted);
++}
++
++.failures {
++  margin: 0;
++  padding-left: var(--space-6);
++  color: var(--color-muted);
++}
++
++.indicator > button {
++  justify-self: start;
++}
+diff --git a/apps/web/src/features/status/use-readiness.ts b/apps/web/src/features/status/use-readiness.ts
+new file mode 100644
+index 0000000..6175919
+--- /dev/null
++++ b/apps/web/src/features/status/use-readiness.ts
+@@ -0,0 +1,56 @@
++import { useCallback, useEffect, useRef, useState } from 'react';
++import { useServices, useSyncState } from '../../app-services';
++import { useRepos } from '../../repos';
++import { computeReadiness, NOT_READY, type Readiness } from './readiness';
++
++export const READINESS_REFRESH_MS = 5000;
++
++/** État « Prêt hors ligne », recalculé au montage, à chaque état de synchro et toutes les 5 s. */
++export function useReadiness(): { readiness: Readiness; refresh(): Promise<void>; retry(): Promise<void> } {
++  const services = useServices();
++  const repos = useRepos();
++  const syncState = useSyncState();
++  const [readiness, setReadiness] = useState<Readiness>(NOT_READY);
++  const latest = useRef(0);
++  const mounted = useRef(true);
++  useEffect(() => {
++    mounted.current = true;
++    return () => {
++      mounted.current = false;
++    };
++  }, []);
++
++  const refresh = useCallback(async () => {
++    const call = ++latest.current;
++    const [sw, inputs] = await Promise.all([
++      services.swStatus().catch(() => null),
++      repos.status.readinessInputs(),
++    ]);
++    // Un calcul plus récent a pu finir avant celui-ci.
++    if (!mounted.current || call !== latest.current) return;
++    setReadiness(computeReadiness({ sw, ...inputs, now: services.now() }));
++  }, [services, repos]);
++
++  // biome-ignore lint/correctness/useExhaustiveDependencies: recalcul voulu à chaque état de synchro
++  useEffect(() => {
++    refresh().catch(() => {});
++  }, [refresh, syncState]);
++
++  useEffect(() => {
++    const timer = setInterval(() => {
++      refresh().catch(() => {});
++    }, READINESS_REFRESH_MS);
++    return () => clearInterval(timer);
++  }, [refresh]);
++
++  const retry = useCallback(async () => {
++    try {
++      await repos.status.retry();
++    } catch {
++      // Hors ligne ou catalogue indisponible : le voyant dit déjà ce qui manque.
++    }
++    await refresh();
++  }, [repos, refresh]);
++
++  return { readiness, refresh, retry };
++}
+diff --git a/apps/web/src/local-db/meta.ts b/apps/web/src/local-db/meta.ts
+index 005f088..26a34aa 100644
+--- a/apps/web/src/local-db/meta.ts
++++ b/apps/web/src/local-db/meta.ts
+@@ -1,35 +1,38 @@
+-import type { MeResponse } from '@appsport/contracts';
++import type { AgeBand, MeResponse } from '@appsport/contracts';
+ import type { AppDb } from './db';
+ 
+ export interface MetaValues {
+   deviceId: string;
+   userId: string;
+   watermark: string;
+   serverEpoch: string;
+   protocol: number;
+   catalogVersion: string;
+   serverCatalogVersion: string;
+   activeSessionId: string | null;
+   lastPullOkAt: string;
+   persistGranted: boolean;
+   me: MeResponse;
++  /** Tranche d'âge vue en dernier sur l'appareil : message des 18 ans, une fois (R-AGE-6). */
++  lastAgeBand: AgeBand;
+ }
+ 
+ /** Clés liées à l'utilisateur connecté, effacées par `wipeUserData`. */
+ export const USER_META_KEYS: readonly (keyof MetaValues)[] = [
+   'userId',
+   'watermark',
+   'serverEpoch',
+   'lastPullOkAt',
+   'activeSessionId',
+   'me',
++  'lastAgeBand',
+ ];
+ 
+ export async function getMeta<K extends keyof MetaValues>(
+   db: AppDb,
+   k: K,
+ ): Promise<MetaValues[K] | undefined> {
+   const entry = await db.meta.get(k);
+   return entry?.value as MetaValues[K] | undefined;
+ }
+ 
+diff --git a/apps/web/src/main.tsx b/apps/web/src/main.tsx
+index d5bda35..ccc6525 100644
+--- a/apps/web/src/main.tsx
++++ b/apps/web/src/main.tsx
+@@ -1,40 +1,45 @@
+ import { createMonotonicUuidV7 } from '@appsport/domain';
+ import { StrictMode } from 'react';
+ import { createRoot } from 'react-dom/client';
+ import { Router } from 'wouter';
+ import { navigate } from 'wouter/use-browser-location';
+ import { App } from './App';
+ import { createApiClient } from './api/client';
+ import { type AppServices, handleAccountDeleted, ServicesProvider } from './app-services';
+ import { bootApp } from './boot';
+ import { createAppDb } from './local-db/db';
++import { getSwStatus } from './sw/sw-client';
+ import { createSyncEngine } from './sync/engine';
+ import { browserTransport } from './sync/transport';
+ 
+ const randomBytes = (n: number) => crypto.getRandomValues(new Uint8Array(n));
+ const go = (to: string) => navigate(to, { replace: true });
+ 
+ const db = createAppDb();
+ const transport = browserTransport();
+ const newOpId = createMonotonicUuidV7(Date.now, randomBytes);
+ const sync = createSyncEngine({
+   db,
+   transport,
+   newOpId,
+   onAccountDeleted: () => go('/login?reason=account_deleted'),
+ });
+ const api = createApiClient(transport, {
+   onUnauthenticated: () => void sync.syncNow('manual'),
+   onAccountDeleted: () => void handleAccountDeleted(db, go),
+ });
+-const services: AppServices = { db, api, sync, transport, now: Date.now, newOpId };
++// Vite en développement n'enregistre pas de SW : coquille et illustrations réputées en cache.
++const swStatus: AppServices['swStatus'] = import.meta.env.DEV
++  ? async () => ({ type: 'STATUS', buildHash: 'dev', shellCached: true, illustrationsMissing: 0 })
++  : () => getSwStatus();
++const services: AppServices = { db, api, sync, transport, now: Date.now, newOpId, swStatus };
+ 
+ bootApp(services);
+ 
+ const root = document.getElementById('root');
+ if (!root) throw new Error('#root absent de index.html');
+ createRoot(root).render(
+   <StrictMode>
+     <Router>
+       <ServicesProvider services={services}>
+         <App />
+diff --git a/apps/web/src/repos/admin-repo.ts b/apps/web/src/repos/admin-repo.ts
+new file mode 100644
+index 0000000..bb659a3
+--- /dev/null
++++ b/apps/web/src/repos/admin-repo.ts
+@@ -0,0 +1,59 @@
++import {
++  type CreateInvitationRequest,
++  CreateInvitationResponse,
++  GymSummary,
++  InvitationSummary,
++  MemberSummary,
++  OpsStatusResponse,
++  ResetLinkResponse,
++  type Role,
++  type UserStatus,
++} from '@appsport/contracts';
++import { z } from 'zod';
++import type { AppServices } from '../app-services';
++import { sendThenPull } from './rows';
++
++export interface AdminRepo {
++  members(): Promise<MemberSummary[]>;
++  resetLink(id: string): Promise<ResetLinkResponse>;
++  revokeSessions(id: string): Promise<void>;
++  setStatus(id: string, s: UserStatus): Promise<void>;
++  /** `password` : mot de passe de l'admin (P-AUT-5). */
++  setRole(id: string, r: Role, password: string): Promise<void>;
++  setBirthDate(id: string, d: string): Promise<void>;
++  deleteMember(id: string, confirmUsername: string, password: string): Promise<void>;
++  invitations(): Promise<InvitationSummary[]>;
++  createInvitation(r: CreateInvitationRequest): Promise<CreateInvitationResponse>;
++  revokeInvitation(id: string): Promise<void>;
++  opsStatus(): Promise<OpsStatusResponse>;
++  gyms(): Promise<GymSummary[]>;
++  deleteGym(id: string): Promise<void>;
++}
++
++export function createAdminRepo(s: AppServices): AdminRepo {
++  const { api } = s;
++  const member = (id: string, action: string) => `/api/admin/members/${encodeURIComponent(id)}/${action}`;
++  const post = async (path: string, body?: unknown) => {
++    await sendThenPull(s, 'POST', path, { body });
++  };
++
++  return {
++    members: () => api.get('/api/admin/members', z.array(MemberSummary)),
++    resetLink: (id) => sendThenPull(s, 'POST', member(id, 'reset-link'), { schema: ResetLinkResponse }),
++    revokeSessions: (id) => post(member(id, 'revoke-sessions')),
++    setStatus: (id, status) => post(member(id, 'status'), { status }),
++    setRole: (id, role, password) => post(member(id, 'role'), { role, password }),
++    setBirthDate: (id, birthDate) => post(member(id, 'birth-date'), { birthDate }),
++    deleteMember: (id, confirmUsername, password) =>
++      post(member(id, 'delete'), { confirmUsername, password }),
++    invitations: () => api.get('/api/admin/invitations', z.array(InvitationSummary)),
++    createInvitation: (r) =>
++      sendThenPull(s, 'POST', '/api/admin/invitations', { body: r, schema: CreateInvitationResponse }),
++    revokeInvitation: (id) => post(`/api/admin/invitations/${encodeURIComponent(id)}/revoke`),
++    opsStatus: () => api.get('/api/admin/ops-status', OpsStatusResponse),
++    gyms: () => api.get('/api/gyms', z.array(GymSummary)),
++    async deleteGym(id) {
++      await sendThenPull(s, 'DELETE', `/api/admin/gyms/${encodeURIComponent(id)}`);
++    },
++  };
++}
+diff --git a/apps/web/src/repos/consent-repo.ts b/apps/web/src/repos/consent-repo.ts
+new file mode 100644
+index 0000000..9b7cf0a
+--- /dev/null
++++ b/apps/web/src/repos/consent-repo.ts
+@@ -0,0 +1,110 @@
++import {
++  BODY_AREAS,
++  type BodyArea,
++  type ConsentState,
++  CreateLimitationResponse,
++  HEALTH_CONSENT_TEXT,
++  HEALTH_QUESTIONNAIRE,
++  HealthScreeningResponse,
++  LIMITATION_SEVERITIES,
++  LIMITATION_SIDES,
++  type LimitationInput,
++  type LimitationPatch,
++  type LimitationSeverity,
++  type LimitationSide,
++  MeResponse,
++  majorOf,
++} from '@appsport/contracts';
++import type { AppServices } from '../app-services';
++import { getMeta, setMeta } from '../local-db/meta';
++import { purgeHealthData } from '../local-db/wipe';
++import { currentUserId, isLive, oneOf, ownedRows, sendThenPull, text } from './rows';
++
++export interface LimitationView {
++  id: string;
++  bodyArea: BodyArea;
++  side: LimitationSide;
++  severity: LimitationSeverity;
++  note: string | null;
++  active: boolean;
++}
++
++export interface ConsentRepo {
++  state(): Promise<ConsentState | null>;
++  /** Accord santé actif donné sur une version majeure antérieure du texte (P-CST-4). */
++  needsHealthReconsent(): Promise<boolean>;
++  grantHealth(): Promise<MeResponse>;
++  /** MeResponse → meta.me, purge locale des données de santé (P-CST-3), puis pull. */
++  withdrawHealth(password: string): Promise<MeResponse>;
++  screening(): Promise<{ caution: boolean; questionnaireVersion: string; answeredAt: string } | null>;
++  saveScreening(a: [boolean, boolean, boolean, boolean]): Promise<{ caution: boolean }>;
++  limitations(): Promise<LimitationView[]>;
++  addLimitation(i: LimitationInput): Promise<{ id: string }>;
++  updateLimitation(id: string, p: LimitationPatch): Promise<void>;
++  removeLimitation(id: string): Promise<void>;
++}
++
++export function createConsentRepo(s: AppServices): ConsentRepo {
++  const { db } = s;
++  const saveMe = (me: MeResponse) => setMeta(db, 'me', me);
++  const limitationPath = (id: string) => `/api/me/limitations/${encodeURIComponent(id)}`;
++
++  return {
++    async state() {
++      return (await getMeta(db, 'me'))?.consents ?? null;
++    },
++    async needsHealthReconsent() {
++      const health = (await getMeta(db, 'me'))?.consents.health;
++      if (!health?.active || health.textVersion === null) return false;
++      return majorOf(health.textVersion) < majorOf(HEALTH_CONSENT_TEXT.version);
++    },
++    grantHealth: () =>
++      sendThenPull(s, 'POST', '/api/me/consents', {
++        body: { type: 'health', textVersion: HEALTH_CONSENT_TEXT.version },
++        schema: MeResponse,
++        apply: saveMe,
++      }),
++    withdrawHealth: (password) =>
++      sendThenPull(s, 'POST', '/api/me/consents/withdraw', {
++        body: { type: 'health', password },
++        schema: MeResponse,
++        apply: async (me) => {
++          await saveMe(me);
++          await purgeHealthData(db);
++        },
++      }),
++    async screening() {
++      const userId = await currentUserId(db);
++      // id = owner_id pour health_screening.
++      const row = userId === null ? undefined : await db.mirror('health_screening').get(userId);
++      if (!row || !isLive(row) || typeof row.caution !== 'boolean') return null;
++      const questionnaireVersion = text(row.questionnaireVersion);
++      const answeredAt = text(row.answeredAt);
++      if (questionnaireVersion === null || answeredAt === null) return null;
++      return { caution: row.caution, questionnaireVersion, answeredAt };
++    },
++    saveScreening: (answers) =>
++      sendThenPull(s, 'PUT', '/api/me/health-screening', {
++        body: { answers, questionnaireVersion: HEALTH_QUESTIONNAIRE.version },
++        schema: HealthScreeningResponse,
++      }),
++    async limitations() {
++      const rows = await ownedRows(db, 'limitation', await currentUserId(db));
++      return rows.flatMap((r) => {
++        const bodyArea = oneOf(BODY_AREAS, r.bodyArea);
++        const side = oneOf(LIMITATION_SIDES, r.side);
++        const severity = oneOf(LIMITATION_SEVERITIES, r.severity);
++        if (!bodyArea || !side || !severity) return [];
++        return [{ id: r.id, bodyArea, side, severity, note: text(r.note), active: r.active === true }];
++      });
++    },
++    addLimitation: (i) =>
++      sendThenPull(s, 'POST', '/api/me/limitations', { body: i, schema: CreateLimitationResponse }),
++    async updateLimitation(id, p) {
++      await sendThenPull(s, 'PATCH', limitationPath(id), { body: p });
++    },
++    async removeLimitation(id) {
++      await sendThenPull(s, 'DELETE', limitationPath(id));
++    },
++  };
++}
+diff --git a/apps/web/src/repos/gyms-repo.ts b/apps/web/src/repos/gyms-repo.ts
+new file mode 100644
+index 0000000..0cbbcc9
+--- /dev/null
++++ b/apps/web/src/repos/gyms-repo.ts
+@@ -0,0 +1,75 @@
++import {
++  type CreateGymRequest,
++  CreateGymResponse,
++  defaultLoadSettings,
++  type EquipmentCode,
++  GymDetail,
++  GymSummary,
++  LoadSettingsSchema,
++  type UpdateGymRequest,
++} from '@appsport/contracts';
++import { z } from 'zod';
++import { NetworkRequiredError } from '../api/client';
++import type { AppServices } from '../app-services';
++import { equipmentOf } from './places-repo';
++import { parseJsonColumn, sendThenPull, text } from './rows';
++
++export interface GymsRepo {
++  search(q: string): Promise<GymSummary[]>;
++  similar(name: string, city: string): Promise<GymSummary[]>;
++  create(r: CreateGymRequest): Promise<CreateGymResponse>;
++  /**
++   * En ligne : fiche du serveur. Hors ligne : fiche tirée des miroirs (`offline: true`), sans droit
++   * d'édition, historique ni membres visibles ; l'écran affiche alors « Liste disponible en ligne »
++   * au lieu de la liste vide. Salle absente des miroirs : l'erreur réseau est relancée.
++   */
++  detail(id: string): Promise<{ detail: GymDetail; offline: boolean }>;
++  update(id: string, r: UpdateGymRequest): Promise<void>;
++  setEquipment(id: string, code: EquipmentCode, present: boolean): Promise<void>;
++}
++
++const GymSummaries = z.array(GymSummary);
++
++export function createGymsRepo(s: AppServices): GymsRepo {
++  const { db, api } = s;
++  const gymPath = (id: string) => `/api/gyms/${encodeURIComponent(id)}`;
++
++  async function offlineDetail(id: string): Promise<GymDetail | null> {
++    const gym = await db.mirror('gym').get(id);
++    if (!gym) return null;
++    return {
++      id: gym.id,
++      name: text(gym.name) ?? '',
++      city: text(gym.city) ?? '',
++      loadSettings: parseJsonColumn(gym.loadSettings, LoadSettingsSchema) ?? defaultLoadSettings('gym'),
++      deletedAt: gym.deletedAt,
++      equipment: await equipmentOf(db, 'gym_equipment', 'gymId', gym.id),
++      canEdit: false,
++      visibleMembers: [],
++      history: [],
++    };
++  }
++
++  return {
++    search: (q) => api.get(`/api/gyms?${new URLSearchParams({ q })}`, GymSummaries),
++    similar: (name, city) =>
++      api.get(`/api/gyms/similar?${new URLSearchParams({ name, city })}`, GymSummaries),
++    create: (r) => sendThenPull(s, 'POST', '/api/gyms', { body: r, schema: CreateGymResponse }),
++    async detail(id) {
++      try {
++        return { detail: await api.get(gymPath(id), GymDetail), offline: false };
++      } catch (error) {
++        if (!(error instanceof NetworkRequiredError)) throw error;
++        const detail = await offlineDetail(id);
++        if (!detail) throw error;
++        return { detail, offline: true };
++      }
++    },
++    async update(id, r) {
++      await sendThenPull(s, 'PATCH', gymPath(id), { body: r });
++    },
++    async setEquipment(id, code, present) {
++      await sendThenPull(s, present ? 'PUT' : 'DELETE', `${gymPath(id)}/equipment/${code}`);
++    },
++  };
++}
+diff --git a/apps/web/src/repos/index.ts b/apps/web/src/repos/index.ts
+new file mode 100644
+index 0000000..20c5ca3
+--- /dev/null
++++ b/apps/web/src/repos/index.ts
+@@ -0,0 +1,60 @@
++import { useMemo } from 'react';
++import { type AppServices, useServices } from '../app-services';
++import { type AdminRepo, createAdminRepo } from './admin-repo';
++import { type ConsentRepo, createConsentRepo } from './consent-repo';
++import { createGymsRepo, type GymsRepo } from './gyms-repo';
++import { createMeRepo, type MeRepo } from './me-repo';
++import { createPlacesRepo, type PlacesRepo } from './places-repo';
++import { createProfileRepo, type ProfileRepo } from './profile-repo';
++import { createRejectionsRepo, type RejectionsRepo } from './rejections-repo';
++import { createStatusRepo, type StatusRepo } from './status-repo';
++
++export type { AdminRepo } from './admin-repo';
++export type { ConsentRepo, LimitationView } from './consent-repo';
++export type { GymsRepo } from './gyms-repo';
++export type { MeRepo } from './me-repo';
++export type { PlacesRepo, PlaceView } from './places-repo';
++export type { ProfileRepo, TrainingProfileView } from './profile-repo';
++export type { RejectionsRepo, RejectionView } from './rejections-repo';
++export { isLive, parseJsonColumn } from './rows';
++export type { StatusRepo } from './status-repo';
++
++/** Seul accès des écrans aux données : Dexie (miroirs, meta, outbox) et API en ligne (01 §2 et §3). */
++export interface Repos {
++  me: MeRepo;
++  profile: ProfileRepo;
++  places: PlacesRepo;
++  gyms: GymsRepo;
++  consent: ConsentRepo;
++  admin: AdminRepo;
++  rejections: RejectionsRepo;
++  status: StatusRepo;
++}
++
++export function createRepos(s: AppServices): Repos {
++  return {
++    me: createMeRepo(s),
++    profile: createProfileRepo(s),
++    places: createPlacesRepo(s),
++    gyms: createGymsRepo(s),
++    consent: createConsentRepo(s),
++    admin: createAdminRepo(s),
++    rejections: createRejectionsRepo(s),
++    status: createStatusRepo(s),
++  };
++}
++
++const cache = new WeakMap<AppServices, Repos>();
++
++/** Dépôts des services courants, un seul jeu par services (référence stable). */
++export function useRepos(): Repos {
++  const services = useServices();
++  return useMemo(() => {
++    let repos = cache.get(services);
++    if (!repos) {
++      repos = createRepos(services);
++      cache.set(services, repos);
++    }
++    return repos;
++  }, [services]);
++}
+diff --git a/apps/web/src/repos/me-repo.ts b/apps/web/src/repos/me-repo.ts
+new file mode 100644
+index 0000000..117d404
+--- /dev/null
++++ b/apps/web/src/repos/me-repo.ts
+@@ -0,0 +1,148 @@
++import {
++  type AcceptInvitationRequest,
++  type ChangePasswordRequest,
++  ExportV1,
++  InvitationCheckResponse,
++  type LoginRequest,
++  MeResponse,
++  ResetCheckResponse,
++  type ResetPasswordRequest,
++} from '@appsport/contracts';
++import { ApiError, NetworkRequiredError } from '../api/client';
++import type { AppServices } from '../app-services';
++import { getMeta, setMeta } from '../local-db/meta';
++import { wipeUserData } from '../local-db/wipe';
++import { pendingCount } from '../sync/outbox';
++
++export interface MeRepo {
++  current(): Promise<MeResponse | null>;
++  /** GET /api/me ; hors ligne → cache ; ApiError → null sans effacer le cache. */
++  refresh(): Promise<MeResponse | null>;
++  /** Propriétaire des données de l'appareil, pour avertir avant qu'un autre pseudo se connecte (P-AUT-6). */
++  deviceOwner(): Promise<{ userId: string | null; username: string | null; pending: number }>;
++  login(r: LoginRequest): Promise<MeResponse>;
++  checkInvitation(code: string): Promise<InvitationCheckResponse>;
++  acceptInvitation(r: AcceptInvitationRequest): Promise<MeResponse>;
++  checkReset(code: string): Promise<ResetCheckResponse>;
++  resetPassword(r: ResetPasswordRequest): Promise<MeResponse>;
++  updateUsername(u: string): Promise<MeResponse>;
++  /** 204 → refresh() puis synchro manuelle (débloquée après R-MDP-1). */
++  changePassword(r: ChangePasswordRequest): Promise<void>;
++  logout(mode: 'current' | 'all'): Promise<void>;
++  exportData(): Promise<ExportV1>;
++  deleteAccount(password: string): Promise<void>;
++  /** Message des 18 ans à afficher : tranche vue « minor » sur l'appareil, « adult » maintenant (R-AGE-6). */
++  adultNotice(): Promise<boolean>;
++  dismissAdultNotice(): Promise<void>;
++}
++
++export function createMeRepo(s: AppServices): MeRepo {
++  const { db, api, sync } = s;
++
++  /** meta.me, et la tranche d'âge vue : posée si absente, ou tant que l'utilisateur est mineur. */
++  async function rememberMe(me: MeResponse): Promise<void> {
++    await db.transaction('rw', db.meta, async () => {
++      await setMeta(db, 'me', me);
++      const last = await getMeta(db, 'lastAgeBand');
++      if (last === undefined || me.ageBand === 'minor') await setMeta(db, 'lastAgeBand', me.ageBand);
++    });
++  }
++
++  /**
++   * Session ouverte sous `me` (moteur déjà arrêté). Autre utilisateur que celui de l'appareil :
++   * données locales effacées, file comprise (P-AUT-6, l'écran a averti grâce à `deviceOwner`),
++   * puis meta.userId posé avant toute synchro sous le nouveau cookie. Le moteur est relancé
++   * (réarmé même après un 410) et une synchro manuelle demandée.
++   */
++  async function adoptSession(me: MeResponse): Promise<void> {
++    if ((await getMeta(db, 'userId')) !== me.id) {
++      await wipeUserData(db, { keepOutbox: false });
++      await setMeta(db, 'userId', me.id);
++    }
++    await rememberMe(me);
++    sync.start();
++    void sync.syncNow('manual');
++  }
++
++  /**
++   * Le moteur est arrêté avant la requête : aucun cycle de l'ancien utilisateur ne part sous le
++   * cookie que la réponse pose. En cas d'échec, il est relancé tel quel.
++   */
++  async function openSession(request: () => Promise<MeResponse>): Promise<MeResponse> {
++    sync.stop();
++    let me: MeResponse;
++    try {
++      me = await request();
++    } catch (error) {
++      sync.start();
++      throw error;
++    }
++    await adoptSession(me);
++    return me;
++  }
++
++  const current = async () => (await getMeta(db, 'me')) ?? null;
++
++  const repo: MeRepo = {
++    current,
++    async refresh() {
++      let me: MeResponse;
++      try {
++        me = await api.get('/api/me', MeResponse);
++      } catch (error) {
++        if (error instanceof NetworkRequiredError) return current();
++        if (error instanceof ApiError) return null;
++        throw error;
++      }
++      if ((await getMeta(db, 'userId')) === me.id) {
++        await rememberMe(me);
++      } else {
++        // Session d'un autre compte (ouverte ailleurs dans ce navigateur) : on l'adopte.
++        sync.stop();
++        await adoptSession(me);
++      }
++      return me;
++    },
++    async deviceOwner() {
++      const userId = (await getMeta(db, 'userId')) ?? null;
++      return {
++        userId,
++        username: (await getMeta(db, 'me'))?.username ?? null,
++        pending: userId ? await pendingCount(db, userId) : 0,
++      };
++    },
++    login: (r) => openSession(() => api.send('POST', '/api/auth/login', r, MeResponse)),
++    checkInvitation: (code) => api.send('POST', '/api/invitations/check', { code }, InvitationCheckResponse),
++    acceptInvitation: (r) => openSession(() => api.send('POST', '/api/invitations/accept', r, MeResponse)),
++    checkReset: (code) => api.send('POST', '/api/auth/reset/check', { code }, ResetCheckResponse),
++    resetPassword: (r) => openSession(() => api.send('POST', '/api/auth/reset', r, MeResponse)),
++    async updateUsername(username) {
++      const me = await api.send('PATCH', '/api/me', { username }, MeResponse);
++      await rememberMe(me);
++      await sync.pullNow();
++      return me;
++    },
++    async changePassword(r) {
++      await api.send('POST', '/api/auth/password', r);
++      await repo.refresh();
++      void sync.syncNow('manual');
++    },
++    async logout(mode) {
++      await api.send('POST', mode === 'all' ? '/api/auth/logout-all' : '/api/auth/logout');
++      await wipeUserData(db, { keepOutbox: false });
++    },
++    exportData: () => api.get('/api/me/export', ExportV1),
++    async deleteAccount(password) {
++      await api.send('POST', '/api/me/delete', { password });
++      await wipeUserData(db, { keepOutbox: false });
++    },
++    async adultNotice() {
++      const last = await getMeta(db, 'lastAgeBand');
++      return last === 'minor' && (await current())?.ageBand === 'adult';
++    },
++    async dismissAdultNotice() {
++      await setMeta(db, 'lastAgeBand', 'adult');
++    },
++  };
++  return repo;
++}
+diff --git a/apps/web/src/repos/places-repo.ts b/apps/web/src/repos/places-repo.ts
+new file mode 100644
+index 0000000..384817a
+--- /dev/null
++++ b/apps/web/src/repos/places-repo.ts
+@@ -0,0 +1,109 @@
++import {
++  type CreatePlaceRequest,
++  type DeletePlaceRequest,
++  EQUIPMENT,
++  type EquipmentCode,
++  HOME_PLACE_DEFAULT_NAME,
++  type LoadSettings,
++  LoadSettingsSchema,
++  type UpdatePlaceRequest,
++} from '@appsport/contracts';
++import type { AppServices } from '../app-services';
++import type { AppDb, MirrorRow } from '../local-db/db';
++import { currentUserId, isLive, ownedRows, parseJsonColumn, sendThenPull, text } from './rows';
++
++export interface PlaceView {
++  id: string;
++  kind: 'gym' | 'home';
++  gymId: string | null;
++  name: string;
++  city: string | null;
++  isPrimary: boolean;
++  visibleAtGym: boolean | null;
++  loadSettings: LoadSettings | null;
++  equipment: EquipmentCode[];
++}
++
++export interface PlacesRepo {
++  /** Lieux vivants de l'utilisateur, le principal d'abord puis par nom. */
++  list(): Promise<PlaceView[]>;
++  get(id: string): Promise<PlaceView | null>;
++  create(r: CreatePlaceRequest): Promise<void>;
++  update(id: string, r: UpdatePlaceRequest): Promise<void>;
++  remove(id: string, r: DeletePlaceRequest): Promise<void>;
++  setEquipment(placeId: string, code: EquipmentCode, present: boolean): Promise<void>;
++}
++
++/** Codes vivants d'un miroir de matériel (`gym_equipment` ou `home_equipment`), dans l'ordre de la taxonomie. */
++export async function equipmentOf(
++  db: AppDb,
++  entity: 'gym_equipment' | 'home_equipment',
++  key: 'gymId' | 'placeId',
++  id: string,
++): Promise<EquipmentCode[]> {
++  const rows = await db.mirror(entity).where(key).equals(id).toArray();
++  const codes = new Set(rows.filter(isLive).map((r) => r.equipmentCode));
++  return EQUIPMENT.filter((c) => codes.has(c));
++}
++
++async function toView(db: AppDb, row: MirrorRow): Promise<PlaceView> {
++  const own = parseJsonColumn(row.loadSettings, LoadSettingsSchema);
++  if (row.kind === 'gym') {
++    const gymId = text(row.gymId);
++    const gym = gymId ? await db.mirror('gym').get(gymId) : undefined;
++    return {
++      id: row.id,
++      kind: 'gym',
++      gymId,
++      name: text(gym?.name) ?? text(row.name) ?? '',
++      city: text(gym?.city),
++      isPrimary: row.isPrimary === true,
++      visibleAtGym: typeof row.visibleAtGym === 'boolean' ? row.visibleAtGym : null,
++      loadSettings: own ?? parseJsonColumn(gym?.loadSettings, LoadSettingsSchema),
++      equipment: gymId ? await equipmentOf(db, 'gym_equipment', 'gymId', gymId) : [],
++    };
++  }
++  return {
++    id: row.id,
++    kind: 'home',
++    gymId: null,
++    name: text(row.name) ?? HOME_PLACE_DEFAULT_NAME,
++    city: null,
++    isPrimary: row.isPrimary === true,
++    visibleAtGym: null,
++    loadSettings: own,
++    equipment: await equipmentOf(db, 'home_equipment', 'placeId', row.id),
++  };
++}
++
++export function createPlacesRepo(s: AppServices): PlacesRepo {
++  const { db } = s;
++
++  async function list(): Promise<PlaceView[]> {
++    const rows = await ownedRows(db, 'place', await currentUserId(db));
++    const views = await Promise.all(rows.map((r) => toView(db, r)));
++    return views.sort(
++      (a, b) => Number(b.isPrimary) - Number(a.isPrimary) || a.name.localeCompare(b.name, 'fr'),
++    );
++  }
++
++  return {
++    list,
++    async get(id) {
++      return (await list()).find((p) => p.id === id) ?? null;
++    },
++    async create(r) {
++      await sendThenPull(s, 'POST', '/api/places', { body: r });
++    },
++    async update(id, r) {
++      await sendThenPull(s, 'PATCH', `/api/places/${encodeURIComponent(id)}`, { body: r });
++    },
++    async remove(id, r) {
++      await sendThenPull(s, 'DELETE', `/api/places/${encodeURIComponent(id)}`, { body: r });
++    },
++    async setEquipment(placeId, code, present) {
++      const path = `/api/places/${encodeURIComponent(placeId)}/equipment/${code}`;
++      await sendThenPull(s, present ? 'PUT' : 'DELETE', path);
++    },
++  };
++}
+diff --git a/apps/web/src/repos/profile-repo.ts b/apps/web/src/repos/profile-repo.ts
+new file mode 100644
+index 0000000..598fbea
+--- /dev/null
++++ b/apps/web/src/repos/profile-repo.ts
+@@ -0,0 +1,76 @@
++import {
++  DAYS_PER_WEEK,
++  EXPERIENCES,
++  type Experience,
++  GOALS,
++  type Goal,
++  MeResponse,
++  SESSION_MINUTES,
++  SPORT_CODES,
++  type SportCode,
++  type TrainingProfilePatch,
++} from '@appsport/contracts';
++import type { firstIncompleteStep } from '@appsport/domain';
++import type { AppServices } from '../app-services';
++import { getMeta, setMeta } from '../local-db/meta';
++import { currentUserId, isLive, oneOf, ownedRows, sendThenPull, text } from './rows';
++
++export interface TrainingProfileView {
++  goal: Goal | null;
++  experience: Experience | null;
++  daysPerWeek: 2 | 3 | 4 | null;
++  sessionMinutes: 30 | 45 | 60 | 75 | 90 | null;
++  sportCode: SportCode | null;
++  sportOtherLabel: string | null;
++  cautiousMode: boolean;
++}
++
++export interface ProfileRepo {
++  get(): Promise<TrainingProfileView | null>;
++  update(p: TrainingProfilePatch): Promise<MeResponse>;
++  completeOnboarding(): Promise<MeResponse>;
++  onboardingInput(): Promise<Parameters<typeof firstIncompleteStep>[0]>;
++}
++
++export function createProfileRepo(s: AppServices): ProfileRepo {
++  const { db } = s;
++
++  async function get(): Promise<TrainingProfileView | null> {
++    const userId = await currentUserId(db);
++    if (userId === null) return null;
++    // id = owner_id pour training_profile.
++    const row = await db.mirror('training_profile').get(userId);
++    if (!row || !isLive(row)) return null;
++    return {
++      goal: oneOf(GOALS, row.goal),
++      experience: oneOf(EXPERIENCES, row.experience),
++      daysPerWeek: oneOf(DAYS_PER_WEEK, row.daysPerWeek),
++      sessionMinutes: oneOf(SESSION_MINUTES, row.sessionMinutes),
++      sportCode: oneOf(SPORT_CODES, row.sportCode),
++      sportOtherLabel: text(row.sportOtherLabel),
++      cautiousMode: row.cautiousMode === true,
++    };
++  }
++
++  const saveMe = (me: MeResponse) => setMeta(db, 'me', me);
++
++  return {
++    get,
++    update: (p) =>
++      sendThenPull(s, 'PATCH', '/api/me/training-profile', { body: p, schema: MeResponse, apply: saveMe }),
++    completeOnboarding: () =>
++      sendThenPull(s, 'POST', '/api/me/onboarding/complete', { schema: MeResponse, apply: saveMe }),
++    async onboardingInput() {
++      const profile = await get();
++      const places = await ownedRows(db, 'place', await currentUserId(db));
++      return {
++        goal: profile?.goal ?? null,
++        experience: profile?.experience ?? null,
++        daysPerWeek: profile?.daysPerWeek ?? null,
++        sessionMinutes: profile?.sessionMinutes ?? null,
++        hasPrimaryPlace: places.some((p) => p.isPrimary === true),
++        lastValidatedStep: (await getMeta(db, 'me'))?.onboardingStep ?? null,
++      };
++    },
++  };
++}
+diff --git a/apps/web/src/repos/rejections-repo.ts b/apps/web/src/repos/rejections-repo.ts
+new file mode 100644
+index 0000000..efea966
+--- /dev/null
++++ b/apps/web/src/repos/rejections-repo.ts
+@@ -0,0 +1,108 @@
++import type { AppServices } from '../app-services';
++import { getMeta } from '../local-db/meta';
++import { writeLocal } from '../sync/outbox';
++import { currentUserId, ownedRows, text } from './rows';
++
++export interface RejectionView {
++  /** id de la ligne sync_rejection, ou 'local:<opId>' pour un rejet reçu au push (deadletter). */
++  id: string;
++  source: 'server' | 'local';
++  opId: string;
++  entity: string;
++  rowId: string;
++  code: string;
++  detail: unknown;
++  at: string;
++}
++
++export interface RejectionsRepo {
++  list(): Promise<RejectionView[]>;
++  count(): Promise<number>;
++  dismiss(id: string): Promise<void>;
++}
++
++const LOCAL_PREFIX = 'local:';
++
++export function createRejectionsRepo(s: AppServices): RejectionsRepo {
++  const { db } = s;
++
++  /** Rejets serveur non écartés, puis rejets locaux que le serveur n'a pas (encore) enregistrés. */
++  async function list(): Promise<RejectionView[]> {
++    const userId = await currentUserId(db);
++    if (userId === null) return [];
++    const server: RejectionView[] = (await ownedRows(db, 'sync_rejection', userId))
++      .filter((r) => r.dismissedAt == null && typeof r.opId === 'string')
++      .map((r) => ({
++        id: r.id,
++        source: 'server' as const,
++        opId: String(r.opId),
++        entity: text(r.entity) ?? '',
++        rowId: text(r.rowId) ?? '',
++        code: text(r.code) ?? '',
++        detail: r.detailJson ?? null,
++        at: text(r.createdAt) ?? '',
++      }))
++      .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
++    const covered = new Set(server.map((r) => r.opId));
++    const local: RejectionView[] = (await db.deadletter.where('userId').equals(userId).toArray())
++      .filter((d) => !covered.has(d.opId))
++      .map((d) => ({
++        id: `${LOCAL_PREFIX}${d.opId}`,
++        source: 'local' as const,
++        opId: d.opId,
++        entity: d.entity,
++        rowId: d.id,
++        code: d.code,
++        detail: d.detail,
++        at: d.receivedAt,
++      }))
++      .sort((a, b) => a.at.localeCompare(b.at) || a.opId.localeCompare(b.opId));
++    return [...server, ...local];
++  }
++
++  const dropDeadletter = (opId: string, userId: string) =>
++    db.deadletter
++      .where('opId')
++      .equals(opId)
++      .filter((d) => d.userId === userId)
++      .delete();
++
++  return {
++    list,
++    async count() {
++      return (await list()).length;
++    },
++    /**
++     * Rejet serveur : `dismissedAt` écrit par l'outbox (seule écriture J du socle), deadletter de
++     * même opId retirée. Rejet local : deadletter retirée. Puis synchro « mutation », qui envoie
++     * l'op et met à jour les compteurs du moteur (l'intervalle de 60 s voit l'op en attente).
++     */
++    async dismiss(id) {
++      const userId = await currentUserId(db);
++      if (userId === null) return;
++      if (id.startsWith(LOCAL_PREFIX)) {
++        await dropDeadletter(id.slice(LOCAL_PREFIX.length), userId);
++      } else {
++        const row = await db.mirror('sync_rejection').get(id);
++        if (!row || row.ownerId !== userId) return;
++        await writeLocal(
++          db,
++          {
++            entity: 'sync_rejection',
++            id,
++            kind: 'patch',
++            fields: { dismissedAt: new Date(s.now()).toISOString() },
++          },
++          {
++            userId,
++            now: () => new Date(s.now()).toISOString(),
++            newOpId: s.newOpId,
++            healthConsentActive: (await getMeta(db, 'me'))?.consents.health.active === true,
++          },
++        );
++        if (typeof row.opId === 'string') await dropDeadletter(row.opId, userId);
++      }
++      void s.sync.syncNow('mutation');
++    },
++  };
++}
+diff --git a/apps/web/src/repos/rows.ts b/apps/web/src/repos/rows.ts
+new file mode 100644
+index 0000000..61b2d9b
+--- /dev/null
++++ b/apps/web/src/repos/rows.ts
+@@ -0,0 +1,55 @@
++import type { z } from 'zod';
++import type { AppServices } from '../app-services';
++import type { AppDb, MirrorRow } from '../local-db/db';
++import { getMeta } from '../local-db/meta';
++
++/**
++ * Colonne JSON d'un miroir : le pull l'a déjà décodée (`COLUMN_CODECS`), on ne fait que valider
++ * l'objet ; texte, valeur absente ou objet invalide → null.
++ */
++export function parseJsonColumn<T>(v: unknown, schema: z.ZodType<T>): T | null {
++  if (typeof v !== 'object' || v === null) return null;
++  const parsed = schema.safeParse(v);
++  return parsed.success ? parsed.data : null;
++}
++
++/** Ligne non supprimée (tombstone exclu). */
++export function isLive(row: MirrorRow): boolean {
++  return row.deletedAt == null;
++}
++
++/** `v` s'il fait partie de `values`, sinon null (valeur de miroir inattendue). */
++export function oneOf<T>(values: readonly T[], v: unknown): T | null {
++  return values.includes(v as T) ? (v as T) : null;
++}
++
++export const text = (v: unknown): string | null => (typeof v === 'string' ? v : null);
++
++export async function currentUserId(db: AppDb): Promise<string | null> {
++  return (await getMeta(db, 'userId')) ?? null;
++}
++
++/** Lignes vivantes d'un miroir appartenant à `ownerId`. */
++export async function ownedRows(db: AppDb, entity: string, ownerId: string | null): Promise<MirrorRow[]> {
++  if (ownerId === null) return [];
++  return db
++    .mirror(entity)
++    .filter((r) => isLive(r) && r.ownerId === ownerId)
++    .toArray();
++}
++
++/**
++ * Écriture de classe E : l'API d'abord (hors ligne → NetworkRequiredError, rien d'écrit en local),
++ * puis `apply` sur la réponse (meta.me par exemple), puis un pull qui ramène les lignes serveur.
++ */
++export async function sendThenPull<T = void>(
++  s: AppServices,
++  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
++  path: string,
++  opts: { body?: unknown; schema?: z.ZodType<T>; apply?: (result: T) => Promise<void> } = {},
++): Promise<T> {
++  const result = await s.api.send(method, path, opts.body, opts.schema);
++  await opts.apply?.(result);
++  await s.sync.pullNow();
++  return result;
++}
+diff --git a/apps/web/src/repos/status-repo.ts b/apps/web/src/repos/status-repo.ts
+new file mode 100644
+index 0000000..c540a7a
+--- /dev/null
++++ b/apps/web/src/repos/status-repo.ts
+@@ -0,0 +1,79 @@
++import type { AppServices } from '../app-services';
++import { getMeta, setMeta } from '../local-db/meta';
++import { refreshCatalog } from '../sync/catalog';
++import { pendingCount } from '../sync/outbox';
++import { currentUserId, text } from './rows';
++
++type PersistentStorage = Pick<StorageManager, 'persist' | 'persisted'>;
++
++export interface StatusRepo {
++  readinessInputs(): Promise<{
++    catalogVersion: string | null;
++    serverCatalogVersion: string | null;
++    lastPullOkAt: string | null;
++  }>;
++  persistGranted(): Promise<boolean | null>;
++  pendingCount(): Promise<number>;
++  /** Synchro manuelle puis catalogue (bouton « Réessayer »). */
++  retry(): Promise<void>;
++  activeSessionId(): Promise<string | null>;
++  /** Champ `file` du magasin `illustrations`, trié. */
++  illustrationFiles(): Promise<string[]>;
++  /**
++   * Stockage persistant (navigator.storage par défaut) ; résultat écrit dans meta.persistGranted.
++   * API absente, refus ou erreur → false. L'appelant vérifie isStandalone().
++   */
++  requestPersistentStorage(storage?: PersistentStorage): Promise<boolean>;
++}
++
++const defaultStorage = (): PersistentStorage | undefined =>
++  typeof navigator === 'undefined' ? undefined : navigator.storage;
++
++async function askPersistence(storage: PersistentStorage | undefined): Promise<boolean> {
++  if (typeof storage?.persist !== 'function') return false;
++  try {
++    if (typeof storage.persisted === 'function' && (await storage.persisted())) return true;
++    return (await storage.persist()) === true;
++  } catch {
++    return false;
++  }
++}
++
++export function createStatusRepo(s: AppServices): StatusRepo {
++  const { db } = s;
++  return {
++    async readinessInputs() {
++      return {
++        catalogVersion: (await getMeta(db, 'catalogVersion')) ?? null,
++        serverCatalogVersion: (await getMeta(db, 'serverCatalogVersion')) ?? null,
++        lastPullOkAt: (await getMeta(db, 'lastPullOkAt')) ?? null,
++      };
++    },
++    async persistGranted() {
++      return (await getMeta(db, 'persistGranted')) ?? null;
++    },
++    async pendingCount() {
++      const userId = await currentUserId(db);
++      return userId === null ? 0 : pendingCount(db, userId);
++    },
++    async retry() {
++      await s.sync.syncNow('manual');
++      await refreshCatalog(db, s.transport);
++    },
++    async activeSessionId() {
++      return (await getMeta(db, 'activeSessionId')) ?? null;
++    },
++    async illustrationFiles() {
++      const rows: { file?: unknown }[] = await db.table('illustrations').toArray();
++      return rows
++        .map((r) => text(r.file))
++        .filter((f): f is string => f !== null)
++        .sort();
++    },
++    async requestPersistentStorage(storage = defaultStorage()) {
++      const granted = await askPersistence(storage);
++      await setMeta(db, 'persistGranted', granted);
++      return granted;
++    },
++  };
++}
+diff --git a/apps/web/src/sw/protocol.ts b/apps/web/src/sw/protocol.ts
+index 2ca4ea0..40d7976 100644
+--- a/apps/web/src/sw/protocol.ts
++++ b/apps/web/src/sw/protocol.ts
+@@ -1,5 +1,15 @@
+ /** Messages de la page vers le service worker. */
+ export type PageToSw =
+   | { type: 'SKIP_WAITING' }
+   | { type: 'GET_STATUS' }
+   | { type: 'SYNC_ILLUSTRATIONS'; files: string[] };
++
++/** Réponse du service worker à `GET_STATUS`, par le port du MessageChannel. */
++export interface SwStatus {
++  type: 'STATUS';
++  buildHash: string;
++  shellCached: boolean;
++  illustrationsMissing: number;
++  /** Version de la base locale attendue par le SW (manifeste, T36). */
++  localDbVersion?: number;
++}
+diff --git a/apps/web/src/sw/sw-client.ts b/apps/web/src/sw/sw-client.ts
+index 72b3018..f754c02 100644
+--- a/apps/web/src/sw/sw-client.ts
++++ b/apps/web/src/sw/sw-client.ts
+@@ -1,9 +1,50 @@
+-import type { PageToSw } from './protocol';
++import type { PageToSw, SwStatus } from './protocol';
++
++function currentController(): ServiceWorker | null {
++  return typeof navigator === 'undefined' ? null : (navigator.serviceWorker?.controller ?? null);
++}
+ 
+ /** Poste au service worker qui contrôle la page ; `false` sans contrôleur. */
+ export function postToSw(msg: PageToSw): boolean {
+-  const controller = typeof navigator === 'undefined' ? undefined : navigator.serviceWorker?.controller;
++  const controller = currentController();
+   if (!controller) return false;
+   controller.postMessage(msg);
+   return true;
+ }
++
++function isSwStatus(v: unknown): v is SwStatus {
++  if (typeof v !== 'object' || v === null) return false;
++  const s = v as Record<string, unknown>;
++  return (
++    s.type === 'STATUS' &&
++    typeof s.buildHash === 'string' &&
++    typeof s.shellCached === 'boolean' &&
++    typeof s.illustrationsMissing === 'number' &&
++    (s.localDbVersion === undefined || typeof s.localDbVersion === 'number')
++  );
++}
++
++/**
++ * État du service worker (`GET_STATUS`, réponse sur un MessageChannel) ; `null` sans contrôleur,
++ * sans réponse valide dans `timeoutMs`, ou si l'envoi échoue.
++ */
++export async function getSwStatus(timeoutMs = 1000): Promise<SwStatus | null> {
++  const controller = currentController();
++  if (!controller) return null;
++  return new Promise<SwStatus | null>((resolve) => {
++    const channel = new MessageChannel();
++    const finish = (status: SwStatus | null) => {
++      clearTimeout(timer);
++      channel.port1.onmessage = null;
++      channel.port1.close();
++      resolve(status);
++    };
++    const timer = setTimeout(() => finish(null), timeoutMs);
++    channel.port1.onmessage = (event: MessageEvent) => finish(isSwStatus(event.data) ? event.data : null);
++    try {
++      controller.postMessage({ type: 'GET_STATUS' } satisfies PageToSw, [channel.port2]);
++    } catch {
++      finish(null);
++    }
++  });
++}
+diff --git a/apps/web/test/app/boot.test.ts b/apps/web/test/app/boot.test.ts
+index d56dd7f..4d696a0 100644
+--- a/apps/web/test/app/boot.test.ts
++++ b/apps/web/test/app/boot.test.ts
+@@ -10,20 +10,21 @@ import { DEFAULT_NOW } from '../support/render';
+ import { until } from '../support/wait';
+ 
+ function services(api: FakeApi, sync: SyncEngine, db = createTestLocalDb()): AppServices {
+   return {
+     db,
+     api: createApiClient(api.transport, { onUnauthenticated: () => {}, onAccountDeleted: () => {} }),
+     sync,
+     transport: api.transport,
+     now: () => DEFAULT_NOW,
+     newOpId: () => crypto.randomUUID(),
++    swStatus: async () => null,
+   };
+ }
+ 
+ describe('bootApp', () => {
+   it("démarre le moteur et rend de quoi l'arrêter", () => {
+     const api = createFakeApi();
+     const sync = createFakeSyncEngine();
+     const stop = bootApp(services(api, sync));
+     expect(sync.started).toBe(true);
+     stop();
+diff --git a/apps/web/test/architecture.test.ts b/apps/web/test/architecture.test.ts
+new file mode 100644
+index 0000000..545dc1b
+--- /dev/null
++++ b/apps/web/test/architecture.test.ts
+@@ -0,0 +1,61 @@
++import { readdirSync, readFileSync } from 'node:fs';
++import { join, relative, resolve } from 'node:path';
++import { describe, expect, it } from 'vitest';
++
++const SRC = resolve(import.meta.dirname, '../src');
++
++function* walk(dir: string): Generator<string> {
++  for (const entry of readdirSync(dir, { withFileTypes: true })) {
++    const full = join(dir, entry.name);
++    if (entry.isDirectory()) yield* walk(full);
++    else if (entry.isFile()) yield full;
++  }
++}
++
++const rel = (f: string) => relative(SRC, f).replaceAll('\\', '/');
++const code = (f: string) => /\.(ts|tsx)$/.test(f);
++
++/** Écrans et composants : Dexie seulement derrière `repos/` (01 §2 et §3). */
++const isScreen = (path: string) =>
++  path.startsWith('features/') ||
++  path.startsWith('ui/') ||
++  path === 'App.tsx' ||
++  (path.startsWith('sw/') && path.endsWith('.tsx'));
++
++const IMPORT = /(?:import|export)\s[^'"]*?from\s+['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)/g;
++
++const withoutComments = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
++
++function imports(file: string): string[] {
++  const text = readFileSync(file, 'utf8');
++  return [...text.matchAll(IMPORT)].map((m) => m[1] ?? m[2] ?? '');
++}
++
++describe('architecture', () => {
++  const files = [...walk(SRC)].filter(code);
++
++  it('features/, ui/, App.tsx et src/sw/**/*.tsx n’importent ni dexie ni local-db/', () => {
++    const screens = files.filter((f) => isScreen(rel(f)));
++    expect(screens.length).toBeGreaterThan(5);
++    for (const file of screens) {
++      for (const spec of imports(file)) {
++        expect(spec, rel(file)).not.toBe('dexie');
++        expect(spec, rel(file)).not.toMatch(/(^|\/)local-db(\/|$)/);
++      }
++    }
++  });
++
++  it('aucun navigator.onLine dans le code de src/ (R-SYN-30, commentaires exclus)', () => {
++    for (const file of files) {
++      expect(withoutComments(readFileSync(file, 'utf8')), rel(file)).not.toContain('navigator.onLine');
++    }
++    expect(withoutComments('// navigator.onLine\n/* navigator.onLine */ x')).not.toContain('navigator');
++    expect(withoutComments('const a = navigator.onLine;')).toContain('navigator.onLine');
++  });
++
++  it('le motif détecte bien un import interdit', () => {
++    const sample = "import { getMeta } from '../../local-db/meta';\nimport Dexie from 'dexie';";
++    const found = [...sample.matchAll(IMPORT)].map((m) => m[1]);
++    expect(found).toEqual(['../../local-db/meta', 'dexie']);
++  });
++});
+diff --git a/apps/web/test/home/adult-notice.test.tsx b/apps/web/test/home/adult-notice.test.tsx
+new file mode 100644
+index 0000000..a316d52
+--- /dev/null
++++ b/apps/web/test/home/adult-notice.test.tsx
+@@ -0,0 +1,44 @@
++import { cleanup, fireEvent, screen } from '@testing-library/react';
++import { describe, expect, it } from 'vitest';
++import { getMeta, setMeta } from '../../src/local-db/meta';
++import { createFakeApi } from '../support/fake-api';
++import { createTestLocalDb } from '../support/local-db';
++import { makeMe, renderApp } from '../support/render';
++import { until } from '../support/wait';
++
++const NOTICE = "Tu as 18 ans : tu peux désormais choisir l'objectif « Perdre du gras » dans ton profil.";
++const notice = () => screen.queryByText(NOTICE);
++
++describe('message des 18 ans (R-AGE-6)', () => {
++  it('affiché une fois : « J’ai compris » le retire, absent au rendu suivant', async () => {
++    const db = createTestLocalDb();
++    await setMeta(db, 'lastAgeBand', 'minor');
++    await renderApp({ db });
++    await until(() => notice() !== null);
++    expect(notice()?.closest('[role="status"]')).not.toBeNull();
++    fireEvent.click(screen.getByRole('button', { name: "J'ai compris" }));
++    await until(() => notice() === null);
++    expect(await getMeta(db, 'lastAgeBand')).toBe('adult');
++
++    cleanup();
++    await renderApp({ db });
++    await until(() => screen.queryByTestId('offline-ready') !== null);
++    expect(notice()).toBeNull();
++  });
++
++  it('au lancement, le profil rafraîchi révèle le passage à 18 ans', async () => {
++    const db = createTestLocalDb();
++    await setMeta(db, 'lastAgeBand', 'minor');
++    const api = createFakeApi();
++    api.on('GET', '/api/me', { status: 200, body: makeMe() });
++    await renderApp({ db, api, me: makeMe({ ageBand: 'minor' }) });
++    await until(() => notice() !== null);
++    expect(api.calls.map((c) => c.path)).toEqual(['/api/me']);
++  });
++
++  it('lastAgeBand absent : aucun message', async () => {
++    await renderApp();
++    await until(() => screen.queryByTestId('offline-ready') !== null);
++    expect(notice()).toBeNull();
++  });
++});
+diff --git a/apps/web/test/repos/admin-rejections.test.ts b/apps/web/test/repos/admin-rejections.test.ts
+new file mode 100644
+index 0000000..b1bbae2
+--- /dev/null
++++ b/apps/web/test/repos/admin-rejections.test.ts
+@@ -0,0 +1,165 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import type { DeadletterEntry } from '../../src/local-db/db';
++import { createRepos } from '../../src/repos';
++import { createSyncEngine, type SyncEngine } from '../../src/sync/engine';
++import { createTestServices, DEFAULT_NOW, makeMe } from '../support/render';
++import { seedMirror } from '../support/seed';
++import { until } from '../support/wait';
++
++const AT = '2026-10-06T10:00:00.000Z';
++const rejection = (id: string, opId: string, extra: Record<string, unknown> = {}) => ({
++  id,
++  ownerId: 'u-1',
++  opId,
++  entity: 'place',
++  rowId: 'p-1',
++  code: 'validation',
++  detailJson: { field: 'name' },
++  dismissedAt: null,
++  createdAt: AT,
++  ...extra,
++});
++const dead = (opId: string, userId: string): DeadletterEntry => ({
++  opId,
++  userId,
++  entity: 'sync_rejection',
++  id: `row-${opId}`,
++  code: 'forbidden',
++  detail: { kind: 'patch', fieldNames: ['dismissedAt'] },
++  receivedAt: AT,
++});
++
++async function setup() {
++  const t = await createTestServices({ me: makeMe() });
++  await seedMirror(t.db, 'sync_rejection', [
++    rejection('r-1', 'op-1'),
++    rejection('r-2', 'op-2', { dismissedAt: AT }),
++    rejection('r-3', 'op-3', { deletedAt: AT }),
++  ]);
++  await t.db.deadletter.bulkPut([dead('op-1', 'u-1'), dead('op-7', 'u-1'), dead('op-8', 'u-2')]);
++  return { ...t, repos: createRepos(t.services) };
++}
++
++let engine: SyncEngine | null = null;
++afterEach(() => {
++  engine?.stop();
++  engine = null;
++});
++
++describe('RejectionsRepo', () => {
++  it('list : rejets serveur actifs puis rejets locaux non couverts, utilisateur courant seulement', async () => {
++    const { repos } = await setup();
++    const list = await repos.rejections.list();
++    expect(list).toMatchObject([
++      {
++        id: 'r-1',
++        source: 'server',
++        opId: 'op-1',
++        entity: 'place',
++        rowId: 'p-1',
++        code: 'validation',
++        at: AT,
++      },
++      { id: 'local:op-7', source: 'local', opId: 'op-7', code: 'forbidden', at: AT },
++    ]);
++    expect(list[0]?.detail).toEqual({ field: 'name' });
++    expect(await repos.rejections.count()).toBe(2);
++  });
++
++  it('dismiss d’un rejet serveur : op patch dismissedAt, deadletter retirée, synchro « mutation »', async () => {
++    const { repos, db, sync } = await setup();
++    await repos.rejections.dismiss('r-1');
++    const ops = await db.outbox.toArray();
++    expect(ops).toHaveLength(1);
++    expect(ops[0]).toMatchObject({
++      entity: 'sync_rejection',
++      id: 'r-1',
++      kind: 'patch',
++      userId: 'u-1',
++      fields: { dismissedAt: '2026-10-06T12:00:00.000Z' },
++    });
++    expect(await db.deadletter.get('op-1')).toBeUndefined();
++    expect(sync.triggers).toContain('mutation');
++    expect((await repos.rejections.list()).map((r) => r.id)).toEqual(['local:op-7']);
++  });
++
++  it('dismiss d’un rejet local : deadletter retirée, aucune op', async () => {
++    const { repos, db } = await setup();
++    await repos.rejections.dismiss('local:op-7');
++    expect(await db.outbox.count()).toBe(0);
++    expect(await db.deadletter.get('op-7')).toBeUndefined();
++    expect(await db.deadletter.get('op-8')).toBeDefined();
++  });
++
++  it('après l’écriture locale, le compteur du moteur voit l’op en attente (intervalle de 60 s)', async () => {
++    const { services, api, db } = await setup();
++    api.setOffline('reject');
++    engine = createSyncEngine({
++      db,
++      transport: api.transport,
++      now: () => DEFAULT_NOW,
++      triggers: () => () => {},
++    });
++    const real = engine;
++    await createRepos({ ...services, sync: real }).rejections.dismiss('r-1');
++    await until(() => real.getState().pending === 1);
++    expect(real.getState().pending).toBe(1);
++  });
++});
++
++describe('AdminRepo', () => {
++  it('deleteMember : POST /delete { confirmUsername, password }', async () => {
++    const { repos, api, sync } = await setup();
++    api.on('POST', '/api/admin/members/:id/delete', { status: 204 });
++    await repos.admin.deleteMember('u-2', 'lea', 'pw');
++    expect(api.calls[0]).toMatchObject({
++      method: 'POST',
++      path: '/api/admin/members/u-2/delete',
++      body: { confirmUsername: 'lea', password: 'pw' },
++    });
++    expect(sync.pullCount).toBe(1);
++  });
++
++  it('resetLink : 200 ResetLinkResponse', async () => {
++    const { repos, api } = await setup();
++    const link = { code: 'ABCD-EFGH-JKMN-PQRS', link: '/reset#ABCD-EFGH-JKMN-PQRS', expiresAt: AT };
++    api.on('POST', '/api/admin/members/:id/reset-link', { status: 200, body: link });
++    expect(await repos.admin.resetLink('u-2')).toEqual(link);
++  });
++
++  it('chemins et corps des actions admin', async () => {
++    const { repos, api } = await setup();
++    api.on('GET', '/api/admin/members', { status: 200, body: [] });
++    api.on('POST', '/api/admin/members/:id/revoke-sessions', { status: 204 });
++    api.on('POST', '/api/admin/members/:id/status', { status: 204 });
++    api.on('POST', '/api/admin/members/:id/role', { status: 204 });
++    api.on('POST', '/api/admin/members/:id/birth-date', { status: 204 });
++    api.on('GET', '/api/admin/invitations', { status: 200, body: [] });
++    api.on('POST', '/api/admin/invitations/:id/revoke', { status: 204 });
++    api.on('GET', '/api/admin/ops-status', { status: 200, body: { version: 'dev', opsStatus: null } });
++    api.on('GET', '/api/gyms', { status: 200, body: [] });
++    api.on('DELETE', '/api/admin/gyms/:id', { status: 204 });
++    expect(await repos.admin.members()).toEqual([]);
++    await repos.admin.revokeSessions('u-2');
++    await repos.admin.setStatus('u-2', 'disabled');
++    await repos.admin.setRole('u-2', 'admin', 'pw');
++    await repos.admin.setBirthDate('u-2', '2000-01-01');
++    expect(await repos.admin.invitations()).toEqual([]);
++    await repos.admin.revokeInvitation('i-1');
++    expect(await repos.admin.opsStatus()).toEqual({ version: 'dev', opsStatus: null });
++    expect(await repos.admin.gyms()).toEqual([]);
++    await repos.admin.deleteGym('g-1');
++    expect(api.calls.map((c) => [`${c.method} ${c.path}`, c.method === 'GET' ? undefined : c.body])).toEqual([
++      ['GET /api/admin/members', undefined],
++      ['POST /api/admin/members/u-2/revoke-sessions', {}],
++      ['POST /api/admin/members/u-2/status', { status: 'disabled' }],
++      ['POST /api/admin/members/u-2/role', { role: 'admin', password: 'pw' }],
++      ['POST /api/admin/members/u-2/birth-date', { birthDate: '2000-01-01' }],
++      ['GET /api/admin/invitations', undefined],
++      ['POST /api/admin/invitations/i-1/revoke', {}],
++      ['GET /api/admin/ops-status', undefined],
++      ['GET /api/gyms', undefined],
++      ['DELETE /api/admin/gyms/g-1', {}],
++    ]);
++  });
++});
+diff --git a/apps/web/test/repos/consent-repo.test.ts b/apps/web/test/repos/consent-repo.test.ts
+new file mode 100644
+index 0000000..bb28624
+--- /dev/null
++++ b/apps/web/test/repos/consent-repo.test.ts
+@@ -0,0 +1,136 @@
++import type { MeResponse } from '@appsport/contracts';
++import { describe, expect, it } from 'vitest';
++import { getMeta } from '../../src/local-db/meta';
++import { createRepos } from '../../src/repos';
++import { createTestServices, makeMe } from '../support/render';
++import { seedMirror } from '../support/seed';
++
++const consented = (textVersion: string | null, active = true): MeResponse =>
++  makeMe({
++    consents: {
++      health: { active, textVersion, at: '2026-10-01T10:00:00.000Z' },
++      aiCoach: { active: false, textVersion: null, at: null },
++    },
++  });
++
++async function setup(me: MeResponse = consented('1.0')) {
++  const t = await createTestServices({ me });
++  await seedMirror(t.db, 'health_screening', [
++    {
++      id: 'u-1',
++      ownerId: 'u-1',
++      caution: true,
++      questionnaireVersion: '1.0',
++      answeredAt: '2026-10-02T10:00:00.000Z',
++    },
++  ]);
++  await seedMirror(t.db, 'limitation', [
++    { id: 'l-1', ownerId: 'u-1', bodyArea: 'knee', side: 'left', severity: 'mild', note: null, active: true },
++    {
++      id: 'l-2',
++      ownerId: 'u-1',
++      bodyArea: null,
++      side: null,
++      severity: null,
++      note: null,
++      active: null,
++      deletedAt: '2026-10-03T10:00:00.000Z',
++    },
++  ]);
++  return { ...t, consent: createRepos(t.services).consent };
++}
++
++describe('ConsentRepo', () => {
++  it('lectures : état, questionnaire et limitations actives du miroir', async () => {
++    const { consent } = await setup();
++    expect((await consent.state())?.health.active).toBe(true);
++    expect(await consent.screening()).toEqual({
++      caution: true,
++      questionnaireVersion: '1.0',
++      answeredAt: '2026-10-02T10:00:00.000Z',
++    });
++    expect(await consent.limitations()).toEqual([
++      { id: 'l-1', bodyArea: 'knee', side: 'left', severity: 'mild', note: null, active: true },
++    ]);
++  });
++
++  it('withdrawHealth : POST, meta.me à jour, miroirs C2 vidés, un pull', async () => {
++    const { consent, api, sync, db } = await setup();
++    let body: unknown;
++    api.on('POST', '/api/me/consents/withdraw', (req) => {
++      body = req.body;
++      return { status: 200, body: consented(null, false) };
++    });
++    await consent.withdrawHealth('pw');
++    expect(body).toEqual({ type: 'health', password: 'pw' });
++    expect((await getMeta(db, 'me'))?.consents.health.active).toBe(false);
++    expect(await db.mirror('health_screening').count()).toBe(0);
++    expect(await db.mirror('limitation').count()).toBe(0);
++    expect(sync.pullCount).toBe(1);
++  });
++
++  it('withdrawHealth : 401 → rien de purgé', async () => {
++    const { consent, api, sync, db } = await setup();
++    api.on('POST', '/api/me/consents/withdraw', { status: 401, body: { error: 'invalid_credentials' } });
++    await expect(consent.withdrawHealth('faux')).rejects.toMatchObject({ code: 'invalid_credentials' });
++    expect(await db.mirror('health_screening').count()).toBe(1);
++    expect(await db.mirror('limitation').count()).toBe(2);
++    expect((await getMeta(db, 'me'))?.consents.health.active).toBe(true);
++    expect(sync.pullCount).toBe(0);
++  });
++
++  it('needsHealthReconsent : version majeure inférieure à celle du texte, accord actif', async () => {
++    for (const [me, expected] of [
++      [consented('0.9'), true],
++      [consented('1.0'), false],
++      [consented('1.4'), false],
++      [consented('0.9', false), false],
++    ] as const) {
++      const { consent } = await setup(me);
++      expect(await consent.needsHealthReconsent()).toBe(expected);
++    }
++  });
++
++  it('grantHealth : POST de la version du texte, meta.me à jour, un pull', async () => {
++    const { consent, api, sync, db } = await setup(consented(null, false));
++    let body: unknown;
++    api.on('POST', '/api/me/consents', (req) => {
++      body = req.body;
++      return { status: 200, body: consented('1.0') };
++    });
++    await consent.grantHealth();
++    expect(body).toEqual({ type: 'health', textVersion: '1.0' });
++    expect((await getMeta(db, 'me'))?.consents.health.active).toBe(true);
++    expect(sync.pullCount).toBe(1);
++  });
++
++  it('saveScreening : PUT { answers, questionnaireVersion }, un pull', async () => {
++    const { consent, api, sync } = await setup();
++    let body: unknown;
++    api.on('PUT', '/api/me/health-screening', (req) => {
++      body = req.body;
++      return { status: 200, body: { caution: true } };
++    });
++    expect(await consent.saveScreening([true, false, false, false])).toEqual({ caution: true });
++    expect(body).toEqual({ answers: [true, false, false, false], questionnaireVersion: '1.0' });
++    expect(sync.pullCount).toBe(1);
++  });
++
++  it('limitations : POST, PATCH, DELETE puis pull', async () => {
++    const { consent, api, sync } = await setup();
++    api.on('POST', '/api/me/limitations', { status: 201, body: { id: 'l-9' } });
++    api.on('PATCH', '/api/me/limitations/:id', { status: 204 });
++    api.on('DELETE', '/api/me/limitations/:id', { status: 204 });
++    expect(await consent.addLimitation({ bodyArea: 'knee', side: 'left', severity: 'mild' })).toEqual({
++      id: 'l-9',
++    });
++    await consent.updateLimitation('l-9', { severity: 'severe' });
++    await consent.removeLimitation('l-9');
++    expect(api.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
++      'POST /api/me/limitations',
++      'PATCH /api/me/limitations/l-9',
++      'DELETE /api/me/limitations/l-9',
++    ]);
++    expect(sync.pullCount).toBe(3);
++  });
++});
+diff --git a/apps/web/test/repos/me-repo.test.ts b/apps/web/test/repos/me-repo.test.ts
+new file mode 100644
+index 0000000..44896e3
+--- /dev/null
++++ b/apps/web/test/repos/me-repo.test.ts
+@@ -0,0 +1,229 @@
++import type { MeResponse } from '@appsport/contracts';
++import { afterEach, describe, expect, it } from 'vitest';
++import { getMeta, setMeta } from '../../src/local-db/meta';
++import { createRepos } from '../../src/repos';
++import { createSyncEngine, type SyncEngine } from '../../src/sync/engine';
++import { createTestServices, DEFAULT_NOW, makeMe } from '../support/render';
++import { seedOutbox } from '../support/seed';
++import { until } from '../support/wait';
++
++const lea = makeMe({ id: 'u-A', username: 'lea' });
++const max = makeMe({ id: 'u-B', username: 'max' });
++const ok = (body: unknown) => ({ status: 200, body });
++const EMPTY_PULL = { rows: [], nextWatermark: 'e1:0', hasMore: false, catalogVersion: null };
++
++let engine: SyncEngine | null = null;
++afterEach(() => {
++  engine?.stop();
++  engine = null;
++});
++
++describe('MeRepo : profil en cache', () => {
++  it('refresh met meta.me à jour', async () => {
++    const { services, api, db } = await createTestServices({ me: lea });
++    api.on('GET', '/api/me', ok({ ...lea, username: 'lea2' }));
++    const me = await createRepos(services).me.refresh();
++    expect(me?.username).toBe('lea2');
++    expect((await getMeta(db, 'me'))?.username).toBe('lea2');
++  });
++
++  it('hors ligne : refresh rend le cache', async () => {
++    const { services, api, db } = await createTestServices({ me: lea });
++    api.setOffline('reject');
++    expect((await createRepos(services).me.refresh())?.username).toBe('lea');
++    expect((await getMeta(db, 'me'))?.username).toBe('lea');
++  });
++
++  it('erreur API : null sans effacer le cache', async () => {
++    const { services, api, db } = await createTestServices({ me: lea });
++    api.on('GET', '/api/me', { status: 500, body: { error: 'internal' } });
++    expect(await createRepos(services).me.refresh()).toBeNull();
++    expect((await getMeta(db, 'me'))?.username).toBe('lea');
++  });
++});
++
++describe('MeRepo : changement de compte (P-AUT-6)', () => {
++  it("connexion d'un autre compte : file de l'ancien effacée, meta.userId posé, synchro relancée", async () => {
++    const { services, api, sync, db } = await createTestServices({ me: lea });
++    await seedOutbox(db, 'u-A', 2);
++    const repos = createRepos(services);
++    expect(await repos.me.deviceOwner()).toEqual({ userId: 'u-A', username: 'lea', pending: 2 });
++
++    api.on('POST', '/api/auth/login', ok(max));
++    const me = await repos.me.login({ username: 'max', password: 'pw' });
++    expect(me.id).toBe('u-B');
++    expect(await db.outbox.count()).toBe(0);
++    expect(await getMeta(db, 'userId')).toBe('u-B');
++    expect((await getMeta(db, 'me'))?.id).toBe('u-B');
++    expect(sync.triggers).toContain('manual');
++    expect(sync.started).toBe(true);
++  });
++
++  it('reconnexion du même compte : file gardée', async () => {
++    const { services, api, db } = await createTestServices({ me: lea });
++    await seedOutbox(db, 'u-A', 2);
++    api.on('POST', '/api/auth/login', ok(lea));
++    await createRepos(services).me.login({ username: 'Lea', password: 'pw' });
++    expect(await db.outbox.count()).toBe(2);
++    expect(await getMeta(db, 'userId')).toBe('u-A');
++  });
++
++  it('acceptInvitation et resetPassword adoptent la session', async () => {
++    const { services, api, db } = await createTestServices({ me: null });
++    const repos = createRepos(services);
++    api.on('POST', '/api/invitations/accept', { status: 201, body: max });
++    await repos.me.acceptInvitation({ code: 'c', username: 'max', password: 'pw', termsVersion: '1.0' });
++    expect(await getMeta(db, 'userId')).toBe('u-B');
++    api.on('POST', '/api/auth/reset', ok(lea));
++    await repos.me.resetPassword({ code: 'c', newPassword: 'pw' });
++    expect(await getMeta(db, 'userId')).toBe('u-A');
++  });
++
++  it("connexion refusée : rien n'est effacé", async () => {
++    const { services, api, db } = await createTestServices({ me: lea });
++    await seedOutbox(db, 'u-A', 2);
++    api.on('POST', '/api/auth/login', { status: 401, body: { error: 'invalid_credentials' } });
++    await expect(createRepos(services).me.login({ username: 'max', password: 'x' })).rejects.toMatchObject({
++      code: 'invalid_credentials',
++    });
++    expect(await db.outbox.count()).toBe(2);
++    expect(await getMeta(db, 'userId')).toBe('u-A');
++  });
++
++  it('logout : une requête, base vidée, meta.userId et meta.me absents', async () => {
++    const { services, api, db } = await createTestServices({ me: lea });
++    await seedOutbox(db, 'u-A', 2);
++    api.on('POST', '/api/auth/logout', { status: 204 });
++    await createRepos(services).me.logout('current');
++    expect(api.calls.map((c) => c.path)).toEqual(['/api/auth/logout']);
++    expect(await db.outbox.count()).toBe(0);
++    expect(await getMeta(db, 'me')).toBeUndefined();
++    expect(await getMeta(db, 'userId')).toBeUndefined();
++  });
++
++  it('logout("all") appelle /api/auth/logout-all', async () => {
++    const { services, api } = await createTestServices({ me: lea });
++    api.on('POST', '/api/auth/logout-all', { status: 204 });
++    await createRepos(services).me.logout('all');
++    expect(api.calls.map((c) => c.path)).toEqual(['/api/auth/logout-all']);
++  });
++
++  it('changePassword : POST puis GET /api/me, meta.me à jour, synchro manuelle', async () => {
++    const { services, api, sync, db } = await createTestServices({
++      me: { ...lea, mustChangePassword: true },
++    });
++    api.on('POST', '/api/auth/password', { status: 204 });
++    api.on('GET', '/api/me', ok(lea));
++    await createRepos(services).me.changePassword({ currentPassword: 'a', newPassword: 'b' });
++    expect(api.calls.map((c) => `${c.method} ${c.path}`)).toEqual(['POST /api/auth/password', 'GET /api/me']);
++    expect((await getMeta(db, 'me'))?.mustChangePassword).toBe(false);
++    expect(sync.triggers).toContain('manual');
++  });
++});
++
++describe('MeRepo avec le moteur réel', () => {
++  it('après un 410 account_deleted, la connexion de u-B relance un cycle complet', async () => {
++    const { services, api, db } = await createTestServices({ me: lea });
++    api.on('GET', '/api/health', { status: 410, body: { error: 'account_deleted' } });
++    api.on('GET', '/api/sync/pull', ok(EMPTY_PULL));
++    engine = createSyncEngine({
++      db,
++      transport: api.transport,
++      now: () => DEFAULT_NOW,
++      triggers: () => () => {},
++    });
++    engine.start();
++    const real = engine;
++    await until(() => real.getState().connection === 'account_deleted');
++    expect(await getMeta(db, 'userId')).toBeUndefined();
++
++    api.on('GET', '/api/health', ok({}));
++    api.on('POST', '/api/auth/login', ok(max));
++    const before = api.calls.length;
++    await createRepos({ ...services, sync: real }).me.login({ username: 'max', password: 'pw' });
++    await until(() => api.calls.slice(before).some((c) => c.path === '/api/sync/pull'));
++    expect(api.calls.slice(before, before + 3).map((c) => `${c.method} ${c.path}`)).toEqual([
++      'POST /api/auth/login',
++      'GET /api/health',
++      'GET /api/sync/pull',
++    ]);
++    await until(() => !real.getState().syncing);
++    expect(real.getState().connection).toBe('online');
++  });
++
++  it("A → B : la file de A n'est jamais envoyée sous la session de B", async () => {
++    const { services, api, db } = await createTestServices({ me: lea });
++    await seedOutbox(db, 'u-A', 2);
++    let release: () => void = () => {};
++    api.on(
++      'GET',
++      '/api/health',
++      () =>
++        new Promise((resolve) => {
++          release = () => resolve({ status: 200, body: {} });
++        }),
++    );
++    api.on('POST', '/api/sync/push', (req) => {
++      const ops = (req.body as { ops: { opId: string }[] }).ops;
++      return ok({ results: ops.map((o) => ({ opId: o.opId, status: 'applied', rev: 1 })) });
++    });
++    api.on('GET', '/api/sync/pull', ok(EMPTY_PULL));
++    engine = createSyncEngine({
++      db,
++      transport: api.transport,
++      now: () => DEFAULT_NOW,
++      triggers: () => () => {},
++    });
++    engine.start();
++    const real = engine;
++    // Cycle de A en vol, bloqué sur /api/health.
++    await until(() => api.calls.some((c) => c.path === '/api/health'));
++
++    api.on('POST', '/api/auth/login', ok(max));
++    await createRepos({ ...services, sync: real }).me.login({ username: 'max', password: 'pw' });
++    api.on('GET', '/api/health', ok({}));
++    release();
++    await until(() => api.calls.some((c) => c.path === '/api/sync/pull'));
++    await until(() => !real.getState().syncing);
++
++    const pushed = api.calls
++      .filter((c) => c.path === '/api/sync/push')
++      .flatMap((c) => (c.body as { ops: { userId: string }[] }).ops);
++    expect(pushed.filter((o) => o.userId === 'u-A')).toEqual([]);
++    expect(await getMeta(db, 'userId')).toBe('u-B');
++  });
++});
++
++describe('MeRepo : message des 18 ans (R-AGE-6)', () => {
++  const minor: MeResponse = { ...lea, ageBand: 'minor' };
++
++  it('mineur devenu adulte : avis affiché une fois, puis effacé', async () => {
++    const { services, api, db } = await createTestServices({ me: minor });
++    await setMeta(db, 'lastAgeBand', 'minor');
++    api.on('GET', '/api/me', ok(lea));
++    const repos = createRepos(services);
++    await repos.me.refresh();
++    expect(await repos.me.adultNotice()).toBe(true);
++    await repos.me.dismissAdultNotice();
++    expect(await repos.me.adultNotice()).toBe(false);
++    expect(await getMeta(db, 'lastAgeBand')).toBe('adult');
++  });
++
++  it('adulte à l’installation : jamais d’avis', async () => {
++    const { services, api, db } = await createTestServices({ me: lea });
++    api.on('GET', '/api/me', ok(lea));
++    const repos = createRepos(services);
++    await repos.me.refresh();
++    expect(await getMeta(db, 'lastAgeBand')).toBe('adult');
++    expect(await repos.me.adultNotice()).toBe(false);
++  });
++
++  it('mineur : tranche notée, pas d’avis', async () => {
++    const { services, api, db } = await createTestServices({ me: minor });
++    api.on('GET', '/api/me', ok(minor));
++    const repos = createRepos(services);
++    await repos.me.refresh();
++    expect(await getMeta(db, 'lastAgeBand')).toBe('minor');
++    expect(await repos.me.adultNotice()).toBe(false);
++  });
++});
+diff --git a/apps/web/test/repos/offline-mutations.test.ts b/apps/web/test/repos/offline-mutations.test.ts
+new file mode 100644
+index 0000000..bf28085
+--- /dev/null
++++ b/apps/web/test/repos/offline-mutations.test.ts
+@@ -0,0 +1,33 @@
++import { describe, expect, it } from 'vitest';
++import { NetworkRequiredError } from '../../src/api/client';
++import { createRepos, type Repos } from '../../src/repos';
++import { dumpLocalDb } from '../support/local-db';
++import { createTestServices, makeMe } from '../support/render';
++import { seedMirror } from '../support/seed';
++
++const WRITES: [string, (r: Repos) => Promise<unknown>][] = [
++  ['profile.update', (r) => r.profile.update({ goal: 'strength' })],
++  ['places.create', (r) => r.places.create({ kind: 'home', equipment: [], isPrimary: false })],
++  ['gyms.setEquipment', (r) => r.gyms.setEquipment('g-1', 'barbell', true)],
++  ['consent.grantHealth', (r) => r.consent.grantHealth()],
++  ['admin.revokeSessions', (r) => r.admin.revokeSessions('u-2')],
++];
++
++describe('écritures E hors ligne (01 §1 principe 4)', () => {
++  for (const [name, write] of WRITES) {
++    it(`${name} → « Nécessite le réseau », base inchangée, aucun pull`, async () => {
++      const { services, api, sync, db } = await createTestServices({ me: makeMe({ role: 'admin' }) });
++      await seedMirror(db, 'place', [
++        { id: 'p-1', ownerId: 'u-1', kind: 'home', gymId: null, name: 'Maison', isPrimary: true },
++      ]);
++      const before = await dumpLocalDb(db);
++      api.setOffline('reject');
++      const error = await write(createRepos(services)).catch((e: unknown) => e);
++      expect(error).toBeInstanceOf(NetworkRequiredError);
++      expect((error as Error).message).toBe('Nécessite le réseau');
++      expect(await dumpLocalDb(db)).toBe(before);
++      expect(await db.outbox.count()).toBe(0);
++      expect(sync.pullCount).toBe(0);
++    });
++  }
++});
+diff --git a/apps/web/test/repos/profile-places-gyms.test.ts b/apps/web/test/repos/profile-places-gyms.test.ts
+new file mode 100644
+index 0000000..d7a14b7
+--- /dev/null
++++ b/apps/web/test/repos/profile-places-gyms.test.ts
+@@ -0,0 +1,266 @@
++import { defaultLoadSettings, EQUIPMENT, type GymDetail, LoadSettingsSchema } from '@appsport/contracts';
++import { describe, expect, it } from 'vitest';
++import { ApiError } from '../../src/api/client';
++import type { MirrorRow } from '../../src/local-db/db';
++import { getMeta } from '../../src/local-db/meta';
++import { createRepos } from '../../src/repos';
++import { isLive, parseJsonColumn } from '../../src/repos/rows';
++import { createTestServices, makeMe } from '../support/render';
++import { seedMirror } from '../support/seed';
++
++const GYM_LS = defaultLoadSettings('gym');
++const HOME_LS = { ...defaultLoadSettings('home'), dumbbellsG: [2000, 4000] };
++const DELETED = '2026-10-01T10:00:00.000Z';
++
++async function setup() {
++  const t = await createTestServices({
++    me: makeMe({ onboardingStep: 'sport', onboardingCompletedAt: null }),
++  });
++  const { db } = t;
++  await seedMirror(db, 'training_profile', [
++    {
++      id: 'u-1',
++      ownerId: 'u-1',
++      goal: 'muscle',
++      experience: 'none',
++      daysPerWeek: 3,
++      sessionMinutes: 45,
++      sportCode: null,
++      sportOtherLabel: null,
++      cautiousMode: false,
++    },
++  ]);
++  await seedMirror(db, 'gym', [
++    {
++      id: 'g-1',
++      name: 'Basic Fit',
++      nameKey: 'basic fit',
++      city: 'Lyon',
++      cityKey: 'lyon',
++      loadSettings: GYM_LS,
++    },
++  ]);
++  await seedMirror(db, 'gym_equipment', [
++    { id: 'g-1:barbell', gymId: 'g-1', equipmentCode: 'barbell' },
++    { id: 'g-1:squat_rack', gymId: 'g-1', equipmentCode: 'squat_rack' },
++    { id: 'g-1:leg_press', gymId: 'g-1', equipmentCode: 'leg_press', deletedAt: DELETED },
++  ]);
++  await seedMirror(db, 'place', [
++    {
++      id: 'p-2',
++      ownerId: 'u-1',
++      kind: 'home',
++      gymId: null,
++      name: 'Garage',
++      isPrimary: false,
++      visibleAtGym: null,
++      loadSettings: HOME_LS,
++    },
++    {
++      id: 'p-1',
++      ownerId: 'u-1',
++      kind: 'gym',
++      gymId: 'g-1',
++      name: null,
++      isPrimary: true,
++      visibleAtGym: true,
++      loadSettings: null,
++    },
++    {
++      id: 'p-3',
++      ownerId: 'u-1',
++      kind: 'home',
++      gymId: null,
++      name: 'Ancien',
++      isPrimary: false,
++      visibleAtGym: null,
++      loadSettings: null,
++      deletedAt: DELETED,
++    },
++  ]);
++  await seedMirror(db, 'home_equipment', [
++    { id: 'p-2:chair', ownerId: 'u-1', placeId: 'p-2', equipmentCode: 'chair' },
++  ]);
++  return { ...t, repos: createRepos(t.services) };
++}
++
++const gymCodes = EQUIPMENT.filter((c) => c === 'barbell' || c === 'squat_rack');
++
++describe('rows', () => {
++  it('parseJsonColumn valide un objet ; invalide ou texte → null', () => {
++    expect(parseJsonColumn(GYM_LS, LoadSettingsSchema)).toEqual(GYM_LS);
++    expect(parseJsonColumn({ barG: 1 }, LoadSettingsSchema)).toBeNull();
++    expect(parseJsonColumn(JSON.stringify(GYM_LS), LoadSettingsSchema)).toBeNull();
++    expect(parseJsonColumn(null, LoadSettingsSchema)).toBeNull();
++  });
++
++  it('isLive : ligne non supprimée', () => {
++    const row: MirrorRow = { id: 'x', serverRevSeen: 1, deletedAt: null };
++    expect(isLive(row)).toBe(true);
++    expect(isLive({ ...row, deletedAt: DELETED })).toBe(false);
++  });
++});
++
++describe('ProfileRepo', () => {
++  it('get : profil décodé du miroir', async () => {
++    const { repos } = await setup();
++    expect(await repos.profile.get()).toEqual({
++      goal: 'muscle',
++      experience: 'none',
++      daysPerWeek: 3,
++      sessionMinutes: 45,
++      sportCode: null,
++      sportOtherLabel: null,
++      cautiousMode: false,
++    });
++  });
++
++  it('update : PATCH de ce corps, meta.me à jour, un pull', async () => {
++    const { repos, api, sync, db } = await setup();
++    let body: unknown;
++    api.on('PATCH', '/api/me/training-profile', (req) => {
++      body = req.body;
++      return { status: 200, body: makeMe({ onboardingStep: 'goal', onboardingCompletedAt: null }) };
++    });
++    await repos.profile.update({ goal: 'strength', onboardingStep: 'goal' });
++    expect(body).toEqual({ goal: 'strength', onboardingStep: 'goal' });
++    expect((await getMeta(db, 'me'))?.onboardingStep).toBe('goal');
++    expect(sync.pullCount).toBe(1);
++  });
++
++  it('onboardingInput : profil, lieu principal et dernière étape validée', async () => {
++    const { repos } = await setup();
++    expect(await repos.profile.onboardingInput()).toEqual({
++      goal: 'muscle',
++      experience: 'none',
++      daysPerWeek: 3,
++      sessionMinutes: 45,
++      hasPrimaryPlace: true,
++      lastValidatedStep: 'sport',
++    });
++  });
++
++  it('completeOnboarding : meta.me à jour, un pull', async () => {
++    const { repos, api, sync, db } = await setup();
++    api.on('POST', '/api/me/onboarding/complete', { status: 200, body: makeMe() });
++    await repos.profile.completeOnboarding();
++    expect((await getMeta(db, 'me'))?.onboardingCompletedAt).not.toBeNull();
++    expect(sync.pullCount).toBe(1);
++  });
++});
++
++describe('PlacesRepo', () => {
++  it('list : principal d’abord, nom et matériel résolus, supprimé absent', async () => {
++    const { repos } = await setup();
++    expect(await repos.places.list()).toEqual([
++      {
++        id: 'p-1',
++        kind: 'gym',
++        gymId: 'g-1',
++        name: 'Basic Fit',
++        city: 'Lyon',
++        isPrimary: true,
++        visibleAtGym: true,
++        loadSettings: GYM_LS,
++        equipment: gymCodes,
++      },
++      {
++        id: 'p-2',
++        kind: 'home',
++        gymId: null,
++        name: 'Garage',
++        city: null,
++        isPrimary: false,
++        visibleAtGym: null,
++        loadSettings: HOME_LS,
++        equipment: ['chair'],
++      },
++    ]);
++    expect(await repos.places.get('p-3')).toBeNull();
++    expect((await repos.places.get('p-2'))?.name).toBe('Garage');
++  });
++
++  it('create, update, remove et matériel : API puis pull', async () => {
++    const { repos, api, sync } = await setup();
++    api.on('POST', '/api/places', { status: 201, body: { id: 'p-9' } });
++    api.on('PATCH', '/api/places/:id', { status: 204 });
++    api.on('DELETE', '/api/places/:id', { status: 204 });
++    api.on('DELETE', '/api/places/:id/equipment/:code', { status: 204 });
++    await repos.places.create({ kind: 'home', equipment: [], isPrimary: false });
++    await repos.places.update('p-2', { name: 'Cave' });
++    await repos.places.remove('p-2', {});
++    await repos.places.setEquipment('p-2', 'chair', false);
++    expect(api.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
++      'POST /api/places',
++      'PATCH /api/places/p-2',
++      'DELETE /api/places/p-2',
++      'DELETE /api/places/p-2/equipment/chair',
++    ]);
++    expect(sync.pullCount).toBe(4);
++  });
++});
++
++describe('GymsRepo', () => {
++  it('detail en ligne : réponse du serveur', async () => {
++    const { repos, api } = await setup();
++    const detail: GymDetail = {
++      id: 'g-1',
++      name: 'Basic Fit',
++      city: 'Lyon',
++      loadSettings: GYM_LS,
++      deletedAt: null,
++      equipment: ['barbell'],
++      canEdit: true,
++      visibleMembers: ['max'],
++      history: [],
++    };
++    api.on('GET', '/api/gyms/:id', { status: 200, body: detail });
++    expect(await repos.gyms.detail('g-1')).toEqual({ detail, offline: false });
++  });
++
++  it('detail hors ligne : miroirs, sans droit, historique ni membres', async () => {
++    const { repos, api } = await setup();
++    api.setOffline('reject');
++    expect(await repos.gyms.detail('g-1')).toEqual({
++      offline: true,
++      detail: {
++        id: 'g-1',
++        name: 'Basic Fit',
++        city: 'Lyon',
++        loadSettings: GYM_LS,
++        deletedAt: null,
++        equipment: gymCodes,
++        canEdit: false,
++        visibleMembers: [],
++        history: [],
++      },
++    });
++  });
++
++  it('create : 409 gym_duplicate → ApiError avec gymId, aucun pull', async () => {
++    const { repos, api, sync } = await setup();
++    api.on('POST', '/api/gyms', { status: 409, body: { error: 'gym_duplicate', gymId: 'g-1' } });
++    const error = await repos.gyms
++      .create({ name: 'Basic Fit', city: 'Lyon', equipment: [], isPrimary: true })
++      .catch((e: unknown) => e);
++    expect(error).toBeInstanceOf(ApiError);
++    expect((error as ApiError).body.gymId).toBe('g-1');
++    expect(sync.pullCount).toBe(0);
++  });
++
++  it('search, similar, setEquipment', async () => {
++    const { repos, api, sync } = await setup();
++    const summary = { id: 'g-1', name: 'Basic Fit', city: 'Lyon', visibleMemberCount: 2 };
++    api.on('GET', '/api/gyms', { status: 200, body: [summary] });
++    api.on('GET', '/api/gyms/similar', { status: 200, body: [summary] });
++    api.on('PUT', '/api/gyms/:id/equipment/:code', { status: 204 });
++    expect(await repos.gyms.search('basic fit')).toEqual([summary]);
++    expect(await repos.gyms.similar('Basic', 'Lyon')).toEqual([summary]);
++    await repos.gyms.setEquipment('g-1', 'barbell', true);
++    expect(api.calls[0]?.query.get('q')).toBe('basic fit');
++    expect(api.calls[1]?.query.get('name')).toBe('Basic');
++    expect(api.calls[1]?.query.get('city')).toBe('Lyon');
++    expect(api.calls[2]?.path).toBe('/api/gyms/g-1/equipment/barbell');
++    expect(sync.pullCount).toBe(1);
++  });
++});
+diff --git a/apps/web/test/repos/status-repo.test.ts b/apps/web/test/repos/status-repo.test.ts
+new file mode 100644
+index 0000000..ea90190
+--- /dev/null
++++ b/apps/web/test/repos/status-repo.test.ts
+@@ -0,0 +1,96 @@
++import { describe, expect, it, vi } from 'vitest';
++import { getMeta, setMeta } from '../../src/local-db/meta';
++import { createRepos } from '../../src/repos';
++import { createTestServices, makeMe } from '../support/render';
++import { seedOutbox } from '../support/seed';
++
++type Storage = Parameters<ReturnType<typeof createRepos>['status']['requestPersistentStorage']>[0];
++
++async function setup() {
++  const t = await createTestServices({ me: makeMe() });
++  return { ...t, status: createRepos(t.services).status };
++}
++
++describe('StatusRepo', () => {
++  it('readinessInputs : versions du catalogue et dernier pull réussi, null sinon', async () => {
++    const { status, db } = await setup();
++    expect(await status.readinessInputs()).toEqual({
++      catalogVersion: null,
++      serverCatalogVersion: null,
++      lastPullOkAt: null,
++    });
++    await setMeta(db, 'catalogVersion', 'cat-1');
++    await setMeta(db, 'serverCatalogVersion', 'cat-2');
++    await setMeta(db, 'lastPullOkAt', '2026-10-06T11:00:00.000Z');
++    expect(await status.readinessInputs()).toEqual({
++      catalogVersion: 'cat-1',
++      serverCatalogVersion: 'cat-2',
++      lastPullOkAt: '2026-10-06T11:00:00.000Z',
++    });
++  });
++
++  it("pendingCount : ops de l'utilisateur connecté seulement", async () => {
++    const { status, db } = await setup();
++    await seedOutbox(db, 'u-1', 3);
++    await seedOutbox(db, 'u-2', 1);
++    expect(await status.pendingCount()).toBe(3);
++  });
++
++  it('activeSessionId : meta ou null', async () => {
++    const { status, db } = await setup();
++    expect(await status.activeSessionId()).toBeNull();
++    await setMeta(db, 'activeSessionId', 's-1');
++    expect(await status.activeSessionId()).toBe('s-1');
++  });
++
++  it('illustrationFiles : champ file du magasin illustrations, trié', async () => {
++    const { status, db } = await setup();
++    await db.table('illustrations').bulkPut([
++      { id: 'b', file: 'b.22222222.svg' },
++      { id: 'a', file: 'a.11111111.svg' },
++    ]);
++    expect(await status.illustrationFiles()).toEqual(['a.11111111.svg', 'b.22222222.svg']);
++  });
++
++  it('retry : synchro manuelle puis catalogue', async () => {
++    const { status, api, sync } = await setup();
++    api.on('GET', '/api/catalog', { status: 304 });
++    await status.retry();
++    expect(sync.triggers).toEqual(['manual']);
++    expect(api.calls.map((c) => c.path)).toEqual(['/api/catalog']);
++  });
++
++  describe('requestPersistentStorage', () => {
++    const cases: [string, () => Storage, boolean][] = [
++      ['API absente', () => ({}) as Storage, false],
++      ['refusé', () => ({ persisted: async () => false, persist: async () => false }), false],
++      ['accordé', () => ({ persisted: async () => false, persist: async () => true }), true],
++      [
++        'erreur',
++        () => ({ persisted: async () => false, persist: () => Promise.reject(new Error('x')) }),
++        false,
++      ],
++    ];
++    for (const [name, storage, expected] of cases) {
++      it(`${name} → ${expected}, meta.persistGranted = ${expected}`, async () => {
++        const { status, db } = await setup();
++        expect(await status.requestPersistentStorage(storage())).toBe(expected);
++        expect(await getMeta(db, 'persistGranted')).toBe(expected);
++        expect(await status.persistGranted()).toBe(expected);
++      });
++    }
++
++    it('déjà persistant : true sans appeler persist()', async () => {
++      const { status, db } = await setup();
++      const persist = vi.fn(async () => true);
++      expect(await status.requestPersistentStorage({ persisted: async () => true, persist })).toBe(true);
++      expect(persist).not.toHaveBeenCalled();
++      expect(await getMeta(db, 'persistGranted')).toBe(true);
++    });
++
++    it('persistGranted : null tant que rien n’est demandé', async () => {
++      const { status } = await setup();
++      expect(await status.persistGranted()).toBeNull();
++    });
++  });
++});
+diff --git a/apps/web/test/status/offline-ready.test.tsx b/apps/web/test/status/offline-ready.test.tsx
+new file mode 100644
+index 0000000..dc217e7
+--- /dev/null
++++ b/apps/web/test/status/offline-ready.test.tsx
+@@ -0,0 +1,90 @@
++import { fireEvent, screen } from '@testing-library/react';
++import { describe, expect, it } from 'vitest';
++import { OfflineReadyIndicator } from '../../src/features/status/OfflineReadyIndicator';
++import { setMeta } from '../../src/local-db/meta';
++import { createTestLocalDb } from '../support/local-db';
++import { DEFAULT_NOW, renderApp, renderWithServices } from '../support/render';
++import { until } from '../support/wait';
++
++const HOUR = 3_600_000;
++const iso = (ms: number) => new Date(ms).toISOString();
++
++async function dbWith(pullAgoMs: number | null) {
++  const db = createTestLocalDb();
++  await setMeta(db, 'catalogVersion', 'cat-1');
++  await setMeta(db, 'serverCatalogVersion', 'cat-1');
++  if (pullAgoMs !== null) await setMeta(db, 'lastPullOkAt', iso(DEFAULT_NOW - pullAgoMs));
++  return db;
++}
++
++const indicator = () => screen.getByTestId('offline-ready');
++const stateIs = (s: string) => () => indicator().getAttribute('data-state') === s;
++
++describe('OfflineReadyIndicator', () => {
++  it('pull il y a 1 h : « Prêt hors ligne »', async () => {
++    await renderWithServices(<OfflineReadyIndicator />, { db: await dbWith(HOUR) });
++    await until(stateIs('ready'));
++    expect(indicator().textContent).toContain('Prêt hors ligne');
++  });
++
++  it('pull il y a 25 h : pas prêt, faute de synchronisation récente', async () => {
++    await renderWithServices(<OfflineReadyIndicator />, { db: await dbWith(25 * HOUR) });
++    await until(
++      () => indicator().textContent?.includes('Pas de synchronisation depuis plus de 24 h') ?? false,
++    );
++    expect(indicator().getAttribute('data-state')).toBe('not-ready');
++    expect(indicator().textContent).toContain('Pas encore prêt hors ligne');
++  });
++
++  it('SW absent : « Appli pas encore enregistrée sur l’appareil »', async () => {
++    await renderWithServices(<OfflineReadyIndicator />, { db: await dbWith(HOUR), swStatus: null });
++    await until(
++      () => indicator().textContent?.includes("Appli pas encore enregistrée sur l'appareil") ?? false,
++    );
++    expect(indicator().getAttribute('data-state')).toBe('not-ready');
++    expect(indicator().textContent).toContain('Illustrations à télécharger');
++  });
++
++  it('catalogue en retard : « Catalogue à télécharger »', async () => {
++    const db = await dbWith(HOUR);
++    await setMeta(db, 'serverCatalogVersion', 'cat-2');
++    await renderWithServices(<OfflineReadyIndicator />, { db });
++    await until(() => indicator().textContent?.includes('Catalogue à télécharger') ?? false);
++  });
++
++  it('recalculé à chaque état de synchro', async () => {
++    const db = await dbWith(null);
++    const { sync } = await renderWithServices(<OfflineReadyIndicator />, { db });
++    await until(() => indicator().textContent?.includes('Pas de synchronisation') ?? false);
++    await setMeta(db, 'lastPullOkAt', iso(DEFAULT_NOW - HOUR));
++    sync.set({ lastPullOkAt: iso(DEFAULT_NOW - HOUR) });
++    await until(stateIs('ready'));
++  });
++
++  it('« Réessayer » lance une synchro manuelle', async () => {
++    const { sync, api } = await renderWithServices(<OfflineReadyIndicator />, { db: await dbWith(null) });
++    api.on('GET', '/api/catalog', { status: 304 });
++    await until(stateIs('not-ready'));
++    fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
++    await until(() => sync.triggers.includes('manual'));
++  });
++
++  it('readiness fournie : rendu direct', async () => {
++    await renderWithServices(
++      <OfflineReadyIndicator
++        readiness={{
++          ready: false,
++          checks: { shell: true, catalog: true, illustrations: false, recentPull: true },
++        }}
++      />,
++    );
++    expect(indicator().getAttribute('data-state')).toBe('not-ready');
++    expect(indicator().textContent).toContain('Illustrations à télécharger');
++    expect(indicator().textContent).not.toContain('Catalogue à télécharger');
++  });
++
++  it("l'accueil affiche le voyant", async () => {
++    await renderApp({ db: await dbWith(HOUR) });
++    await until(() => screen.queryByTestId('offline-ready')?.getAttribute('data-state') === 'ready');
++  });
++});
+diff --git a/apps/web/test/status/readiness.test.ts b/apps/web/test/status/readiness.test.ts
+new file mode 100644
+index 0000000..37b3777
+--- /dev/null
++++ b/apps/web/test/status/readiness.test.ts
+@@ -0,0 +1,64 @@
++import { describe, expect, it } from 'vitest';
++import { computeReadiness, RECENT_PULL_MS } from '../../src/features/status/readiness';
++import type { SwStatus } from '../../src/sw/protocol';
++
++const NOW = Date.parse('2026-10-06T12:00:00.000Z');
++const iso = (ms: number) => new Date(ms).toISOString();
++const sw = (o: Partial<SwStatus> = {}): SwStatus => ({
++  type: 'STATUS',
++  buildHash: 'b1',
++  shellCached: true,
++  illustrationsMissing: 0,
++  ...o,
++});
++
++describe('computeReadiness', () => {
++  it('16 combinaisons : prêt si et seulement si les quatre vérifications passent', () => {
++    for (let mask = 0; mask < 16; mask++) {
++      const s = (mask & 1) !== 0;
++      const c = (mask & 2) !== 0;
++      const i = (mask & 4) !== 0;
++      const p = (mask & 8) !== 0;
++      const r = computeReadiness({
++        sw: sw({ shellCached: s, illustrationsMissing: i ? 0 : 3 }),
++        catalogVersion: 'cat-1',
++        serverCatalogVersion: c ? 'cat-1' : 'cat-2',
++        lastPullOkAt: iso(p ? NOW - 3_600_000 : NOW - 2 * RECENT_PULL_MS),
++        now: NOW,
++      });
++      expect(r, `masque ${mask}`).toEqual({
++        ready: s && c && i && p,
++        checks: { shell: s, catalog: c, illustrations: i, recentPull: p },
++      });
++    }
++  });
++
++  it('pull il y a 24 h exactement → pas récent ; 24 h − 1 ms → récent', () => {
++    const at = (ms: number) =>
++      computeReadiness({
++        sw: sw(),
++        catalogVersion: 'c',
++        serverCatalogVersion: 'c',
++        lastPullOkAt: iso(NOW - ms),
++        now: NOW,
++      }).checks.recentPull;
++    expect(RECENT_PULL_MS).toBe(86_400_000);
++    expect(at(RECENT_PULL_MS)).toBe(false);
++    expect(at(RECENT_PULL_MS - 1)).toBe(true);
++  });
++
++  it('sans SW, sans versions ni pull : tout échoue', () => {
++    expect(
++      computeReadiness({
++        sw: null,
++        catalogVersion: null,
++        serverCatalogVersion: null,
++        lastPullOkAt: null,
++        now: NOW,
++      }),
++    ).toEqual({
++      ready: false,
++      checks: { shell: false, catalog: false, illustrations: false, recentPull: false },
++    });
++  });
++});
+diff --git a/apps/web/test/status/sw-client.test.ts b/apps/web/test/status/sw-client.test.ts
+new file mode 100644
+index 0000000..bbbed19
+--- /dev/null
++++ b/apps/web/test/status/sw-client.test.ts
+@@ -0,0 +1,42 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import type { PageToSw, SwStatus } from '../../src/sw/protocol';
++import { getSwStatus, postToSw } from '../../src/sw/sw-client';
++
++const STATUS: SwStatus = { type: 'STATUS', buildHash: 'b1', shellCached: true, illustrationsMissing: 2 };
++
++function setController(controller: { postMessage(msg: PageToSw, transfer?: Transferable[]): void } | null) {
++  Object.defineProperty(navigator, 'serviceWorker', {
++    configurable: true,
++    value: { controller },
++  });
++}
++
++afterEach(() => {
++  Reflect.deleteProperty(navigator, 'serviceWorker');
++});
++
++describe('getSwStatus', () => {
++  it('répond par le MessageChannel au message GET_STATUS', async () => {
++    const received: PageToSw[] = [];
++    setController({
++      postMessage(msg, transfer) {
++        received.push(msg);
++        const port = transfer?.[0] as MessagePort;
++        port.postMessage(STATUS);
++      },
++    });
++    expect(await getSwStatus()).toEqual(STATUS);
++    expect(received).toEqual([{ type: 'GET_STATUS' }]);
++  });
++
++  it('sans contrôleur : null, et postToSw rend false', async () => {
++    setController(null);
++    expect(await getSwStatus()).toBeNull();
++    expect(postToSw({ type: 'SKIP_WAITING' })).toBe(false);
++  });
++
++  it('contrôleur muet : null après le délai', async () => {
++    setController({ postMessage() {} });
++    expect(await getSwStatus(50)).toBeNull();
++  });
++});
+diff --git a/apps/web/test/support/render.tsx b/apps/web/test/support/render.tsx
+index 78f891f..210bfa5 100644
+--- a/apps/web/test/support/render.tsx
++++ b/apps/web/test/support/render.tsx
+@@ -2,20 +2,21 @@ import type { MeResponse } from '@appsport/contracts';
+ import { createMonotonicUuidV7 } from '@appsport/domain';
+ import { type RenderResult, render } from '@testing-library/react';
+ import type { ReactElement } from 'react';
+ import { Router } from 'wouter';
+ import { memoryLocation } from 'wouter/memory-location';
+ import { App } from '../../src/App';
+ import { createApiClient } from '../../src/api/client';
+ import { type AppServices, handleAccountDeleted, ServicesProvider } from '../../src/app-services';
+ import type { AppDb } from '../../src/local-db/db';
+ import { setMeta } from '../../src/local-db/meta';
++import type { SwStatus } from '../../src/sw/protocol';
+ import { createFakeApi, createFakeSyncEngine, type FakeApi, type FakeSyncEngine } from './fake-api';
+ import { createTestLocalDb } from './local-db';
+ 
+ export const DEFAULT_NOW = Date.parse('2026-10-06T12:00:00.000Z');
+ 
+ /** Membre adulte actif, onboardé, sans consentement actif. */
+ export function makeMe(o: Partial<MeResponse> = {}): MeResponse {
+   return {
+     id: 'u-1',
+     username: 'lea',
+@@ -38,59 +39,84 @@ export function makeMe(o: Partial<MeResponse> = {}): MeResponse {
+ }
+ 
+ export interface RenderAppOptions {
+   path?: string;
+   /** Utilisateur en session ; `null` : aucune session ; absent : `makeMe()`. */
+   me?: MeResponse | null;
+   api?: FakeApi;
+   sync?: FakeSyncEngine;
+   db?: AppDb;
+   now?: number;
++  /** Réponse du service worker ; absent : coquille et illustrations en cache. */
++  swStatus?: SwStatus | null;
+ }
+ 
++export const DEFAULT_SW_STATUS: SwStatus = {
++  type: 'STATUS',
++  buildHash: 'test',
++  shellCached: true,
++  illustrationsMissing: 0,
++};
++
+ export interface RenderAppResult extends RenderResult {
+   services: AppServices;
+   api: FakeApi;
+   sync: FakeSyncEngine;
+   db: AppDb;
+   location(): string;
+ }
+ 
+-/** Rend `ui` avec des services de test, dans un routeur en mémoire (wouter). */
+-export async function renderWithServices(
+-  ui: ReactElement,
+-  opts: RenderAppOptions = {},
+-): Promise<RenderAppResult> {
++export interface TestServices {
++  services: AppServices;
++  api: FakeApi;
++  sync: FakeSyncEngine;
++  db: AppDb;
++  memory: ReturnType<typeof memoryLocation>;
++}
++
++/** Services de test sans rendu (dépôts testés seuls) ; `me` posé dans meta comme une session. */
++export async function createTestServices(opts: RenderAppOptions = {}): Promise<TestServices> {
+   const api = opts.api ?? createFakeApi();
+   const sync = opts.sync ?? createFakeSyncEngine();
+   const db = opts.db ?? createTestLocalDb();
+   const nowMs = opts.now ?? DEFAULT_NOW;
+   const me = opts.me === undefined ? makeMe() : opts.me;
+   if (me) {
+     await setMeta(db, 'userId', me.id);
+     await setMeta(db, 'me', me);
+   }
++  const swStatus = opts.swStatus === undefined ? DEFAULT_SW_STATUS : opts.swStatus;
+   const memory = memoryLocation({ path: opts.path ?? '/', record: true });
+   const services: AppServices = {
+     db,
+     api: createApiClient(api.transport, {
+       onUnauthenticated: () => void sync.syncNow('manual'),
+       onAccountDeleted: () => void handleAccountDeleted(db, memory.navigate),
+     }),
+     sync,
+     transport: api.transport,
+     now: () => nowMs,
+     newOpId: createMonotonicUuidV7(
+       () => nowMs,
+       (n) => crypto.getRandomValues(new Uint8Array(n)),
+     ),
++    swStatus: async () => swStatus,
+   };
++  return { services, api, sync, db, memory };
++}
++
++/** Rend `ui` avec des services de test, dans un routeur en mémoire (wouter). */
++export async function renderWithServices(
++  ui: ReactElement,
++  opts: RenderAppOptions = {},
++): Promise<RenderAppResult> {
++  const { services, api, sync, db, memory } = await createTestServices(opts);
+   const result = render(
+     <Router hook={memory.hook} searchHook={memory.searchHook}>
+       <ServicesProvider services={services}>{ui}</ServicesProvider>
+     </Router>,
+   );
+   return {
+     ...result,
+     services,
+     api,
+     sync,
+diff --git a/apps/web/test/support/seed.ts b/apps/web/test/support/seed.ts
+new file mode 100644
+index 0000000..259204d
+--- /dev/null
++++ b/apps/web/test/support/seed.ts
+@@ -0,0 +1,46 @@
++import { SYNC_PROTOCOL, SyncOp } from '@appsport/contracts';
++import { createMonotonicUuidV7 } from '@appsport/domain';
++import type { AppDb, OutboxOp } from '../../src/local-db/db';
++import { applyPulledRows } from '../../src/sync/apply-pull';
++import { DEFAULT_NOW } from './render';
++
++const newOpId = createMonotonicUuidV7(
++  () => DEFAULT_NOW,
++  (n) => crypto.getRandomValues(new Uint8Array(n)),
++);
++
++/**
++ * Lignes au format du pull (camelCase, valeurs décodées : booléens, objets) écrites dans le
++ * miroir `entity` par le même chemin que la synchro ; `deletedAt` vaut null par défaut.
++ */
++export async function seedMirror(db: AppDb, entity: string, rows: Record<string, unknown>[]): Promise<void> {
++  await applyPulledRows(
++    db,
++    rows.map((row, i) => ({ entity, rev: i + 1, row: { deletedAt: null, ...row } })),
++  );
++}
++
++/** `n` ops en attente de `userId` (patch de `dismissedAt` sur `sync_rejection` par défaut). */
++export async function seedOutbox(
++  db: AppDb,
++  userId: string,
++  n: number,
++  entity = 'sync_rejection',
++): Promise<OutboxOp[]> {
++  const clientTs = new Date(DEFAULT_NOW).toISOString();
++  const ops = Array.from({ length: n }, (_, i) =>
++    SyncOp.parse({
++      opId: newOpId(),
++      userId,
++      entity,
++      id: `${userId}-row-${i + 1}`,
++      kind: 'patch',
++      fields: { dismissedAt: clientTs },
++      clientTs,
++      protocol: SYNC_PROTOCOL,
++      attempts: 0,
++    }),
++  );
++  await db.outbox.bulkAdd(ops);
++  return ops;
++}

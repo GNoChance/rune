@@ -1,0 +1,278 @@
+# Review package: 40fdc96..HEAD
+
+## Commits
+b969e92 fix(privacy): révision des lignes détachées à la suppression de compte
+
+## Files changed
+ apps/server/src/privacy/delete-account.ts        | 36 ++++++++++++++++++-
+ apps/server/test/auth/purge.test.ts              |  2 ++
+ apps/server/test/privacy/admin-isolation.test.ts | 27 +++++++++------
+ apps/server/test/privacy/delete.test.ts          | 44 +++++++++++++++++++++++-
+ 4 files changed, 96 insertions(+), 13 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/privacy/delete-account.ts b/apps/server/src/privacy/delete-account.ts
+index fe4264f..48a150b 100644
+--- a/apps/server/src/privacy/delete-account.ts
++++ b/apps/server/src/privacy/delete-account.ts
+@@ -1,17 +1,50 @@
+-import type { Transaction } from 'kysely';
++import { sql, type Transaction } from 'kysely';
+ import { assertNotLastAdmin } from '../admin/members';
+ import { logSecurityEvent } from '../auth/security-log';
++import { nextRev } from '../db/rev';
+ import type { Database } from '../db/schema';
+ import type { AppDeps } from '../deps';
+ import { httpError } from '../http/errors';
+ 
++type Row = Record<string, unknown>;
++
++/**
++ * Les clés étrangères `ON DELETE SET NULL` vers `user` détachent les lignes sans nouvelle révision :
++ * les miroirs des autres membres garderaient l'identifiant effacé. Pour chaque table synchronisée
++ * (J, D, E) et chaque colonne concernée, on met la colonne à NULL avec une nouvelle révision.
++ * `updated_by` n'est pas renseigné : l'auteur de l'écriture n'est pas l'utilisateur supprimé.
++ */
++async function detachMirroredReferences(trx: Transaction<Database>, deps: AppDeps, userId: string) {
++  const fks = await sql<{ tbl: string; col: string }>`
++    select m.name as tbl, f."from" as col
++    from sqlite_schema m, pragma_foreign_key_list(m.name) f
++    where m.type = 'table' and f."table" = 'user' and f."on_delete" = 'SET NULL'`.execute(trx);
++  const now = deps.clock.now().toISOString();
++  for (const { tbl, col } of fks.rows) {
++    const rule = deps.entityRules[tbl];
++    if (!rule || !['J', 'D', 'E'].includes(rule.syncClass)) continue;
++    if (!rule.columns.includes('rev') || !rule.columns.includes('updated_at')) continue;
++    const owner = rule.ownerColumn === null ? sql`1 = 1` : sql`${sql.ref(rule.ownerColumn)} != ${userId}`;
++    const rows =
++      await sql<Row>`select rowid as rid from ${sql.table(tbl)} where ${sql.ref(col)} = ${userId} and ${owner}`.execute(
++        trx,
++      );
++    for (const { rid } of rows.rows) {
++      const rev = await nextRev(trx);
++      await sql`update ${sql.table(tbl)} set ${sql.ref(col)} = null, rev = ${rev}, updated_at = ${now} where rowid = ${rid}`.execute(
++        trx,
++      );
++    }
++  }
++}
++
+ /**
+  * Supprime le compte dans la transaction reçue (R-SUP-1 à R-SUP-6). Les sessions sont anonymisées
+  * (410 pour leurs porteurs, puis purge) ; `gym_history` perd son auteur ; les clés étrangères
+  * suppriment ou détachent le reste. `security_event` n'est jamais modifié.
+  * `enforceLastAdmin: false` : réapplication des suppressions (privacy:reapply), où le dernier admin
+  * peut avoir été supprimé après la sauvegarde.
+  */
+ export async function deleteAccount(
+   trx: Transaction<Database>,
+   deps: AppDeps,
+@@ -27,19 +60,20 @@ export async function deleteAccount(
+   await trx
+     .updateTable('session')
+     .set((eb) => ({
+       userId: null,
+       revokedReason: 'account_deleted',
+       revokedAt: eb.fn.coalesce('revokedAt', eb.val(now)),
+     }))
+     .where('userId', '=', userId)
+     .execute();
+   await trx.updateTable('gymHistory').set({ authorId: null }).where('authorId', '=', userId).execute();
++  await detachMirroredReferences(trx, deps, userId);
+   await trx.deleteFrom('user').where('id', '=', userId).execute();
+   await logSecurityEvent(trx, deps, {
+     type: 'account_deleted',
+     actorId: actor.actorId,
+     targetId: userId,
+     ip: actor.ip,
+     outcome: 'success',
+   });
+ }
+diff --git a/apps/server/test/auth/purge.test.ts b/apps/server/test/auth/purge.test.ts
+index c5c0501..0992741 100644
+--- a/apps/server/test/auth/purge.test.ts
++++ b/apps/server/test/auth/purge.test.ts
+@@ -23,20 +23,21 @@ describe('authPurgeJob (03 §7)', () => {
+ 
+   it('sessions : bornes exactes', async () => {
+     ctx = await createTestContext();
+     const { db } = ctx.deps;
+     const u = await insertFixtureRow(db, 'user');
+     const mk = async (v: Record<string, unknown>) =>
+       (await insertFixtureRow(db, 'session', { userId: u.id, expiresAt: FAR, ...v })).id as string;
+     await mk({ revokedAt: LIM, revokedReason: 'logout' }); // purgée
+     const revokedLim1 = await mk({ revokedAt: LIM1, revokedReason: 'logout' });
+     await mk({ lastSeenAt: '2026-06-07T10:00:00.000Z' }); // inactive depuis plus de 120 jours : purgée
++    await mk({ lastSeenAt: '2026-06-08T10:00:00.000Z' }); // borne exacte : purgée
+     const idleKept = await mk({ lastSeenAt: '2026-06-08T10:00:00.001Z' });
+     const active = await mk({});
+     await mk({ expiresAt: LIM }); // purgée
+     const expiredKept = await mk({ expiresAt: LIM1 });
+     const delKept = await mk({
+       userId: null,
+       revokedAt: '2026-01-01T00:00:00.000Z',
+       revokedReason: 'account_deleted',
+       expiresAt: '2026-10-06T10:00:00.001Z',
+     });
+@@ -54,20 +55,21 @@ describe('authPurgeJob (03 §7)', () => {
+     ctx = await createTestContext();
+     const { db } = ctx.deps;
+     const mk = async (v: Record<string, unknown>) =>
+       (await insertFixtureRow(db, 'invitation', { birthDate: '2010-01-01', expiresAt: FAR, ...v }))
+         .id as string;
+     const expired = await mk({ expiresAt: '2026-10-06T09:00:00.000Z' });
+     const pending = await mk({});
+     await mk({ usedAt: LIM }); // purgée
+     const usedLim1 = await mk({ usedAt: LIM1 });
+     await mk({ revokedAt: '2026-09-01T10:00:00.000Z' }); // purgée
++    await mk({ revokedAt: LIM }); // borne exacte : purgée
+     await authPurgeJob.run(ctx.deps);
+     expect(await ids('invitation')).toEqual([expired, pending, usedLim1].sort());
+     const rows = await db.selectFrom('invitation').select(['id', 'birthDate']).execute();
+     const birth = Object.fromEntries(rows.map((r) => [r.id, r.birthDate]));
+     expect(birth[expired]).toBeNull();
+     expect(birth[pending]).toBe('2010-01-01');
+     expect(birth[usedLim1]).toBe('2010-01-01');
+   });
+ 
+   it('réinitialisations : bornes exactes', async () => {
+diff --git a/apps/server/test/privacy/admin-isolation.test.ts b/apps/server/test/privacy/admin-isolation.test.ts
+index bd01cf5..80e5503 100644
+--- a/apps/server/test/privacy/admin-isolation.test.ts
++++ b/apps/server/test/privacy/admin-isolation.test.ts
+@@ -1,10 +1,11 @@
++import { entityRules } from '@appsport/contracts';
+ import { afterEach, describe, expect, it } from 'vitest';
+ import { createTestContext, createUser, insertFixtureRow, login, type TestContext } from '../support';
+ 
+ // Planchers du nombre de routes énumérées : T18 monte MIN_ID_ROUTES à 4, T19 à 6.
+ const MIN_ADMIN_ROUTES = 10;
+ const MIN_ID_ROUTES = 0;
+ 
+ let ctx: TestContext;
+ afterEach(() => ctx?.close());
+ 
+@@ -33,33 +34,37 @@ const fill = (path: string, id: string): string =>
+   path.replace(/:([A-Za-z]+)(\{[^}]*\})?/g, (_m, name: string) => (name === 'id' ? id : 'x'));
+ 
+ async function setup() {
+   ctx = await createTestContext();
+   const { db } = ctx.deps;
+   const admin = await createUser(ctx, { username: 'porteur', role: 'admin', password: 'quatorze carac' });
+   const b = await createUser(ctx, { username: 'brigitte' });
+   const cookie = await login(ctx, 'porteur', admin.password);
+   // consentement santé actif de l'admin : la garde C2 ne doit pas masquer le contrôle du propriétaire
+   await insertFixtureRow(db, 'consent_event', { ownerId: admin.id, type: 'health', action: 'grant' });
+-  await insertFixtureRow(db, 'consent_event', { ownerId: b.id, type: 'health', action: 'grant' });
+ 
+-  const rowIds: string[] = [];
+-  const keep = (row: Record<string, unknown>) => {
+-    rowIds.push(row.id as string);
+-    return row;
++  // une ligne par table liée du registre : les tables des tâches suivantes sont reprises automatiquement
++  const witnessed: Record<string, Record<string, unknown>> = {
++    training_profile: { sportOtherLabel: WITNESSES[0] },
++    health_screening: { questionnaireVersion: WITNESSES[1] },
++    limitation: { note: WITNESSES[2] },
+   };
+-  keep(await insertFixtureRow(db, 'training_profile', { ownerId: b.id, sportOtherLabel: WITNESSES[0] }));
+-  keep(await insertFixtureRow(db, 'health_screening', { ownerId: b.id, questionnaireVersion: WITNESSES[1] }));
+-  keep(await insertFixtureRow(db, 'limitation', { ownerId: b.id, note: WITNESSES[2] }));
+-  keep(await insertFixtureRow(db, 'sync_rejection', { ownerId: b.id }));
+-  const place = keep(await insertFixtureRow(db, 'place', { ownerId: b.id }));
+-  keep(await insertFixtureRow(db, 'home_equipment', { ownerId: b.id, placeId: place.id }));
++  const rowIds: string[] = [];
++  for (const [table, rule] of Object.entries(entityRules)) {
++    if (table === 'user' || table === 'session' || rule.onUserDelete !== 'cascade') continue;
++    if (rule.ownerColumn !== 'owner_id' && rule.ownerColumn !== 'user_id') continue;
++    const row = await insertFixtureRow(db, table, {
++      [rule.ownerColumn === 'owner_id' ? 'ownerId' : 'userId']: b.id,
++      ...witnessed[table],
++    });
++    rowIds.push((row.id ?? row.opId) as string);
++  }
+   return { admin, b, cookie, rowIds };
+ }
+ 
+ describe("isolation de l'administrateur (P-ADM-1, P-ADM-2, 02 §15 n°14)", () => {
+   it("les routes /api/admin/* ne renvoient aucune donnée C1 à C3 d'un membre", async () => {
+     const { b, cookie } = await setup();
+     const admin = listRoutes().filter(
+       (r) => r.path.startsWith('/api/admin/') && !r.path.endsWith('/members/:id/delete'),
+     );
+     expect(admin.length).toBeGreaterThanOrEqual(MIN_ADMIN_ROUTES);
+diff --git a/apps/server/test/privacy/delete.test.ts b/apps/server/test/privacy/delete.test.ts
+index 2478fd4..4fd139d 100644
+--- a/apps/server/test/privacy/delete.test.ts
++++ b/apps/server/test/privacy/delete.test.ts
+@@ -122,27 +122,69 @@ describe('POST /api/me/delete (R-SUP-1 à R-SUP-6, P-DRT-3)', () => {
+     }
+     expect((await ctx.deps.db.selectFrom('gym').select('id').execute()).length).toBe(gymsBefore.length);
+     const history = await ctx.deps.db.selectFrom('gymHistory').selectAll().execute();
+     expect(history).toHaveLength(1);
+     expect(history[0]?.authorId).toBeNull();
+ 
+     const [event, ...rest] = await events('account_deleted');
+     expect(rest).toEqual([]);
+     expect(event).toMatchObject({ actorId: lea.id, targetId: lea.id, details: null, outcome: 'success' });
+     // le journal garde ses lignes antérieures
+-    expect((await events('login_succeeded')).filter((e) => e.id === 'ev-before')).toHaveLength(1);
++    const kept = (await events('login_succeeded')).filter((e) => e.id === 'ev-before');
++    expect(kept).toHaveLength(1);
++    expect(kept[0]).toMatchObject({ actorId: lea.id, targetId: lea.id });
+ 
+     const gone = await ctx.request('/api/me', { cookie: other });
+     expect(gone.status).toBe(410);
+     expect(await gone.json()).toEqual({ error: 'account_deleted' });
+   });
+ 
++  it('détache les références non cascadées des miroirs avec une nouvelle révision (R-SUP-3)', async () => {
++    const { lea } = await setup();
++    const { db } = ctx.deps;
++    const cookie = await login(ctx, 'Léa', lea.password);
++    const gym = await insertFixtureRow(db, 'gym', { createdBy: lea.id, updatedBy: lea.id });
++    const equipment = await insertFixtureRow(db, 'gym_equipment', { gymId: gym.id, addedBy: lea.id });
++    const peer = await insertFixtureRow(db, 'user', { updatedBy: lea.id });
++    const revs = async () => ({
++      gym: await db
++        .selectFrom('gym')
++        .select(['createdBy', 'updatedBy', 'rev', 'updatedAt'])
++        .where('id', '=', gym.id as string)
++        .executeTakeFirstOrThrow(),
++      eq: await db
++        .selectFrom('gymEquipment')
++        .select(['addedBy', 'rev'])
++        .where('id', '=', equipment.id as string)
++        .executeTakeFirstOrThrow(),
++      peer: await db
++        .selectFrom('user')
++        .select(['updatedBy', 'rev'])
++        .where('id', '=', peer.id as string)
++        .executeTakeFirstOrThrow(),
++    });
++    const before = await revs();
++    expect((await del(cookie, { password: lea.password })).status).toBe(204);
++    const after = await revs();
++    expect(after.gym).toMatchObject({
++      createdBy: null,
++      updatedBy: null,
++      updatedAt: '2026-10-06T10:00:00.000Z',
++    });
++    expect(after.eq.addedBy).toBeNull();
++    expect(after.peer.updatedBy).toBeNull();
++    expect(after.gym.rev).toBeGreaterThan(before.gym.rev);
++    expect(after.eq.rev).toBeGreaterThan(before.eq.rev);
++    expect(after.peer.rev).toBeGreaterThan(before.peer.rev);
++    expect(await occurrences(lea.id)).toEqual([]);
++  });
++
+   it('la seule table anonymisée du registre est `session`', () => {
+     expect(
+       Object.entries(entityRules)
+         .filter(([, r]) => r.onUserDelete === 'anonymize')
+         .map(([t]) => t),
+     ).toEqual(['session']);
+   });
+ });
+ 
+ describe('POST /api/admin/members/:id/delete (R-SUP-2)', () => {

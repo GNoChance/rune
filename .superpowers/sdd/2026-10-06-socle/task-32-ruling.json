@@ -1,0 +1,16 @@
+[
+ {
+  "id": "T32-F1",
+  "severity": "Important",
+  "lenses": [
+   "security"
+  ],
+  "file": "apps/web/src/features/profile/ProfilePage.tsx",
+  "line": "37-46, 70-78",
+  "title": "No logout available while the password must be changed",
+  "problem": "When me.mustChangePassword is true, ProfilePage renders only the banner and PasswordSection, dropping AccountSection, the only place with « Se déconnecter » (LogoutDialog is used nowhere else). The route guard sends every path to /profile and /login redirects to /, so the user cannot end the session. The server allows POST /api/auth/logout in this state (MUST_CHANGE_ALLOWED, apps/server/src/auth/session.ts:149-153). On a shared phone the session cookie stays valid and the local mirror (possibly C2 health rows) stays in IndexedDB, against R-AUTH-9. The test at apps/web/test/profile/profile-page.test.tsx:147-159 locks the absence in without checking that a logout is offered.",
+  "fix": "In the forced branch, render a « Se déconnecter » button wired to <LogoutDialog mode=\"current\"> (POST /api/auth/logout, then wipeUserData). Keep « Déconnecter tous mes appareils » hidden. Extend the mustChangePassword test: « Se déconnecter » present, dialog, POST /api/auth/logout called once, logout-all absent.",
+  "specRef": "02-comptes R-MDP-1, R-AUTH-9; server MUST_CHANGE_ALLOWED",
+  "minorAction": "n/a"
+ }
+]

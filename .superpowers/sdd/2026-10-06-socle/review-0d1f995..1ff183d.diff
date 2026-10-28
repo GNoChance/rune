@@ -1,0 +1,1069 @@
+# Review package: 0d1f995..HEAD
+
+## Commits
+1ff183d feat(auth): invitations à usage unique, création de compte et amorçage admin
+
+## Files changed
+ apps/server/src/auth/bootstrap.ts                  |  38 +++
+ apps/server/src/auth/invitation-routes.ts          |  86 +++++++
+ apps/server/src/auth/invitations.ts                | 261 +++++++++++++++++++++
+ apps/server/src/cli.ts                             |  33 +++
+ apps/server/src/routes.ts                          |   3 +
+ apps/server/test/auth/bootstrap.test.ts            | 131 +++++++++++
+ .../test/auth/invitation-concurrency.test.ts       |  63 +++++
+ apps/server/test/auth/invitation.test.ts           | 258 ++++++++++++++++++++
+ packages/contracts/src/api/admin.ts                |  29 +++
+ packages/contracts/src/api/auth.ts                 |  15 ++
+ packages/contracts/src/index.ts                    |   1 +
+ 11 files changed, 918 insertions(+)
+
+## Diff
+diff --git a/apps/server/src/auth/bootstrap.ts b/apps/server/src/auth/bootstrap.ts
+new file mode 100644
+index 0000000..0b65b14
+--- /dev/null
++++ b/apps/server/src/auth/bootstrap.ts
+@@ -0,0 +1,38 @@
++import { BOOTSTRAP_INVITATION_TTL_HOURS } from '@appsport/contracts';
++import type { AppDeps } from '../deps';
++import { httpError } from '../http/errors';
++import { createInvitation } from './invitations';
++
++const HOUR_MS = 3_600_000;
++
++/**
++ * Invitation d'amorçage du premier administrateur (R-ROLE-5) : une seule à la fois, valable 24 h.
++ * Refusée dès qu'un administrateur existe.
++ */
++export async function bootstrapAdminInvitation(
++  deps: AppDeps,
++  birthDate: string,
++): Promise<{ code: string; link: string; expiresAt: string }> {
++  return deps.db.transaction().execute(async (trx) => {
++    const admin = await trx.selectFrom('user').select('id').where('role', '=', 'admin').executeTakeFirst();
++    if (admin) throw httpError('conflict', { reason: 'admin_exists' });
++    const now = deps.clock.now().toISOString();
++    await trx
++      .updateTable('invitation')
++      .set({ revokedAt: now, birthDate: null })
++      .where('isAdminBootstrap', '=', 1)
++      .where('usedAt', 'is', null)
++      .where('revokedAt', 'is', null)
++      .where('expiresAt', '>', now)
++      .execute();
++    const created = await createInvitation(trx, deps, {
++      birthDate,
++      note: null,
++      createdBy: null,
++      isAdminBootstrap: true,
++      ttlMs: BOOTSTRAP_INVITATION_TTL_HOURS * HOUR_MS,
++      ip: null,
++    });
++    return { code: created.code, link: created.link, expiresAt: created.invitation.expiresAt };
++  });
++}
+diff --git a/apps/server/src/auth/invitation-routes.ts b/apps/server/src/auth/invitation-routes.ts
+new file mode 100644
+index 0000000..fe6af4b
+--- /dev/null
++++ b/apps/server/src/auth/invitation-routes.ts
+@@ -0,0 +1,86 @@
++import {
++  AcceptInvitationRequest,
++  CodeRequest,
++  CreateInvitationRequest,
++  INVITATION_TTL_DAYS,
++} from '@appsport/contracts';
++import { Hono } from 'hono';
++import type { AppEnv } from '../app-env';
++import type { AppDeps } from '../deps';
++import { validClientIp } from '../http/client-ip';
++import { httpError } from '../http/errors';
++import { parseJson } from '../http/validate';
++import {
++  acceptInvitation,
++  checkInvitation,
++  createInvitation,
++  listInvitations,
++  revokeInvitation,
++} from './invitations';
++import { authLimiters } from './limiter';
++import { buildMe } from './me';
++import { requireAdmin, setSessionCookie } from './session';
++
++const DAY_MS = 86_400_000;
++
++/** Vérifications de code et acceptations partagent le même compteur par IP (R-INV-8). */
++function limitCodeAttempts(deps: AppDeps, ip: string | null): void {
++  const verdict = authLimiters(deps).invitationCheck.hit(ip);
++  if (!verdict.allowed) throw httpError('rate_limited', { retryAfterS: verdict.retryAfterS });
++}
++
++export function invitationRoutes(deps: AppDeps): Hono<AppEnv> {
++  const routes = new Hono<AppEnv>();
++
++  routes.post('/check', async (c) => {
++    limitCodeAttempts(deps, validClientIp(c));
++    const body = await parseJson(c, CodeRequest);
++    return c.json(await checkInvitation(deps.db, deps, body.code));
++  });
++
++  routes.post('/accept', async (c) => {
++    const ip = validClientIp(c);
++    limitCodeAttempts(deps, ip);
++    const body = await parseJson(c, AcceptInvitationRequest);
++    const { userId, token } = await acceptInvitation(deps, body, ip);
++    setSessionCookie(c, deps, token);
++    return c.json(await buildMe(deps.db, deps, userId), 201);
++  });
++
++  return routes;
++}
++
++export function adminInvitationRoutes(deps: AppDeps): Hono<AppEnv> {
++  const routes = new Hono<AppEnv>();
++  routes.use('*', requireAdmin);
++
++  routes.get('/', async (c) => c.json(await listInvitations(deps.db, deps)));
++
++  routes.post('/', async (c) => {
++    const admin = c.get('user');
++    if (!admin) throw httpError('unauthenticated');
++    const body = await parseJson(c, CreateInvitationRequest);
++    const created = await deps.db.transaction().execute((trx) =>
++      createInvitation(trx, deps, {
++        birthDate: body.birthDate,
++        note: body.note ? body.note : null,
++        createdBy: admin.id,
++        isAdminBootstrap: false,
++        ttlMs: INVITATION_TTL_DAYS * DAY_MS,
++        ip: validClientIp(c),
++      }),
++    );
++    return c.json(created, 201);
++  });
++
++  routes.post('/:id/revoke', async (c) => {
++    const admin = c.get('user');
++    if (!admin) throw httpError('unauthenticated');
++    const id = c.req.param('id');
++    const ip = validClientIp(c);
++    await deps.db.transaction().execute((trx) => revokeInvitation(trx, deps, id, { actorId: admin.id, ip }));
++    return c.body(null, 204);
++  });
++
++  return routes;
++}
+diff --git a/apps/server/src/auth/invitations.ts b/apps/server/src/auth/invitations.ts
+new file mode 100644
+index 0000000..871e5fd
+--- /dev/null
++++ b/apps/server/src/auth/invitations.ts
+@@ -0,0 +1,261 @@
++import {
++  AcceptInvitationRequest,
++  type CreateInvitationResponse,
++  type InvitationCheckResponse,
++  type InvitationState,
++  type InvitationSummary,
++  MIN_AGE,
++  PRIVACY_POLICY_VERSION,
++} from '@appsport/contracts';
++import {
++  ageOn,
++  parisDate,
++  parseSecretCode,
++  usernameKey,
++  validatePassword,
++  validateUsername,
++} from '@appsport/domain';
++import { writeStamp } from '../db/rev';
++import type { DbExecutor } from '../db/schema';
++import type { AppDeps } from '../deps';
++import { httpError } from '../http/errors';
++import { COMMON_PASSWORDS } from './common-passwords';
++import { hashPassword } from './password-hash';
++import { createSecretCode, hashSecret } from './secret';
++import { logSecurityEvent } from './security-log';
++import { createSession } from './session';
++
++const isUsernameConflict = (error: unknown): boolean =>
++  error instanceof Error && /UNIQUE constraint failed: user\.username_key/.test(error.message);
++
++/** used > revoked > expired > pending (R-INV-7). */
++export function invitationState(
++  row: { usedAt: string | null; revokedAt: string | null; expiresAt: string },
++  now: Date,
++): InvitationState {
++  if (row.usedAt !== null) return 'used';
++  if (row.revokedAt !== null) return 'revoked';
++  if (new Date(row.expiresAt).getTime() <= now.getTime()) return 'expired';
++  return 'pending';
++}
++
++export function invitationLink(deps: AppDeps, formatted: string): string {
++  return `${deps.config.appOrigin}/invite#${formatted}`;
++}
++
++const STATE_ERRORS = {
++  used: 'invitation_used',
++  revoked: 'invitation_revoked',
++  expired: 'invitation_expired',
++} as const;
++
++/** Invitation à l'état `pending` pour ce code, sinon l'erreur d'API correspondante. */
++async function loadPending(db: DbExecutor, deps: AppDeps, rawCode: string) {
++  const canonical = parseSecretCode(rawCode);
++  if (canonical === null) throw httpError('invitation_unknown');
++  const row = await db
++    .selectFrom('invitation')
++    .select(['id', 'birthDate', 'isAdminBootstrap', 'expiresAt', 'usedAt', 'revokedAt'])
++    .where('codeHash', '=', hashSecret(canonical))
++    .executeTakeFirst();
++  if (!row) throw httpError('invitation_unknown');
++  const state = invitationState(row, deps.clock.now());
++  if (state !== 'pending') throw httpError(STATE_ERRORS[state]);
++  if (row.birthDate === null) throw httpError('invitation_unknown');
++  return { id: row.id, birthDate: row.birthDate, isAdminBootstrap: row.isAdminBootstrap === 1 };
++}
++
++export async function createInvitation(
++  trx: DbExecutor,
++  deps: AppDeps,
++  input: {
++    birthDate: string;
++    note: string | null;
++    createdBy: string | null;
++    isAdminBootstrap: boolean;
++    ttlMs: number;
++    ip: string | null;
++  },
++): Promise<CreateInvitationResponse> {
++  const now = deps.clock.now();
++  if (ageOn(input.birthDate, parisDate(now)) < MIN_AGE) throw httpError('under_min_age');
++  const secret = createSecretCode(deps.ids);
++  const id = deps.ids.uuidv7();
++  const createdAt = now.toISOString();
++  const expiresAt = new Date(now.getTime() + input.ttlMs).toISOString();
++  await trx
++    .insertInto('invitation')
++    .values({
++      id,
++      codeHash: secret.hash,
++      note: input.note,
++      birthDate: input.birthDate,
++      isAdminBootstrap: input.isAdminBootstrap ? 1 : 0,
++      createdBy: input.createdBy,
++      createdAt,
++      expiresAt,
++    })
++    .execute();
++  await logSecurityEvent(trx, deps, {
++    type: 'invitation_created',
++    actorId: input.createdBy,
++    targetId: null,
++    ip: input.ip,
++    outcome: 'success',
++    details: { invitationId: id, bootstrap: input.isAdminBootstrap },
++  });
++  return {
++    invitation: { id, note: input.note, createdAt, expiresAt, state: 'pending', usedByUsername: null },
++    code: secret.formatted,
++    link: invitationLink(deps, secret.formatted),
++  };
++}
++
++export async function listInvitations(db: DbExecutor, deps: AppDeps): Promise<InvitationSummary[]> {
++  const rows = await db
++    .selectFrom('invitation')
++    .leftJoin('user', 'user.id', 'invitation.usedBy')
++    .select([
++      'invitation.id',
++      'invitation.note',
++      'invitation.createdAt',
++      'invitation.expiresAt',
++      'invitation.usedAt',
++      'invitation.revokedAt',
++      'user.username as usedByUsername',
++    ])
++    .orderBy('invitation.createdAt', 'desc')
++    .orderBy('invitation.id', 'desc')
++    .execute();
++  const now = deps.clock.now();
++  return rows.map((r) => ({
++    id: r.id,
++    note: r.note,
++    createdAt: r.createdAt,
++    expiresAt: r.expiresAt,
++    state: invitationState(r, now),
++    usedByUsername: r.usedByUsername,
++  }));
++}
++
++export async function revokeInvitation(
++  trx: DbExecutor,
++  deps: AppDeps,
++  id: string,
++  actor: { actorId: string; ip: string | null },
++): Promise<void> {
++  const row = await trx
++    .selectFrom('invitation')
++    .select(['usedAt', 'revokedAt', 'expiresAt'])
++    .where('id', '=', id)
++    .executeTakeFirst();
++  if (!row) throw httpError('not_found');
++  if (invitationState(row, deps.clock.now()) !== 'pending') throw httpError('conflict');
++  await trx
++    .updateTable('invitation')
++    .set({ revokedAt: deps.clock.now().toISOString(), birthDate: null })
++    .where('id', '=', id)
++    .execute();
++  await logSecurityEvent(trx, deps, {
++    type: 'invitation_revoked',
++    actorId: actor.actorId,
++    targetId: null,
++    ip: actor.ip,
++    outcome: 'success',
++    details: { invitationId: id },
++  });
++}
++
++export async function checkInvitation(
++  db: DbExecutor,
++  deps: AppDeps,
++  rawCode: string,
++): Promise<InvitationCheckResponse> {
++  const row = await loadPending(db, deps, rawCode);
++  return { birthDate: row.birthDate, role: row.isAdminBootstrap ? 'admin' : 'member' };
++}
++
++/**
++ * Création de compte (R-CPT-1, R-CPT-2). Les contrôles et le hachage Argon2 passent avant la
++ * transaction : un refus ne consomme jamais l'invitation. Dans la transaction (BEGIN IMMEDIATE,
++ * donc sérialisée), l'état est relu et la consommation est un UPDATE conditionnel : de deux
++ * acceptations simultanées, une seule réussit.
++ */
++export async function acceptInvitation(
++  deps: AppDeps,
++  input: AcceptInvitationRequest,
++  ip: string | null,
++): Promise<{ userId: string; token: string }> {
++  const parsed = AcceptInvitationRequest.safeParse(input);
++  if (!parsed.success) throw httpError('validation');
++  const { code, username, password, termsVersion } = parsed.data;
++  if (termsVersion !== PRIVACY_POLICY_VERSION) throw httpError('validation', { field: 'termsVersion' });
++
++  const invitation = await loadPending(deps.db, deps, code);
++  const role = invitation.isAdminBootstrap ? 'admin' : 'member';
++  const name = username.normalize('NFC');
++  const nameCheck = validateUsername(name);
++  if (!nameCheck.ok) throw httpError('username_invalid', { reason: nameCheck.reason });
++  const passwordCheck = validatePassword(password, {
++    username: name,
++    role,
++    commonPasswords: COMMON_PASSWORDS,
++  });
++  if (!passwordCheck.ok) throw httpError('password_rejected', { reason: passwordCheck.reason });
++  const key = usernameKey(name);
++  const usernameTaken = async (db: DbExecutor): Promise<boolean> =>
++    (await db.selectFrom('user').select('id').where('usernameKey', '=', key).executeTakeFirst()) !==
++    undefined;
++  if (await usernameTaken(deps.db)) throw httpError('username_taken');
++  const passwordHash = await hashPassword(password, deps.config.argon2, deps.ids);
++
++  return deps.db.transaction().execute(async (trx) => {
++    const current = await loadPending(trx, deps, code);
++    if (await usernameTaken(trx)) throw httpError('username_taken');
++    const userId = deps.ids.uuidv7();
++    const now = deps.clock.now().toISOString();
++    const stamp = await writeStamp(trx, deps, null);
++    try {
++      await trx
++        .insertInto('user')
++        .values({
++          id: userId,
++          username: name,
++          usernameKey: key,
++          passwordHash,
++          role,
++          birthDate: current.birthDate,
++          termsVersion,
++          termsAcceptedAt: now,
++          lastLoginAt: now,
++          passwordChangedAt: now,
++          invitationId: current.id,
++          createdAt: now,
++          ...stamp,
++        })
++        .execute();
++    } catch (error) {
++      if (isUsernameConflict(error)) throw httpError('username_taken');
++      throw error;
++    }
++    // Après le compte : invitation.used_by référence user(id) et les clés étrangères sont immédiates.
++    const result = await trx
++      .updateTable('invitation')
++      .set({ usedAt: now, usedBy: userId, birthDate: null })
++      .where('id', '=', current.id)
++      .where('usedAt', 'is', null)
++      .where('revokedAt', 'is', null)
++      .executeTakeFirst();
++    if (result.numUpdatedRows !== 1n) throw httpError('invitation_used');
++    const session = await createSession(trx, deps, userId);
++    await logSecurityEvent(trx, deps, {
++      type: 'invitation_used',
++      actorId: userId,
++      targetId: userId,
++      ip,
++      outcome: 'success',
++      details: { invitationId: current.id },
++    });
++    return { userId, token: session.token };
++  });
++}
+diff --git a/apps/server/src/cli.ts b/apps/server/src/cli.ts
+index ab51cc7..f7703d4 100644
+--- a/apps/server/src/cli.ts
++++ b/apps/server/src/cli.ts
+@@ -1,17 +1,20 @@
+ import { existsSync, renameSync, rmSync } from 'node:fs';
++import { CivilDate } from '@appsport/contracts';
++import { bootstrapAdminInvitation } from './auth/bootstrap';
+ import { type AppConfig, loadConfig } from './config';
+ import { migrate } from './db/migrate';
+ import { MIGRATIONS, type Migration } from './db/migrations/index';
+ import { openDatabase } from './db/open';
+ import { initServerMeta } from './db/server-meta';
+ import { type AppDeps, createAppDeps, cryptoIds, systemClock } from './deps';
++import { HttpError } from './http/errors';
+ import { createLogger } from './logger';
+ import { openMigrated } from './startup';
+ import { assertStartupPreconditions } from './startup-guard';
+ 
+ export interface CliContext {
+   env: Record<string, string | undefined>;
+   out(line: string): void;
+   err(line: string): void;
+ }
+ 
+@@ -77,21 +80,51 @@ export async function runInit(
+     removeTmp();
+     throw error;
+   }
+   sqlite.close();
+   renameSync(tmpPath, config.dbPath);
+   ctx.out(`Base initialisée : ${config.dbPath}`);
+   ctx.out(`Époque du serveur : ${epoch}`);
+   return 0;
+ }
+ 
++async function runAdminBootstrap(args: string[], ctx: CliContext): Promise<number> {
++  const date = CivilDate.safeParse(parseFlags(args).flags['birth-date']);
++  if (!date.success) {
++    ctx.err('Date de naissance invalide : utilise --birth-date AAAA-MM-JJ.');
++    return 1;
++  }
++  try {
++    const { code, link } = await withAppDeps(ctx, (deps) => bootstrapAdminInvitation(deps, date.data));
++    ctx.out('Invitation administrateur (valable 24 h)');
++    ctx.out(`Lien : ${link}`);
++    ctx.out(`Code : ${code}`);
++    return 0;
++  } catch (error) {
++    if (error instanceof HttpError && error.code === 'under_min_age') {
++      ctx.err('appsport est réservé aux 16 ans et plus.');
++      return 1;
++    }
++    if (error instanceof HttpError && error.code === 'conflict') {
++      ctx.err('Un administrateur existe déjà : utilise admin:reset <pseudo>.');
++      return 1;
++    }
++    throw error;
++  }
++}
++
+ export const COMMANDS: Record<string, CliCommand> = {
++  'admin:bootstrap': {
++    usage:
++      "admin:bootstrap --birth-date AAAA-MM-JJ : crée l'invitation du premier administrateur (valable 24 h)",
++    run: runAdminBootstrap,
++  },
+   init: {
+     usage: "init : crée la base d'un volume neuf (sentinelle requise) et fixe l'époque du serveur",
+     run: (_args, ctx) => runInit(loadConfig(ctx.env), ctx),
+   },
+   'db:check': {
+     usage: "db:check : vérifie l'intégrité de la base (integrity_check et foreign_key_check)",
+     run: (_args, ctx) =>
+       withAppDeps(ctx, async ({ sqlite }) => {
+         const integrity = sqlite.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
+         const foreign = sqlite.prepare('PRAGMA foreign_key_check').all();
+diff --git a/apps/server/src/routes.ts b/apps/server/src/routes.ts
+index f827236..f2052f3 100644
+--- a/apps/server/src/routes.ts
++++ b/apps/server/src/routes.ts
+@@ -1,13 +1,16 @@
+ import type { Hono } from 'hono';
+ import type { AppEnv } from './app-env';
++import { adminInvitationRoutes, invitationRoutes } from './auth/invitation-routes';
+ import { meRoutes } from './auth/me-routes';
+ import { authRoutes } from './auth/routes';
+ import type { AppDeps } from './deps';
+ import { healthRoutes } from './health/routes';
+ 
+ /** Un routeur par ligne ; les routeurs des tâches suivantes s'ajoutent ici. */
+ export function mountRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
+   app.route('/', healthRoutes(deps));
+   app.route('/api/auth', authRoutes(deps));
+   app.route('/api/me', meRoutes(deps));
++  app.route('/api/invitations', invitationRoutes(deps));
++  app.route('/api/admin/invitations', adminInvitationRoutes(deps));
+ }
+diff --git a/apps/server/test/auth/bootstrap.test.ts b/apps/server/test/auth/bootstrap.test.ts
+new file mode 100644
+index 0000000..1458c1d
+--- /dev/null
++++ b/apps/server/test/auth/bootstrap.test.ts
+@@ -0,0 +1,131 @@
++import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { afterEach, describe, expect, it } from 'vitest';
++import { bootstrapAdminInvitation } from '../../src/auth/bootstrap';
++import { hashSecret } from '../../src/auth/secret';
++import { runCli } from '../../src/cli';
++import { openDatabase } from '../../src/db/open';
++import { createTestContext, createUser, type TestContext } from '../support';
++
++let ctx: TestContext | undefined;
++afterEach(() => ctx?.close());
++
++async function open(): Promise<TestContext> {
++  ctx = await createTestContext();
++  return ctx;
++}
++
++const check = (c: TestContext, code: string) =>
++  c.request('/api/invitations/check', { method: 'POST', json: { code }, ip: '100.64.0.7' });
++const accept = (c: TestContext, code: string, username: string, password: string) =>
++  c.request('/api/invitations/accept', {
++    method: 'POST',
++    json: { code, username, password, termsVersion: '1.0' },
++    ip: '100.64.0.7',
++  });
++
++describe('bootstrapAdminInvitation (R-ROLE-5)', () => {
++  it("crée l'invitation admin valable 24 h, minimum de 14 caractères", async () => {
++    const c = await open();
++    const r = await bootstrapAdminInvitation(c.deps, '1985-03-02');
++    expect(r.expiresAt).toBe('2026-10-07T10:00:00.000Z');
++    expect(r.link).toBe(`https://appsport.test.ts.net/invite#${r.code}`);
++    expect(await (await check(c, r.code)).json()).toEqual({ birthDate: '1985-03-02', role: 'admin' });
++    const short = await accept(c, r.code, 'porteur', 'treize carac');
++    expect(await short.json()).toEqual({ error: 'password_rejected', reason: 'too_short' });
++    const ok = await accept(c, r.code, 'porteur', 'quatorze carac');
++    expect(ok.status).toBe(201);
++    expect(await ok.json()).toMatchObject({ role: 'admin', birthDate: '1985-03-02' });
++  });
++
++  it('une seconde invitation révoque la première', async () => {
++    const c = await open();
++    const first = await bootstrapAdminInvitation(c.deps, '1985-03-02');
++    const second = await bootstrapAdminInvitation(c.deps, '1985-03-02');
++    expect(await (await check(c, first.code)).json()).toEqual({ error: 'invitation_revoked' });
++    const row = await c.deps.db
++      .selectFrom('invitation')
++      .selectAll()
++      .where('codeHash', '=', hashSecret(first.code.replaceAll('-', '')))
++      .executeTakeFirstOrThrow();
++    expect(row.birthDate).toBeNull();
++    expect((await check(c, second.code)).status).toBe(200);
++  });
++
++  it('refuse quand un administrateur existe', async () => {
++    const c = await open();
++    await createUser(c, { role: 'admin' });
++    await expect(bootstrapAdminInvitation(c.deps, '1985-03-02')).rejects.toMatchObject({
++      code: 'conflict',
++      extra: { reason: 'admin_exists' },
++    });
++  });
++
++  it('refuse un mineur', async () => {
++    const c = await open();
++    await expect(bootstrapAdminInvitation(c.deps, '2015-01-01')).rejects.toMatchObject({
++      code: 'under_min_age',
++    });
++  });
++});
++
++describe('admin:bootstrap (CLI)', () => {
++  let dir: string;
++  let env: Record<string, string>;
++  const out: string[] = [];
++  const err: string[] = [];
++  const o = (l: string): void => {
++    out.push(l);
++  };
++  const e = (l: string): void => {
++    err.push(l);
++  };
++
++  async function init(): Promise<void> {
++    out.length = 0;
++    err.length = 0;
++    dir = mkdtempSync(join(tmpdir(), 'appsport-boot-'));
++    env = {
++      APP_ORIGIN: 'https://appsport.test.ts.net',
++      APPSPORT_DATA_DIR: dir,
++      HOST: '127.0.0.1',
++      PORT: '0',
++    };
++    writeFileSync(join(dir, '.appsport-volume'), '');
++    expect(await runCli(['init'], env, o, e)).toBe(0);
++    out.length = 0;
++  }
++  afterEach(() => rmSync(dir, { recursive: true, force: true }));
++
++  it("écrit exactement trois lignes et ne stocke que l'empreinte", async () => {
++    await init();
++    expect(await runCli(['admin:bootstrap', '--birth-date', '1985-03-02'], env, o, e)).toBe(0);
++    expect(out).toHaveLength(3);
++    expect(out[0]).toBe('Invitation administrateur (valable 24 h)');
++    expect(out[1]).toMatch(
++      /^Lien : https:\/\/appsport\.test\.ts\.net\/invite#[0-9A-HJKMNP-TV-Z]{4}(?:-[0-9A-HJKMNP-TV-Z]{4}){3}$/,
++    );
++    const code = out[1]?.split('#')[1] as string;
++    expect(out[2]).toBe(`Code : ${code}`);
++    const { sqlite, db } = openDatabase(join(dir, 'appsport.db'));
++    const rows = await db.selectFrom('invitation').selectAll().execute();
++    await db.destroy();
++    sqlite.close();
++    expect(rows).toHaveLength(1);
++    expect(rows[0]).toMatchObject({ isAdminBootstrap: 1, createdBy: null, birthDate: '1985-03-02' });
++    expect(Date.parse(rows[0]?.expiresAt ?? '') - Date.parse(rows[0]?.createdAt ?? '')).toBe(86_400_000);
++    expect(rows[0]?.codeHash).toBe(hashSecret(code.replaceAll('-', '')));
++    expect(JSON.stringify(rows)).not.toContain(code.replaceAll('-', ''));
++  });
++
++  it.each([[[]], [['--birth-date', '1985-02-30']], [['--birth-date', '2015-01-01']]])(
++    'entrée refusée %j : code 1 et rien sur stdout',
++    async (args) => {
++      await init();
++      expect(await runCli(['admin:bootstrap', ...args], env, o, e)).toBe(1);
++      expect(out).toEqual([]);
++      expect(err).toHaveLength(1);
++    },
++  );
++});
+diff --git a/apps/server/test/auth/invitation-concurrency.test.ts b/apps/server/test/auth/invitation-concurrency.test.ts
+new file mode 100644
+index 0000000..ed22e8f
+--- /dev/null
++++ b/apps/server/test/auth/invitation-concurrency.test.ts
+@@ -0,0 +1,63 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { createTestContext, createUser, login, type TestContext } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx.close());
++
++async function invite(): Promise<string> {
++  ctx = await createTestContext();
++  const admin = await createUser(ctx, { username: 'porteur', role: 'admin' });
++  const cookie = await login(ctx, admin.username, admin.password);
++  const res = await ctx.request('/api/admin/invitations', {
++    method: 'POST',
++    json: { birthDate: '2001-05-04' },
++    cookie,
++  });
++  return ((await res.json()) as { code: string }).code;
++}
++
++const members = () =>
++  ctx.deps.db.selectFrom('user').select('username').where('role', '=', 'member').execute();
++const accept = (code: string, username: string, password: string) =>
++  ctx.request('/api/invitations/accept', {
++    method: 'POST',
++    json: { code, username, password, termsVersion: '1.0' },
++    ip: '100.64.0.7',
++  });
++
++describe('acceptations simultanées (R-INV-6, Review Focus 1)', () => {
++  it('deux acceptations : un compte, 201 puis invitation_used', async () => {
++    const code = await invite();
++    const [a, b] = await Promise.all([
++      accept(code, 'lea', 'tortue verte du jardin'),
++      accept(code, 'leo', 'tortue verte du jardin'),
++    ]);
++    expect([a.status, b.status].sort()).toEqual([201, 400]);
++    expect(await (a.status === 400 ? a : b).json()).toEqual({ error: 'invitation_used' });
++    expect(await members()).toHaveLength(1);
++  });
++
++  it('cinq acceptations dont une au mot de passe refusé : exactement un compte', async () => {
++    const code = await invite();
++    const results = await Promise.all([
++      accept(code, 'lea', 'tortue verte du jardin'),
++      accept(code, 'leo', 'tortue verte du jardin'),
++      accept(code, 'lou', 'court'),
++      accept(code, 'luc', 'tortue verte du jardin'),
++      accept(code, 'liv', 'tortue verte du jardin'),
++    ]);
++    const statuses = results.map((r) => r.status);
++    expect(statuses.filter((s) => s === 201)).toHaveLength(1);
++    expect(statuses.filter((s) => s === 400)).toHaveLength(4);
++    expect(await members()).toHaveLength(1);
++    const bodies = (await Promise.all(results.filter((r) => r.status === 400).map((r) => r.json()))) as {
++      error: string;
++    }[];
++    expect(bodies.map((b) => b.error).sort()).toEqual([
++      'invitation_used',
++      'invitation_used',
++      'invitation_used',
++      'password_rejected',
++    ]);
++  });
++});
+diff --git a/apps/server/test/auth/invitation.test.ts b/apps/server/test/auth/invitation.test.ts
+new file mode 100644
+index 0000000..f607de7
+--- /dev/null
++++ b/apps/server/test/auth/invitation.test.ts
+@@ -0,0 +1,258 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { hashSecret } from '../../src/auth/secret';
++import { createLogger } from '../../src/logger';
++import { createTestContext, createUser, login, type TestContext } from '../support';
++
++const CODE_RE = /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$/;
++const ORIGIN = 'https://appsport.test.ts.net';
++const PASSWORD = 'tortue verte du jardin';
++
++let ctx: TestContext;
++afterEach(() => ctx.close());
++
++async function setup(opts: Parameters<typeof createTestContext>[0] = {}) {
++  ctx = await createTestContext(opts);
++  const admin = await createUser(ctx, { username: 'porteur', role: 'admin' });
++  const cookie = await login(ctx, admin.username, admin.password);
++  return { admin, cookie };
++}
++
++const create = (cookie: string, json: unknown) =>
++  ctx.request('/api/admin/invitations', { method: 'POST', json, cookie });
++const check = (code: string, ip = '100.64.0.7') =>
++  ctx.request('/api/invitations/check', { method: 'POST', json: { code }, ip });
++const accept = (code: string, username: string, password: string, extra: object = {}, ip = '100.64.0.7') =>
++  ctx.request('/api/invitations/accept', {
++    method: 'POST',
++    json: { code, username, password, termsVersion: '1.0', ...extra },
++    ip,
++  });
++const canonical = (code: string): string => code.replaceAll('-', '');
++const invitationRow = (code: string) =>
++  ctx.deps.db
++    .selectFrom('invitation')
++    .selectAll()
++    .where('codeHash', '=', hashSecret(canonical(code)))
++    .executeTakeFirstOrThrow();
++
++interface Created {
++  code: string;
++  link: string;
++  invitation: { id: string; state: string };
++}
++async function created(cookie: string, json: object = { birthDate: '2001-05-04' }): Promise<Created> {
++  const res = await create(cookie, json);
++  expect(res.status).toBe(201);
++  return (await res.json()) as Created;
++}
++const listing = async (cookie: string) =>
++  (await (await ctx.request('/api/admin/invitations', { cookie })).json()) as {
++    id: string;
++    state: string;
++    usedByUsername: string | null;
++  }[];
++const eventsOf = (type: string) =>
++  ctx.deps.db.selectFrom('securityEvent').selectAll().where('type', '=', type).execute();
++
++describe('POST /api/admin/invitations', () => {
++  it('crée une invitation : code, lien, empreinte seule, journal', async () => {
++    const { admin, cookie } = await setup();
++    const r = await created(cookie, { birthDate: '2001-05-04', note: 'pour Léa' });
++    expect(r.code).toMatch(CODE_RE);
++    expect(r.link).toBe(`${ORIGIN}/invite#${r.code}`);
++    expect(r.invitation).toMatchObject({
++      note: 'pour Léa',
++      state: 'pending',
++      usedByUsername: null,
++      expiresAt: '2026-10-13T10:00:00.000Z',
++    });
++    const row = await invitationRow(r.code);
++    expect(row).toMatchObject({ birthDate: '2001-05-04', createdBy: admin.id, isAdminBootstrap: 0 });
++    expect(JSON.stringify(row)).not.toContain(canonical(r.code));
++    expect(JSON.stringify(await listing(cookie))).not.toContain(canonical(r.code));
++    const events = await eventsOf('invitation_created');
++    expect(events).toHaveLength(1);
++    expect(events[0]).toMatchObject({ actorId: admin.id, outcome: 'success' });
++  });
++
++  it('refuse un invité de moins de 16 ans', async () => {
++    const { cookie } = await setup();
++    const under = await create(cookie, { birthDate: '2010-10-07' });
++    expect(under.status).toBe(400);
++    expect(await under.json()).toEqual({ error: 'under_min_age' });
++    expect((await create(cookie, { birthDate: '2010-10-06' })).status).toBe(201);
++  });
++
++  it('compte l âge à la date de Paris (02 §15 n°1)', async () => {
++    const { cookie } = await setup({ now: '2026-10-05T22:30:00.000Z' });
++    expect((await create(cookie, { birthDate: '2010-10-06' })).status).toBe(201);
++  });
++
++  it('borne la note à 60 caractères et exige un administrateur', async () => {
++    const { cookie } = await setup();
++    expect((await create(cookie, { birthDate: '2001-05-04', note: 'a'.repeat(61) })).status).toBe(400);
++    expect((await create(cookie, { birthDate: '2001-05-04', note: 'a'.repeat(60) })).status).toBe(201);
++    const member = await createUser(ctx, { username: 'membre' });
++    const memberCookie = await login(ctx, member.username, member.password);
++    const res = await create(memberCookie, { birthDate: '2001-05-04' });
++    expect(res.status).toBe(403);
++    expect(await res.json()).toEqual({ error: 'forbidden' });
++  });
++});
++
++describe('révocation et états', () => {
++  it('révoque (204), efface la date, journalise ; la seconde révocation donne 409', async () => {
++    const { cookie } = await setup();
++    const r = await created(cookie);
++    const url = `/api/admin/invitations/${r.invitation.id}/revoke`;
++    expect((await ctx.request(url, { method: 'POST', json: {}, cookie })).status).toBe(204);
++    expect((await invitationRow(r.code)).birthDate).toBeNull();
++    expect((await ctx.request(url, { method: 'POST', json: {}, cookie })).status).toBe(409);
++    const unknown = await ctx.request('/api/admin/invitations/inconnue/revoke', {
++      method: 'POST',
++      json: {},
++      cookie,
++    });
++    expect(unknown.status).toBe(404);
++    expect(await eventsOf('invitation_revoked')).toHaveLength(1);
++    expect((await listing(cookie)).map((i) => i.state)).toEqual(['revoked']);
++  });
++
++  it('utilisée : used avec le pseudo ; +7 jours : expired', async () => {
++    const { cookie } = await setup();
++    const used = await created(cookie);
++    const lapsed = await created(cookie, { birthDate: '2001-05-04', note: 'expire' });
++    expect((await accept(used.code, 'lea', PASSWORD)).status).toBe(201);
++    ctx.clock.advance(7 * 86_400_000);
++    const byId = new Map((await listing(cookie)).map((i) => [i.id, i]));
++    expect(byId.get(used.invitation.id)).toMatchObject({ state: 'used', usedByUsername: 'lea' });
++    expect(byId.get(lapsed.invitation.id)?.state).toBe('expired');
++    expect((await invitationRow(used.code)).birthDate).toBeNull();
++    expect((await invitationRow(lapsed.code)).birthDate).toBe('2001-05-04');
++  });
++});
++
++describe('POST /api/invitations/check', () => {
++  it('accepte minuscules, espaces et lien complet', async () => {
++    const { cookie } = await setup();
++    const r = await created(cookie);
++    for (const input of [r.code.toLowerCase(), r.link, r.code.replaceAll('-', ' ')]) {
++      const res = await check(input);
++      expect(res.status).toBe(200);
++      expect(await res.json()).toEqual({ birthDate: '2001-05-04', role: 'member' });
++    }
++  });
++
++  it('refuse code inconnu, mal formé, révoqué, utilisé, expiré', async () => {
++    const { cookie } = await setup();
++    const revoked = await created(cookie);
++    await ctx.request(`/api/admin/invitations/${revoked.invitation.id}/revoke`, {
++      method: 'POST',
++      json: {},
++      cookie,
++    });
++    const used = await created(cookie);
++    await accept(used.code, 'lea', PASSWORD);
++    const expired = await created(cookie);
++    const cases: [string, string][] = [
++      ['AAAA-AAAA-AAAA-AAAA', 'invitation_unknown'],
++      ['pas un code', 'invitation_unknown'],
++      [revoked.code, 'invitation_revoked'],
++      [used.code, 'invitation_used'],
++    ];
++    for (const [code, error] of cases) {
++      const res = await check(code);
++      expect(res.status).toBe(400);
++      expect(await res.json()).toEqual({ error });
++    }
++    ctx.clock.advance(7 * 86_400_000);
++    const res = await check(expired.code);
++    expect(res.status).toBe(400);
++    expect(await res.json()).toEqual({ error: 'invitation_expired' });
++  });
++});
++
++describe('POST /api/invitations/accept', () => {
++  it('crée le compte, ouvre la session et journalise (R-CPT-2)', async () => {
++    const { cookie } = await setup();
++    const r = await created(cookie);
++    const res = await accept(r.code, 'Éloïse_2', PASSWORD);
++    expect(res.status).toBe(201);
++    expect(await res.json()).toMatchObject({
++      username: 'Éloïse_2',
++      role: 'member',
++      birthDate: '2001-05-04',
++      termsVersion: '1.0',
++      onboardingCompletedAt: null,
++    });
++    expect(res.headers.get('set-cookie')).toMatch(/^__Host-session=/);
++    const user = await ctx.deps.db
++      .selectFrom('user')
++      .selectAll()
++      .where('username', '=', 'Éloïse_2')
++      .executeTakeFirstOrThrow();
++    const row = await invitationRow(r.code);
++    expect(user).toMatchObject({
++      invitationId: row.id,
++      termsAcceptedAt: '2026-10-06T10:00:00.000Z',
++      status: 'active',
++      lastLoginAt: '2026-10-06T10:00:00.000Z',
++      passwordChangedAt: '2026-10-06T10:00:00.000Z',
++    });
++    expect(row).toMatchObject({ usedBy: user.id, usedAt: '2026-10-06T10:00:00.000Z', birthDate: null });
++    const [ev] = await eventsOf('invitation_used');
++    expect(ev).toMatchObject({ actorId: user.id, targetId: user.id, outcome: 'success' });
++    expect(JSON.parse(ev?.details ?? '{}')).toEqual({ invitationId: row.id });
++  });
++
++  it("un échec de validation ne consomme pas l'invitation (02 §15 n°2)", async () => {
++    const { cookie } = await setup();
++    const r = await created(cookie);
++    const cases: [string, string, object, object][] = [
++      ['lea', 'court', {}, { error: 'password_rejected', reason: 'too_short' }],
++      ['Admin', PASSWORD, {}, { error: 'username_invalid', reason: 'reserved' }],
++      ['porteur', PASSWORD, {}, { error: 'username_taken' }],
++      ['lea', PASSWORD, { termsVersion: '0.9' }, { error: 'validation' }],
++    ];
++    for (const [username, password, extra, body] of cases) {
++      const res = await accept(r.code, username, password, extra);
++      expect(res.status).toBeGreaterThanOrEqual(400);
++      expect(await res.json()).toMatchObject(body);
++    }
++    expect((await invitationRow(r.code)).usedAt).toBeNull();
++    expect((await accept(r.code, 'lea', PASSWORD)).status).toBe(201);
++    const again = await accept(r.code, 'leo', PASSWORD);
++    expect(await again.json()).toEqual({ error: 'invitation_used' });
++  });
++});
++
++describe('limiteur de codes (02 §15 n°3)', () => {
++  it('19 check + 1 accept, la 21e vérification est refusée ; autre IP et +1 h passent', async () => {
++    const { cookie } = await setup();
++    const r = await created(cookie);
++    const bad = 'AAAA-AAAA-AAAA-AAAA';
++    for (let i = 0; i < 19; i += 1) expect((await check(bad)).status).toBe(400);
++    expect((await accept(r.code, 'lea', 'court')).status).toBe(400);
++    const blocked = await check(bad);
++    expect(blocked.status).toBe(429);
++    expect(await blocked.json()).toMatchObject({ error: 'rate_limited' });
++    expect((await check(bad, '100.64.0.8')).status).toBe(400);
++    ctx.clock.advance(3_600_000);
++    expect((await check(bad)).status).toBe(400);
++  });
++});
++
++describe('confidentialité des codes (02 §15 n°4)', () => {
++  it("ni le code, ni le canonique, ni l'empreinte dans les journaux", async () => {
++    const lines: string[] = [];
++    const { cookie } = await setup({ deps: { logger: createLogger((l) => lines.push(l)) } });
++    const r = await created(cookie);
++    await check(r.code);
++    await accept(r.code, 'lea', PASSWORD);
++    const events = await ctx.deps.db.selectFrom('securityEvent').selectAll().execute();
++    const haystack = JSON.stringify(events) + lines.join('\n');
++    for (const secret of [r.code, canonical(r.code), hashSecret(canonical(r.code))]) {
++      expect(haystack).not.toContain(secret);
++    }
++  });
++});
+diff --git a/packages/contracts/src/api/admin.ts b/packages/contracts/src/api/admin.ts
+new file mode 100644
+index 0000000..a3ec799
+--- /dev/null
++++ b/packages/contracts/src/api/admin.ts
+@@ -0,0 +1,29 @@
++import { z } from 'zod';
++import { INVITATION_NOTE_MAX } from '../auth-constants';
++import { CivilDate } from './auth';
++
++export const InvitationState = z.enum(['pending', 'used', 'revoked', 'expired']);
++export type InvitationState = z.infer<typeof InvitationState>;
++
++export const InvitationSummary = z.object({
++  id: z.string(),
++  note: z.string().nullable(),
++  createdAt: z.string(),
++  expiresAt: z.string(),
++  state: InvitationState,
++  usedByUsername: z.string().nullable(),
++});
++export type InvitationSummary = z.infer<typeof InvitationSummary>;
++
++export const CreateInvitationRequest = z.object({
++  birthDate: CivilDate,
++  note: z.string().max(INVITATION_NOTE_MAX).optional(),
++});
++export type CreateInvitationRequest = z.infer<typeof CreateInvitationRequest>;
++
++export const CreateInvitationResponse = z.object({
++  invitation: InvitationSummary,
++  code: z.string(),
++  link: z.string(),
++});
++export type CreateInvitationResponse = z.infer<typeof CreateInvitationResponse>;
+diff --git a/packages/contracts/src/api/auth.ts b/packages/contracts/src/api/auth.ts
+index 61d17db..10a3971 100644
+--- a/packages/contracts/src/api/auth.ts
++++ b/packages/contracts/src/api/auth.ts
+@@ -56,10 +56,25 @@ export type LoginRequest = z.infer<typeof LoginRequest>;
+ 
+ export const ChangePasswordRequest = z.object({
+   currentPassword: z.string().min(1).max(1024),
+   newPassword: z.string().min(1).max(1024),
+ });
+ export type ChangePasswordRequest = z.infer<typeof ChangePasswordRequest>;
+ 
+ /** Strict : birthDate ou tout autre champ → 400 validation (P-MIN-2). */
+ export const UpdateMeRequest = z.strictObject({ username: z.string().min(1).max(100) });
+ export type UpdateMeRequest = z.infer<typeof UpdateMeRequest>;
++
++export const CodeRequest = z.object({ code: z.string().min(1).max(300) });
++export type CodeRequest = z.infer<typeof CodeRequest>;
++
++/** `role` : rôle visé, qui fixe le minimum de mot de passe côté client (14 caractères pour l'amorçage). */
++export const InvitationCheckResponse = z.object({ birthDate: CivilDate, role: RoleSchema });
++export type InvitationCheckResponse = z.infer<typeof InvitationCheckResponse>;
++
++export const AcceptInvitationRequest = z.object({
++  code: z.string().min(1).max(300),
++  username: z.string().min(1).max(100),
++  password: z.string().min(1).max(1024),
++  termsVersion: z.string(),
++});
++export type AcceptInvitationRequest = z.infer<typeof AcceptInvitationRequest>;
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index ad30ca7..89d2ef1 100644
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -1,7 +1,8 @@
++export * from './api/admin';
+ export * from './api/auth';
+ export * from './api/errors';
+ export * from './api/health';
+ export * from './auth-constants';
+ export * from './case';
+ export * from './constants';
+ export * from './entity-rules';

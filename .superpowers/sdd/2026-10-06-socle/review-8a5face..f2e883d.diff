@@ -1,0 +1,650 @@
+# Review package: 8a5face..HEAD
+
+## Commits
+f2e883d feat(profil): profil d'entraînement et fin de l'onboarding
+
+## Files changed
+ apps/server/src/db/schema.ts                       |   6 +-
+ apps/server/src/profile/routes.ts                  | 182 +++++++++++++++++++++
+ apps/server/src/routes.ts                          |   2 +
+ .../test/profile/onboarding-complete.test.ts       |  64 ++++++++
+ apps/server/test/profile/training-profile.test.ts  | 181 ++++++++++++++++++++
+ apps/server/test/support/index.ts                  |   3 +-
+ apps/server/test/support/onboarding.ts             |  33 ++++
+ apps/server/test/support/users.ts                  |   9 +
+ packages/contracts/src/api/profile.ts              |  18 ++
+ 9 files changed, 494 insertions(+), 4 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/db/schema.ts b/apps/server/src/db/schema.ts
+index e62b62b..0a7a12f 100644
+--- a/apps/server/src/db/schema.ts
++++ b/apps/server/src/db/schema.ts
+@@ -1,11 +1,11 @@
+-import { snakeToCamel } from '@appsport/contracts';
++import { type Experience, type Goal, snakeToCamel } from '@appsport/contracts';
+ import type { Generated, Kysely, Transaction } from 'kysely';
+ 
+ /** Gabarit +SYNC des tables à propriétaire (09 §0). */
+ interface SyncColumns {
+   ownerId: string;
+   rev: number;
+   createdAt: string;
+   updatedAt: string;
+   updatedBy: string | null;
+ }
+@@ -138,22 +138,22 @@ export interface SecurityEventTable {
+   type: string;
+   actorId: string | null;
+   targetId: string | null;
+   tailnetIp: string | null;
+   outcome: 'success' | 'failure' | 'blocked';
+   details: string | null;
+ }
+ 
+ export interface TrainingProfileTable extends SyncColumns, SoftDelete {
+   id: string;
+-  goal: 'muscle' | 'strength' | 'fat_loss' | 'fitness' | 'sport_support' | null;
+-  experience: 'none' | 'lt_6_months' | '6_to_24_months' | 'gt_24_months' | null;
++  goal: Goal | null;
++  experience: Experience | null;
+   daysPerWeek: number | null;
+   sessionMinutes: number | null;
+   sportCode: string | null;
+   sportOtherLabel: string | null;
+   cautiousMode: Generated<number>;
+ }
+ 
+ export interface HealthScreeningTable extends SyncColumns, SoftDelete {
+   id: string;
+   caution: number | null;
+diff --git a/apps/server/src/profile/routes.ts b/apps/server/src/profile/routes.ts
+new file mode 100644
+index 0000000..4a88f43
+--- /dev/null
++++ b/apps/server/src/profile/routes.ts
+@@ -0,0 +1,182 @@
++import {
++  type Experience,
++  type Goal,
++  ONBOARDING_STEPS,
++  SPORT_OTHER_LABEL_MAX,
++  TrainingProfilePatch,
++} from '@appsport/contracts';
++import { ageBandOn, availableGoals, firstIncompleteStep, parisDate } from '@appsport/domain';
++import { Hono } from 'hono';
++import type { AppEnv, SessionUser } from '../app-env';
++import { buildMe } from '../auth/me';
++import { requireUser } from '../auth/session';
++import { writeStamp } from '../db/rev';
++import type { DbExecutor } from '../db/schema';
++import type { AppDeps } from '../deps';
++import { httpError } from '../http/errors';
++import { parseJson } from '../http/validate';
++
++interface ProfileState {
++  goal: Goal | null;
++  experience: Experience | null;
++  daysPerWeek: number | null;
++  sessionMinutes: number | null;
++  sportCode: string | null;
++  sportOtherLabel: string | null;
++  cautiousMode: number;
++}
++
++const EMPTY_PROFILE: ProfileState = {
++  goal: null,
++  experience: null,
++  daysPerWeek: null,
++  sessionMinutes: null,
++  sportCode: null,
++  sportOtherLabel: null,
++  cautiousMode: 0,
++};
++
++const stepIndex = (step: string | null): number =>
++  step === null ? -1 : ONBOARDING_STEPS.indexOf(step as (typeof ONBOARDING_STEPS)[number]);
++
++const invalid = (field: string) => httpError('validation', { field });
++
++async function patchProfile(
++  trx: DbExecutor,
++  deps: AppDeps,
++  sessionUser: SessionUser,
++  patch: TrainingProfilePatch,
++): Promise<void> {
++  const userId = sessionUser.id;
++  const user = await trx
++    .selectFrom('user')
++    .select(['birthDate', 'onboardingStep', 'onboardingCompletedAt'])
++    .where('id', '=', userId)
++    .executeTakeFirstOrThrow();
++  const row = await trx
++    .selectFrom('trainingProfile')
++    .select(Object.keys(EMPTY_PROFILE) as (keyof ProfileState)[])
++    .where('id', '=', userId)
++    .where('deletedAt', 'is', null)
++    .executeTakeFirst();
++  const current: ProfileState = row ?? EMPTY_PROFILE;
++
++  const merged: ProfileState = {
++    goal: patch.goal ?? current.goal,
++    experience: patch.experience ?? current.experience,
++    daysPerWeek: patch.daysPerWeek ?? current.daysPerWeek,
++    sessionMinutes: patch.sessionMinutes ?? current.sessionMinutes,
++    sportCode: patch.sportCode === undefined ? current.sportCode : patch.sportCode,
++    sportOtherLabel: patch.sportOtherLabel === undefined ? current.sportOtherLabel : patch.sportOtherLabel,
++    cautiousMode: patch.cautiousMode === undefined ? current.cautiousMode : patch.cautiousMode ? 1 : 0,
++  };
++
++  const ageBand = ageBandOn(user.birthDate, parisDate(deps.clock.now()));
++  if (patch.goal !== undefined && !availableGoals(ageBand).includes(patch.goal)) throw invalid('goal');
++
++  if (merged.sportCode === 'other') {
++    if (merged.sportOtherLabel === null || merged.sportOtherLabel.length > SPORT_OTHER_LABEL_MAX) {
++      throw invalid('sportOtherLabel');
++    }
++  } else {
++    if (patch.sportOtherLabel != null) throw invalid('sportOtherLabel');
++    merged.sportOtherLabel = null;
++  }
++
++  const writtenStep = patch.onboardingStep ?? user.onboardingStep;
++  const sportRequired = user.onboardingCompletedAt !== null || stepIndex(writtenStep) >= stepIndex('sport');
++  if (merged.goal === 'sport_support' && merged.sportCode === null && sportRequired)
++    throw invalid('sportCode');
++
++  if (!row) {
++    const stamp = await writeStamp(trx, deps, userId);
++    await trx
++      .insertInto('trainingProfile')
++      .values({ id: userId, ownerId: userId, createdAt: stamp.updatedAt, ...merged, ...stamp })
++      .execute();
++  } else {
++    const changed: Partial<ProfileState> = {};
++    for (const key of Object.keys(EMPTY_PROFILE) as (keyof ProfileState)[]) {
++      if (merged[key] !== current[key]) Object.assign(changed, { [key]: merged[key] });
++    }
++    if (Object.keys(changed).length > 0) {
++      const stamp = await writeStamp(trx, deps, userId);
++      await trx
++        .updateTable('trainingProfile')
++        .set({ ...changed, ...stamp })
++        .where('id', '=', userId)
++        .execute();
++    }
++  }
++
++  if (
++    user.onboardingCompletedAt === null &&
++    patch.onboardingStep !== undefined &&
++    patch.onboardingStep !== user.onboardingStep
++  ) {
++    const stamp = await writeStamp(trx, deps, userId);
++    await trx
++      .updateTable('user')
++      .set({ onboardingStep: patch.onboardingStep, ...stamp })
++      .where('id', '=', userId)
++      .execute();
++  }
++}
++
++async function completeOnboarding(trx: DbExecutor, deps: AppDeps, userId: string): Promise<void> {
++  const user = await trx
++    .selectFrom('user')
++    .select(['onboardingStep', 'onboardingCompletedAt'])
++    .where('id', '=', userId)
++    .executeTakeFirstOrThrow();
++  if (user.onboardingCompletedAt !== null) return;
++  const profile = await trx
++    .selectFrom('trainingProfile')
++    .select(['goal', 'experience', 'daysPerWeek', 'sessionMinutes'])
++    .where('id', '=', userId)
++    .where('deletedAt', 'is', null)
++    .executeTakeFirst();
++  const primary = await trx
++    .selectFrom('place')
++    .select('id')
++    .where('ownerId', '=', userId)
++    .where('deletedAt', 'is', null)
++    .where('isPrimary', '=', 1)
++    .executeTakeFirst();
++  const step = firstIncompleteStep({
++    goal: profile?.goal ?? null,
++    experience: profile?.experience ?? null,
++    daysPerWeek: profile?.daysPerWeek ?? null,
++    sessionMinutes: profile?.sessionMinutes ?? null,
++    hasPrimaryPlace: primary !== undefined,
++    lastValidatedStep: user.onboardingStep,
++  });
++  if (step !== 'ready') throw httpError('onboarding_incomplete', { step });
++  const stamp = await writeStamp(trx, deps, userId);
++  await trx
++    .updateTable('user')
++    .set({ onboardingCompletedAt: stamp.updatedAt, ...stamp })
++    .where('id', '=', userId)
++    .execute();
++}
++
++export function profileRoutes(deps: AppDeps): Hono<AppEnv> {
++  const routes = new Hono<AppEnv>();
++
++  routes.patch('/training-profile', requireUser, async (c) => {
++    const user = c.get('user');
++    if (!user) throw httpError('unauthenticated');
++    const body = await parseJson(c, TrainingProfilePatch);
++    await deps.db.transaction().execute((trx) => patchProfile(trx, deps, user, body));
++    return c.json(await buildMe(deps.db, deps, user.id, { mustChangePassword: user.mustChangePassword }));
++  });
++
++  routes.post('/onboarding/complete', requireUser, async (c) => {
++    const user = c.get('user');
++    if (!user) throw httpError('unauthenticated');
++    await deps.db.transaction().execute((trx) => completeOnboarding(trx, deps, user.id));
++    return c.json(await buildMe(deps.db, deps, user.id, { mustChangePassword: user.mustChangePassword }));
++  });
++
++  return routes;
++}
+diff --git a/apps/server/src/routes.ts b/apps/server/src/routes.ts
+index 31e1b01..e8d601c 100644
+--- a/apps/server/src/routes.ts
++++ b/apps/server/src/routes.ts
+@@ -1,18 +1,20 @@
+ import type { Hono } from 'hono';
+ import { adminRoutes } from './admin/routes';
+ import type { AppEnv } from './app-env';
+ import { adminInvitationRoutes, invitationRoutes } from './auth/invitation-routes';
+ import { meRoutes } from './auth/me-routes';
+ import { authRoutes } from './auth/routes';
+ import type { AppDeps } from './deps';
+ import { healthRoutes } from './health/routes';
++import { profileRoutes } from './profile/routes';
+ 
+ /** Un routeur par ligne ; les routeurs des tâches suivantes s'ajoutent ici. */
+ export function mountRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
+   app.route('/', healthRoutes(deps));
+   app.route('/api/auth', authRoutes(deps));
+   app.route('/api/me', meRoutes(deps));
++  app.route('/api/me', profileRoutes(deps));
+   app.route('/api/invitations', invitationRoutes(deps));
+   app.route('/api/admin/invitations', adminInvitationRoutes(deps));
+   app.route('/api/admin', adminRoutes(deps));
+ }
+diff --git a/apps/server/test/profile/onboarding-complete.test.ts b/apps/server/test/profile/onboarding-complete.test.ts
+new file mode 100644
+index 0000000..d414eb0
+--- /dev/null
++++ b/apps/server/test/profile/onboarding-complete.test.ts
+@@ -0,0 +1,64 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { createTestContext, createUserAndLogin, insertFixtureRow, type TestContext } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx.close());
++
++const patch = (cookie: string, json: unknown) =>
++  ctx.request('/api/me/training-profile', { method: 'PATCH', cookie, json });
++const complete = (cookie: string) =>
++  ctx.request('/api/me/onboarding/complete', { method: 'POST', cookie, json: {} });
++
++describe('POST /api/me/onboarding/complete', () => {
++  it('409 avec la première étape incomplète (R-ONB-1)', async () => {
++    ctx = await createTestContext({ now: '2026-10-06T10:00:00.000Z' });
++    const u = await createUserAndLogin(ctx);
++    const res = await complete(u.cookie);
++    expect(res.status).toBe(409);
++    expect(await res.json()).toEqual({ error: 'onboarding_incomplete', step: 'goal' });
++
++    await patch(u.cookie, {
++      goal: 'muscle',
++      experience: 'none',
++      daysPerWeek: 3,
++      sessionMinutes: 45,
++      onboardingStep: 'sport',
++    });
++    expect(await (await complete(u.cookie)).json()).toEqual({
++      error: 'onboarding_incomplete',
++      step: 'place_kind',
++    });
++
++    await insertFixtureRow(ctx.deps.db, 'place', { ownerId: u.id, kind: 'home', isPrimary: 1 });
++    await patch(u.cookie, { onboardingStep: 'availability' });
++    expect(await (await complete(u.cookie)).json()).toEqual({
++      error: 'onboarding_incomplete',
++      step: 'health',
++    });
++  });
++
++  it('pose onboardingCompletedAt une seule fois', async () => {
++    ctx = await createTestContext({ now: '2026-10-06T10:00:00.000Z' });
++    const u = await createUserAndLogin(ctx);
++    await patch(u.cookie, {
++      goal: 'muscle',
++      experience: 'none',
++      daysPerWeek: 3,
++      sessionMinutes: 45,
++      onboardingStep: 'health',
++    });
++    await insertFixtureRow(ctx.deps.db, 'place', { ownerId: u.id, kind: 'home', isPrimary: 1 });
++    const first = await complete(u.cookie);
++    expect(first.status).toBe(200);
++    expect(await first.json()).toMatchObject({ onboardingCompletedAt: '2026-10-06T10:00:00.000Z' });
++    ctx.clock.set('2026-10-06T10:01:00.000Z');
++    const second = await complete(u.cookie);
++    expect(second.status).toBe(200);
++    expect(await second.json()).toMatchObject({ onboardingCompletedAt: '2026-10-06T10:00:00.000Z' });
++  });
++
++  it('401 sans session', async () => {
++    ctx = await createTestContext();
++    expect((await ctx.request('/api/me/onboarding/complete', { method: 'POST', json: {} })).status).toBe(401);
++  });
++});
+diff --git a/apps/server/test/profile/training-profile.test.ts b/apps/server/test/profile/training-profile.test.ts
+new file mode 100644
+index 0000000..9258f8c
+--- /dev/null
++++ b/apps/server/test/profile/training-profile.test.ts
+@@ -0,0 +1,181 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { completeOnboarding, createTestContext, createUserAndLogin, type TestContext } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx.close());
++
++const patch = (cookie: string, json: unknown) =>
++  ctx.request('/api/me/training-profile', { method: 'PATCH', cookie, json });
++const profile = (id: string) =>
++  ctx.deps.db.selectFrom('trainingProfile').selectAll().where('id', '=', id).executeTakeFirst();
++const userRow = (id: string) =>
++  ctx.deps.db.selectFrom('user').selectAll().where('id', '=', id).executeTakeFirstOrThrow();
++
++describe('PATCH /api/me/training-profile', () => {
++  it('crée la ligne puis fusionne les patchs', async () => {
++    ctx = await createTestContext();
++    const u = await createUserAndLogin(ctx);
++    const rev0 = (await userRow(u.id)).rev;
++    const res = await patch(u.cookie, { goal: 'muscle', onboardingStep: 'goal' });
++    expect(res.status).toBe(200);
++    expect(await res.json()).toMatchObject({ onboardingStep: 'goal' });
++    expect(await profile(u.id)).toMatchObject({
++      id: u.id,
++      ownerId: u.id,
++      goal: 'muscle',
++      experience: null,
++      daysPerWeek: null,
++      sessionMinutes: null,
++      sportCode: null,
++      sportOtherLabel: null,
++      cautiousMode: 0,
++      updatedBy: u.id,
++      deletedAt: null,
++    });
++    const after = await userRow(u.id);
++    expect(after.onboardingStep).toBe('goal');
++    expect(after.rev).toBeGreaterThan(rev0);
++
++    const rev1 = (await profile(u.id))?.rev ?? 0;
++    expect(
++      (await patch(u.cookie, { experience: 'lt_6_months', daysPerWeek: 3, sessionMinutes: 45 })).status,
++    ).toBe(200);
++    const merged = await profile(u.id);
++    expect(merged).toMatchObject({
++      goal: 'muscle',
++      experience: 'lt_6_months',
++      daysPerWeek: 3,
++      sessionMinutes: 45,
++    });
++    expect(merged?.rev).toBeGreaterThan(rev1);
++  });
++
++  it('onboardingStep seul crée la ligne vide', async () => {
++    ctx = await createTestContext();
++    const u = await createUserAndLogin(ctx);
++    expect((await patch(u.cookie, { onboardingStep: 'place_kind' })).status).toBe(200);
++    expect(await profile(u.id)).toMatchObject({ goal: null, experience: null });
++    expect((await userRow(u.id)).onboardingStep).toBe('place_kind');
++  });
++
++  it('même valeur renvoyée : pas de nouveau rev', async () => {
++    ctx = await createTestContext();
++    const u = await createUserAndLogin(ctx);
++    await patch(u.cookie, { goal: 'muscle', onboardingStep: 'goal' });
++    const before = { p: await profile(u.id), u: await userRow(u.id) };
++    expect((await patch(u.cookie, { goal: 'muscle', onboardingStep: 'goal' })).status).toBe(200);
++    expect(await profile(u.id)).toEqual(before.p);
++    expect(await userRow(u.id)).toEqual(before.u);
++  });
++
++  it.each([
++    [{ daysPerWeek: 5 }],
++    [{ daysPerWeek: 1 }],
++    [{ sessionMinutes: 50 }],
++    [{ goal: 'cardio' }],
++    [{ experience: 'expert' }],
++    [{ sportCode: 'golf' }],
++    [{ unknown: 1 }],
++  ])('400 validation pour %o', async (body) => {
++    ctx = await createTestContext();
++    const u = await createUserAndLogin(ctx);
++    const res = await patch(u.cookie, body);
++    expect(res.status).toBe(400);
++    expect(((await res.json()) as { error: string }).error).toBe('validation');
++  });
++
++  it('401 sans session', async () => {
++    ctx = await createTestContext();
++    const res = await ctx.request('/api/me/training-profile', { method: 'PATCH', json: { goal: 'muscle' } });
++    expect(res.status).toBe(401);
++  });
++
++  it('fat_loss refusé aux mineurs seulement quand le patch porte goal (E1)', async () => {
++    ctx = await createTestContext();
++    const minor = await createUserAndLogin(ctx, { birthDate: '2009-10-07' });
++    const refused = await patch(minor.cookie, { goal: 'fat_loss' });
++    expect(refused.status).toBe(400);
++    expect(await refused.json()).toMatchObject({ error: 'validation', field: 'goal' });
++
++    const adult = await createUserAndLogin(ctx);
++    expect((await patch(adult.cookie, { goal: 'fat_loss' })).status).toBe(200);
++    await ctx.deps.db
++      .updateTable('user')
++      .set({ birthDate: '2009-10-07' })
++      .where('id', '=', adult.id)
++      .execute();
++    expect((await patch(adult.cookie, { cautiousMode: true })).status).toBe(200);
++    expect((await patch(adult.cookie, { goal: 'fat_loss' })).status).toBe(400);
++  });
++
++  it("sport_support exige un sport dès l'étape sport ou après l'onboarding (E2)", async () => {
++    ctx = await createTestContext();
++    const u = await createUserAndLogin(ctx);
++    expect((await patch(u.cookie, { goal: 'sport_support', onboardingStep: 'goal' })).status).toBe(200);
++    const refused = await patch(u.cookie, { sportCode: null, onboardingStep: 'sport' });
++    expect(refused.status).toBe(400);
++    expect(await refused.json()).toEqual({ error: 'validation', field: 'sportCode' });
++    expect((await patch(u.cookie, { sportCode: 'tennis', onboardingStep: 'sport' })).status).toBe(200);
++
++    const v = await createUserAndLogin(ctx);
++    await completeOnboarding(ctx, v);
++    const late = await patch(v.cookie, { goal: 'sport_support' });
++    expect(late.status).toBe(400);
++    expect(await late.json()).toEqual({ error: 'validation', field: 'sportCode' });
++    expect((await patch(v.cookie, { goal: 'sport_support', sportCode: 'tennis' })).status).toBe(200);
++  });
++
++  it('« Non » à la question du sport (goal muscle)', async () => {
++    ctx = await createTestContext();
++    const u = await createUserAndLogin(ctx);
++    await patch(u.cookie, { goal: 'muscle', onboardingStep: 'goal' });
++    expect(
++      (await patch(u.cookie, { sportCode: null, sportOtherLabel: null, onboardingStep: 'sport' })).status,
++    ).toBe(200);
++  });
++
++  it('sportOtherLabel', async () => {
++    ctx = await createTestContext();
++    const u = await createUserAndLogin(ctx);
++    const outcome = async (res: Response) => ({ status: res.status, body: await res.json() });
++    const refusal = { status: 400, body: { error: 'validation', field: 'sportOtherLabel' } };
++    expect(
++      await outcome(await patch(u.cookie, { sportCode: 'tennis', sportOtherLabel: 'Ultimate' })),
++    ).toEqual(refusal);
++    expect((await patch(u.cookie, { sportCode: 'other', sportOtherLabel: 'x'.repeat(41) })).status).toBe(400);
++    expect(await outcome(await patch(u.cookie, { sportCode: 'other' }))).toEqual(refusal);
++    expect((await patch(u.cookie, { sportCode: 'other', sportOtherLabel: 'Ultimate' })).status).toBe(200);
++    expect((await patch(u.cookie, { sportOtherLabel: null })).status).toBe(400);
++    expect((await patch(u.cookie, { sportCode: 'rugby' })).status).toBe(200);
++    expect(await profile(u.id)).toMatchObject({ sportCode: 'rugby', sportOtherLabel: null });
++  });
++
++  it('cautiousMode (R-CST-7)', async () => {
++    ctx = await createTestContext();
++    const u = await createUserAndLogin(ctx);
++    expect(await (await patch(u.cookie, { cautiousMode: true })).json()).toMatchObject({ cautious: true });
++    expect(await (await patch(u.cookie, { cautiousMode: false })).json()).toMatchObject({ cautious: false });
++    expect(await profile(u.id)).toMatchObject({ cautiousMode: 0 });
++  });
++
++  it('âge évalué à la date de Paris (R-AGE-5, R-AGE-6)', async () => {
++    ctx = await createTestContext();
++    const u = await createUserAndLogin(ctx, { birthDate: '2008-10-07' });
++    const first = await patch(u.cookie, { goal: 'muscle' });
++    expect(await first.json()).toMatchObject({ ageBand: 'minor', cautious: true });
++    ctx.clock.set('2026-10-06T22:30:00.000Z');
++    const res = await patch(u.cookie, { onboardingStep: 'goal' });
++    expect(await res.json()).toMatchObject({ ageBand: 'adult', cautious: false });
++    expect(await profile(u.id)).toMatchObject({ goal: 'muscle' });
++    expect((await patch(u.cookie, { goal: 'fat_loss' })).status).toBe(200);
++  });
++
++  it("n'écrit plus onboarding_step une fois l'onboarding terminé (R-ONB-3)", async () => {
++    ctx = await createTestContext();
++    const u = await createUserAndLogin(ctx);
++    await completeOnboarding(ctx, u);
++    expect((await patch(u.cookie, { goal: 'strength', onboardingStep: 'goal' })).status).toBe(200);
++    expect((await userRow(u.id)).onboardingStep).toBe('health');
++    expect(await profile(u.id)).toMatchObject({ goal: 'strength' });
++  });
++});
+diff --git a/apps/server/test/support/index.ts b/apps/server/test/support/index.ts
+index c01ffab..a29b44a 100644
+--- a/apps/server/test/support/index.ts
++++ b/apps/server/test/support/index.ts
+@@ -1,5 +1,6 @@
+ export { FakeClock } from './clock';
+ export { createTestContext, TEST_ARGON2, type TestContext, type TestRequestInit } from './context';
+ export { insertFixtureRow } from './factories';
+ export { seqIds } from './ids';
+-export { type CreateUserOptions, createUser, login, type TestUser } from './users';
++export { completeOnboarding } from './onboarding';
++export { type CreateUserOptions, createUser, createUserAndLogin, login, type TestUser } from './users';
+diff --git a/apps/server/test/support/onboarding.ts b/apps/server/test/support/onboarding.ts
+new file mode 100644
+index 0000000..3ee4c71
+--- /dev/null
++++ b/apps/server/test/support/onboarding.ts
+@@ -0,0 +1,33 @@
++import type { TestContext } from './context';
++import { insertFixtureRow } from './factories';
++
++/** Profil muscle, aucune expérience, 3 j de 45 min, étape « health », lieu maison principal, puis fin de l'onboarding. */
++export async function completeOnboarding(
++  ctx: TestContext,
++  user: { id: string; cookie: string },
++): Promise<{ placeId: string }> {
++  const patch = await ctx.request('/api/me/training-profile', {
++    method: 'PATCH',
++    cookie: user.cookie,
++    json: {
++      goal: 'muscle',
++      experience: 'none',
++      daysPerWeek: 3,
++      sessionMinutes: 45,
++      onboardingStep: 'health',
++    },
++  });
++  if (patch.status !== 200) throw new Error(`Profil refusé (${patch.status})`);
++  const place = await insertFixtureRow(ctx.deps.db, 'place', {
++    ownerId: user.id,
++    kind: 'home',
++    isPrimary: 1,
++  });
++  const done = await ctx.request('/api/me/onboarding/complete', {
++    method: 'POST',
++    cookie: user.cookie,
++    json: {},
++  });
++  if (done.status !== 200) throw new Error(`Fin de l'onboarding refusée (${done.status})`);
++  return { placeId: place.id as string };
++}
+diff --git a/apps/server/test/support/users.ts b/apps/server/test/support/users.ts
+index 6fc574d..098c9a3 100644
+--- a/apps/server/test/support/users.ts
++++ b/apps/server/test/support/users.ts
+@@ -61,10 +61,19 @@ export async function login(
+   username: string,
+   password: string,
+   ip = '100.64.0.1',
+ ): Promise<string> {
+   const res = await ctx.request('/api/auth/login', { method: 'POST', json: { username, password }, ip });
+   if (res.status !== 200) throw new Error(`Connexion refusée (${res.status}) pour ${username}`);
+   const cookie = res.headers.get('set-cookie')?.split(';')[0];
+   if (!cookie) throw new Error('Set-Cookie absent');
+   return cookie;
+ }
++
++/** Crée un compte puis le connecte (`login` avec le mot de passe de la fabrique). */
++export async function createUserAndLogin(
++  ctx: TestContext,
++  o: CreateUserOptions = {},
++): Promise<TestUser & { cookie: string }> {
++  const user = await createUser(ctx, o);
++  return { ...user, cookie: await login(ctx, user.username, user.password) };
++}
+diff --git a/packages/contracts/src/api/profile.ts b/packages/contracts/src/api/profile.ts
+index 0f3febe..24e5ee3 100644
+--- a/packages/contracts/src/api/profile.ts
++++ b/packages/contracts/src/api/profile.ts
+@@ -1,11 +1,13 @@
+ import { z } from 'zod';
++import { SPORT_OTHER_LABEL_MAX, SportCodeSchema } from '../sports';
++import { OnboardingStep } from './auth';
+ 
+ export const GOALS = ['muscle', 'strength', 'fat_loss', 'fitness', 'sport_support'] as const;
+ export const Goal = z.enum(GOALS);
+ export type Goal = z.infer<typeof Goal>;
+ 
+ export const EXPERIENCES = ['none', 'lt_6_months', '6_to_24_months', 'gt_24_months'] as const;
+ export const Experience = z.enum(EXPERIENCES);
+ export type Experience = z.infer<typeof Experience>;
+ 
+ export const GOAL_LABELS: Record<Goal, string> = {
+@@ -15,10 +17,26 @@ export const GOAL_LABELS: Record<Goal, string> = {
+   fitness: 'Forme et santé',
+   sport_support: 'Me renforcer pour mon sport',
+ };
+ 
+ export const EXPERIENCE_LABELS: Record<Experience, string> = {
+   none: 'Jamais',
+   lt_6_months: 'Moins de 6 mois',
+   '6_to_24_months': '6 mois à 2 ans',
+   gt_24_months: 'Plus de 2 ans',
+ };
++
++export const DAYS_PER_WEEK = [2, 3, 4] as const;
++export const SESSION_MINUTES = [30, 45, 60, 75, 90] as const;
++
++/** Strict : tout champ inconnu → 400 validation. */
++export const TrainingProfilePatch = z.strictObject({
++  goal: Goal.optional(),
++  experience: Experience.optional(),
++  daysPerWeek: z.literal(DAYS_PER_WEEK).optional(),
++  sessionMinutes: z.literal(SESSION_MINUTES).optional(),
++  sportCode: SportCodeSchema.nullable().optional(),
++  sportOtherLabel: z.string().trim().min(1).max(SPORT_OTHER_LABEL_MAX).nullable().optional(),
++  cautiousMode: z.boolean().optional(),
++  onboardingStep: OnboardingStep.optional(),
++});
++export type TrainingProfilePatch = z.infer<typeof TrainingProfilePatch>;

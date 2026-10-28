@@ -1,0 +1,1014 @@
+# Review package: 373f5bb..HEAD
+
+## Commits
+e67fdde feat(db): schéma STRICT des 18 tables du socle
+
+## Files changed
+ apps/server/src/db/migrations/0001_socle.ts | 261 ++++++++++++++++++++++++++++
+ apps/server/src/db/migrations/index.ts      |   5 +-
+ apps/server/src/db/schema.ts                | 237 ++++++++++++++++++++++++-
+ apps/server/test/__snapshots__/schema.sql   |  46 +++++
+ apps/server/test/db/m1.ts                   |  13 --
+ apps/server/test/db/migrate.test.ts         |  13 +-
+ apps/server/test/db/rev.test.ts             |   4 +-
+ apps/server/test/db/schema-dump.ts          |  11 ++
+ apps/server/test/db/schema.test.ts          | 149 ++++++++++++++++
+ apps/server/test/db/upgrade.test.ts         |  24 +++
+ apps/server/test/fixtures/schema-v1.sql     |  46 +++++
+ 11 files changed, 780 insertions(+), 29 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/db/migrations/0001_socle.ts b/apps/server/src/db/migrations/0001_socle.ts
+new file mode 100644
+index 0000000..edd9ccf
+--- /dev/null
++++ b/apps/server/src/db/migrations/0001_socle.ts
+@@ -0,0 +1,261 @@
++import { sql } from 'kysely';
++import type { Migration } from './index';
++
++const FK_USER = 'TEXT REFERENCES user(id) ON DELETE SET NULL';
++
++/** Booléen 0/1 ; `DEFAULT 0` sauf demande contraire. */
++const bool = (col: string, withDefault = true) =>
++  `${col} INTEGER NOT NULL${withDefault ? ' DEFAULT 0' : ''} CHECK (${col} IN (0,1))`;
++
++/** Gabarit +SYNC (09 §0) ; `deleted` à false pour les tables sans suppression logique. */
++const sync = (deleted = true) =>
++  [
++    'owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE',
++    'rev INTEGER NOT NULL',
++    'created_at TEXT NOT NULL',
++    'updated_at TEXT NOT NULL',
++    `updated_by ${FK_USER}`,
++    ...(deleted ? ['deleted_at TEXT'] : []),
++  ].join(', ');
++
++const table = (name: string, ...defs: string[]) => `CREATE TABLE ${name} (${defs.join(', ')}) STRICT`;
++
++const TABLES: string[] = [
++  table(
++    'server_meta',
++    'id INTEGER PRIMARY KEY CHECK (id = 1)',
++    'server_epoch TEXT NOT NULL',
++    'epoch_started_at TEXT NOT NULL',
++    'epoch_base_rev INTEGER NOT NULL DEFAULT 0',
++    'sync_counter INTEGER NOT NULL DEFAULT 0',
++    'tombstone_purge_rev INTEGER NOT NULL DEFAULT 0',
++    'catalog_version TEXT',
++    'catalog_updated_at TEXT',
++  ),
++  table(
++    'user',
++    'id TEXT PRIMARY KEY',
++    'username TEXT NOT NULL',
++    'username_key TEXT NOT NULL UNIQUE',
++    'password_hash TEXT NOT NULL',
++    "role TEXT NOT NULL CHECK (role IN ('admin','member'))",
++    "status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled'))",
++    'birth_date TEXT NOT NULL',
++    'terms_version TEXT',
++    'terms_accepted_at TEXT',
++    'last_login_at TEXT',
++    'password_changed_at TEXT',
++    "onboarding_step TEXT CHECK (onboarding_step IN ('goal','sport','place_kind','place','experience','availability','health','ready'))",
++    'onboarding_completed_at TEXT',
++    'invitation_id TEXT REFERENCES invitation(id) ON DELETE SET NULL',
++    'rev INTEGER NOT NULL',
++    'created_at TEXT NOT NULL',
++    'updated_at TEXT NOT NULL',
++    `updated_by ${FK_USER}`,
++  ),
++  table(
++    'invitation',
++    'id TEXT PRIMARY KEY',
++    'code_hash TEXT NOT NULL UNIQUE',
++    'note TEXT CHECK (length(note) <= 60)',
++    'birth_date TEXT',
++    bool('is_admin_bootstrap'),
++    `created_by ${FK_USER}`,
++    'created_at TEXT NOT NULL',
++    'expires_at TEXT NOT NULL',
++    'used_at TEXT',
++    `used_by ${FK_USER}`,
++    'revoked_at TEXT',
++  ),
++  table(
++    'applied_op',
++    'op_id TEXT PRIMARY KEY',
++    'user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE',
++    'entity TEXT NOT NULL',
++    'row_id TEXT NOT NULL',
++    "status TEXT NOT NULL CHECK (status IN ('applied','applied_partial','duplicate','rejected'))",
++    'assigned_rev INTEGER',
++    'applied_at TEXT NOT NULL',
++  ),
++  table(
++    'sync_rejection',
++    'id TEXT PRIMARY KEY',
++    sync(),
++    'op_id TEXT NOT NULL',
++    'entity TEXT NOT NULL',
++    'row_id TEXT NOT NULL',
++    "code TEXT NOT NULL CHECK (code IN ('validation','forbidden','parent_rejected','stale_revision','unknown_entity','protocol'))",
++    'detail_json TEXT CHECK (json_valid(detail_json))',
++    'dismissed_at TEXT',
++  ),
++  table(
++    'password_reset',
++    'id TEXT PRIMARY KEY',
++    'user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE',
++    'code_hash TEXT NOT NULL UNIQUE',
++    `created_by ${FK_USER}`,
++    'created_at TEXT NOT NULL',
++    'expires_at TEXT NOT NULL',
++    'used_at TEXT',
++    'cancelled_at TEXT',
++  ),
++  table(
++    'session',
++    'id TEXT PRIMARY KEY',
++    'token_hash TEXT NOT NULL UNIQUE',
++    `user_id ${FK_USER}`,
++    'created_at TEXT NOT NULL',
++    'last_seen_at TEXT NOT NULL',
++    'expires_at TEXT NOT NULL',
++    bool('must_change_password'),
++    'revoked_at TEXT',
++    "revoked_reason TEXT CHECK (revoked_reason IN ('logout','logout_all','password_change','password_reset','admin','account_deleted'))",
++  ),
++  table(
++    'consent_event',
++    'id TEXT PRIMARY KEY',
++    sync(false),
++    "type TEXT NOT NULL CHECK (type IN ('health','ai_coach'))",
++    "action TEXT NOT NULL CHECK (action IN ('grant','withdraw'))",
++    'text_version TEXT NOT NULL',
++  ),
++  table(
++    'security_event',
++    'id TEXT PRIMARY KEY',
++    'at TEXT NOT NULL',
++    'type TEXT NOT NULL',
++    'actor_id TEXT',
++    'target_id TEXT',
++    'tailnet_ip TEXT',
++    "outcome TEXT NOT NULL CHECK (outcome IN ('success','failure','blocked'))",
++    'details TEXT CHECK (json_valid(details))',
++  ),
++  table(
++    'training_profile',
++    'id TEXT PRIMARY KEY',
++    sync(),
++    "goal TEXT CHECK (goal IN ('muscle','strength','fat_loss','fitness','sport_support'))",
++    "experience TEXT CHECK (experience IN ('none','lt_6_months','6_to_24_months','gt_24_months'))",
++    'days_per_week INTEGER CHECK (days_per_week BETWEEN 2 AND 4)',
++    'session_minutes INTEGER CHECK (session_minutes IN (30,45,60,75,90))',
++    'sport_code TEXT',
++    'sport_other_label TEXT CHECK (length(sport_other_label) <= 40)',
++    bool('cautious_mode'),
++    'CHECK (id = owner_id)',
++  ),
++  table(
++    'health_screening',
++    'id TEXT PRIMARY KEY',
++    sync(),
++    'caution INTEGER CHECK (caution IN (0,1))',
++    'questionnaire_version TEXT',
++    'answered_at TEXT',
++    'CHECK (id = owner_id)',
++    'CHECK (deleted_at IS NOT NULL OR (caution IS NOT NULL AND questionnaire_version IS NOT NULL AND answered_at IS NOT NULL))',
++  ),
++  table(
++    'limitation',
++    'id TEXT PRIMARY KEY',
++    sync(),
++    "body_area TEXT CHECK (body_area IN ('shoulder','elbow','wrist_hand','neck','upper_back','lower_back','hip','knee','ankle_foot','other'))",
++    "side TEXT CHECK (side IN ('left','right','both','not_applicable'))",
++    "severity TEXT CHECK (severity IN ('mild','severe'))",
++    'note TEXT CHECK (length(note) <= 200)',
++    'active INTEGER CHECK (active IN (0,1))',
++    'CHECK (deleted_at IS NOT NULL OR (body_area IS NOT NULL AND side IS NOT NULL AND severity IS NOT NULL AND active IS NOT NULL))',
++  ),
++  table(
++    'gym',
++    'id TEXT PRIMARY KEY',
++    'name TEXT NOT NULL CHECK (length(name) BETWEEN 2 AND 60)',
++    'name_key TEXT NOT NULL',
++    'city TEXT NOT NULL CHECK (length(city) BETWEEN 2 AND 60)',
++    'city_key TEXT NOT NULL',
++    'load_settings TEXT NOT NULL CHECK (json_valid(load_settings))',
++    `created_by ${FK_USER}`,
++    `updated_by ${FK_USER}`,
++    'rev INTEGER NOT NULL',
++    'created_at TEXT NOT NULL',
++    'updated_at TEXT NOT NULL',
++    'deleted_at TEXT',
++    'UNIQUE (name_key, city_key)',
++  ),
++  table(
++    'gym_equipment',
++    'id TEXT PRIMARY KEY',
++    'gym_id TEXT NOT NULL REFERENCES gym(id) ON DELETE CASCADE',
++    'equipment_code TEXT NOT NULL',
++    `added_by ${FK_USER}`,
++    'rev INTEGER NOT NULL',
++    'created_at TEXT NOT NULL',
++    'updated_at TEXT NOT NULL',
++    'deleted_at TEXT',
++    "CHECK (id = gym_id || ':' || equipment_code)",
++  ),
++  table(
++    'gym_history',
++    'id TEXT PRIMARY KEY',
++    'gym_id TEXT NOT NULL REFERENCES gym(id) ON DELETE CASCADE',
++    `author_id ${FK_USER}`,
++    'at TEXT NOT NULL',
++    "action TEXT NOT NULL CHECK (action IN ('create','update_info','add_equipment','remove_equipment','update_load_settings'))",
++    'detail TEXT NOT NULL CHECK (json_valid(detail))',
++  ),
++  table(
++    'place',
++    'id TEXT PRIMARY KEY',
++    sync(),
++    "kind TEXT NOT NULL CHECK (kind IN ('gym','home'))",
++    'gym_id TEXT REFERENCES gym(id)',
++    'name TEXT CHECK (length(name) <= 30)',
++    bool('is_primary'),
++    bool('visible_at_gym'),
++    'load_settings TEXT CHECK (json_valid(load_settings))',
++    "CHECK (kind = 'home' OR load_settings IS NULL)",
++    "CHECK ((kind = 'gym') = (gym_id IS NOT NULL))",
++    "CHECK (kind = 'home' OR name IS NULL)",
++  ),
++  table(
++    'home_equipment',
++    'id TEXT PRIMARY KEY',
++    'place_id TEXT NOT NULL REFERENCES place(id) ON DELETE CASCADE',
++    'equipment_code TEXT NOT NULL',
++    sync(),
++    "CHECK (id = place_id || ':' || equipment_code)",
++  ),
++];
++
++const OWNER_REV = [
++  'sync_rejection',
++  'consent_event',
++  'training_profile',
++  'health_screening',
++  'limitation',
++  'place',
++  'home_equipment',
++];
++const REV = ['user', 'gym', 'gym_equipment', ...OWNER_REV];
++
++const INDEXES: string[] = [
++  ...REV.map((t) => `CREATE INDEX ${t}_rev_idx ON ${t} (rev)`),
++  ...OWNER_REV.map((t) => `CREATE INDEX ${t}_owner_rev_idx ON ${t} (owner_id, rev)`),
++  'CREATE INDEX applied_op_user_applied_idx ON applied_op (user_id, applied_at)',
++  'CREATE INDEX consent_event_owner_type_created_idx ON consent_event (owner_id, type, created_at)',
++  'CREATE INDEX security_event_at_idx ON security_event (at)',
++  'CREATE INDEX password_reset_user_idx ON password_reset (user_id)',
++  'CREATE INDEX session_user_idx ON session (user_id)',
++  'CREATE INDEX gym_equipment_gym_idx ON gym_equipment (gym_id)',
++  'CREATE INDEX gym_history_gym_at_idx ON gym_history (gym_id, at)',
++  'CREATE INDEX place_gym_idx ON place (gym_id)',
++  'CREATE INDEX home_equipment_place_idx ON home_equipment (place_id)',
++  'CREATE UNIQUE INDEX place_owner_gym_uq ON place (owner_id, gym_id) WHERE deleted_at IS NULL',
++  'CREATE UNIQUE INDEX place_owner_primary_uq ON place (owner_id) WHERE is_primary = 1 AND deleted_at IS NULL',
++];
++
++export const socle: Migration = {
++  id: '0001_socle',
++  breaking: false,
++  up: async (db) => {
++    for (const ddl of [...TABLES, ...INDEXES]) await sql.raw(ddl).execute(db);
++  },
++};
+diff --git a/apps/server/src/db/migrations/index.ts b/apps/server/src/db/migrations/index.ts
+index f362289..6278779 100644
+--- a/apps/server/src/db/migrations/index.ts
++++ b/apps/server/src/db/migrations/index.ts
+@@ -1,11 +1,12 @@
+ import type { Kysely } from 'kysely';
++import { socle } from './0001_socle';
+ 
+ export interface Migration {
+   id: string;
+   breaking: boolean;
+   // biome-ignore lint/suspicious/noExplicitAny: une migration écrit du DDL hors du schéma typé
+   up(db: Kysely<any>): Promise<void>;
+ }
+ 
+-/** Migrations du socle ; la Task 4b ajoute '0001_socle'. */
+-export const MIGRATIONS: readonly Migration[] = [];
++/** Migrations du socle, dans l'ordre. */
++export const MIGRATIONS: readonly Migration[] = [socle];
+diff --git a/apps/server/src/db/schema.ts b/apps/server/src/db/schema.ts
+index f199ca4..f4c1de1 100644
+--- a/apps/server/src/db/schema.ts
++++ b/apps/server/src/db/schema.ts
+@@ -1,31 +1,258 @@
+-import type { Kysely, Transaction } from 'kysely';
++import type { Generated, Kysely, Transaction } from 'kysely';
++
++/** Gabarit +SYNC des tables à propriétaire (09 §0). */
++interface SyncColumns {
++  ownerId: string;
++  rev: number;
++  createdAt: string;
++  updatedAt: string;
++  updatedBy: string | null;
++}
++
++interface SoftDelete {
++  deletedAt: string | null;
++}
+ 
+ export interface ServerMetaTable {
+   id: number;
+   serverEpoch: string;
+   epochStartedAt: string;
+-  epochBaseRev: number;
+-  syncCounter: number;
+-  tombstonePurgeRev: number;
++  epochBaseRev: Generated<number>;
++  syncCounter: Generated<number>;
++  tombstonePurgeRev: Generated<number>;
+   catalogVersion: string | null;
+   catalogUpdatedAt: string | null;
+ }
+ 
+ export interface SchemaMigrationsTable {
+   id: string;
+   breaking: number;
+   appliedAt: string;
+ }
+ 
+-// Les autres tables du socle arrivent avec la Task 4b.
++export interface AppliedOpTable {
++  opId: string;
++  userId: string;
++  entity: string;
++  rowId: string;
++  status: 'applied' | 'applied_partial' | 'duplicate' | 'rejected';
++  assignedRev: number | null;
++  appliedAt: string;
++}
++
++export interface SyncRejectionTable extends SyncColumns, SoftDelete {
++  id: string;
++  opId: string;
++  entity: string;
++  rowId: string;
++  code: 'validation' | 'forbidden' | 'parent_rejected' | 'stale_revision' | 'unknown_entity' | 'protocol';
++  detailJson: string | null;
++  dismissedAt: string | null;
++}
++
++export interface UserTable {
++  id: string;
++  username: string;
++  usernameKey: string;
++  passwordHash: string;
++  role: 'admin' | 'member';
++  status: Generated<'active' | 'disabled'>;
++  birthDate: string;
++  termsVersion: string | null;
++  termsAcceptedAt: string | null;
++  lastLoginAt: string | null;
++  passwordChangedAt: string | null;
++  onboardingStep:
++    | 'goal'
++    | 'sport'
++    | 'place_kind'
++    | 'place'
++    | 'experience'
++    | 'availability'
++    | 'health'
++    | 'ready'
++    | null;
++  onboardingCompletedAt: string | null;
++  invitationId: string | null;
++  rev: number;
++  createdAt: string;
++  updatedAt: string;
++  updatedBy: string | null;
++}
++
++export interface InvitationTable {
++  id: string;
++  codeHash: string;
++  note: string | null;
++  birthDate: string | null;
++  isAdminBootstrap: Generated<number>;
++  createdBy: string | null;
++  createdAt: string;
++  expiresAt: string;
++  usedAt: string | null;
++  usedBy: string | null;
++  revokedAt: string | null;
++}
++
++export interface PasswordResetTable {
++  id: string;
++  userId: string;
++  codeHash: string;
++  createdBy: string | null;
++  createdAt: string;
++  expiresAt: string;
++  usedAt: string | null;
++  cancelledAt: string | null;
++}
++
++export interface SessionTable {
++  id: string;
++  tokenHash: string;
++  userId: string | null;
++  createdAt: string;
++  lastSeenAt: string;
++  expiresAt: string;
++  mustChangePassword: Generated<number>;
++  revokedAt: string | null;
++  revokedReason:
++    | 'logout'
++    | 'logout_all'
++    | 'password_change'
++    | 'password_reset'
++    | 'admin'
++    | 'account_deleted'
++    | null;
++}
++
++export interface ConsentEventTable extends SyncColumns {
++  id: string;
++  type: 'health' | 'ai_coach';
++  action: 'grant' | 'withdraw';
++  textVersion: string;
++}
++
++export interface SecurityEventTable {
++  id: string;
++  at: string;
++  type: string;
++  actorId: string | null;
++  targetId: string | null;
++  tailnetIp: string | null;
++  outcome: 'success' | 'failure' | 'blocked';
++  details: string | null;
++}
++
++export interface TrainingProfileTable extends SyncColumns, SoftDelete {
++  id: string;
++  goal: 'muscle' | 'strength' | 'fat_loss' | 'fitness' | 'sport_support' | null;
++  experience: 'none' | 'lt_6_months' | '6_to_24_months' | 'gt_24_months' | null;
++  daysPerWeek: number | null;
++  sessionMinutes: number | null;
++  sportCode: string | null;
++  sportOtherLabel: string | null;
++  cautiousMode: Generated<number>;
++}
++
++export interface HealthScreeningTable extends SyncColumns, SoftDelete {
++  id: string;
++  caution: number | null;
++  questionnaireVersion: string | null;
++  answeredAt: string | null;
++}
++
++export interface LimitationTable extends SyncColumns, SoftDelete {
++  id: string;
++  bodyArea:
++    | 'shoulder'
++    | 'elbow'
++    | 'wrist_hand'
++    | 'neck'
++    | 'upper_back'
++    | 'lower_back'
++    | 'hip'
++    | 'knee'
++    | 'ankle_foot'
++    | 'other'
++    | null;
++  side: 'left' | 'right' | 'both' | 'not_applicable' | null;
++  severity: 'mild' | 'severe' | null;
++  note: string | null;
++  active: number | null;
++}
++
++export interface GymTable extends SoftDelete {
++  id: string;
++  name: string;
++  nameKey: string;
++  city: string;
++  cityKey: string;
++  loadSettings: string;
++  createdBy: string | null;
++  updatedBy: string | null;
++  rev: number;
++  createdAt: string;
++  updatedAt: string;
++}
++
++export interface GymEquipmentTable extends SoftDelete {
++  id: string;
++  gymId: string;
++  equipmentCode: string;
++  addedBy: string | null;
++  rev: number;
++  createdAt: string;
++  updatedAt: string;
++}
++
++export interface GymHistoryTable {
++  id: string;
++  gymId: string;
++  authorId: string | null;
++  at: string;
++  action: 'create' | 'update_info' | 'add_equipment' | 'remove_equipment' | 'update_load_settings';
++  detail: string;
++}
++
++export interface PlaceTable extends SyncColumns, SoftDelete {
++  id: string;
++  kind: 'gym' | 'home';
++  gymId: string | null;
++  name: string | null;
++  isPrimary: Generated<number>;
++  visibleAtGym: Generated<number>;
++  loadSettings: string | null;
++}
++
++export interface HomeEquipmentTable extends SyncColumns, SoftDelete {
++  id: string;
++  placeId: string;
++  equipmentCode: string;
++}
++
+ export interface Database {
+   serverMeta: ServerMetaTable;
+   schemaMigrations: SchemaMigrationsTable;
++  appliedOp: AppliedOpTable;
++  syncRejection: SyncRejectionTable;
++  user: UserTable;
++  invitation: InvitationTable;
++  passwordReset: PasswordResetTable;
++  session: SessionTable;
++  consentEvent: ConsentEventTable;
++  securityEvent: SecurityEventTable;
++  trainingProfile: TrainingProfileTable;
++  healthScreening: HealthScreeningTable;
++  limitation: LimitationTable;
++  gym: GymTable;
++  gymEquipment: GymEquipmentTable;
++  gymHistory: GymHistoryTable;
++  place: PlaceTable;
++  homeEquipment: HomeEquipmentTable;
+ }
+ 
+ export type DbExecutor = Kysely<Database> | Transaction<Database>;
+ 
+ /** Nom de table SQL (snake_case) vers clé de `Database` (camelCase) : 'training_profile' → 'trainingProfile'. */
+ export function tableKey(sqlTable: string): keyof Database {
+   return sqlTable.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase()) as keyof Database;
+ }
+diff --git a/apps/server/test/__snapshots__/schema.sql b/apps/server/test/__snapshots__/schema.sql
+new file mode 100644
+index 0000000..21a8bd3
+--- /dev/null
++++ b/apps/server/test/__snapshots__/schema.sql
+@@ -0,0 +1,46 @@
++CREATE TABLE applied_op (op_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, entity TEXT NOT NULL, row_id TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('applied','applied_partial','duplicate','rejected')), assigned_rev INTEGER, applied_at TEXT NOT NULL) STRICT;
++CREATE TABLE consent_event (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, type TEXT NOT NULL CHECK (type IN ('health','ai_coach')), action TEXT NOT NULL CHECK (action IN ('grant','withdraw')), text_version TEXT NOT NULL) STRICT;
++CREATE TABLE gym (id TEXT PRIMARY KEY, name TEXT NOT NULL CHECK (length(name) BETWEEN 2 AND 60), name_key TEXT NOT NULL, city TEXT NOT NULL CHECK (length(city) BETWEEN 2 AND 60), city_key TEXT NOT NULL, load_settings TEXT NOT NULL CHECK (json_valid(load_settings)), created_by TEXT REFERENCES user(id) ON DELETE SET NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT, UNIQUE (name_key, city_key)) STRICT;
++CREATE TABLE gym_equipment (id TEXT PRIMARY KEY, gym_id TEXT NOT NULL REFERENCES gym(id) ON DELETE CASCADE, equipment_code TEXT NOT NULL, added_by TEXT REFERENCES user(id) ON DELETE SET NULL, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT, CHECK (id = gym_id || ':' || equipment_code)) STRICT;
++CREATE TABLE gym_history (id TEXT PRIMARY KEY, gym_id TEXT NOT NULL REFERENCES gym(id) ON DELETE CASCADE, author_id TEXT REFERENCES user(id) ON DELETE SET NULL, at TEXT NOT NULL, action TEXT NOT NULL CHECK (action IN ('create','update_info','add_equipment','remove_equipment','update_load_settings')), detail TEXT NOT NULL CHECK (json_valid(detail))) STRICT;
++CREATE TABLE health_screening (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, caution INTEGER CHECK (caution IN (0,1)), questionnaire_version TEXT, answered_at TEXT, CHECK (id = owner_id), CHECK (deleted_at IS NOT NULL OR (caution IS NOT NULL AND questionnaire_version IS NOT NULL AND answered_at IS NOT NULL))) STRICT;
++CREATE TABLE home_equipment (id TEXT PRIMARY KEY, place_id TEXT NOT NULL REFERENCES place(id) ON DELETE CASCADE, equipment_code TEXT NOT NULL, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, CHECK (id = place_id || ':' || equipment_code)) STRICT;
++CREATE TABLE invitation (id TEXT PRIMARY KEY, code_hash TEXT NOT NULL UNIQUE, note TEXT CHECK (length(note) <= 60), birth_date TEXT, is_admin_bootstrap INTEGER NOT NULL DEFAULT 0 CHECK (is_admin_bootstrap IN (0,1)), created_by TEXT REFERENCES user(id) ON DELETE SET NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, used_by TEXT REFERENCES user(id) ON DELETE SET NULL, revoked_at TEXT) STRICT;
++CREATE TABLE limitation (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, body_area TEXT CHECK (body_area IN ('shoulder','elbow','wrist_hand','neck','upper_back','lower_back','hip','knee','ankle_foot','other')), side TEXT CHECK (side IN ('left','right','both','not_applicable')), severity TEXT CHECK (severity IN ('mild','severe')), note TEXT CHECK (length(note) <= 200), active INTEGER CHECK (active IN (0,1)), CHECK (deleted_at IS NOT NULL OR (body_area IS NOT NULL AND side IS NOT NULL AND severity IS NOT NULL AND active IS NOT NULL))) STRICT;
++CREATE TABLE password_reset (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, code_hash TEXT NOT NULL UNIQUE, created_by TEXT REFERENCES user(id) ON DELETE SET NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, cancelled_at TEXT) STRICT;
++CREATE TABLE place (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, kind TEXT NOT NULL CHECK (kind IN ('gym','home')), gym_id TEXT REFERENCES gym(id), name TEXT CHECK (length(name) <= 30), is_primary INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0,1)), visible_at_gym INTEGER NOT NULL DEFAULT 0 CHECK (visible_at_gym IN (0,1)), load_settings TEXT CHECK (json_valid(load_settings)), CHECK (kind = 'home' OR load_settings IS NULL), CHECK ((kind = 'gym') = (gym_id IS NOT NULL)), CHECK (kind = 'home' OR name IS NULL)) STRICT;
++CREATE TABLE schema_migrations (id TEXT PRIMARY KEY, breaking INTEGER NOT NULL CHECK (breaking IN (0,1)), applied_at TEXT NOT NULL) STRICT;
++CREATE TABLE security_event (id TEXT PRIMARY KEY, at TEXT NOT NULL, type TEXT NOT NULL, actor_id TEXT, target_id TEXT, tailnet_ip TEXT, outcome TEXT NOT NULL CHECK (outcome IN ('success','failure','blocked')), details TEXT CHECK (json_valid(details))) STRICT;
++CREATE TABLE server_meta (id INTEGER PRIMARY KEY CHECK (id = 1), server_epoch TEXT NOT NULL, epoch_started_at TEXT NOT NULL, epoch_base_rev INTEGER NOT NULL DEFAULT 0, sync_counter INTEGER NOT NULL DEFAULT 0, tombstone_purge_rev INTEGER NOT NULL DEFAULT 0, catalog_version TEXT, catalog_updated_at TEXT) STRICT;
++CREATE TABLE session (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, user_id TEXT REFERENCES user(id) ON DELETE SET NULL, created_at TEXT NOT NULL, last_seen_at TEXT NOT NULL, expires_at TEXT NOT NULL, must_change_password INTEGER NOT NULL DEFAULT 0 CHECK (must_change_password IN (0,1)), revoked_at TEXT, revoked_reason TEXT CHECK (revoked_reason IN ('logout','logout_all','password_change','password_reset','admin','account_deleted'))) STRICT;
++CREATE TABLE sync_rejection (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, op_id TEXT NOT NULL, entity TEXT NOT NULL, row_id TEXT NOT NULL, code TEXT NOT NULL CHECK (code IN ('validation','forbidden','parent_rejected','stale_revision','unknown_entity','protocol')), detail_json TEXT CHECK (json_valid(detail_json)), dismissed_at TEXT) STRICT;
++CREATE TABLE training_profile (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, goal TEXT CHECK (goal IN ('muscle','strength','fat_loss','fitness','sport_support')), experience TEXT CHECK (experience IN ('none','lt_6_months','6_to_24_months','gt_24_months')), days_per_week INTEGER CHECK (days_per_week BETWEEN 2 AND 4), session_minutes INTEGER CHECK (session_minutes IN (30,45,60,75,90)), sport_code TEXT, sport_other_label TEXT CHECK (length(sport_other_label) <= 40), cautious_mode INTEGER NOT NULL DEFAULT 0 CHECK (cautious_mode IN (0,1)), CHECK (id = owner_id)) STRICT;
++CREATE TABLE user (id TEXT PRIMARY KEY, username TEXT NOT NULL, username_key TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('admin','member')), status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')), birth_date TEXT NOT NULL, terms_version TEXT, terms_accepted_at TEXT, last_login_at TEXT, password_changed_at TEXT, onboarding_step TEXT CHECK (onboarding_step IN ('goal','sport','place_kind','place','experience','availability','health','ready')), onboarding_completed_at TEXT, invitation_id TEXT REFERENCES invitation(id) ON DELETE SET NULL, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL) STRICT;
++CREATE INDEX applied_op_user_applied_idx ON applied_op (user_id, applied_at);
++CREATE INDEX consent_event_owner_rev_idx ON consent_event (owner_id, rev);
++CREATE INDEX consent_event_owner_type_created_idx ON consent_event (owner_id, type, created_at);
++CREATE INDEX consent_event_rev_idx ON consent_event (rev);
++CREATE INDEX gym_equipment_gym_idx ON gym_equipment (gym_id);
++CREATE INDEX gym_equipment_rev_idx ON gym_equipment (rev);
++CREATE INDEX gym_history_gym_at_idx ON gym_history (gym_id, at);
++CREATE INDEX gym_rev_idx ON gym (rev);
++CREATE INDEX health_screening_owner_rev_idx ON health_screening (owner_id, rev);
++CREATE INDEX health_screening_rev_idx ON health_screening (rev);
++CREATE INDEX home_equipment_owner_rev_idx ON home_equipment (owner_id, rev);
++CREATE INDEX home_equipment_place_idx ON home_equipment (place_id);
++CREATE INDEX home_equipment_rev_idx ON home_equipment (rev);
++CREATE INDEX limitation_owner_rev_idx ON limitation (owner_id, rev);
++CREATE INDEX limitation_rev_idx ON limitation (rev);
++CREATE INDEX password_reset_user_idx ON password_reset (user_id);
++CREATE INDEX place_gym_idx ON place (gym_id);
++CREATE UNIQUE INDEX place_owner_gym_uq ON place (owner_id, gym_id) WHERE deleted_at IS NULL;
++CREATE UNIQUE INDEX place_owner_primary_uq ON place (owner_id) WHERE is_primary = 1 AND deleted_at IS NULL;
++CREATE INDEX place_owner_rev_idx ON place (owner_id, rev);
++CREATE INDEX place_rev_idx ON place (rev);
++CREATE INDEX security_event_at_idx ON security_event (at);
++CREATE INDEX session_user_idx ON session (user_id);
++CREATE INDEX sync_rejection_owner_rev_idx ON sync_rejection (owner_id, rev);
++CREATE INDEX sync_rejection_rev_idx ON sync_rejection (rev);
++CREATE INDEX training_profile_owner_rev_idx ON training_profile (owner_id, rev);
++CREATE INDEX training_profile_rev_idx ON training_profile (rev);
++CREATE INDEX user_rev_idx ON user (rev);
+diff --git a/apps/server/test/db/m1.ts b/apps/server/test/db/m1.ts
+deleted file mode 100644
+index 2dd4133..0000000
+--- a/apps/server/test/db/m1.ts
++++ /dev/null
+@@ -1,13 +0,0 @@
+-import { sql } from 'kysely';
+-import type { Migration } from '../../src/db/migrations/index';
+-
+-/** Migration de test : crée server_meta selon le DDL de la Task 4b (remplacée par MIGRATIONS en Task 4b). */
+-export const m1: Migration = {
+-  id: '0001_t',
+-  breaking: false,
+-  up: async (db) => {
+-    await sql`CREATE TABLE server_meta (id INTEGER PRIMARY KEY CHECK (id = 1), server_epoch TEXT NOT NULL, epoch_started_at TEXT NOT NULL, epoch_base_rev INTEGER NOT NULL DEFAULT 0, sync_counter INTEGER NOT NULL DEFAULT 0, tombstone_purge_rev INTEGER NOT NULL DEFAULT 0, catalog_version TEXT, catalog_updated_at TEXT) STRICT`.execute(
+-      db,
+-    );
+-  },
+-};
+diff --git a/apps/server/test/db/migrate.test.ts b/apps/server/test/db/migrate.test.ts
+index 3757f4b..a823d01 100644
+--- a/apps/server/test/db/migrate.test.ts
++++ b/apps/server/test/db/migrate.test.ts
+@@ -1,17 +1,16 @@
+ import { type Kysely, sql } from 'kysely';
+ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+ import { migrate } from '../../src/db/migrate';
+-import type { Migration } from '../../src/db/migrations/index';
++import { MIGRATIONS, type Migration } from '../../src/db/migrations/index';
+ import { openDatabase } from '../../src/db/open';
+ import { FakeClock } from '../support';
+-import { m1 } from './m1';
+ 
+ describe('migrate', () => {
+   let close: () => void;
+   // biome-ignore lint/suspicious/noExplicitAny: base de test sans schéma typé
+   let db: Kysely<any>;
+   const clock = new FakeClock();
+   const tables = async () =>
+     (
+       await sql<{
+         name: string;
+@@ -19,50 +18,50 @@ describe('migrate', () => {
+     ).rows.map((r) => r.name);
+ 
+   beforeEach(() => {
+     const h = openDatabase(':memory:');
+     db = h.db;
+     close = () => h.sqlite.close();
+   });
+   afterEach(() => close());
+ 
+   it('applique une fois, puis ne fait plus rien', async () => {
+-    expect(await migrate(db, [m1], clock)).toEqual({ applied: ['0001_t'], unknownNonBreaking: [] });
+-    expect(await migrate(db, [m1], clock)).toEqual({ applied: [], unknownNonBreaking: [] });
++    expect(await migrate(db, MIGRATIONS, clock)).toEqual({ applied: ['0001_socle'], unknownNonBreaking: [] });
++    expect(await migrate(db, MIGRATIONS, clock)).toEqual({ applied: [], unknownNonBreaking: [] });
+     expect(await db.selectFrom('schemaMigrations').selectAll().execute()).toEqual([
+-      { id: '0001_t', breaking: 0, appliedAt: '2026-10-06T10:00:00.000Z' },
++      { id: '0001_socle', breaking: 0, appliedAt: '2026-10-06T10:00:00.000Z' },
+     ]);
+   });
+ 
+   it('un échec annule toute la série', async () => {
+     const fail: Migration = {
+       id: '0002_fail',
+       breaking: false,
+       up: async (trx) => {
+         await sql`CREATE TABLE x (a INTEGER) STRICT`.execute(trx);
+         throw new Error('boum');
+       },
+     };
+-    await expect(migrate(db, [m1, fail], clock)).rejects.toMatchObject({
++    await expect(migrate(db, [...MIGRATIONS, fail], clock)).rejects.toMatchObject({
+       name: 'MigrationError',
+       code: 'migration_failed',
+     });
+     expect(await tables()).toEqual(['schema_migrations']);
+     expect(await db.selectFrom('schemaMigrations').selectAll().execute()).toEqual([]);
+   });
+ 
+   it('migration inconnue cassante → unknown_breaking_migration (R-VER-7)', async () => {
+     await migrate(db, [], clock);
+     await sql`INSERT INTO schema_migrations (id, breaking, applied_at) VALUES ('0099_future', 1, 'x')`.execute(
+       db,
+     );
+-    await expect(migrate(db, [m1], clock)).rejects.toMatchObject({
++    await expect(migrate(db, MIGRATIONS, clock)).rejects.toMatchObject({
+       name: 'MigrationError',
+       code: 'unknown_breaking_migration',
+     });
+     expect(await tables()).toEqual(['schema_migrations']);
+   });
+ 
+   it('migrations inconnues non cassantes permises', async () => {
+     await migrate(db, [], clock);
+     await sql`INSERT INTO schema_migrations (id, breaking, applied_at) VALUES ('0002_future', 0, 'x')`.execute(
+       db,
+diff --git a/apps/server/test/db/rev.test.ts b/apps/server/test/db/rev.test.ts
+index 357ab08..33879e4 100644
+--- a/apps/server/test/db/rev.test.ts
++++ b/apps/server/test/db/rev.test.ts
+@@ -1,29 +1,29 @@
+ import { isUuidV7 } from '@appsport/domain';
+ import type { Kysely } from 'kysely';
+ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+ import { migrate } from '../../src/db/migrate';
++import { MIGRATIONS } from '../../src/db/migrations/index';
+ import { openDatabase } from '../../src/db/open';
+ import { nextRev, writeStamp } from '../../src/db/rev';
+ import { type Database, tableKey } from '../../src/db/schema';
+ import { getServerMeta, initServerMeta } from '../../src/db/server-meta';
+ import { FakeClock, seqIds } from '../support';
+-import { m1 } from './m1';
+ 
+ describe('server_meta et révisions', () => {
+   let close: () => void;
+   let db: Kysely<Database>;
+   beforeEach(async () => {
+     const h = openDatabase(':memory:');
+     db = h.db;
+     close = () => h.sqlite.close();
+-    await migrate(db, [m1], new FakeClock());
++    await migrate(db, MIGRATIONS, new FakeClock());
+   });
+   afterEach(() => close());
+ 
+   it('initServerMeta pose époque, date de début et compteurs', async () => {
+     const meta = await initServerMeta(db, { ids: seqIds(1), clock: new FakeClock() });
+     expect(isUuidV7(meta.serverEpoch)).toBe(true);
+     expect(meta).toMatchObject({
+       epochStartedAt: '2026-10-06T10:00:00.000Z',
+       epochBaseRev: 0,
+       syncCounter: 0,
+diff --git a/apps/server/test/db/schema-dump.ts b/apps/server/test/db/schema-dump.ts
+new file mode 100644
+index 0000000..a3a927e
+--- /dev/null
++++ b/apps/server/test/db/schema-dump.ts
+@@ -0,0 +1,11 @@
++import type { DatabaseSync } from 'node:sqlite';
++
++/** Instantané de sqlite_schema : tables puis index, par nom, chacun suivi de ';\n'. */
++export function dumpSchema(sqlite: DatabaseSync): string {
++  const rows = sqlite
++    .prepare(
++      "SELECT sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY (type = 'index'), name",
++    )
++    .all() as { sql: string }[];
++  return rows.map((r) => `${r.sql};\n`).join('');
++}
+diff --git a/apps/server/test/db/schema.test.ts b/apps/server/test/db/schema.test.ts
+new file mode 100644
+index 0000000..25867e1
+--- /dev/null
++++ b/apps/server/test/db/schema.test.ts
+@@ -0,0 +1,149 @@
++import { afterEach, beforeEach, describe, expect, it } from 'vitest';
++import { migrate } from '../../src/db/migrate';
++import { MIGRATIONS } from '../../src/db/migrations/index';
++import { openDatabase } from '../../src/db/open';
++import { FakeClock } from '../support';
++import { dumpSchema } from './schema-dump';
++
++const REFUS = /CHECK constraint failed|UNIQUE constraint failed|FOREIGN KEY constraint failed/;
++const S = "1, '2026-10-06T10:00:00.000Z', '2026-10-06T10:00:00.000Z'";
++const x = (n: number) => 'x'.repeat(n);
++
++describe('schéma du socle', () => {
++  let h: ReturnType<typeof openDatabase>;
++  const run = (q: string) => h.sqlite.exec(q);
++  const ok = (q: string) => expect(() => run(q)).not.toThrow();
++  const bad = (q: string) => expect(() => run(q)).toThrow(REFUS);
++  const count = (q: string) => (h.sqlite.prepare(q).get() as { n: number }).n;
++
++  const place = (id: string, owner: string, cols: string, vals: string) =>
++    `INSERT INTO place (id, owner_id, rev, created_at, updated_at, ${cols}) VALUES ('${id}', '${owner}', ${S}, ${vals})`;
++  const gym = (id: string, name: string, key = id) =>
++    `INSERT INTO gym (id, name, name_key, city, city_key, load_settings, rev, created_at, updated_at) VALUES ('${id}', '${name}', '${key}', 'Paris', '${key}', '{}', ${S})`;
++  const profile = (cols: string, vals: string, id = 'u1') =>
++    `INSERT INTO training_profile (id, owner_id, rev, created_at, updated_at, ${cols}) VALUES ('${id}', 'u1', ${S}, ${vals})`;
++  const consent = (action: string) =>
++    `INSERT INTO consent_event (id, owner_id, type, action, text_version, rev, created_at, updated_at) VALUES ('c-${action}', 'u1', 'health', '${action}', 'v1', ${S})`;
++  const session = (id: string, cols: string, vals: string) =>
++    `INSERT INTO session (id, token_hash, created_at, last_seen_at, expires_at, ${cols}) VALUES ('${id}', 't-${id}', 'x', 'x', 'x', ${vals})`;
++  const limitation = (area: string | null, note: string | null) =>
++    `INSERT INTO limitation (id, owner_id, rev, created_at, updated_at, body_area, side, severity, active, note) VALUES ('l1', 'u1', ${S}, ${area ? `'${area}'` : 'NULL'}, 'left', 'mild', 1, ${note ? `'${note}'` : 'NULL'})`;
++
++  beforeEach(async () => {
++    h = openDatabase(':memory:');
++    await migrate(h.db, MIGRATIONS, new FakeClock());
++    run(`INSERT INTO user (id, username, username_key, password_hash, role, birth_date, rev, created_at, updated_at) VALUES
++      ('u1', 'U1', 'u1', 'h', 'member', '1990-01-01', ${S}), ('u2', 'U2', 'u2', 'h', 'member', '1990-01-01', ${S})`);
++  });
++  afterEach(() => h.sqlite.close());
++
++  it('instantané de sqlite_schema', async () => {
++    await expect(dumpSchema(h.sqlite)).toMatchFileSnapshot('../__snapshots__/schema.sql');
++  });
++
++  it('18 tables, toutes STRICT', () => {
++    const rows = h.sqlite
++      .prepare(
++        "SELECT name, strict FROM pragma_table_list WHERE schema = 'main' AND name NOT LIKE 'sqlite_%'",
++      )
++      .all() as { name: string; strict: number }[];
++    expect(rows).toHaveLength(18);
++    expect(rows.every((r) => r.strict === 1)).toBe(true);
++  });
++
++  it('server_meta, user et training_profile', () => {
++    const meta = (id: number) =>
++      `INSERT INTO server_meta (id, server_epoch, epoch_started_at) VALUES (${id}, 'e', 'x')`;
++    ok(meta(1));
++    bad(meta(2));
++    bad("UPDATE user SET role = 'root' WHERE id = 'u1'");
++    bad("UPDATE user SET onboarding_step = 'nope' WHERE id = 'u1'");
++    ok("UPDATE user SET onboarding_step = NULL WHERE id = 'u1'");
++    ok(profile('goal, experience, days_per_week, session_minutes', 'NULL, NULL, NULL, NULL'));
++    run('DELETE FROM training_profile');
++    bad(profile('goal', 'NULL', 'autre'));
++    bad(profile('days_per_week', '5'));
++    bad(profile('session_minutes', '50'));
++    bad(profile('sport_other_label', `'${x(41)}'`));
++    ok(profile('sport_other_label', `'${x(40)}'`));
++  });
++
++  it('health_screening et limitation', () => {
++    const hs = (del: string) =>
++      `INSERT INTO health_screening (id, owner_id, rev, created_at, updated_at, deleted_at) VALUES ('u1', 'u1', ${S}, ${del})`;
++    bad(hs('NULL'));
++    ok(hs("'2026-10-06'"));
++    bad(limitation(null, null));
++    bad(limitation('tete', null));
++    bad(limitation('knee', x(201)));
++    ok(limitation('knee', x(200)));
++  });
++
++  it('place', () => {
++    run(gym('g1', 'Salle un'));
++    run(gym('g2', 'Salle deux'));
++    ok(place('p1', 'u1', 'kind, is_primary', "'home', 1"));
++    bad(place('p2', 'u1', 'kind, is_primary', "'home', 1"));
++    ok(place('p3', 'u1', 'kind, is_primary, deleted_at', "'home', 1, 'x'"));
++    ok(place('p4', 'u1', 'kind, gym_id', "'gym', 'g1'"));
++    bad(place('p5', 'u1', 'kind, gym_id', "'gym', 'g1'"));
++    ok(place('p6', 'u2', 'kind, gym_id', "'gym', 'g1'"));
++    bad(place('p7', 'u1', 'kind', "'gym'"));
++    bad(place('p8', 'u2', 'kind, gym_id, load_settings', "'gym', 'g2', '{}'"));
++    bad(place('p9', 'u2', 'kind, gym_id, name', "'gym', 'g2', 'x'"));
++    bad(place('pa', 'u2', 'kind, name', `'home', '${x(31)}'`));
++    ok(place('pb', 'u2', 'kind, name', `'home', '${x(30)}'`));
++  });
++
++  it('gym, équipements, invitation, session et journaux', () => {
++    ok(gym('g1', 'Salle un'));
++    bad(gym('g2', 'Salle deux', 'g1'));
++    bad(gym('g3', 'X'));
++    const ge = (id: string) =>
++      `INSERT INTO gym_equipment (id, gym_id, equipment_code, rev, created_at, updated_at) VALUES ('${id}', 'g1', 'barbell', ${S})`;
++    bad(ge('g1:dumbbell'));
++    ok(ge('g1:barbell'));
++    ok(place('p1', 'u1', 'kind', "'home'"));
++    const he = (id: string) =>
++      `INSERT INTO home_equipment (id, place_id, equipment_code, owner_id, rev, created_at, updated_at) VALUES ('${id}', 'p1', 'bench', 'u1', ${S})`;
++    bad(he('p1:other'));
++    ok(he('p1:bench'));
++    const inv = (n: number) =>
++      `INSERT INTO invitation (id, code_hash, note, created_at, expires_at) VALUES ('i${n}', 'c${n}', '${x(n)}', 'x', 'x')`;
++    bad(inv(61));
++    ok(inv(60));
++    bad(session('s1', 'must_change_password', '2'));
++    bad(session('s2', 'revoked_reason', "'expired'"));
++    ok(session('s3', 'revoked_reason', "'logout'"));
++    bad(consent('revoke'));
++    ok(consent('grant'));
++    bad(
++      `INSERT INTO sync_rejection (id, owner_id, rev, created_at, updated_at, op_id, entity, row_id, code) VALUES ('r', 'u1', ${S}, 'o', 'e', 'r', 'nope')`,
++    );
++    bad(
++      "INSERT INTO applied_op (op_id, user_id, entity, row_id, status, applied_at) VALUES ('o', 'u1', 'e', 'r', 'nope', 'x')",
++    );
++    bad("INSERT INTO gym_history (id, gym_id, at, action, detail) VALUES ('h', 'g1', 'x', 'nope', '{}')");
++  });
++
++  it("suppression d'un user : cascades et SET NULL", () => {
++    run(profile('goal', "'muscle'"));
++    run(place('p1', 'u1', 'kind', "'home'"));
++    run(consent('grant'));
++    run(
++      "INSERT INTO password_reset (id, user_id, code_hash, created_at, expires_at) VALUES ('pr', 'u1', 'h', 'x', 'x')",
++    );
++    run(session('s', 'user_id', "'u1'"));
++    run(gym('g1', 'Salle un'));
++    run(
++      "INSERT INTO gym_history (id, gym_id, author_id, at, action, detail) VALUES ('h', 'g1', 'u1', 'x', 'create', '{}')",
++    );
++    run("DELETE FROM user WHERE id = 'u1'");
++    for (const t of ['training_profile', 'place', 'consent_event', 'password_reset']) {
++      expect(count(`SELECT count(*) AS n FROM ${t}`)).toBe(0);
++    }
++    expect(count("SELECT count(*) AS n FROM session WHERE id = 's' AND user_id IS NULL")).toBe(1);
++    expect(count("SELECT count(*) AS n FROM gym_history WHERE id = 'h' AND author_id IS NULL")).toBe(1);
++    expect(h.sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
++  });
++});
+diff --git a/apps/server/test/db/upgrade.test.ts b/apps/server/test/db/upgrade.test.ts
+new file mode 100644
+index 0000000..fb72189
+--- /dev/null
++++ b/apps/server/test/db/upgrade.test.ts
+@@ -0,0 +1,24 @@
++import { readFileSync } from 'node:fs';
++import { afterEach, beforeEach, describe, expect, it } from 'vitest';
++import { migrate } from '../../src/db/migrate';
++import { MIGRATIONS } from '../../src/db/migrations/index';
++import { openDatabase } from '../../src/db/open';
++import { FakeClock } from '../support';
++import { dumpSchema } from './schema-dump';
++
++const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8');
++
++describe('passage de la version précédente (01 §9.1.4)', () => {
++  let h: ReturnType<typeof openDatabase>;
++  beforeEach(() => {
++    h = openDatabase(':memory:');
++  });
++  afterEach(() => h.sqlite.close());
++
++  it('le schéma v1 figé est déjà à jour et identique à l’instantané', async () => {
++    h.sqlite.exec(read('../fixtures/schema-v1.sql'));
++    h.sqlite.exec("INSERT INTO schema_migrations VALUES ('0001_socle', 0, 'x')");
++    expect(await migrate(h.db, MIGRATIONS, new FakeClock())).toEqual({ applied: [], unknownNonBreaking: [] });
++    expect(dumpSchema(h.sqlite)).toBe(read('../__snapshots__/schema.sql'));
++  });
++});
+diff --git a/apps/server/test/fixtures/schema-v1.sql b/apps/server/test/fixtures/schema-v1.sql
+new file mode 100644
+index 0000000..21a8bd3
+--- /dev/null
++++ b/apps/server/test/fixtures/schema-v1.sql
+@@ -0,0 +1,46 @@
++CREATE TABLE applied_op (op_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, entity TEXT NOT NULL, row_id TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('applied','applied_partial','duplicate','rejected')), assigned_rev INTEGER, applied_at TEXT NOT NULL) STRICT;
++CREATE TABLE consent_event (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, type TEXT NOT NULL CHECK (type IN ('health','ai_coach')), action TEXT NOT NULL CHECK (action IN ('grant','withdraw')), text_version TEXT NOT NULL) STRICT;
++CREATE TABLE gym (id TEXT PRIMARY KEY, name TEXT NOT NULL CHECK (length(name) BETWEEN 2 AND 60), name_key TEXT NOT NULL, city TEXT NOT NULL CHECK (length(city) BETWEEN 2 AND 60), city_key TEXT NOT NULL, load_settings TEXT NOT NULL CHECK (json_valid(load_settings)), created_by TEXT REFERENCES user(id) ON DELETE SET NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT, UNIQUE (name_key, city_key)) STRICT;
++CREATE TABLE gym_equipment (id TEXT PRIMARY KEY, gym_id TEXT NOT NULL REFERENCES gym(id) ON DELETE CASCADE, equipment_code TEXT NOT NULL, added_by TEXT REFERENCES user(id) ON DELETE SET NULL, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT, CHECK (id = gym_id || ':' || equipment_code)) STRICT;
++CREATE TABLE gym_history (id TEXT PRIMARY KEY, gym_id TEXT NOT NULL REFERENCES gym(id) ON DELETE CASCADE, author_id TEXT REFERENCES user(id) ON DELETE SET NULL, at TEXT NOT NULL, action TEXT NOT NULL CHECK (action IN ('create','update_info','add_equipment','remove_equipment','update_load_settings')), detail TEXT NOT NULL CHECK (json_valid(detail))) STRICT;
++CREATE TABLE health_screening (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, caution INTEGER CHECK (caution IN (0,1)), questionnaire_version TEXT, answered_at TEXT, CHECK (id = owner_id), CHECK (deleted_at IS NOT NULL OR (caution IS NOT NULL AND questionnaire_version IS NOT NULL AND answered_at IS NOT NULL))) STRICT;
++CREATE TABLE home_equipment (id TEXT PRIMARY KEY, place_id TEXT NOT NULL REFERENCES place(id) ON DELETE CASCADE, equipment_code TEXT NOT NULL, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, CHECK (id = place_id || ':' || equipment_code)) STRICT;
++CREATE TABLE invitation (id TEXT PRIMARY KEY, code_hash TEXT NOT NULL UNIQUE, note TEXT CHECK (length(note) <= 60), birth_date TEXT, is_admin_bootstrap INTEGER NOT NULL DEFAULT 0 CHECK (is_admin_bootstrap IN (0,1)), created_by TEXT REFERENCES user(id) ON DELETE SET NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, used_by TEXT REFERENCES user(id) ON DELETE SET NULL, revoked_at TEXT) STRICT;
++CREATE TABLE limitation (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, body_area TEXT CHECK (body_area IN ('shoulder','elbow','wrist_hand','neck','upper_back','lower_back','hip','knee','ankle_foot','other')), side TEXT CHECK (side IN ('left','right','both','not_applicable')), severity TEXT CHECK (severity IN ('mild','severe')), note TEXT CHECK (length(note) <= 200), active INTEGER CHECK (active IN (0,1)), CHECK (deleted_at IS NOT NULL OR (body_area IS NOT NULL AND side IS NOT NULL AND severity IS NOT NULL AND active IS NOT NULL))) STRICT;
++CREATE TABLE password_reset (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, code_hash TEXT NOT NULL UNIQUE, created_by TEXT REFERENCES user(id) ON DELETE SET NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, cancelled_at TEXT) STRICT;
++CREATE TABLE place (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, kind TEXT NOT NULL CHECK (kind IN ('gym','home')), gym_id TEXT REFERENCES gym(id), name TEXT CHECK (length(name) <= 30), is_primary INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0,1)), visible_at_gym INTEGER NOT NULL DEFAULT 0 CHECK (visible_at_gym IN (0,1)), load_settings TEXT CHECK (json_valid(load_settings)), CHECK (kind = 'home' OR load_settings IS NULL), CHECK ((kind = 'gym') = (gym_id IS NOT NULL)), CHECK (kind = 'home' OR name IS NULL)) STRICT;
++CREATE TABLE schema_migrations (id TEXT PRIMARY KEY, breaking INTEGER NOT NULL CHECK (breaking IN (0,1)), applied_at TEXT NOT NULL) STRICT;
++CREATE TABLE security_event (id TEXT PRIMARY KEY, at TEXT NOT NULL, type TEXT NOT NULL, actor_id TEXT, target_id TEXT, tailnet_ip TEXT, outcome TEXT NOT NULL CHECK (outcome IN ('success','failure','blocked')), details TEXT CHECK (json_valid(details))) STRICT;
++CREATE TABLE server_meta (id INTEGER PRIMARY KEY CHECK (id = 1), server_epoch TEXT NOT NULL, epoch_started_at TEXT NOT NULL, epoch_base_rev INTEGER NOT NULL DEFAULT 0, sync_counter INTEGER NOT NULL DEFAULT 0, tombstone_purge_rev INTEGER NOT NULL DEFAULT 0, catalog_version TEXT, catalog_updated_at TEXT) STRICT;
++CREATE TABLE session (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, user_id TEXT REFERENCES user(id) ON DELETE SET NULL, created_at TEXT NOT NULL, last_seen_at TEXT NOT NULL, expires_at TEXT NOT NULL, must_change_password INTEGER NOT NULL DEFAULT 0 CHECK (must_change_password IN (0,1)), revoked_at TEXT, revoked_reason TEXT CHECK (revoked_reason IN ('logout','logout_all','password_change','password_reset','admin','account_deleted'))) STRICT;
++CREATE TABLE sync_rejection (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, op_id TEXT NOT NULL, entity TEXT NOT NULL, row_id TEXT NOT NULL, code TEXT NOT NULL CHECK (code IN ('validation','forbidden','parent_rejected','stale_revision','unknown_entity','protocol')), detail_json TEXT CHECK (json_valid(detail_json)), dismissed_at TEXT) STRICT;
++CREATE TABLE training_profile (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, goal TEXT CHECK (goal IN ('muscle','strength','fat_loss','fitness','sport_support')), experience TEXT CHECK (experience IN ('none','lt_6_months','6_to_24_months','gt_24_months')), days_per_week INTEGER CHECK (days_per_week BETWEEN 2 AND 4), session_minutes INTEGER CHECK (session_minutes IN (30,45,60,75,90)), sport_code TEXT, sport_other_label TEXT CHECK (length(sport_other_label) <= 40), cautious_mode INTEGER NOT NULL DEFAULT 0 CHECK (cautious_mode IN (0,1)), CHECK (id = owner_id)) STRICT;
++CREATE TABLE user (id TEXT PRIMARY KEY, username TEXT NOT NULL, username_key TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('admin','member')), status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')), birth_date TEXT NOT NULL, terms_version TEXT, terms_accepted_at TEXT, last_login_at TEXT, password_changed_at TEXT, onboarding_step TEXT CHECK (onboarding_step IN ('goal','sport','place_kind','place','experience','availability','health','ready')), onboarding_completed_at TEXT, invitation_id TEXT REFERENCES invitation(id) ON DELETE SET NULL, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL) STRICT;
++CREATE INDEX applied_op_user_applied_idx ON applied_op (user_id, applied_at);
++CREATE INDEX consent_event_owner_rev_idx ON consent_event (owner_id, rev);
++CREATE INDEX consent_event_owner_type_created_idx ON consent_event (owner_id, type, created_at);
++CREATE INDEX consent_event_rev_idx ON consent_event (rev);
++CREATE INDEX gym_equipment_gym_idx ON gym_equipment (gym_id);
++CREATE INDEX gym_equipment_rev_idx ON gym_equipment (rev);
++CREATE INDEX gym_history_gym_at_idx ON gym_history (gym_id, at);
++CREATE INDEX gym_rev_idx ON gym (rev);
++CREATE INDEX health_screening_owner_rev_idx ON health_screening (owner_id, rev);
++CREATE INDEX health_screening_rev_idx ON health_screening (rev);
++CREATE INDEX home_equipment_owner_rev_idx ON home_equipment (owner_id, rev);
++CREATE INDEX home_equipment_place_idx ON home_equipment (place_id);
++CREATE INDEX home_equipment_rev_idx ON home_equipment (rev);
++CREATE INDEX limitation_owner_rev_idx ON limitation (owner_id, rev);
++CREATE INDEX limitation_rev_idx ON limitation (rev);
++CREATE INDEX password_reset_user_idx ON password_reset (user_id);
++CREATE INDEX place_gym_idx ON place (gym_id);
++CREATE UNIQUE INDEX place_owner_gym_uq ON place (owner_id, gym_id) WHERE deleted_at IS NULL;
++CREATE UNIQUE INDEX place_owner_primary_uq ON place (owner_id) WHERE is_primary = 1 AND deleted_at IS NULL;
++CREATE INDEX place_owner_rev_idx ON place (owner_id, rev);
++CREATE INDEX place_rev_idx ON place (rev);
++CREATE INDEX security_event_at_idx ON security_event (at);
++CREATE INDEX session_user_idx ON session (user_id);
++CREATE INDEX sync_rejection_owner_rev_idx ON sync_rejection (owner_id, rev);
++CREATE INDEX sync_rejection_rev_idx ON sync_rejection (rev);
++CREATE INDEX training_profile_owner_rev_idx ON training_profile (owner_id, rev);
++CREATE INDEX training_profile_rev_idx ON training_profile (rev);
++CREATE INDEX user_rev_idx ON user (rev);

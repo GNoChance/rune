@@ -1,0 +1,459 @@
+# Review package: 5af20ac..HEAD
+
+## Commits
+69ee5d9 fix(synchro): âge des tombstones lu sur updated_at, deletedAt borné
+
+## Files changed
+ apps/server/src/sync/purge.ts                |  5 ++--
+ apps/server/src/sync/push.ts                 | 32 ++++++++++++++------
+ apps/server/src/sync/restore-upsert.ts       | 15 ++++++----
+ apps/server/test/sync/purge.test.ts          | 44 +++++++++++++++++++++++-----
+ apps/server/test/sync/restore-upsert.test.ts | 34 +++++++++++++++++++++
+ 5 files changed, 106 insertions(+), 24 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/sync/purge.ts b/apps/server/src/sync/purge.ts
+index 365112f..5230709 100644
+--- a/apps/server/src/sync/purge.ts
++++ b/apps/server/src/sync/purge.ts
+@@ -45,21 +45,22 @@ function childrenFirst(tables: string[], incoming: Map<string, IncomingFk[]>): s
+     for (const t of next) {
+       pending.delete(t);
+       order.push(t);
+     }
+   }
+   return order;
+ }
+ 
+ /**
+  * Purge quotidienne de la synchro (R-SYN-26, 03 §7), en une transaction : tombstones J/D/E de plus
+- * de 90 j (hors salles et lieux), enfants avant parents, jamais un parent encore référencé ;
++ * de 90 j (âge lu sur `updated_at`, horodaté par le serveur, jamais sur le `deleted_at` du client),
++ * hors salles et lieux, enfants avant parents, jamais un parent encore référencé ;
+  * `tombstone_purge_rev` monte au plus grand rev supprimé ; `applied_op` de plus de 12 mois.
+  */
+ export const syncPurgeJob: DailyJob = {
+   name: 'sync-purge',
+   async run(deps: AppDeps) {
+     const now = deps.clock.now();
+     const tombstonesBefore = new Date(now.getTime() - TOMBSTONE_TTL_DAYS * DAY_MS).toISOString();
+     const opsBefore = subtractMonths(now, APPLIED_OP_TTL_MONTHS).toISOString();
+ 
+     const count = await deps.db.transaction().execute(async (trx) => {
+@@ -73,21 +74,21 @@ export const syncPurgeJob: DailyJob = {
+       const incoming = await incomingForeignKeys(trx);
+       let total = 0;
+       let maxRev = 0;
+       for (const table of childrenFirst(targets, incoming)) {
+         const referenced = (incoming.get(table) ?? []).map(
+           (fk) => sql`not exists (select 1 from ${sql.table(fk.child)} as c
+             where ${sql.ref(`c.${fk.from}`)} = ${sql.ref(`${table}.${fk.to}`)})`,
+         );
+         const conditions = [
+           sql`deleted_at is not null`,
+-          sql`deleted_at < ${tombstonesBefore}`,
++          sql`updated_at < ${tombstonesBefore}`,
+           ...referenced,
+         ];
+         const deleted = await sql<{ rev: number }>`delete from ${sql.table(table)}
+           where ${sql.join(conditions, sql` and `)} returning rev`.execute(trx);
+         total += deleted.rows.length;
+         for (const { rev } of deleted.rows) maxRev = Math.max(maxRev, rev);
+       }
+       if (maxRev > 0) {
+         await trx
+           .updateTable('serverMeta')
+diff --git a/apps/server/src/sync/push.ts b/apps/server/src/sync/push.ts
+index 49c2ff6..cc200f4 100644
+--- a/apps/server/src/sync/push.ts
++++ b/apps/server/src/sync/push.ts
+@@ -1,13 +1,14 @@
+ import {
+   camelToSnake,
+   type EntityRule,
++  EPOCH_RESEND_DAYS,
+   MIN_PROTOCOL,
+   type PushResult,
+   type RejectionCode,
+   SYNC_PROTOCOL,
+   SyncOp,
+   snakeToCamel,
+ } from '@appsport/contracts';
+ import { isUuidV7 } from '@appsport/domain';
+ import { sql, type Transaction } from 'kysely';
+ import { z } from 'zod';
+@@ -29,20 +30,21 @@ export class OpRejection extends Error {
+     this.name = 'OpRejection';
+     this.code = code;
+     this.reason = reason;
+   }
+ }
+ 
+ /** Op d'un autre utilisateur (opId ou userId) : refusée sans rien écrire. */
+ class UnrecordedRejection extends Error {}
+ 
+ const SQLITE_CONSTRAINT = 19;
++const DAY_MS = 86_400_000;
+ 
+ interface Batch {
+   trx: Transaction<Database>;
+   deps: AppDeps;
+   user: SessionUser;
+   consent: boolean;
+   rejectedRows: Set<string>;
+   written: Map<string, { entity: string; id: string }[]>;
+ }
+ 
+@@ -208,37 +210,42 @@ async function applyOp(b: Batch, raw: Raw): Promise<Applied> {
+   }
+   // 5. Utilisateur de la session.
+   if (op.userId !== user.id) throw new UnrecordedRejection();
+   // 6. Propriétaire de la ligne existante.
+   const existing = await readRow(trx, op.entity, op.id);
+   if (existing && existing.ownerId !== user.id) throw new OpRejection('forbidden', 'owner_mismatch');
+   // 7. Parent (à la création, et pour un patch qui change de parent).
+   if (rule.parent && (clientId || (op.kind === 'patch' && snakeToCamel(rule.parent.column) in op.fields))) {
+     await assertParent(b, rule.parent, op.fields);
+   }
+-  // 8. Table C2 sans accord : op écartée, rien d'écrit.
+-  if (!b.consent && rule.category === 'C2' && op.kind !== 'delete') {
++  // 8. Table C2 sans accord : op écartée, rien d'écrit ; une suppression (delete, ou restore_upsert
++  // portant deletedAt) l'emporte et n'écrit que la tombstone.
++  const restoredDeletion = op.kind === 'restore_upsert' && op.fields.deletedAt != null;
++  const c2Blocked = !b.consent && rule.category === 'C2';
++  if (c2Blocked && op.kind !== 'delete' && !restoredDeletion) {
+     await recordAppliedOp(b, op.opId, op.entity, op.id, 'applied_partial', null);
+     return { result: { opId: op.opId, status: 'applied_partial', dropped: true } };
+   }
+   // 9. Champs écrits par le client ; C2 à null sans accord ; restore_upsert admet aussi deletedAt.
+   const { fields, droppedFields } =
+-    op.kind === 'delete' ? { fields: {}, droppedFields: [] } : keepFields(rule, op.fields, b.consent);
++    op.kind === 'delete' || c2Blocked
++      ? { fields: {} as Record<string, unknown>, droppedFields: [] }
++      : keepFields(rule, op.fields, b.consent);
+   if (op.kind === 'restore_upsert' && Object.hasOwn(op.fields, 'deletedAt')) {
+-    fields.deleted_at = restoredDeletedAt(op.fields.deletedAt);
++    fields.deleted_at = restoredDeletedAt(op.fields.deletedAt, deps.clock.now());
+   }
+   // 10. Écriture.
+   const hookCtx: HookCtx = { trx, deps, userId: user.id, op };
+   await hooks?.beforeApply?.(hookCtx, fields);
+   const outcome =
+     op.kind === 'restore_upsert'
+-      ? restoreOutcome(await applyRestoreUpsert(hookCtx, rule, fields))
++      ? restoreOutcome(await applyRestoreUpsert(hookCtx, rule, fields, existing))
+       : await writeRow(b, op, existing, fields);
+   // 11.
+   if (outcome.wrote) await hooks?.afterApply?.(hookCtx);
+   // 12.
+   const status = droppedFields.length > 0 ? 'applied_partial' : 'applied';
+   await recordAppliedOp(b, op.opId, op.entity, op.id, status, outcome.rev);
+   return {
+     result: {
+       opId: op.opId,
+       status,
+@@ -295,25 +302,32 @@ async function assertParent(
+   const parentId = fields[snakeToCamel(parent.column)];
+   if (typeof parentId !== 'string' || b.rejectedRows.has(`${parent.entity}:${parentId}`)) {
+     throw new OpRejection('parent_rejected', 'parent_rejected');
+   }
+   const row = await readRow(b.trx, parent.entity, parentId);
+   if (!row || row.ownerId !== b.user.id) throw new OpRejection('parent_rejected', 'parent_rejected');
+ }
+ 
+ const IsoDateTime = z.iso.datetime();
+ 
+-/** deletedAt d'un restore_upsert : null ou horodatage ISO, sinon rejet validation. */
+-function restoredDeletedAt(value: unknown): string | null {
++/**
++ * deletedAt d'un restore_upsert : null ou horodatage ISO (sinon rejet validation), ramené dans
++ * [now − EPOCH_RESEND_DAYS, now] : une horloge d'appareil fausse ne date pas la tombstone.
++ */
++function restoredDeletedAt(value: unknown, now: Date): string | null {
+   if (value === null) return null;
+-  if (!IsoDateTime.safeParse(value).success) throw new OpRejection('validation', 'deleted_at');
+-  return value as string;
++  if (typeof value !== 'string' || !IsoDateTime.safeParse(value).success) {
++    throw new OpRejection('validation', 'deleted_at');
++  }
++  const earliest = now.getTime() - EPOCH_RESEND_DAYS * DAY_MS;
++  const ms = Math.min(Math.max(new Date(value).getTime(), earliest), now.getTime());
++  return new Date(ms).toISOString();
+ }
+ 
+ const restoreOutcome = (r: RestoreUpsertOutcome): { rev: number; wrote: boolean } => ({
+   rev: r.rev,
+   wrote: r.outcome !== 'kept',
+ });
+ 
+ function isC2Value(rule: EntityRule, column: string, value: unknown): boolean {
+   if (value === null || value === undefined) return false;
+   if (rule.c2Columns.includes(column)) return true;
+diff --git a/apps/server/src/sync/restore-upsert.ts b/apps/server/src/sync/restore-upsert.ts
+index 7463697..b46057f 100644
+--- a/apps/server/src/sync/restore-upsert.ts
++++ b/apps/server/src/sync/restore-upsert.ts
+@@ -1,42 +1,47 @@
+ import type { EntityRule } from '@appsport/contracts';
+ import { sql } from 'kysely';
+ import { writeStamp } from '../db/rev';
+ import { getServerMeta } from '../db/server-meta';
+ import type { HookCtx } from './hooks';
+ 
+ export type RestoreUpsertOutcome = { outcome: 'inserted' | 'replaced' | 'kept'; rev: number };
+ 
++/** Ligne déjà lue par le push (étape 6) ; `undefined` si l'id est inconnu. */
++export interface RestoreTarget {
++  rev: number;
++  deletedAt: string | null;
++}
++
+ /**
+  * Renvoi d'une ligne J après une nouvelle époque (R-SYN-27). `fields` : colonnes snake_case déjà
+  * filtrées, `deleted_at` compris s'il est fourni. Ligne absente → insérée ; ligne venue de la
+  * sauvegarde (rev ≤ epoch_base_rev) que le client avait vue plus récente (serverRevSeen > rev) →
+  * remplacée ; sinon gardée, sauf une suppression du client sur une ligne vivante, qui l'emporte.
++ * La règle n'est pas relue : le push n'admet que les tables J à `owner_id`.
+  */
+ export async function applyRestoreUpsert(
+   ctx: HookCtx,
+-  rule: EntityRule,
++  _rule: EntityRule,
+   fields: Record<string, unknown>,
++  existing: RestoreTarget | undefined,
+ ): Promise<RestoreUpsertOutcome> {
+   const { trx, deps, userId, op } = ctx;
+   const table = sql.table(op.entity);
+-  const found = await sql<{ rev: number; deletedAt: string | null }>`
+-    select rev, deleted_at from ${table} where id = ${op.id}`.execute(trx);
+-  const existing = found.rows[0];
+ 
+   if (!existing) {
+     const stamp = await writeStamp(trx, deps, userId);
+     const row: Record<string, unknown> = {
+       deleted_at: null,
+       ...fields,
+       id: op.id,
+-      [rule.ownerColumn ?? 'owner_id']: userId,
++      owner_id: userId,
+       rev: stamp.rev,
+       created_at: stamp.updatedAt,
+       updated_at: stamp.updatedAt,
+       updated_by: stamp.updatedBy,
+     };
+     const columns = sql.join(Object.keys(row).map((c) => sql.ref(c)));
+     await sql`insert into ${table} (${columns}) values (${sql.join(Object.values(row))})`.execute(trx);
+     return { outcome: 'inserted', rev: stamp.rev };
+   }
+ 
+diff --git a/apps/server/test/sync/purge.test.ts b/apps/server/test/sync/purge.test.ts
+index 848d6ed..0d1c9e7 100644
+--- a/apps/server/test/sync/purge.test.ts
++++ b/apps/server/test/sync/purge.test.ts
+@@ -34,43 +34,49 @@ async function setup(): Promise<Member> {
+ const bumpRev = () =>
+   (
+     ctx.deps.sqlite
+       .prepare('UPDATE server_meta SET sync_counter = sync_counter + 1 RETURNING sync_counter')
+       .get() as { sync_counter: number }
+   ).sync_counter;
+ 
+ const rowOf = (table: string, id: string) =>
+   ctx.deps.sqlite.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id) as Row | undefined;
+ 
+-function insertNote(owner: { id: string }, deletedAt: string | null): { id: string; rev: number } {
++/** Tombstone : updated_at (horodatage serveur de la suppression) vaut deletedAt sauf mention contraire. */
++function insertNote(
++  owner: { id: string },
++  deletedAt: string | null,
++  updatedAt = deletedAt ?? NOW,
++): { id: string; rev: number } {
+   const id = rowIds.uuidv7();
+   const rev = bumpRev();
+   ctx.deps.sqlite
+     .prepare(
+       'INSERT INTO fixture_note (id, owner_id, rev, created_at, updated_at, updated_by, deleted_at, title) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+     )
+-    .run(id, owner.id, rev, NOW, NOW, owner.id, deletedAt, 'note');
++    .run(id, owner.id, rev, NOW, updatedAt, owner.id, deletedAt, 'note');
+   return { id, rev };
+ }
+ 
+ function insertItem(
+   owner: { id: string },
+   noteId: string,
+   deletedAt: string | null,
++  updatedAt = deletedAt ?? NOW,
+ ): { id: string; rev: number } {
+   const id = rowIds.uuidv7();
+   const rev = bumpRev();
+   ctx.deps.sqlite
+     .prepare(
+       'INSERT INTO fixture_note_item (id, owner_id, rev, created_at, updated_at, updated_by, deleted_at, note_id, label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+     )
+-    .run(id, owner.id, rev, NOW, NOW, owner.id, deletedAt, noteId, 'item');
++    .run(id, owner.id, rev, NOW, updatedAt, owner.id, deletedAt, noteId, 'item');
+   return { id, rev };
+ }
+ 
+ function insertAppliedOp(owner: { id: string }, appliedAt: string): string {
+   const opId = rowIds.uuidv7();
+   ctx.deps.sqlite
+     .prepare(
+       "INSERT INTO applied_op (op_id, user_id, entity, row_id, status, assigned_rev, applied_at) VALUES (?, ?, 'fixture_note', ?, 'applied', 1, ?)",
+     )
+     .run(opId, owner.id, rowIds.uuidv7(), appliedAt);
+@@ -78,25 +84,23 @@ function insertAppliedOp(owner: { id: string }, appliedAt: string): string {
+ }
+ 
+ const purgeRev = async () => (await getServerMeta(ctx.deps.db)).tombstonePurgeRev;
+ 
+ describe('syncPurgeJob (tombstones à 90 j, applied_op à 12 mois)', () => {
+   it('tombstone de 91 j supprimée, de 89 j gardée ; gym et place jamais purgées', async () => {
+     const a = await setup();
+     const old = insertNote(a, OLD);
+     const recent = insertNote(a, RECENT);
+     const live = insertNote(a, null);
+-    const gym = await insertFixtureRow(ctx.deps.db, 'gym', { deletedAt: '2026-01-01T00:00:00.000Z' });
+-    const place = await insertFixtureRow(ctx.deps.db, 'place', {
+-      ownerId: a.id,
+-      deletedAt: '2026-01-01T00:00:00.000Z',
+-    });
++    const longAgo = { deletedAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' };
++    const gym = await insertFixtureRow(ctx.deps.db, 'gym', longAgo);
++    const place = await insertFixtureRow(ctx.deps.db, 'place', { ownerId: a.id, ...longAgo });
+ 
+     await syncPurgeJob.run(ctx.deps);
+ 
+     expect(rowOf('fixture_note', old.id)).toBeUndefined();
+     expect(rowOf('fixture_note', recent.id)).toBeDefined();
+     expect(rowOf('fixture_note', live.id)).toBeDefined();
+     expect(rowOf('gym', gym.id as string)).toBeDefined();
+     expect(rowOf('place', place.id as string)).toBeDefined();
+     expect(await purgeRev()).toBe(old.rev);
+     const log = lines.map((l) => JSON.parse(l)).find((l) => l.msg === 'sync purge');
+@@ -114,20 +118,44 @@ describe('syncPurgeJob (tombstones à 90 j, applied_op à 12 mois)', () => {
+     await syncPurgeJob.run(ctx.deps);
+ 
+     expect(rowOf('fixture_note', parent.id)).toBeUndefined();
+     expect(rowOf('fixture_note_item', child.id)).toBeUndefined();
+     expect(rowOf('fixture_note', other.id)).toBeUndefined();
+     expect(rowOf('fixture_note', keptParent.id)).toBeDefined();
+     expect(rowOf('fixture_note_item', liveChild.id)).toBeDefined();
+     expect(await purgeRev()).toBe(other.rev);
+   });
+ 
++  it("l'âge se lit sur updated_at (serveur), jamais sur le deleted_at du client", async () => {
++    const a = await setup();
++    const clockReset = insertNote(a, '1970-01-01T00:00:00.000Z', '2026-10-05T10:00:00.000Z');
++    const future = insertNote(a, '2099-01-01T00:00:00.000Z', OLD);
++
++    await syncPurgeJob.run(ctx.deps);
++
++    expect(rowOf('fixture_note', clockReset.id)).toBeDefined();
++    expect(rowOf('fixture_note', future.id)).toBeUndefined();
++    expect(await purgeRev()).toBe(future.rev);
++  });
++
++  it('parent à 91 j avec un enfant tombstone à 89 j → parent gardé', async () => {
++    const a = await setup();
++    const parent = insertNote(a, OLD);
++    const child = insertItem(a, parent.id, RECENT);
++
++    await syncPurgeJob.run(ctx.deps);
++
++    expect(rowOf('fixture_note', parent.id)).toBeDefined();
++    expect(rowOf('fixture_note_item', child.id)).toBeDefined();
++    expect(await purgeRev()).toBe(0);
++  });
++
+   it('tombstone_purge_rev ne diminue jamais', async () => {
+     const a = await setup();
+     insertNote(a, OLD);
+     ctx.deps.sqlite.prepare('UPDATE server_meta SET tombstone_purge_rev = 1000').run();
+     await syncPurgeJob.run(ctx.deps);
+     expect(await purgeRev()).toBe(1000);
+     await syncPurgeJob.run(ctx.deps);
+     expect(await purgeRev()).toBe(1000);
+   });
+ 
+diff --git a/apps/server/test/sync/restore-upsert.test.ts b/apps/server/test/sync/restore-upsert.test.ts
+index 5c0f5e9..949488a 100644
+--- a/apps/server/test/sync/restore-upsert.test.ts
++++ b/apps/server/test/sync/restore-upsert.test.ts
+@@ -140,20 +140,33 @@ describe('restore_upsert : trois branches (R-SYN-27)', () => {
+     const r = await syncPush(ctx, a.cookie, [ru(a, id, { title: 'client' }, 1_000_000)]);
+     expect(r.body.results[0]).toEqual({ opId: expect.any(String), status: 'applied', rev: rd });
+     expect(rowOf('fixture_note', id)?.deleted_at).not.toBeNull();
+   });
+ 
+   it('deletedAt invalide → validation', async () => {
+     const a = await setup();
+     const res = await syncPush(ctx, a.cookie, [ru(a, newId(), { title: 't', deletedAt: 'hier' })]);
+     expect(res.body.results[0]).toMatchObject({ status: 'rejected', code: 'validation' });
+   });
++
++  it('deletedAt ramené dans [now − 60 j, now] (horloge du client fausse)', async () => {
++    const a = await setup();
++    const future = newId();
++    const past = newId();
++    const res = await syncPush(ctx, a.cookie, [
++      ru(a, future, { title: 'f', deletedAt: '2099-01-01T00:00:00.000Z' }),
++      ru(a, past, { title: 'p', deletedAt: '1970-01-01T00:00:00.000Z' }),
++    ]);
++    expect(res.body.results.map((r: Row) => r.status)).toEqual(['applied', 'applied']);
++    expect(rowOf('fixture_note', future)?.deleted_at).toBe('2026-10-06T10:00:00.000Z');
++    expect(rowOf('fixture_note', past)?.deleted_at).toBe('2026-08-07T10:00:00.000Z');
++  });
+ });
+ 
+ describe('restore_upsert : garde-fous du push', () => {
+   it('sur sync_rejection → forbidden', async () => {
+     const a = await setup();
+     const res = await syncPush(ctx, a.cookie, [
+       ru(a, newId(), { dismissedAt: null }, null, 'sync_rejection'),
+     ]);
+     expect(res.body.results[0]).toMatchObject({ status: 'rejected', code: 'forbidden' });
+   });
+@@ -163,20 +176,41 @@ describe('restore_upsert : garde-fous du push', () => {
+     const id = newId();
+     const res = await syncPush(ctx, a.cookie, [ru(a, id, { value: 3 }, null, 'fixture_c2_log')]);
+     expect(res.body.results[0]).toEqual({
+       opId: expect.any(String),
+       status: 'applied_partial',
+       dropped: true,
+     });
+     expect(rowOf('fixture_c2_log', id)).toBeUndefined();
+   });
+ 
++  it('table C2 sans consentement : un restore_upsert portant deletedAt pose la tombstone, sans contenu', async () => {
++    const a = await setup();
++    const absent = newId();
++    const live = newId();
++    ctx.deps.sqlite
++      .prepare(
++        'INSERT INTO fixture_c2_log (id, owner_id, rev, created_at, updated_at, updated_by, deleted_at, value) VALUES (?, ?, 1, ?, ?, ?, NULL, 7)',
++      )
++      .run(live, a.id, '2026-10-06T10:00:00.000Z', '2026-10-06T10:00:00.000Z', a.id);
++    const deletedAt = '2026-10-01T08:00:00.000Z';
++    const res = await syncPush(ctx, a.cookie, [
++      ru(a, absent, { value: 3, deletedAt }, null, 'fixture_c2_log'),
++      ru(a, live, { value: 3, deletedAt }, null, 'fixture_c2_log'),
++    ]);
++    for (const r of res.body.results) {
++      expect(r).toEqual({ opId: expect.any(String), status: 'applied', rev: expect.any(Number) });
++    }
++    expect(rowOf('fixture_c2_log', absent)).toMatchObject({ deleted_at: deletedAt, value: null });
++    expect(rowOf('fixture_c2_log', live)).toMatchObject({ deleted_at: deletedAt, value: 7 });
++  });
++
+   it("ligne d'un autre → forbidden, ligne intacte", async () => {
+     const a = await setup();
+     const b = await createUserAndLogin(ctx, { username: 'bob' });
+     const { id, r1 } = await restoredNote(a);
+     const res = await syncPush(ctx, b.cookie, [ru(b, id, { title: 'vol' }, r1 + 1)]);
+     expect(res.body.results[0]).toMatchObject({ status: 'rejected', code: 'forbidden' });
+     expect(rowOf('fixture_note', id)).toMatchObject({ owner_id: a.id, title: 'sauvegarde' });
+   });
+ 
+   it('beforeApply puis afterApply seulement si la ligne est écrite', async () => {

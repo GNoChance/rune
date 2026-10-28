@@ -1,0 +1,1397 @@
+# Review package: 3808db2..HEAD
+
+## Commits
+0d1f995 feat(auth): connexion limitée, déconnexion, changement de mot de passe et /api/me
+
+## Files changed
+ apps/server/src/auth/limiter.ts                | 120 +++++++++++++++++
+ apps/server/src/auth/me-routes.ts              |  65 +++++++++
+ apps/server/src/auth/me.ts                     | 134 ++++++++++++++++++
+ apps/server/src/auth/routes.ts                 | 180 +++++++++++++++++++++++++
+ apps/server/src/http/client-ip.ts              |   7 +
+ apps/server/src/privacy/consent-state.ts       |  32 +++++
+ apps/server/src/routes.ts                      |   4 +
+ apps/server/test/auth/limiter.test.ts          |  94 +++++++++++++
+ apps/server/test/auth/login.test.ts            | 145 ++++++++++++++++++++
+ apps/server/test/auth/me.test.ts               | 159 ++++++++++++++++++++++
+ apps/server/test/auth/password-change.test.ts  | 134 ++++++++++++++++++
+ apps/server/test/privacy/consent-state.test.ts |  43 ++++++
+ apps/server/test/support/index.ts              |   1 +
+ apps/server/test/support/users.ts              |  70 ++++++++++
+ packages/contracts/src/api/auth.ts             |  57 ++++++++
+ 15 files changed, 1245 insertions(+)
+
+## Diff
+diff --git a/apps/server/src/auth/limiter.ts b/apps/server/src/auth/limiter.ts
+new file mode 100644
+index 0000000..161546b
+--- /dev/null
++++ b/apps/server/src/auth/limiter.ts
+@@ -0,0 +1,120 @@
++import { CODE_CHECKS_PER_HOUR, LOGIN_LIMITS } from '@appsport/contracts';
++import type { AppDeps, Clock } from '../deps';
++
++type Verdict = { allowed: true } | { allowed: false; retryAfterS: number };
++
++export interface LoginLimiter {
++  check(usernameKey: string, ip: string | null): Verdict;
++  recordFailure(usernameKey: string, ip: string | null): void;
++  recordSuccess(usernameKey: string): void;
++  unlock(usernameKey: string): void;
++}
++
++export interface IpLimiter {
++  hit(ip: string | null): { allowed: boolean; retryAfterS: number };
++}
++
++interface UserState {
++  consecutive: number;
++  lastFailureAt: number;
++  failures: number[];
++  lockedUntil: number;
++}
++
++const seconds = (ms: number): number => Math.ceil(ms / 1000);
++
++/** Limiteur en mémoire (R-AUTH-2, R-AUTH-3) : repart de zéro au redémarrage. */
++export function createLoginLimiter(clock: Clock): LoginLimiter {
++  const L = LOGIN_LIMITS;
++  const users = new Map<string, UserState>();
++  const ips = new Map<string, number[]>();
++  const recent = (times: number[], now: number): number[] => times.filter((t) => now - t < L.windowMs);
++
++  return {
++    check(usernameKey, ip) {
++      const now = clock.now().getTime();
++      const waits = [0];
++      const state = users.get(usernameKey);
++      if (state) {
++        if (state.lockedUntil > now) waits.push(state.lockedUntil - now);
++        if (state.consecutive >= L.consecutiveThreshold) {
++          const delay = Math.min(
++            L.firstDelayMs * 2 ** (state.consecutive - L.consecutiveThreshold),
++            L.maxDelayMs,
++          );
++          waits.push(state.lastFailureAt + delay - now);
++        }
++      }
++      const ipFailures = ip === null ? [] : recent(ips.get(ip) ?? [], now);
++      const oldest = ipFailures[0];
++      if (ipFailures.length >= L.ipMaxFailuresPerHour && oldest !== undefined) {
++        waits.push(oldest + L.windowMs - now);
++      }
++      const wait = Math.max(...waits);
++      return wait > 0 ? { allowed: false, retryAfterS: seconds(wait) } : { allowed: true };
++    },
++    recordFailure(usernameKey, ip) {
++      const now = clock.now().getTime();
++      const state = users.get(usernameKey) ?? {
++        consecutive: 0,
++        lastFailureAt: 0,
++        failures: [],
++        lockedUntil: 0,
++      };
++      state.consecutive += 1;
++      state.lastFailureAt = now;
++      state.failures = [...recent(state.failures, now), now];
++      if (state.failures.length >= L.hourlyMaxFailures) state.lockedUntil = now + L.lockMs;
++      users.set(usernameKey, state);
++      if (ip !== null) ips.set(ip, [...recent(ips.get(ip) ?? [], now), now]);
++    },
++    recordSuccess(usernameKey) {
++      const state = users.get(usernameKey);
++      if (state) state.consecutive = 0;
++    },
++    unlock(usernameKey) {
++      users.delete(usernameKey);
++    },
++  };
++}
++
++/** Compte seulement les essais acceptés ; un essai refusé ne prolonge pas le blocage. */
++export function createIpLimiter(clock: Clock, opts: { limit: number; windowMs: number }): IpLimiter {
++  const hits = new Map<string, number[]>();
++  return {
++    hit(ip) {
++      if (ip === null) return { allowed: true, retryAfterS: 0 };
++      const now = clock.now().getTime();
++      const inWindow = (hits.get(ip) ?? []).filter((t) => now - t < opts.windowMs);
++      const oldest = inWindow[0];
++      if (inWindow.length >= opts.limit && oldest !== undefined) {
++        hits.set(ip, inWindow);
++        return { allowed: false, retryAfterS: seconds(oldest + opts.windowMs - now) };
++      }
++      hits.set(ip, [...inWindow, now]);
++      return { allowed: true, retryAfterS: 0 };
++    },
++  };
++}
++
++export interface AuthLimiters {
++  login: LoginLimiter;
++  invitationCheck: IpLimiter;
++  resetCheck: IpLimiter;
++}
++
++const instances = new WeakMap<AppDeps, AuthLimiters>();
++
++export function authLimiters(deps: AppDeps): AuthLimiters {
++  let limiters = instances.get(deps);
++  if (!limiters) {
++    const codes = { limit: CODE_CHECKS_PER_HOUR, windowMs: LOGIN_LIMITS.windowMs };
++    limiters = {
++      login: createLoginLimiter(deps.clock),
++      invitationCheck: createIpLimiter(deps.clock, codes),
++      resetCheck: createIpLimiter(deps.clock, codes),
++    };
++    instances.set(deps, limiters);
++  }
++  return limiters;
++}
+diff --git a/apps/server/src/auth/me-routes.ts b/apps/server/src/auth/me-routes.ts
+new file mode 100644
+index 0000000..35ba336
+--- /dev/null
++++ b/apps/server/src/auth/me-routes.ts
+@@ -0,0 +1,65 @@
++import { UpdateMeRequest } from '@appsport/contracts';
++import { usernameKey, validateUsername } from '@appsport/domain';
++import { Hono } from 'hono';
++import type { AppEnv } from '../app-env';
++import { writeStamp } from '../db/rev';
++import type { AppDeps } from '../deps';
++import { validClientIp } from '../http/client-ip';
++import { httpError } from '../http/errors';
++import { parseJson } from '../http/validate';
++import { buildMe } from './me';
++import { logSecurityEvent } from './security-log';
++import { requireUser } from './session';
++
++const isUsernameConflict = (error: unknown): boolean =>
++  error instanceof Error && /UNIQUE constraint failed: user\.username_key/.test(error.message);
++
++export function meRoutes(deps: AppDeps): Hono<AppEnv> {
++  const routes = new Hono<AppEnv>();
++  routes.use('*', requireUser);
++
++  routes.get('/', async (c) => {
++    const user = c.get('user');
++    if (!user) throw httpError('unauthenticated');
++    return c.json(await buildMe(deps.db, deps, user.id, { mustChangePassword: user.mustChangePassword }));
++  });
++
++  routes.patch('/', async (c) => {
++    const user = c.get('user');
++    if (!user) throw httpError('unauthenticated');
++    const body = await parseJson(c, UpdateMeRequest);
++    const username = body.username.normalize('NFC');
++    const check = validateUsername(username);
++    if (!check.ok) throw httpError('username_invalid', { reason: check.reason });
++    const key = usernameKey(username);
++    try {
++      await deps.db.transaction().execute(async (trx) => {
++        const taken = await trx
++          .selectFrom('user')
++          .select('id')
++          .where('usernameKey', '=', key)
++          .where('id', '!=', user.id)
++          .executeTakeFirst();
++        if (taken) throw httpError('username_taken');
++        const stamp = await writeStamp(trx, deps, user.id);
++        await trx
++          .updateTable('user')
++          .set({ username, usernameKey: key, ...stamp })
++          .where('id', '=', user.id)
++          .execute();
++        await logSecurityEvent(trx, deps, {
++          type: 'username_changed',
++          actorId: user.id,
++          targetId: user.id,
++          ip: validClientIp(c),
++          outcome: 'success',
++        });
++      });
++    } catch (error) {
++      throw isUsernameConflict(error) ? httpError('username_taken') : error;
++    }
++    return c.json(await buildMe(deps.db, deps, user.id, { mustChangePassword: user.mustChangePassword }));
++  });
++
++  return routes;
++}
+diff --git a/apps/server/src/auth/me.ts b/apps/server/src/auth/me.ts
+new file mode 100644
+index 0000000..c68ceba
+--- /dev/null
++++ b/apps/server/src/auth/me.ts
+@@ -0,0 +1,134 @@
++import { ADMIN_PASSWORD_REMINDER_MONTHS, type AgeBand, type MeResponse } from '@appsport/contracts';
++import { ageBandOn, computeCautious, parisDate, usernameKey } from '@appsport/domain';
++import type { SessionUser } from '../app-env';
++import { writeStamp } from '../db/rev';
++import type { DbExecutor } from '../db/schema';
++import type { AppDeps } from '../deps';
++import { httpError } from '../http/errors';
++import { getConsentState, isHealthConsentActive } from '../privacy/consent-state';
++import { authLimiters } from './limiter';
++import { verifyPassword } from './password-hash';
++
++/** Ajoute des mois calendaires en UTC ; le jour est ramené à la fin du mois cible si besoin. */
++function addMonths(iso: string, months: number): Date {
++  const d = new Date(iso);
++  const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, 1));
++  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
++  target.setUTCDate(Math.min(d.getUTCDate(), lastDay));
++  target.setUTCHours(d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds());
++  return target;
++}
++
++/**
++ * Point d'extension R-AGE-3 : tranche d'âge et mode prudent, seuls éléments d'âge exposés
++ * aux autres briques (jamais `birthDate`).
++ */
++export async function userTraits(
++  db: DbExecutor,
++  deps: AppDeps,
++  userId: string,
++): Promise<{ ageBand: AgeBand; cautious: boolean }> {
++  const user = await db
++    .selectFrom('user')
++    .select('birthDate')
++    .where('id', '=', userId)
++    .executeTakeFirstOrThrow();
++  const profile = await db
++    .selectFrom('trainingProfile')
++    .select('cautiousMode')
++    .where('ownerId', '=', userId)
++    .where('deletedAt', 'is', null)
++    .executeTakeFirst();
++  const screening = await db
++    .selectFrom('healthScreening')
++    .select('caution')
++    .where('ownerId', '=', userId)
++    .where('deletedAt', 'is', null)
++    .executeTakeFirst();
++  const ageBand = ageBandOn(user.birthDate, parisDate(deps.clock.now()));
++  const cautious = computeCautious({
++    ageBand,
++    cautiousMode: profile?.cautiousMode === 1,
++    healthConsentActive: await isHealthConsentActive(db, userId),
++    caution: screening?.caution == null ? null : screening.caution === 1,
++  });
++  return { ageBand, cautious };
++}
++
++export async function buildMe(
++  db: DbExecutor,
++  deps: AppDeps,
++  userId: string,
++  opts: { mustChangePassword?: boolean } = {},
++): Promise<MeResponse> {
++  const user = await db.selectFrom('user').selectAll().where('id', '=', userId).executeTakeFirstOrThrow();
++  const { ageBand, cautious } = await userTraits(db, deps, userId);
++  const reminderDue =
++    user.role === 'admin' &&
++    addMonths(user.passwordChangedAt ?? user.createdAt, ADMIN_PASSWORD_REMINDER_MONTHS).getTime() <=
++      deps.clock.now().getTime();
++  return {
++    id: user.id,
++    username: user.username,
++    role: user.role,
++    status: user.status,
++    birthDate: user.birthDate,
++    ageBand,
++    cautious,
++    mustChangePassword: opts.mustChangePassword ?? false,
++    passwordReminderDue: reminderDue,
++    onboardingStep: user.onboardingStep,
++    onboardingCompletedAt: user.onboardingCompletedAt,
++    termsVersion: user.termsVersion,
++    consents: await getConsentState(db, userId),
++  };
++}
++
++/**
++ * Toute ressaisie du mot de passe passe par le limiteur de connexion du pseudo (P-AUT-5) :
++ * bloqué → 429, faux → 401, juste → compteur consécutif remis à zéro.
++ */
++export async function verifyUserPassword(
++  db: DbExecutor,
++  deps: AppDeps,
++  user: SessionUser,
++  password: string,
++  ip: string | null,
++): Promise<void> {
++  const limiter = authLimiters(deps).login;
++  const key = usernameKey(user.username);
++  const verdict = limiter.check(key, ip);
++  if (!verdict.allowed) throw httpError('rate_limited', { retryAfterS: verdict.retryAfterS });
++  const row = await db
++    .selectFrom('user')
++    .select('passwordHash')
++    .where('id', '=', user.id)
++    .executeTakeFirstOrThrow();
++  if (!(await verifyPassword(password, row.passwordHash))) {
++    limiter.recordFailure(key, ip);
++    throw httpError('invalid_credentials');
++  }
++  limiter.recordSuccess(key);
++}
++
++/** Écrit le nouveau haché et annule les réinitialisations en attente (leurs liens ne valent plus). */
++export async function storeNewPassword(
++  trx: DbExecutor,
++  deps: AppDeps,
++  userId: string,
++  passwordHash: string,
++): Promise<void> {
++  const stamp = await writeStamp(trx, deps, userId);
++  await trx
++    .updateTable('user')
++    .set({ passwordHash, passwordChangedAt: stamp.updatedAt, ...stamp })
++    .where('id', '=', userId)
++    .execute();
++  await trx
++    .updateTable('passwordReset')
++    .set({ cancelledAt: stamp.updatedAt })
++    .where('userId', '=', userId)
++    .where('usedAt', 'is', null)
++    .where('cancelledAt', 'is', null)
++    .execute();
++}
+diff --git a/apps/server/src/auth/routes.ts b/apps/server/src/auth/routes.ts
+new file mode 100644
+index 0000000..107d2ed
+--- /dev/null
++++ b/apps/server/src/auth/routes.ts
+@@ -0,0 +1,180 @@
++import { ChangePasswordRequest, LoginRequest, PASSWORD_MIN_ADMIN } from '@appsport/contracts';
++import { passwordLength, usernameKey, validatePassword } from '@appsport/domain';
++import { Hono } from 'hono';
++import type { AppEnv } from '../app-env';
++import { writeStamp } from '../db/rev';
++import type { AppDeps } from '../deps';
++import { validClientIp } from '../http/client-ip';
++import { httpError } from '../http/errors';
++import { parseJson } from '../http/validate';
++import { COMMON_PASSWORDS } from './common-passwords';
++import { authLimiters } from './limiter';
++import { buildMe, storeNewPassword, verifyUserPassword } from './me';
++import { hashPassword, needsRehash, verifyPassword } from './password-hash';
++import { logSecurityEvent } from './security-log';
++import {
++  clearSessionCookie,
++  createSession,
++  requireUser,
++  revokeSession,
++  revokeSessions,
++  setSessionCookie,
++} from './session';
++
++/** Empreinte factice, calculée une fois par `deps` : égalise le temps d'un pseudo inconnu. */
++const dummyHashes = new WeakMap<AppDeps, Promise<string>>();
++function dummyHash(deps: AppDeps): Promise<string> {
++  let hash = dummyHashes.get(deps);
++  if (!hash) {
++    hash = hashPassword('mot de passe factice', deps.config.argon2, deps.ids);
++    dummyHashes.set(deps, hash);
++  }
++  return hash;
++}
++
++export function authRoutes(deps: AppDeps): Hono<AppEnv> {
++  const routes = new Hono<AppEnv>();
++
++  routes.post('/login', async (c) => {
++    const body = await parseJson(c, LoginRequest);
++    const ip = validClientIp(c);
++    const key = usernameKey(body.username);
++    const limiter = authLimiters(deps).login;
++
++    const verdict = limiter.check(key, ip);
++    if (!verdict.allowed) {
++      await logSecurityEvent(deps.db, deps, {
++        type: 'login_blocked',
++        actorId: null,
++        targetId: null,
++        ip,
++        outcome: 'blocked',
++      });
++      throw httpError('rate_limited', { retryAfterS: verdict.retryAfterS });
++    }
++
++    const user = await deps.db
++      .selectFrom('user')
++      .selectAll()
++      .where('usernameKey', '=', key)
++      .executeTakeFirst();
++    const valid = await verifyPassword(body.password, user?.passwordHash ?? (await dummyHash(deps)));
++    if (!user || !valid) {
++      limiter.recordFailure(key, ip);
++      await logSecurityEvent(deps.db, deps, {
++        type: 'login_failed',
++        actorId: null,
++        targetId: user?.id ?? null,
++        ip,
++        outcome: 'failure',
++      });
++      throw httpError('invalid_credentials');
++    }
++    if (user.status === 'disabled') {
++      await logSecurityEvent(deps.db, deps, {
++        type: 'login_failed',
++        actorId: null,
++        targetId: user.id,
++        ip,
++        outcome: 'failure',
++        details: { reason: 'disabled' },
++      });
++      throw httpError('account_disabled');
++    }
++    limiter.recordSuccess(key);
++
++    if (needsRehash(user.passwordHash, deps.config.argon2)) {
++      // Hors transaction ; ni password_changed_at ni storeNewPassword : les liens en attente restent valides (R-MDP-4).
++      const passwordHash = await hashPassword(body.password, deps.config.argon2, deps.ids);
++      await deps.db.updateTable('user').set({ passwordHash }).where('id', '=', user.id).execute();
++    }
++
++    const mustChangePassword = user.role === 'admin' && passwordLength(body.password) < PASSWORD_MIN_ADMIN;
++    const { token } = await deps.db.transaction().execute(async (trx) => {
++      const stamp = await writeStamp(trx, deps, user.id);
++      await trx
++        .updateTable('user')
++        .set({ lastLoginAt: stamp.updatedAt, ...stamp })
++        .where('id', '=', user.id)
++        .execute();
++      const session = await createSession(trx, deps, user.id, { mustChangePassword });
++      await logSecurityEvent(trx, deps, {
++        type: 'login_succeeded',
++        actorId: user.id,
++        targetId: user.id,
++        ip,
++        outcome: 'success',
++      });
++      return session;
++    });
++    setSessionCookie(c, deps, token);
++    return c.json(await buildMe(deps.db, deps, user.id, { mustChangePassword }));
++  });
++
++  routes.post('/logout', requireUser, async (c) => {
++    const user = c.get('user');
++    const sessionId = c.get('sessionId');
++    if (!user || !sessionId) throw httpError('unauthenticated');
++    await deps.db.transaction().execute(async (trx) => {
++      await revokeSession(trx, deps, sessionId, 'logout');
++      await logSecurityEvent(trx, deps, {
++        type: 'logout',
++        actorId: user.id,
++        targetId: user.id,
++        ip: validClientIp(c),
++        outcome: 'success',
++      });
++    });
++    clearSessionCookie(c, deps);
++    return c.body(null, 204);
++  });
++
++  routes.post('/logout-all', requireUser, async (c) => {
++    const user = c.get('user');
++    if (!user) throw httpError('unauthenticated');
++    await deps.db.transaction().execute(async (trx) => {
++      const count = await revokeSessions(trx, deps, user.id, 'logout_all');
++      await logSecurityEvent(trx, deps, {
++        type: 'logout_all',
++        actorId: user.id,
++        targetId: user.id,
++        ip: validClientIp(c),
++        outcome: 'success',
++        details: { sessions: count },
++      });
++    });
++    clearSessionCookie(c, deps);
++    return c.body(null, 204);
++  });
++
++  routes.post('/password', requireUser, async (c) => {
++    const user = c.get('user');
++    const sessionId = c.get('sessionId');
++    if (!user || !sessionId) throw httpError('unauthenticated');
++    const body = await parseJson(c, ChangePasswordRequest);
++    const ip = validClientIp(c);
++    await verifyUserPassword(deps.db, deps, user, body.currentPassword, ip);
++    const check = validatePassword(body.newPassword, {
++      username: user.username,
++      role: user.role,
++      commonPasswords: COMMON_PASSWORDS,
++    });
++    if (!check.ok) throw httpError('password_rejected', { reason: check.reason });
++    const passwordHash = await hashPassword(body.newPassword, deps.config.argon2, deps.ids);
++    await deps.db.transaction().execute(async (trx) => {
++      await storeNewPassword(trx, deps, user.id, passwordHash);
++      await revokeSessions(trx, deps, user.id, 'password_change', sessionId);
++      await trx.updateTable('session').set({ mustChangePassword: 0 }).where('id', '=', sessionId).execute();
++      await logSecurityEvent(trx, deps, {
++        type: 'password_changed',
++        actorId: user.id,
++        targetId: user.id,
++        ip,
++        outcome: 'success',
++      });
++    });
++    return c.body(null, 204);
++  });
++
++  return routes;
++}
+diff --git a/apps/server/src/http/client-ip.ts b/apps/server/src/http/client-ip.ts
+index 9986178..4782c06 100644
+--- a/apps/server/src/http/client-ip.ts
++++ b/apps/server/src/http/client-ip.ts
+@@ -1,10 +1,11 @@
++import { isIP } from 'node:net';
+ import type { Context } from 'hono';
+ import type { AppEnv } from '../app-env';
+ 
+ function peerAddress(c: Context<AppEnv>): string | null {
+   const env = c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined;
+   const raw = env?.incoming?.socket?.remoteAddress;
+   if (!raw) return null;
+   return raw.startsWith('::ffff:') ? raw.slice(7) : raw;
+ }
+ 
+@@ -22,10 +23,16 @@ function isTrustedProxyPeer(ip: string): boolean {
+  * loopback ou le pont Docker, et seul X-Forwarded-For porte l'adresse réelle. Tout autre pair est pris tel quel.
+  */
+ export function clientIp(c: Context<AppEnv>): string | null {
+   const peer = peerAddress(c);
+   if (peer === null || isTrustedProxyPeer(peer)) {
+     const first = c.req.header('X-Forwarded-For')?.split(',')[0]?.trim();
+     if (first) return first;
+   }
+   return peer;
+ }
++
++/** Adresse du client si elle est syntaxiquement valide (IPv4 ou IPv6), sinon null : jamais une clé de limiteur arbitraire. */
++export function validClientIp(c: Context<AppEnv>): string | null {
++  const ip = c.get('clientIp');
++  return ip !== null && isIP(ip) !== 0 ? ip : null;
++}
+diff --git a/apps/server/src/privacy/consent-state.ts b/apps/server/src/privacy/consent-state.ts
+new file mode 100644
+index 0000000..6b5a077
+--- /dev/null
++++ b/apps/server/src/privacy/consent-state.ts
+@@ -0,0 +1,32 @@
++import type { ConsentState, ConsentStatus } from '@appsport/contracts';
++import type { DbExecutor } from '../db/schema';
++
++export type ConsentType = 'health' | 'ai_coach';
++
++const INACTIVE: ConsentStatus = { active: false, textVersion: null, at: null };
++
++async function latestEvent(db: DbExecutor, userId: string, type: ConsentType): Promise<ConsentStatus> {
++  const row = await db
++    .selectFrom('consentEvent')
++    .select(['action', 'textVersion', 'createdAt'])
++    .where('ownerId', '=', userId)
++    .where('type', '=', type)
++    .orderBy('createdAt', 'desc')
++    .orderBy('rev', 'desc')
++    .limit(1)
++    .executeTakeFirst();
++  if (!row) return { ...INACTIVE };
++  return { active: row.action === 'grant', textVersion: row.textVersion, at: row.createdAt };
++}
++
++/** R-CST-1 : le dernier événement de chaque type fait foi (created_at, puis rev). */
++export async function getConsentState(db: DbExecutor, userId: string): Promise<ConsentState> {
++  return {
++    health: await latestEvent(db, userId, 'health'),
++    aiCoach: await latestEvent(db, userId, 'ai_coach'),
++  };
++}
++
++export async function isHealthConsentActive(db: DbExecutor, userId: string): Promise<boolean> {
++  return (await latestEvent(db, userId, 'health')).active;
++}
+diff --git a/apps/server/src/routes.ts b/apps/server/src/routes.ts
+index 9ee7f0c..f827236 100644
+--- a/apps/server/src/routes.ts
++++ b/apps/server/src/routes.ts
+@@ -1,9 +1,13 @@
+ import type { Hono } from 'hono';
+ import type { AppEnv } from './app-env';
++import { meRoutes } from './auth/me-routes';
++import { authRoutes } from './auth/routes';
+ import type { AppDeps } from './deps';
+ import { healthRoutes } from './health/routes';
+ 
+ /** Un routeur par ligne ; les routeurs des tâches suivantes s'ajoutent ici. */
+ export function mountRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
+   app.route('/', healthRoutes(deps));
++  app.route('/api/auth', authRoutes(deps));
++  app.route('/api/me', meRoutes(deps));
+ }
+diff --git a/apps/server/test/auth/limiter.test.ts b/apps/server/test/auth/limiter.test.ts
+new file mode 100644
+index 0000000..91db7c6
+--- /dev/null
++++ b/apps/server/test/auth/limiter.test.ts
+@@ -0,0 +1,94 @@
++import { describe, expect, it } from 'vitest';
++import { createIpLimiter, createLoginLimiter } from '../../src/auth/limiter';
++import { FakeClock } from '../support';
++
++const IP = '100.64.0.9';
++const setup = () => {
++  const clock = new FakeClock();
++  return { clock, limiter: createLoginLimiter(clock) };
++};
++
++describe('limiteur de connexion par pseudo (R-AUTH-2)', () => {
++  it('bloque dès le 5e échec consécutif, puis double jusqu au plafond de 900 s', () => {
++    const { clock, limiter } = setup();
++    for (let i = 0; i < 4; i += 1) limiter.recordFailure('lea', null);
++    expect(limiter.check('lea', null)).toEqual({ allowed: true });
++    limiter.recordFailure('lea', null);
++    expect(limiter.check('lea', null)).toEqual({ allowed: false, retryAfterS: 60 });
++    let wait = 60;
++    for (const expected of [120, 240, 480, 900]) {
++      clock.advance(wait * 1000 - 1000);
++      expect(limiter.check('lea', null)).toEqual({ allowed: false, retryAfterS: 1 });
++      clock.advance(1000);
++      expect(limiter.check('lea', null)).toEqual({ allowed: true });
++      limiter.recordFailure('lea', null);
++      expect(limiter.check('lea', null)).toEqual({ allowed: false, retryAfterS: expected });
++      wait = expected;
++    }
++  });
++
++  it('verrouille une heure au 10e échec de la fenêtre', () => {
++    const { clock, limiter } = setup();
++    for (let i = 0; i < 10; i += 1) limiter.recordFailure('lea', null);
++    expect(limiter.check('lea', null)).toEqual({ allowed: false, retryAfterS: 3600 });
++    clock.advance(3_599_000);
++    expect(limiter.check('lea', null)).toEqual({ allowed: false, retryAfterS: 1 });
++    clock.advance(1000);
++    expect(limiter.check('lea', null)).toEqual({ allowed: true });
++  });
++
++  it('un succès remet le compteur consécutif à zéro mais pas la fenêtre d une heure', () => {
++    const { limiter } = setup();
++    for (let i = 0; i < 4; i += 1) limiter.recordFailure('lea', null);
++    limiter.recordSuccess('lea');
++    for (let i = 0; i < 4; i += 1) limiter.recordFailure('lea', null);
++    expect(limiter.check('lea', null)).toEqual({ allowed: true });
++    limiter.recordSuccess('lea');
++    limiter.recordFailure('lea', null);
++    limiter.recordFailure('lea', null);
++    expect(limiter.check('lea', null)).toEqual({ allowed: false, retryAfterS: 3600 });
++  });
++
++  it('les échecs de plus d une heure sortent de la fenêtre', () => {
++    const { clock, limiter } = setup();
++    for (let i = 0; i < 4; i += 1) limiter.recordFailure('lea', null);
++    clock.advance(3_600_000);
++    for (let i = 0; i < 4; i += 1) limiter.recordFailure('lea', null);
++    limiter.recordSuccess('lea');
++    limiter.recordFailure('lea', null);
++    limiter.recordFailure('lea', null);
++    expect(limiter.check('lea', null)).toEqual({ allowed: true });
++  });
++
++  it('unlock efface l état du pseudo', () => {
++    const { limiter } = setup();
++    for (let i = 0; i < 10; i += 1) limiter.recordFailure('lea', null);
++    limiter.unlock('lea');
++    expect(limiter.check('lea', null)).toEqual({ allowed: true });
++  });
++});
++
++describe('limiteur de connexion par IP (R-AUTH-3)', () => {
++  it('30 échecs d une IP bloquent tous les pseudos pour cette IP seulement', () => {
++    const { limiter } = setup();
++    for (let i = 0; i < 30; i += 1) limiter.recordFailure(`pseudo${i}`, IP);
++    expect(limiter.check('lea', IP)).toEqual({ allowed: false, retryAfterS: 3600 });
++    expect(limiter.check('lea', '100.64.0.10')).toEqual({ allowed: true });
++    expect(limiter.check('lea', null)).toEqual({ allowed: true });
++    limiter.unlock('lea');
++    expect(limiter.check('lea', IP)).toEqual({ allowed: false, retryAfterS: 3600 });
++  });
++});
++
++describe('limiteur d IP (codes)', () => {
++  it('accepte 20 essais par heure et par IP', () => {
++    const clock = new FakeClock();
++    const limiter = createIpLimiter(clock, { limit: 20, windowMs: 3_600_000 });
++    for (let i = 0; i < 20; i += 1) expect(limiter.hit(IP).allowed).toBe(true);
++    expect(limiter.hit(IP)).toEqual({ allowed: false, retryAfterS: 3600 });
++    expect(limiter.hit(IP)).toEqual({ allowed: false, retryAfterS: 3600 });
++    expect(limiter.hit('100.64.0.10').allowed).toBe(true);
++    clock.advance(3_600_000);
++    expect(limiter.hit(IP).allowed).toBe(true);
++  });
++});
+diff --git a/apps/server/test/auth/login.test.ts b/apps/server/test/auth/login.test.ts
+new file mode 100644
+index 0000000..249b412
+--- /dev/null
++++ b/apps/server/test/auth/login.test.ts
+@@ -0,0 +1,145 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { hashPassword } from '../../src/auth/password-hash';
++import { createTestContext, createUser, login, TEST_ARGON2, type TestContext } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx.close());
++
++const IP = '100.64.0.1';
++const BAD = 'faux faux faux faux';
++const post = (username: string, password: string, ip = IP) =>
++  ctx.request('/api/auth/login', { method: 'POST', json: { username, password }, ip });
++const events = (type: string) =>
++  ctx.deps.db.selectFrom('securityEvent').selectAll().where('type', '=', type).orderBy('id').execute();
++const userRow = (id: string) =>
++  ctx.deps.db.selectFrom('user').selectAll().where('id', '=', id).executeTakeFirstOrThrow();
++
++describe('POST /api/auth/login', () => {
++  it('connecte, pose le cookie et journalise (casse ignorée)', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa' });
++    const before = await userRow(u.id);
++    ctx.clock.advance(1000);
++    const res = await post('LÉA', u.password);
++    expect(res.status).toBe(200);
++    expect(await res.json()).toMatchObject({ username: 'Léa', role: 'member', mustChangePassword: false });
++    expect(res.headers.get('set-cookie')).toMatch(/^__Host-session=/);
++    const after = await userRow(u.id);
++    expect(after.lastLoginAt).toBe('2026-10-06T10:00:01.000Z');
++    expect(after.rev).toBeGreaterThan(before.rev);
++    const [ev] = await events('login_succeeded');
++    expect(ev).toMatchObject({ outcome: 'success', tailnetIp: '100.64.0.1', actorId: u.id });
++  });
++
++  it('mauvais mot de passe ou pseudo inconnu : 401 et login_failed', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa' });
++    for (const name of ['Léa', 'inconnu']) {
++      const res = await post(name, BAD);
++      expect(res.status).toBe(401);
++      expect(await res.json()).toEqual({ error: 'invalid_credentials' });
++      expect(res.headers.get('set-cookie')).toBeNull();
++    }
++    const failed = await events('login_failed');
++    expect(failed.map((e) => [e.outcome, e.targetId])).toEqual([
++      ['failure', u.id],
++      ['failure', null],
++    ]);
++  });
++
++  it('5 échecs bloquent 60 s (pseudo existant ou non), puis 200 (02 §15 n°7)', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa' });
++    for (let i = 0; i < 5; i += 1) expect((await post('Léa', BAD)).status).toBe(401);
++    for (let i = 0; i < 2; i += 1) {
++      const res = await post('Léa', u.password);
++      expect(res.status).toBe(429);
++      expect(await res.json()).toEqual({ error: 'rate_limited', retryAfterS: 60 });
++    }
++    expect(await events('login_blocked')).toHaveLength(2);
++    ctx.clock.advance(60_000);
++    expect((await post('Léa', u.password)).status).toBe(200);
++    for (let i = 0; i < 5; i += 1) expect((await post('fantome', 'x')).status).toBe(401);
++    const ghost = await post('fantome', 'x');
++    expect(ghost.status).toBe(429);
++    expect(await ghost.json()).toEqual({ error: 'rate_limited', retryAfterS: 60 });
++  });
++
++  it('10e échec dans l heure : verrou d une heure ; un succès intercalé remet le compteur à zéro', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa' });
++    for (let i = 0; i < 4; i += 1) await post('Léa', BAD);
++    expect((await post('Léa', u.password)).status).toBe(200);
++    for (let i = 0; i < 4; i += 1) await post('Léa', BAD);
++    expect((await post('Léa', u.password)).status).toBe(200);
++    await post('Léa', BAD);
++    await post('Léa', BAD);
++    const res = await post('Léa', u.password);
++    expect(res.status).toBe(429);
++    expect(await res.json()).toEqual({ error: 'rate_limited', retryAfterS: 3600 });
++    ctx.clock.advance(3_600_000);
++    expect((await post('Léa', u.password)).status).toBe(200);
++  });
++
++  it('30 échecs d une IP la bloquent, une autre IP passe (R-AUTH-3)', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa' });
++    for (let i = 0; i < 30; i += 1) await post(`inconnu${i}`, 'x', '100.64.0.9');
++    expect((await post('Léa', u.password, '100.64.0.9')).status).toBe(429);
++    expect((await post('Léa', u.password, '100.64.0.10')).status).toBe(200);
++  });
++
++  it('adresse illisible : ignorée par le limiteur et journalisée sans IP', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa' });
++    const res = await ctx.request('/api/auth/login', {
++      method: 'POST',
++      json: { username: 'Léa', password: u.password },
++      headers: { 'X-Forwarded-For': 'pas-une-ip' },
++    });
++    expect(res.status).toBe(200);
++    const [ev] = await events('login_succeeded');
++    expect(ev?.tailnetIp).toBeNull();
++  });
++
++  it('compte désactivé : invalid_credentials si faux, account_disabled sans cookie si juste (R-AUTH-5)', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa', status: 'disabled' });
++    const bad = await post('Léa', BAD);
++    expect(await bad.json()).toEqual({ error: 'invalid_credentials' });
++    const res = await post('Léa', u.password);
++    expect(res.status).toBe(403);
++    expect(await res.json()).toEqual({ error: 'account_disabled' });
++    expect(res.headers.get('set-cookie')).toBeNull();
++    const failed = await events('login_failed');
++    expect(JSON.parse(failed[1]?.details ?? '{}')).toEqual({ reason: 'disabled' });
++  });
++
++  it('admin avec moins de 14 caractères : changement obligatoire (R-MDP-1)', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Chef', role: 'admin', password: 'abcdefghijklm' });
++    const res = await post('Chef', u.password);
++    expect(await res.json()).toMatchObject({ role: 'admin', mustChangePassword: true });
++    const cookie = res.headers.get('set-cookie')?.split(';')[0] ?? '';
++    expect((await ctx.request('/api/me', { cookie })).status).toBe(200);
++    const out = await ctx.request('/api/auth/logout-all', { method: 'POST', cookie, json: {} });
++    expect(out.status).toBe(403);
++    expect(await out.json()).toEqual({ error: 'password_change_required' });
++  });
++
++  it('re-hache au besoin sans toucher password_changed_at (R-MDP-4)', async () => {
++    ctx = await createTestContext({ config: { argon2: { ...TEST_ARGON2, memoryKiB: 2048 } } });
++    const u = await createUser(ctx, { username: 'Léa' });
++    const old = await hashPassword(u.password, TEST_ARGON2, ctx.deps.ids);
++    await ctx.deps.db
++      .updateTable('user')
++      .set({ passwordHash: old, passwordChangedAt: '2026-09-01T00:00:00.000Z' })
++      .where('id', '=', u.id)
++      .execute();
++    await login(ctx, 'Léa', u.password);
++    const row = await userRow(u.id);
++    expect(row.passwordHash).toMatch(/^\$argon2id\$v=19\$m=2048,t=1,p=1\$/);
++    expect(row.passwordHash).not.toBe(old);
++    expect(row.passwordChangedAt).toBe('2026-09-01T00:00:00.000Z');
++  });
++});
+diff --git a/apps/server/test/auth/me.test.ts b/apps/server/test/auth/me.test.ts
+new file mode 100644
+index 0000000..373ef07
+--- /dev/null
++++ b/apps/server/test/auth/me.test.ts
+@@ -0,0 +1,159 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { userTraits } from '../../src/auth/me';
++import { createTestContext, createUser, insertFixtureRow, login, type TestContext } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx.close());
++
++const me = async (cookie: string) =>
++  (await (await ctx.request('/api/me', { cookie })).json()) as Record<string, unknown>;
++const patch = (cookie: string, json: unknown) => ctx.request('/api/me', { method: 'PATCH', cookie, json });
++const userRow = (id: string) =>
++  ctx.deps.db.selectFrom('user').selectAll().where('id', '=', id).executeTakeFirstOrThrow();
++
++describe('GET /api/me', () => {
++  it('rend le profil complet', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa', onboarded: true });
++    const body = await me(await login(ctx, 'Léa', u.password));
++    expect(body).toMatchObject({
++      id: u.id,
++      username: 'Léa',
++      role: 'member',
++      status: 'active',
++      birthDate: '1990-01-01',
++      ageBand: 'adult',
++      cautious: false,
++      mustChangePassword: false,
++      passwordReminderDue: false,
++      onboardingStep: 'ready',
++      termsVersion: '1.0',
++    });
++    expect(body.consents).toEqual({
++      health: { active: false, textVersion: null, at: null },
++      aiCoach: { active: false, textVersion: null, at: null },
++    });
++  });
++
++  it('âge à la date de Paris (R-AGE-2, R-AGE-3)', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa', birthDate: '2008-10-07' });
++    const cookie = await login(ctx, 'Léa', u.password);
++    expect(await me(cookie)).toMatchObject({ ageBand: 'minor', cautious: true });
++    expect(await userTraits(ctx.deps.db, ctx.deps, u.id)).toEqual({ ageBand: 'minor', cautious: true });
++    ctx.clock.set('2026-10-06T22:30:00.000Z');
++    expect(await me(cookie)).toMatchObject({ ageBand: 'adult', cautious: false });
++    expect(await userTraits(ctx.deps.db, ctx.deps, u.id)).toEqual({ ageBand: 'adult', cautious: false });
++  });
++
++  it('mode prudent et précaution déclarée (R-CST-7)', async () => {
++    ctx = await createTestContext();
++    const a = await createUser(ctx, { username: 'Ana' });
++    await insertFixtureRow(ctx.deps.db, 'training_profile', { ownerId: a.id, cautiousMode: 1 });
++    expect(await me(await login(ctx, 'Ana', a.password))).toMatchObject({ cautious: true });
++    const b = await createUser(ctx, { username: 'Bob' });
++    await insertFixtureRow(ctx.deps.db, 'health_screening', { ownerId: b.id, caution: 1 });
++    const cookie = await login(ctx, 'Bob', b.password);
++    expect(await me(cookie)).toMatchObject({ cautious: false });
++    await insertFixtureRow(ctx.deps.db, 'consent_event', {
++      ownerId: b.id,
++      type: 'health',
++      action: 'grant',
++      textVersion: '1.0',
++    });
++    expect(await me(cookie)).toMatchObject({ cautious: true });
++  });
++
++  it('rappel de mot de passe des admins à 12 mois (R-MDP-5)', async () => {
++    ctx = await createTestContext();
++    const password = 'quatorze carac';
++    const ada = await createUser(ctx, {
++      username: 'Ada',
++      role: 'admin',
++      password,
++      passwordChangedAt: '2025-10-06T09:00:00.000Z',
++    });
++    const eve = await createUser(ctx, {
++      username: 'Eve',
++      role: 'admin',
++      password,
++      passwordChangedAt: '2025-10-06T11:00:00.000Z',
++    });
++    const max = await createUser(ctx, { username: 'Max', passwordChangedAt: '2020-01-01T00:00:00.000Z' });
++    expect(await me(await login(ctx, 'Ada', ada.password))).toMatchObject({ passwordReminderDue: true });
++    expect(await me(await login(ctx, 'Eve', eve.password))).toMatchObject({ passwordReminderDue: false });
++    expect(await me(await login(ctx, 'Max', max.password))).toMatchObject({ passwordReminderDue: false });
++  });
++
++  it('sans session : 401', async () => {
++    ctx = await createTestContext();
++    expect((await ctx.request('/api/me')).status).toBe(401);
++  });
++});
++
++describe('PATCH /api/me', () => {
++  it('change le pseudo (R-CPT-3)', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa' });
++    const cookie = await login(ctx, 'Léa', u.password);
++    const before = await userRow(u.id);
++    const res = await patch(cookie, { username: 'Léa.B' });
++    expect(res.status).toBe(200);
++    expect(await res.json()).toMatchObject({ username: 'Léa.B' });
++    const row = await userRow(u.id);
++    expect(row.usernameKey).toBe('léa.b');
++    expect(row.rev).toBeGreaterThan(before.rev);
++    const ev = await ctx.deps.db
++      .selectFrom('securityEvent')
++      .selectAll()
++      .where('type', '=', 'username_changed')
++      .execute();
++    expect(ev).toHaveLength(1);
++  });
++
++  it('pseudo pris : 409 ; invalide : 400 ; changement de casse de soi-même accepté', async () => {
++    ctx = await createTestContext();
++    await createUser(ctx, { username: 'Éloïse' });
++    const u = await createUser(ctx, { username: 'Léa' });
++    const cookie = await login(ctx, 'Léa', u.password);
++    const taken = await patch(cookie, { username: 'ÉLOÏSE' });
++    expect(taken.status).toBe(409);
++    expect(await taken.json()).toEqual({ error: 'username_taken' });
++    const bad = await patch(cookie, { username: 'ab' });
++    expect(bad.status).toBe(400);
++    expect(await bad.json()).toEqual({ error: 'username_invalid', reason: 'length' });
++    expect((await patch(cookie, { username: 'LÉA' })).status).toBe(200);
++  });
++
++  it('stocke le pseudo en NFC', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa' });
++    const cookie = await login(ctx, 'Léa', u.password);
++    expect((await patch(cookie, { username: 'Léa2' })).status).toBe(200);
++    expect((await userRow(u.id)).username).toBe('Léa2');
++  });
++
++  it('deux changements simultanés vers le même pseudo : un seul passe', async () => {
++    ctx = await createTestContext();
++    const a = await createUser(ctx, { username: 'Ana' });
++    const b = await createUser(ctx, { username: 'Bob' });
++    const ca = await login(ctx, 'Ana', a.password);
++    const cb = await login(ctx, 'Bob', b.password);
++    const results = await Promise.all([patch(ca, { username: 'Zoé' }), patch(cb, { username: 'Zoé' })]);
++    expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
++    const loser = results.find((r) => r.status === 409);
++    expect(await loser?.json()).toEqual({ error: 'username_taken' });
++  });
++
++  it('champ inconnu (birthDate) : 400 validation, rien ne change (P-MIN-2)', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa' });
++    const cookie = await login(ctx, 'Léa', u.password);
++    const res = await patch(cookie, { username: 'lea2', birthDate: '2000-01-01' });
++    expect(res.status).toBe(400);
++    expect(((await res.json()) as { error: string }).error).toBe('validation');
++    const row = await userRow(u.id);
++    expect(row.birthDate).toBe('1990-01-01');
++    expect(row.username).toBe('Léa');
++  });
++});
+diff --git a/apps/server/test/auth/password-change.test.ts b/apps/server/test/auth/password-change.test.ts
+new file mode 100644
+index 0000000..539ad09
+--- /dev/null
++++ b/apps/server/test/auth/password-change.test.ts
+@@ -0,0 +1,134 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { createTestContext, createUser, insertFixtureRow, login, type TestContext } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx.close());
++
++const NEW = 'tortue verte du jardin';
++const WRONG = 'faux faux faux faux';
++const post = (path: string, cookie: string, json?: unknown) =>
++  ctx.request(path, { method: 'POST', cookie, json: json ?? {}, ip: '100.64.0.1' });
++const events = (type: string) =>
++  ctx.deps.db.selectFrom('securityEvent').selectAll().where('type', '=', type).execute();
++
++describe('POST /api/auth/password', () => {
++  it('change le mot de passe, garde la session courante, révoque les autres (R-MDP-6)', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa', password: 'ancien mot de passe' });
++    const current = await login(ctx, 'Léa', u.password);
++    const other = await login(ctx, 'Léa', u.password);
++    ctx.clock.advance(1000);
++    const res = await post('/api/auth/password', current, { currentPassword: u.password, newPassword: NEW });
++    expect(res.status).toBe(204);
++    expect((await ctx.request('/api/me', { cookie: current })).status).toBe(200);
++    expect((await ctx.request('/api/me', { cookie: other })).status).toBe(401);
++    const old = await ctx.request('/api/auth/login', {
++      method: 'POST',
++      json: { username: 'Léa', password: u.password },
++    });
++    expect(old.status).toBe(401);
++    await login(ctx, 'Léa', NEW);
++    const row = await ctx.deps.db
++      .selectFrom('user')
++      .selectAll()
++      .where('id', '=', u.id)
++      .executeTakeFirstOrThrow();
++    expect(row.passwordChangedAt).toBe('2026-10-06T10:00:01.000Z');
++    expect(await events('password_changed')).toHaveLength(1);
++  });
++
++  it('annule les réinitialisations en attente', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa' });
++    const cookie = await login(ctx, 'Léa', u.password);
++    const reset = await insertFixtureRow(ctx.deps.db, 'password_reset', { userId: u.id });
++    await post('/api/auth/password', cookie, { currentPassword: u.password, newPassword: NEW });
++    const row = await ctx.deps.db
++      .selectFrom('passwordReset')
++      .selectAll()
++      .where('id', '=', reset.id as string)
++      .executeTakeFirstOrThrow();
++    expect(row.cancelledAt).toBe('2026-10-06T10:00:00.000Z');
++  });
++
++  it('mot de passe actuel faux : 401 ; 5 faux puis le bon : 429 partagé avec la connexion (P-AUT-5)', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa' });
++    const cookie = await login(ctx, 'Léa', u.password);
++    const bad = await post('/api/auth/password', cookie, { currentPassword: WRONG, newPassword: NEW });
++    expect(bad.status).toBe(401);
++    expect(await bad.json()).toEqual({ error: 'invalid_credentials' });
++    for (let i = 0; i < 4; i += 1) {
++      await post('/api/auth/password', cookie, { currentPassword: WRONG, newPassword: NEW });
++    }
++    const blocked = await post('/api/auth/password', cookie, {
++      currentPassword: u.password,
++      newPassword: NEW,
++    });
++    expect(blocked.status).toBe(429);
++    expect(await blocked.json()).toEqual({ error: 'rate_limited', retryAfterS: 60 });
++    const loginRes = await ctx.request('/api/auth/login', {
++      method: 'POST',
++      json: { username: 'Léa', password: u.password },
++      ip: '100.64.0.1',
++    });
++    expect(loginRes.status).toBe(429);
++  });
++
++  it('nouveau mot de passe refusé : 400 password_rejected', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa' });
++    const cookie = await login(ctx, 'Léa', u.password);
++    const res = await post('/api/auth/password', cookie, {
++      currentPassword: u.password,
++      newPassword: 'court',
++    });
++    expect(res.status).toBe(400);
++    expect(await res.json()).toEqual({ error: 'password_rejected', reason: 'too_short' });
++  });
++
++  it('lève l obligation de changement de l admin', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Chef', role: 'admin', password: 'abcdefghijklm' });
++    const cookie = await login(ctx, 'Chef', u.password);
++    const patch = () => ctx.request('/api/me', { method: 'PATCH', cookie, json: { username: 'Chef2' } });
++    expect((await patch()).status).toBe(403);
++    const res = await post('/api/auth/password', cookie, {
++      currentPassword: u.password,
++      newPassword: 'quatorze carac',
++    });
++    expect(res.status).toBe(204);
++    const me = await ctx.request('/api/me', { cookie });
++    expect(await me.json()).toMatchObject({ mustChangePassword: false });
++    expect((await patch()).status).toBe(200);
++  });
++});
++
++describe('déconnexion (R-AUTH-7)', () => {
++  it('logout ne ferme que la session courante', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa' });
++    const current = await login(ctx, 'Léa', u.password);
++    const other = await login(ctx, 'Léa', u.password);
++    const res = await post('/api/auth/logout', current);
++    expect(res.status).toBe(204);
++    expect(res.headers.get('set-cookie')).toMatch(/Max-Age=0/);
++    expect((await ctx.request('/api/me', { cookie: current })).status).toBe(401);
++    expect((await ctx.request('/api/me', { cookie: other })).status).toBe(200);
++    expect(await events('logout')).toHaveLength(1);
++  });
++
++  it('logout-all ferme toutes les sessions', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'Léa' });
++    const a = await login(ctx, 'Léa', u.password);
++    const b = await login(ctx, 'Léa', u.password);
++    const res = await post('/api/auth/logout-all', a);
++    expect(res.status).toBe(204);
++    expect((await ctx.request('/api/me', { cookie: a })).status).toBe(401);
++    expect((await ctx.request('/api/me', { cookie: b })).status).toBe(401);
++    const rows = await ctx.deps.db.selectFrom('session').select('revokedReason').execute();
++    expect(rows.map((r) => r.revokedReason)).toEqual(['logout_all', 'logout_all']);
++    expect(await events('logout_all')).toHaveLength(1);
++  });
++});
+diff --git a/apps/server/test/privacy/consent-state.test.ts b/apps/server/test/privacy/consent-state.test.ts
+new file mode 100644
+index 0000000..1b7cf02
+--- /dev/null
++++ b/apps/server/test/privacy/consent-state.test.ts
+@@ -0,0 +1,43 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { getConsentState, isHealthConsentActive } from '../../src/privacy/consent-state';
++import { createTestContext, createUser, insertFixtureRow, type TestContext } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx.close());
++
++describe('état du consentement (R-CST-1)', () => {
++  it('sans événement : inactif pour health et aiCoach', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx);
++    const none = { active: false, textVersion: null, at: null };
++    expect(await getConsentState(ctx.deps.db, u.id)).toEqual({ health: none, aiCoach: none });
++    expect(await isHealthConsentActive(ctx.deps.db, u.id)).toBe(false);
++  });
++
++  it('un grant active, puis un retrait au même instant désactive', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx);
++    await insertFixtureRow(ctx.deps.db, 'consent_event', {
++      ownerId: u.id,
++      type: 'health',
++      action: 'grant',
++      textVersion: '1.0',
++      rev: 5,
++      createdAt: '2026-10-06T10:00:00.000Z',
++    });
++    const state = await getConsentState(ctx.deps.db, u.id);
++    expect(state.health).toEqual({ active: true, textVersion: '1.0', at: '2026-10-06T10:00:00.000Z' });
++    expect(state.aiCoach.active).toBe(false);
++    expect(await isHealthConsentActive(ctx.deps.db, u.id)).toBe(true);
++    await insertFixtureRow(ctx.deps.db, 'consent_event', {
++      ownerId: u.id,
++      type: 'health',
++      action: 'withdraw',
++      textVersion: '1.0',
++      rev: 6,
++      createdAt: '2026-10-06T10:00:00.000Z',
++    });
++    expect((await getConsentState(ctx.deps.db, u.id)).health.active).toBe(false);
++    expect(await isHealthConsentActive(ctx.deps.db, u.id)).toBe(false);
++  });
++});
+diff --git a/apps/server/test/support/index.ts b/apps/server/test/support/index.ts
+index 7532362..c01ffab 100644
+--- a/apps/server/test/support/index.ts
++++ b/apps/server/test/support/index.ts
+@@ -1,4 +1,5 @@
+ export { FakeClock } from './clock';
+ export { createTestContext, TEST_ARGON2, type TestContext, type TestRequestInit } from './context';
+ export { insertFixtureRow } from './factories';
+ export { seqIds } from './ids';
++export { type CreateUserOptions, createUser, login, type TestUser } from './users';
+diff --git a/apps/server/test/support/users.ts b/apps/server/test/support/users.ts
+new file mode 100644
+index 0000000..6fc574d
+--- /dev/null
++++ b/apps/server/test/support/users.ts
+@@ -0,0 +1,70 @@
++import { PRIVACY_POLICY_VERSION } from '@appsport/contracts';
++import { hashPassword } from '../../src/auth/password-hash';
++import { writeStamp } from '../../src/db/rev';
++import type { TestContext } from './context';
++
++export interface TestUser {
++  id: string;
++  username: string;
++  password: string;
++}
++
++export interface CreateUserOptions {
++  username?: string;
++  password?: string;
++  role?: 'admin' | 'member';
++  status?: 'active' | 'disabled';
++  birthDate?: string;
++  onboarded?: boolean;
++  passwordChangedAt?: string | null;
++  createdAt?: string;
++}
++
++let counter = 0;
++
++/** Insère un compte directement (sans invitation) ; le mot de passe n'est pas validé. */
++export async function createUser(ctx: TestContext, o: CreateUserOptions = {}): Promise<TestUser> {
++  const { deps } = ctx;
++  counter += 1;
++  const username = o.username ?? `membre${counter}`;
++  const password = o.password ?? 'tortue verte du jardin';
++  const passwordHash = await hashPassword(password, deps.config.argon2, deps.ids);
++  const now = deps.clock.now().toISOString();
++  const id = deps.ids.uuidv7();
++  const stamp = await writeStamp(deps.db, deps, null);
++  await deps.db
++    .insertInto('user')
++    .values({
++      id,
++      username,
++      usernameKey: username.normalize('NFKC').toLowerCase(),
++      passwordHash,
++      role: o.role ?? 'member',
++      ...(o.status ? { status: o.status } : {}),
++      birthDate: o.birthDate ?? '1990-01-01',
++      termsVersion: PRIVACY_POLICY_VERSION,
++      termsAcceptedAt: now,
++      passwordChangedAt: o.passwordChangedAt ?? null,
++      onboardingStep: o.onboarded ? 'ready' : null,
++      onboardingCompletedAt: o.onboarded ? now : null,
++      rev: stamp.rev,
++      createdAt: o.createdAt ?? now,
++      updatedAt: stamp.updatedAt,
++    })
++    .execute();
++  return { id, username, password };
++}
++
++/** Connecte via POST /api/auth/login et renvoie `nom=valeur` du cookie ; lève si le statut n'est pas 200. */
++export async function login(
++  ctx: TestContext,
++  username: string,
++  password: string,
++  ip = '100.64.0.1',
++): Promise<string> {
++  const res = await ctx.request('/api/auth/login', { method: 'POST', json: { username, password }, ip });
++  if (res.status !== 200) throw new Error(`Connexion refusée (${res.status}) pour ${username}`);
++  const cookie = res.headers.get('set-cookie')?.split(';')[0];
++  if (!cookie) throw new Error('Set-Cookie absent');
++  return cookie;
++}
+diff --git a/packages/contracts/src/api/auth.ts b/packages/contracts/src/api/auth.ts
+index f6716e2..61d17db 100644
+--- a/packages/contracts/src/api/auth.ts
++++ b/packages/contracts/src/api/auth.ts
+@@ -1,8 +1,65 @@
+ import { z } from 'zod';
+ 
+ export const CivilDate = z.iso.date();
+ export type CivilDate = z.infer<typeof CivilDate>;
+ 
+ export const RoleSchema = z.enum(['admin', 'member']);
+ export const UserStatusSchema = z.enum(['active', 'disabled']);
+ export const AgeBandSchema = z.enum(['minor', 'adult']);
++
++export const ONBOARDING_STEPS = [
++  'goal',
++  'sport',
++  'place_kind',
++  'place',
++  'experience',
++  'availability',
++  'health',
++  'ready',
++] as const;
++export const OnboardingStep = z.enum(ONBOARDING_STEPS);
++export type OnboardingStep = z.infer<typeof OnboardingStep>;
++
++export const ConsentStatus = z.object({
++  active: z.boolean(),
++  textVersion: z.string().nullable(),
++  at: z.string().nullable(),
++});
++export type ConsentStatus = z.infer<typeof ConsentStatus>;
++
++/** Clés JSON en camelCase ; la valeur SQL et ConsentType restent 'ai_coach'. */
++export const ConsentState = z.object({ health: ConsentStatus, aiCoach: ConsentStatus });
++export type ConsentState = z.infer<typeof ConsentState>;
++
++export const MeResponse = z.object({
++  id: z.string(),
++  username: z.string(),
++  role: RoleSchema,
++  status: UserStatusSchema,
++  birthDate: CivilDate,
++  ageBand: AgeBandSchema,
++  cautious: z.boolean(),
++  mustChangePassword: z.boolean(),
++  passwordReminderDue: z.boolean(),
++  onboardingStep: OnboardingStep.nullable(),
++  onboardingCompletedAt: z.string().nullable(),
++  termsVersion: z.string().nullable(),
++  consents: ConsentState,
++});
++export type MeResponse = z.infer<typeof MeResponse>;
++
++export const LoginRequest = z.object({
++  username: z.string().min(1).max(100),
++  password: z.string().min(1).max(1024),
++});
++export type LoginRequest = z.infer<typeof LoginRequest>;
++
++export const ChangePasswordRequest = z.object({
++  currentPassword: z.string().min(1).max(1024),
++  newPassword: z.string().min(1).max(1024),
++});
++export type ChangePasswordRequest = z.infer<typeof ChangePasswordRequest>;
++
++/** Strict : birthDate ou tout autre champ → 400 validation (P-MIN-2). */
++export const UpdateMeRequest = z.strictObject({ username: z.string().min(1).max(100) });
++export type UpdateMeRequest = z.infer<typeof UpdateMeRequest>;

@@ -1,0 +1,2027 @@
+# Review package: 1884cdf..HEAD
+
+## Commits
+82e0cc5 feat(auth): écrans d'invitation, de connexion, de réinitialisation et de déconnexion
+
+## Files changed
+ apps/web/src/App.tsx                             |   6 +
+ apps/web/src/features/auth/CodeStep.tsx          | 115 +++++++
+ apps/web/src/features/auth/CreateAccountForm.tsx |  87 ++++++
+ apps/web/src/features/auth/InvitePage.tsx        |  96 ++++++
+ apps/web/src/features/auth/LoginPage.tsx         | 114 +++++++
+ apps/web/src/features/auth/LogoutDialog.tsx      |  80 +++++
+ apps/web/src/features/auth/PasswordFields.tsx    |  40 +++
+ apps/web/src/features/auth/ResetPage.tsx         |  86 ++++++
+ apps/web/src/features/auth/auth.module.css       |  54 ++++
+ apps/web/src/features/auth/install-help.ts       |  25 ++
+ apps/web/src/features/auth/messages.ts           | 116 +++++++
+ apps/web/test/auth/invite.test.tsx               | 373 +++++++++++++++++++++++
+ apps/web/test/auth/login.test.tsx                | 208 +++++++++++++
+ apps/web/test/auth/logout-reset.test.tsx         | 231 ++++++++++++++
+ apps/web/test/auth/messages.test.ts              | 205 +++++++++++++
+ apps/web/test/support/auth.ts                    |  36 +++
+ 16 files changed, 1872 insertions(+)
+
+## Diff
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+index 2fd0d15..ab4df20 100644
+--- a/apps/web/src/App.tsx
++++ b/apps/web/src/App.tsx
+@@ -1,14 +1,17 @@
+ import type { MeResponse } from '@appsport/contracts';
+ import { useEffect, useRef } from 'react';
+ import { Redirect, Route, Switch, useLocation } from 'wouter';
+ import { useMeState, useSyncState } from './app-services';
++import { InvitePage } from './features/auth/InvitePage';
++import { LoginPage } from './features/auth/LoginPage';
++import { ResetPage } from './features/auth/ResetPage';
+ import { HomePage } from './features/home/HomePage';
+ import { CreditsPage } from './features/public/CreditsPage';
+ import { HelpPage } from './features/public/HelpPage';
+ import { NotFound } from './features/public/NotFound';
+ import { PrivacyPage } from './features/public/PrivacyPage';
+ import { useRepos } from './repos';
+ import type { ConnectionState } from './sync/engine';
+ import { AppShell, PublicShell } from './ui';
+ 
+ /** Pages lisibles sans session (03 §13 : Confidentialité, Crédits, Aide) et parcours d'accès. */
+@@ -57,20 +60,23 @@ export function resolveGuard(i: {
+   const onboarded = i.me.onboardingCompletedAt !== null;
+   if (!onboarded && path !== '/onboarding') return { kind: 'redirect', to: '/onboarding' };
+   if (onboarded && path === '/onboarding') return { kind: 'redirect', to: '/' };
+   if (isAdminPath(path) && i.me.role !== 'admin') return { kind: 'not_found' };
+   return { kind: 'render' };
+ }
+ 
+ function PublicRoutes() {
+   return (
+     <Switch>
++      <Route path="/login" component={LoginPage} />
++      <Route path="/invite" component={InvitePage} />
++      <Route path="/reset" component={ResetPage} />
+       <Route path="/privacy" component={PrivacyPage} />
+       <Route path="/credits" component={CreditsPage} />
+       <Route path="/help" component={HelpPage} />
+       <Route component={NotFound} />
+     </Switch>
+   );
+ }
+ 
+ function ConnectedRoutes() {
+   return (
+diff --git a/apps/web/src/features/auth/CodeStep.tsx b/apps/web/src/features/auth/CodeStep.tsx
+new file mode 100644
+index 0000000..b7b7913
+--- /dev/null
++++ b/apps/web/src/features/auth/CodeStep.tsx
+@@ -0,0 +1,115 @@
++import { formatSecretCode, parseSecretCode } from '@appsport/domain';
++import { useCallback, useEffect, useRef, useState } from 'react';
++import { Banner, Button, Field } from '../../ui';
++import styles from './auth.module.css';
++import { INCOMPLETE_CODE_MESSAGE } from './messages';
++
++/** Fragment d'adresse `#code` à l'ouverture de la page : présent ou non, et code lisible ou non. */
++export interface FragmentCode {
++  present: boolean;
++  code: string | null;
++}
++
++export function readFragment(): FragmentCode {
++  const hash = window.location.hash;
++  return hash.length > 1 ? { present: true, code: parseSecretCode(hash) } : { present: false, code: null };
++}
++
++/**
++ * Fragment lu une fois à l'ouverture, puis effacé de l'adresse par `history.replaceState` (R-INV-4).
++ * La lecture est pure et l'effacement idempotent : le mode strict de React les rejoue sans dommage.
++ */
++export function useFragmentCode(): FragmentCode {
++  const [fragment] = useState(readFragment);
++  useEffect(() => {
++    if (window.location.hash) {
++      window.history.replaceState(
++        window.history.state,
++        '',
++        window.location.pathname + window.location.search,
++      );
++    }
++  }, []);
++  return fragment;
++}
++
++/**
++ * Saisie d'un code (lien complet ou code, R-INV-5) puis vérification par le serveur. Un fragment
++ * lisible déclenche la vérification seul, une seule fois.
++ */
++export function CodeStep<T>(p: {
++  label: string;
++  fragment: FragmentCode;
++  check(code: string): Promise<T>;
++  onChecked(code: string, result: T): void;
++  describeError(e: unknown): string;
++}) {
++  const [value, setValue] = useState(p.fragment.code ? formatSecretCode(p.fragment.code) : '');
++  const [problem, setProblem] = useState<string | null>(
++    p.fragment.present && !p.fragment.code ? INCOMPLETE_CODE_MESSAGE : null,
++  );
++  const [error, setError] = useState<string | null>(null);
++  const [pending, setPending] = useState(false);
++  const latest = useRef(p);
++  latest.current = p;
++
++  const run = useCallback(async (code: string) => {
++    setPending(true);
++    setError(null);
++    try {
++      latest.current.onChecked(code, await latest.current.check(code));
++    } catch (e) {
++      setError(latest.current.describeError(e));
++    } finally {
++      setPending(false);
++    }
++  }, []);
++
++  const started = useRef(false);
++  useEffect(() => {
++    const code = latest.current.fragment.code;
++    if (started.current || !code) return;
++    started.current = true;
++    void run(code);
++  }, [run]);
++
++  const submit = () => {
++    const code = parseSecretCode(value);
++    if (!code) {
++      setProblem(INCOMPLETE_CODE_MESSAGE);
++      return;
++    }
++    void run(code);
++  };
++
++  return (
++    <form
++      className={styles.form}
++      noValidate
++      onSubmit={(e) => {
++        e.preventDefault();
++        if (!pending) submit();
++      }}
++    >
++      <Field label={p.label} error={problem}>
++        <input
++          type="text"
++          value={value}
++          autoComplete="off"
++          autoCapitalize="none"
++          autoCorrect="off"
++          spellCheck={false}
++          onChange={(e) => {
++            setValue(e.target.value);
++            setProblem(null);
++          }}
++        />
++      </Field>
++      {pending ? <Banner tone="info">Vérification du code…</Banner> : null}
++      {error ? <Banner tone="error">{error}</Banner> : null}
++      <Button type="submit" disabled={pending}>
++        Suivant
++      </Button>
++    </form>
++  );
++}
+diff --git a/apps/web/src/features/auth/CreateAccountForm.tsx b/apps/web/src/features/auth/CreateAccountForm.tsx
+new file mode 100644
+index 0000000..afc9c53
+--- /dev/null
++++ b/apps/web/src/features/auth/CreateAccountForm.tsx
+@@ -0,0 +1,87 @@
++import { type MeResponse, PRIVACY_POLICY_VERSION, type Role } from '@appsport/contracts';
++import { validateUsername } from '@appsport/domain';
++import { type FormEvent, useState } from 'react';
++import { useRepos } from '../../repos';
++import { Banner, Button, Field, formatDate } from '../../ui';
++import styles from './auth.module.css';
++import { accessErrorMessage, checkNewPassword, USERNAME_MESSAGES } from './messages';
++import { PasswordFields } from './PasswordFields';
++
++/**
++ * Création du compte (02 §3.4). Tout est contrôlé ici avant l'envoi ; un refus du serveur garde le
++ * formulaire (R-CPT-1 : l'invitation n'est pas consommée).
++ */
++export function CreateAccountForm(p: {
++  code: string;
++  birthDate: string;
++  role: Role;
++  onCreated(me: MeResponse): void;
++}) {
++  const repos = useRepos();
++  const [username, setUsername] = useState('');
++  const [passwords, setPasswords] = useState({ password: '', confirm: '' });
++  const [read, setRead] = useState(false);
++  const [busy, setBusy] = useState(false);
++  const [error, setError] = useState<string | null>(null);
++
++  async function submit(e: FormEvent) {
++    e.preventDefault();
++    if (busy || !read) return;
++    const name = validateUsername(username);
++    const problem = name.ok
++      ? checkNewPassword({ ...passwords, username, role: p.role })
++      : USERNAME_MESSAGES[name.reason];
++    if (problem) {
++      setError(problem);
++      return;
++    }
++    setBusy(true);
++    setError(null);
++    try {
++      const me = await repos.me.acceptInvitation({
++        code: p.code,
++        username,
++        password: passwords.password,
++        termsVersion: PRIVACY_POLICY_VERSION,
++      });
++      p.onCreated(me);
++    } catch (err) {
++      setError(accessErrorMessage(err, p.role));
++    } finally {
++      setBusy(false);
++    }
++  }
++
++  return (
++    <form className={styles.form} noValidate onSubmit={(e) => void submit(e)}>
++      <Field label="Date de naissance" hint="Renseignée par l'administrateur. Une erreur ? Préviens-le.">
++        <input type="text" readOnly value={formatDate(p.birthDate)} />
++      </Field>
++      <Field label="Pseudo">
++        <input
++          type="text"
++          value={username}
++          autoComplete="username"
++          autoCapitalize="none"
++          autoCorrect="off"
++          spellCheck={false}
++          onChange={(e) => setUsername(e.target.value)}
++        />
++      </Field>
++      <PasswordFields username={username} role={p.role} {...passwords} onChange={setPasswords} />
++      <label className={styles.consent}>
++        <input type="checkbox" checked={read} onChange={(e) => setRead(e.target.checked)} />
++        <span>
++          J'ai lu la page{' '}
++          <a href="/privacy" target="_blank" rel="noopener noreferrer">
++            Confidentialité et règles
++          </a>
++        </span>
++      </label>
++      {error ? <Banner tone="error">{error}</Banner> : null}
++      <Button type="submit" disabled={!read || busy}>
++        Créer mon compte
++      </Button>
++    </form>
++  );
++}
+diff --git a/apps/web/src/features/auth/InvitePage.tsx b/apps/web/src/features/auth/InvitePage.tsx
+new file mode 100644
+index 0000000..ebf0fc1
+--- /dev/null
++++ b/apps/web/src/features/auth/InvitePage.tsx
+@@ -0,0 +1,96 @@
++import type { Role } from '@appsport/contracts';
++import { formatSecretCode } from '@appsport/domain';
++import { useState } from 'react';
++import { useLocation } from 'wouter';
++import { useRepos } from '../../repos';
++import { Banner, Button, CopyButton, Page } from '../../ui';
++import { OWNER_FIRST_NAME } from '../public/privacy-content';
++import styles from './auth.module.css';
++import { CodeStep, useFragmentCode } from './CodeStep';
++import { CreateAccountForm } from './CreateAccountForm';
++import { detectPlatform, installHelp, isStandalone } from './install-help';
++import { accessErrorMessage } from './messages';
++
++interface CheckedInvitation {
++  code: string;
++  birthDate: string;
++  role: Role;
++}
++
++/**
++ * Aide à l'installation avec le code en clair (R-ARR-2). La page ne s'ouvre pas à la création du
++ * compte hors de l'appli installée : le code est copiable, l'adresse ne le garde plus.
++ */
++function InstallGuide(p: { code: string | null; onContinue(): void }) {
++  return (
++    <div className={styles.install}>
++      {installHelp(detectPlatform(navigator.userAgent)).map((line) => (
++        <p key={line}>{line}</p>
++      ))}
++      {p.code ? (
++        <div className={styles.codeRow}>
++          <code className={styles.code}>{formatSecretCode(p.code)}</code>
++          <CopyButton text={formatSecretCode(p.code)} />
++        </div>
++      ) : null}
++      <Button variant="secondary" onClick={p.onContinue}>
++        Continuer dans ce navigateur
++      </Button>
++    </div>
++  );
++}
++
++/** Arrivée d'un proche (02 §3.3 et §3.4) : lien ou code d'invitation, puis création du compte. */
++export function InvitePage() {
++  const repos = useRepos();
++  const [, navigate] = useLocation();
++  const fragment = useFragmentCode();
++  const [standalone] = useState(() => isStandalone());
++  const [inBrowser, setInBrowser] = useState(false);
++  const [checked, setChecked] = useState<CheckedInvitation | null>(null);
++  // Hors appli installée, l'avertissement accompagne la saisie du code puis la création du compte.
++  const browserWarning = standalone ? null : (
++    <Banner tone="warning">
++      Attention : sur téléphone, tes données ne seront pas dans l'appli installée.
++    </Banner>
++  );
++
++  if (checked) {
++    return (
++      <Page title="Crée ton compte">
++        {browserWarning}
++        <CreateAccountForm
++          code={checked.code}
++          birthDate={checked.birthDate}
++          role={checked.role}
++          onCreated={() => navigate('/onboarding', { replace: true })}
++        />
++      </Page>
++    );
++  }
++
++  return (
++    <Page title="Bienvenue sur appsport">
++      <p>
++        appsport est un outil de suivi entre proches, hébergé chez {OWNER_FIRST_NAME}. Ce n'est pas un service
++        médical.
++      </p>
++      {/* Nouvel onglet : l'adresse n'a plus le code, revenir en arrière le ferait perdre. */}
++      <a href="/privacy" target="_blank" rel="noopener noreferrer">
++        Confidentialité et règles
++      </a>
++      {browserWarning}
++      {standalone || inBrowser ? (
++        <CodeStep
++          label="Lien ou code d'invitation"
++          fragment={fragment}
++          check={repos.me.checkInvitation}
++          onChecked={(code, r) => setChecked({ code, birthDate: r.birthDate, role: r.role })}
++          describeError={(e) => accessErrorMessage(e, 'member')}
++        />
++      ) : (
++        <InstallGuide code={fragment.code} onContinue={() => setInBrowser(true)} />
++      )}
++    </Page>
++  );
++}
+diff --git a/apps/web/src/features/auth/LoginPage.tsx b/apps/web/src/features/auth/LoginPage.tsx
+new file mode 100644
+index 0000000..092da40
+--- /dev/null
++++ b/apps/web/src/features/auth/LoginPage.tsx
+@@ -0,0 +1,114 @@
++import { usernameKey } from '@appsport/domain';
++import { type FormEvent, useCallback, useState } from 'react';
++import { Link, useLocation, useSearch } from 'wouter';
++import { useSyncState } from '../../app-services';
++import { useRepos } from '../../repos';
++import { Banner, Button, Dialog, ERROR_MESSAGES, Field, Page } from '../../ui';
++import styles from './auth.module.css';
++import { FORMER_ACCOUNT_NAME, loginErrorMessage, pendingWarning } from './messages';
++
++/** Connexion (R-AUTH-1) ; un autre pseudo que celui de l'appareil est averti avant l'effacement (P-AUT-6). */
++export function LoginPage() {
++  const repos = useRepos();
++  const [, navigate] = useLocation();
++  const search = useSearch();
++  const { connection } = useSyncState();
++  const [username, setUsername] = useState('');
++  const [password, setPassword] = useState('');
++  const [busy, setBusy] = useState(false);
++  const [error, setError] = useState<string | null>(null);
++  const [warning, setWarning] = useState<{ pending: number; owner: string } | null>(null);
++
++  const accountDeleted =
++    new URLSearchParams(search).get('reason') === 'account_deleted' || connection === 'account_deleted';
++  const sessionExpired = connection === 'unauthenticated';
++  const closeWarning = useCallback(() => setWarning(null), []);
++
++  /** `confirmed` : l'avertissement d'effacement a été accepté. */
++  async function attempt(confirmed: boolean) {
++    setBusy(true);
++    setError(null);
++    try {
++      if (!confirmed) {
++        const device = await repos.me.deviceOwner();
++        if (device.pending > 0 && usernameKey(username) !== usernameKey(device.username ?? '')) {
++          setWarning({ pending: device.pending, owner: device.username ?? FORMER_ACCOUNT_NAME });
++          return;
++        }
++      }
++      await repos.me.login({ username, password });
++      navigate('/', { replace: true });
++    } catch (e) {
++      setError(loginErrorMessage(e));
++    } finally {
++      setBusy(false);
++    }
++  }
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    if (!busy) void attempt(false);
++  };
++
++  return (
++    <Page title="Connexion">
++      {accountDeleted ? (
++        <Banner tone="warning">{ERROR_MESSAGES.account_deleted}</Banner>
++      ) : sessionExpired ? (
++        <Banner tone="warning">{ERROR_MESSAGES.unauthenticated}</Banner>
++      ) : null}
++      <form className={styles.form} noValidate onSubmit={submit}>
++        <Field label="Pseudo">
++          <input
++            type="text"
++            value={username}
++            autoComplete="username"
++            autoCapitalize="none"
++            autoCorrect="off"
++            spellCheck={false}
++            onChange={(e) => setUsername(e.target.value)}
++          />
++        </Field>
++        <Field label="Mot de passe">
++          <input
++            type="password"
++            value={password}
++            autoComplete="current-password"
++            onChange={(e) => setPassword(e.target.value)}
++          />
++        </Field>
++        {error ? <Banner tone="error">{error}</Banner> : null}
++        <Button type="submit" disabled={busy}>
++          Se connecter
++        </Button>
++      </form>
++      <nav className={styles.links} aria-label="Autres accès">
++        <Link href="/invite">J'ai un code d'invitation</Link>
++        <Link href="/reset">J'ai un lien de réinitialisation</Link>
++      </nav>
++      <Dialog
++        open={warning !== null}
++        title="Données non envoyées"
++        onClose={closeWarning}
++        actions={
++          <>
++            <Button variant="secondary" onClick={closeWarning}>
++              Annuler
++            </Button>
++            <Button
++              variant="danger"
++              onClick={() => {
++                closeWarning();
++                void attempt(true);
++              }}
++            >
++              Continuer
++            </Button>
++          </>
++        }
++      >
++        <p>{warning ? pendingWarning(warning.pending, warning.owner) : null}</p>
++      </Dialog>
++    </Page>
++  );
++}
+diff --git a/apps/web/src/features/auth/LogoutDialog.tsx b/apps/web/src/features/auth/LogoutDialog.tsx
+new file mode 100644
+index 0000000..d2e9495
+--- /dev/null
++++ b/apps/web/src/features/auth/LogoutDialog.tsx
+@@ -0,0 +1,80 @@
++import { useState } from 'react';
++import { Link, useLocation } from 'wouter';
++import { useLive } from '../../app-services';
++import { useRepos } from '../../repos';
++import { Banner, Button, Dialog, errorMessage } from '../../ui';
++import { FORMER_ACCOUNT_NAME, pendingWarning } from './messages';
++
++/**
++ * Déconnexion de cet appareil (`current`) ou de tous (`all`). Les données locales sont effacées une
++ * fois la déconnexion faite : s'il reste des éléments non envoyés, l'avertissement le dit d'abord
++ * (R-AUTH-9, R-SYN-14) et propose l'export.
++ */
++export function LogoutDialog(p: { mode: 'current' | 'all'; open: boolean; onClose(): void }) {
++  const repos = useRepos();
++  const [, navigate] = useLocation();
++  const [busy, setBusy] = useState(false);
++  const [error, setError] = useState<string | null>(null);
++  const device = useLive(() => (p.open ? repos.me.deviceOwner() : Promise.resolve(null)), [repos, p.open]);
++  if (!p.open || !device) return null;
++
++  const unsent = device.pending > 0;
++  const all = p.mode === 'all';
++
++  async function confirm() {
++    setBusy(true);
++    setError(null);
++    try {
++      await repos.me.logout(p.mode);
++      navigate('/login', { replace: true });
++    } catch (e) {
++      setError(errorMessage(e));
++    } finally {
++      setBusy(false);
++    }
++  }
++
++  const title = unsent
++    ? 'Données non envoyées'
++    : all
++      ? 'Déconnecter tous les appareils ?'
++      : 'Se déconnecter de cet appareil ?';
++  const confirmLabel = unsent
++    ? 'Se déconnecter quand même'
++    : all
++      ? 'Déconnecter tous les appareils'
++      : 'Se déconnecter';
++
++  return (
++    <Dialog
++      open
++      title={title}
++      onClose={p.onClose}
++      actions={
++        <>
++          <Button variant="secondary" onClick={p.onClose} disabled={busy}>
++            Annuler
++          </Button>
++          <Button variant="danger" onClick={() => void confirm()} disabled={busy}>
++            {confirmLabel}
++          </Button>
++        </>
++      }
++    >
++      {unsent ? (
++        <>
++          <p>{pendingWarning(device.pending, device.username ?? FORMER_ACCOUNT_NAME)}</p>
++          <p>
++            <Link href="/profile/privacy" onClick={p.onClose}>
++              Exporter mes données
++            </Link>
++          </p>
++        </>
++      ) : all ? null : (
++        <p>Les données de cet appareil seront effacées. Tu les retrouveras en te reconnectant.</p>
++      )}
++      {all ? <p>Toutes tes sessions seront fermées, sur tous tes appareils, y compris celui-ci.</p> : null}
++      {error ? <Banner tone="error">{error}</Banner> : null}
++    </Dialog>
++  );
++}
+diff --git a/apps/web/src/features/auth/PasswordFields.tsx b/apps/web/src/features/auth/PasswordFields.tsx
+new file mode 100644
+index 0000000..1046676
+--- /dev/null
++++ b/apps/web/src/features/auth/PasswordFields.tsx
+@@ -0,0 +1,40 @@
++import type { Role } from '@appsport/contracts';
++import { Field } from '../../ui';
++
++export const PASSWORD_HINT =
++  'Astuce : une phrase de 4 mots ou plus, par exemple « cheval agrafe batterie correcte », est facile à retenir et solide. Les espaces sont acceptés.';
++
++/**
++ * Mot de passe et confirmation (R-MDP-2). Les règles se contrôlent à l'envoi, par le formulaire
++ * (`checkNewPassword` avec le même `username` et le même `role`) : un seul message à la fois,
++ * pas d'erreur en double.
++ */
++export function PasswordFields(p: {
++  username: string;
++  role: Role;
++  password: string;
++  confirm: string;
++  onChange(v: { password: string; confirm: string }): void;
++  label?: string;
++}) {
++  return (
++    <>
++      <Field label={p.label ?? 'Mot de passe'} hint={PASSWORD_HINT}>
++        <input
++          type="password"
++          autoComplete="new-password"
++          value={p.password}
++          onChange={(e) => p.onChange({ password: e.target.value, confirm: p.confirm })}
++        />
++      </Field>
++      <Field label="Confirmation">
++        <input
++          type="password"
++          autoComplete="new-password"
++          value={p.confirm}
++          onChange={(e) => p.onChange({ password: p.password, confirm: e.target.value })}
++        />
++      </Field>
++    </>
++  );
++}
+diff --git a/apps/web/src/features/auth/ResetPage.tsx b/apps/web/src/features/auth/ResetPage.tsx
+new file mode 100644
+index 0000000..3c1ffc7
+--- /dev/null
++++ b/apps/web/src/features/auth/ResetPage.tsx
+@@ -0,0 +1,86 @@
++import type { Role } from '@appsport/contracts';
++import { type FormEvent, useState } from 'react';
++import { useLocation } from 'wouter';
++import { useRepos } from '../../repos';
++import { Banner, Button, Page } from '../../ui';
++import styles from './auth.module.css';
++import { CodeStep, useFragmentCode } from './CodeStep';
++import { accessErrorMessage, checkNewPassword } from './messages';
++import { PasswordFields } from './PasswordFields';
++
++interface CheckedReset {
++  code: string;
++  username: string;
++  role: Role;
++}
++
++function NewPasswordForm(p: CheckedReset) {
++  const repos = useRepos();
++  const [, navigate] = useLocation();
++  const [passwords, setPasswords] = useState({ password: '', confirm: '' });
++  const [busy, setBusy] = useState(false);
++  const [error, setError] = useState<string | null>(null);
++
++  async function submit(e: FormEvent) {
++    e.preventDefault();
++    if (busy) return;
++    const problem = checkNewPassword({ ...passwords, username: p.username, role: p.role });
++    if (problem) {
++      setError(problem);
++      return;
++    }
++    setBusy(true);
++    setError(null);
++    try {
++      await repos.me.resetPassword({ code: p.code, newPassword: passwords.password });
++      navigate('/', { replace: true });
++    } catch (err) {
++      setError(accessErrorMessage(err, p.role));
++    } finally {
++      setBusy(false);
++    }
++  }
++
++  return (
++    <form className={styles.form} noValidate onSubmit={(e) => void submit(e)}>
++      <PasswordFields
++        username={p.username}
++        role={p.role}
++        label={`Nouveau mot de passe pour ${p.username}`}
++        {...passwords}
++        onChange={setPasswords}
++      />
++      {error ? <Banner tone="error">{error}</Banner> : null}
++      <Button type="submit" disabled={busy}>
++        Changer le mot de passe
++      </Button>
++    </form>
++  );
++}
++
++/** Réinitialisation (R-RST-1) : lien ou code transmis par l'admin, puis nouveau mot de passe. */
++export function ResetPage() {
++  const repos = useRepos();
++  const fragment = useFragmentCode();
++  const [checked, setChecked] = useState<CheckedReset | null>(null);
++
++  if (checked) {
++    return (
++      <Page title="Choisis ton nouveau mot de passe">
++        <NewPasswordForm {...checked} />
++      </Page>
++    );
++  }
++  return (
++    <Page title="Réinitialiser mon mot de passe">
++      <p>Ouvre le lien que l'administrateur t'a transmis, ou colle ici le lien ou le code.</p>
++      <CodeStep
++        label="Lien ou code de réinitialisation"
++        fragment={fragment}
++        check={repos.me.checkReset}
++        onChecked={(code, r) => setChecked({ code, username: r.username, role: r.role })}
++        describeError={(e) => accessErrorMessage(e, 'member')}
++      />
++    </Page>
++  );
++}
+diff --git a/apps/web/src/features/auth/auth.module.css b/apps/web/src/features/auth/auth.module.css
+new file mode 100644
+index 0000000..a11d86d
+--- /dev/null
++++ b/apps/web/src/features/auth/auth.module.css
+@@ -0,0 +1,54 @@
++.form {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-4);
++}
++
++.install {
++  display: flex;
++  flex-direction: column;
++  align-items: flex-start;
++  gap: var(--space-3);
++}
++
++.install p {
++  margin: 0;
++}
++
++.codeRow {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: var(--space-3);
++}
++
++.code {
++  padding: var(--space-2) var(--space-3);
++  border: 1px solid var(--color-border);
++  border-radius: var(--radius);
++  background: var(--color-surface);
++  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
++  font-size: 1.25rem;
++  letter-spacing: 0.05em;
++  overflow-wrap: anywhere;
++}
++
++.consent {
++  display: flex;
++  align-items: flex-start;
++  gap: var(--space-3);
++  min-height: 44px;
++}
++
++.consent input {
++  flex-shrink: 0;
++  width: 1.5rem;
++  height: 1.5rem;
++  margin: 0;
++}
++
++.links {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-2);
++}
+diff --git a/apps/web/src/features/auth/install-help.ts b/apps/web/src/features/auth/install-help.ts
+new file mode 100644
+index 0000000..5e10a10
+--- /dev/null
++++ b/apps/web/src/features/auth/install-help.ts
+@@ -0,0 +1,25 @@
++export type InstallPlatform = 'ios' | 'android' | 'other';
++
++/** Appli installée sur l'écran d'accueil (R-ARR-1) : `display-mode: standalone`, ou `navigator.standalone` sur iOS. */
++export function isStandalone(win: Window = window): boolean {
++  const displayMode =
++    typeof win.matchMedia === 'function' && win.matchMedia('(display-mode: standalone)').matches;
++  return displayMode || (win.navigator as Navigator & { standalone?: boolean }).standalone === true;
++}
++
++export function detectPlatform(userAgent: string): InstallPlatform {
++  if (/iPhone|iPad|iPod/.test(userAgent)) return 'ios';
++  if (/Android/.test(userAgent)) return 'android';
++  return 'other';
++}
++
++const IOS_HELP =
++  "Sur iPhone : touche Partager, puis « Sur l'écran d'accueil ». Ouvre ensuite appsport depuis l'écran d'accueil et colle le code.";
++const ANDROID_HELP = "Sur Android : ouvre le menu ⋮ puis « Installer l'application ».";
++
++/** Consigne d'installation du système, les deux quand il n'est pas reconnu (R-ARR-2). */
++export function installHelp(platform: InstallPlatform): string[] {
++  if (platform === 'ios') return [IOS_HELP];
++  if (platform === 'android') return [ANDROID_HELP];
++  return [IOS_HELP, ANDROID_HELP];
++}
+diff --git a/apps/web/src/features/auth/messages.ts b/apps/web/src/features/auth/messages.ts
+new file mode 100644
+index 0000000..08eb672
+--- /dev/null
++++ b/apps/web/src/features/auth/messages.ts
+@@ -0,0 +1,116 @@
++import {
++  type ApiErrorCode,
++  PASSWORD_MAX,
++  PASSWORD_MIN_ADMIN,
++  PASSWORD_MIN_MEMBER,
++  type Role,
++  SECRET_CODE_LENGTH,
++  USERNAME_MAX,
++  USERNAME_MIN,
++} from '@appsport/contracts';
++import { type PasswordRejection, validatePassword } from '@appsport/domain';
++import { ApiError } from '../../api/client';
++import { ERROR_MESSAGES, errorMessage } from '../../ui';
++
++/** Un message par motif de rejet (R-MDP-1, R-MDP-3) ; le minimum d'un admin passe par `passwordMessage`. */
++export const PASSWORD_MESSAGES: Record<PasswordRejection, string> = {
++  too_short: `${PASSWORD_MIN_MEMBER} caractères au moins.`,
++  too_long: `${PASSWORD_MAX} caractères au plus.`,
++  common: 'Ce mot de passe est trop courant. Choisis-en un autre.',
++  contains_username: 'Le mot de passe ne doit pas contenir ton pseudo.',
++  contains_appsport: 'Le mot de passe ne doit pas contenir « appsport ».',
++  single_char: 'Le mot de passe ne peut pas répéter un seul caractère.',
++};
++
++export const PASSWORD_MISMATCH_MESSAGE = 'Les deux mots de passe ne correspondent pas.';
++
++export function passwordMessage(reason: PasswordRejection, role: Role): string {
++  return reason === 'too_short' && role === 'admin'
++    ? `${PASSWORD_MIN_ADMIN} caractères au moins.`
++    : PASSWORD_MESSAGES[reason];
++}
++
++/** La liste des mots de passe courants reste au serveur : `common` revient en `password_rejected`. */
++const NO_COMMON_PASSWORDS: ReadonlySet<string> = new Set();
++
++/**
++ * Contrôle local d'un nouveau mot de passe avant tout envoi : message à afficher, ou null.
++ * Les règles du mot de passe passent avant la confirmation.
++ */
++export function checkNewPassword(i: {
++  password: string;
++  confirm: string;
++  username: string;
++  role: Role;
++}): string | null {
++  const verdict = validatePassword(i.password, {
++    username: i.username,
++    role: i.role,
++    commonPasswords: NO_COMMON_PASSWORDS,
++  });
++  if (!verdict.ok) return passwordMessage(verdict.reason, i.role);
++  return i.password.normalize('NFC') === i.confirm.normalize('NFC') ? null : PASSWORD_MISMATCH_MESSAGE;
++}
++
++export const USERNAME_MESSAGES: Record<'length' | 'characters' | 'reserved', string> = {
++  length: `${USERNAME_MIN} à ${USERNAME_MAX} caractères.`,
++  characters: 'Lettres (accents admis), chiffres, « . », « _ » et « - » seulement.',
++  reserved: 'Ce pseudo est réservé.',
++};
++
++/** Nom de repli quand l'appareil garde une file sans nom de propriétaire (jamais en usage normal). */
++export const FORMER_ACCOUNT_NAME = "l'ancien compte";
++
++export const INCOMPLETE_CODE_MESSAGE = `Code incomplet : il faut ${SECRET_CODE_LENGTH} caractères.`;
++
++const ASK_ADMIN = "Demande un nouveau code à l'administrateur.";
++const INVITATION_MESSAGES: Partial<Record<ApiErrorCode, string>> = {
++  invitation_expired: `Cette invitation a expiré. ${ASK_ADMIN}`,
++  invitation_used: `Cette invitation a déjà été utilisée. ${ASK_ADMIN}`,
++  invitation_revoked: `Cette invitation a été révoquée. ${ASK_ADMIN}`,
++  invitation_unknown: `Ce code est inconnu. ${ASK_ADMIN}`,
++  rate_limited: "Trop d'essais depuis cet appareil.",
++};
++
++/** Message d'une erreur de l'API sur un code d'invitation (R-INV-8) ; les autres codes gardent le message commun. */
++export function invitationErrorMessage(code: ApiErrorCode): string {
++  return INVITATION_MESSAGES[code] ?? ERROR_MESSAGES[code];
++}
++
++export const RESET_INVALID_MESSAGE =
++  "Ce lien n'est plus valable. Demande un nouveau lien à l'administrateur.";
++
++const isKey = <T extends object>(record: T, key: unknown): key is keyof T =>
++  typeof key === 'string' && Object.hasOwn(record, key);
++
++/**
++ * Erreur d'un parcours d'arrivée (invitation, création du compte, réinitialisation) : motif lu
++ * dans `body.reason` pour `password_rejected` et `username_invalid`, `role` fixant le minimum.
++ */
++export function accessErrorMessage(e: unknown, role: Role): string {
++  if (!(e instanceof ApiError)) return errorMessage(e);
++  const reason = e.body.reason;
++  if (e.code === 'password_rejected' && isKey(PASSWORD_MESSAGES, reason))
++    return passwordMessage(reason, role);
++  if (e.code === 'username_invalid' && isKey(USERNAME_MESSAGES, reason)) return USERNAME_MESSAGES[reason];
++  if (e.code === 'reset_invalid') return RESET_INVALID_MESSAGE;
++  return invitationErrorMessage(e.code);
++}
++
++/** Connexion : `rate_limited` annonce l'attente en minutes, arrondie au supérieur (R-AUTH-2). */
++export function loginErrorMessage(e: unknown): string {
++  if (e instanceof ApiError && e.code === 'rate_limited') {
++    const seconds = e.body.retryAfterS;
++    if (typeof seconds !== 'number' || !Number.isFinite(seconds))
++      return 'Trop de tentatives. Réessaie plus tard.';
++    return `Trop de tentatives. Réessaie dans ${Math.max(1, Math.ceil(seconds / 60))} min.`;
++  }
++  return errorMessage(e);
++}
++
++/** Avertissement avant d'effacer la file d'envoi de l'appareil (R-AUTH-8, R-AUTH-9, P-AUT-6). */
++export function pendingWarning(n: number, username: string): string {
++  return n === 1
++    ? `1 élément non envoyé de ${username} sera effacé de cet appareil`
++    : `${n} éléments non envoyés de ${username} seront effacés de cet appareil`;
++}
+diff --git a/apps/web/test/auth/invite.test.tsx b/apps/web/test/auth/invite.test.tsx
+new file mode 100644
+index 0000000..10d7261
+--- /dev/null
++++ b/apps/web/test/auth/invite.test.tsx
+@@ -0,0 +1,373 @@
++import { fireEvent, screen, waitFor } from '@testing-library/react';
++import { StrictMode } from 'react';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { InvitePage } from '../../src/features/auth/InvitePage';
++import { PASSWORD_MESSAGES, USERNAME_MESSAGES } from '../../src/features/auth/messages';
++import {
++  ANDROID_UA,
++  click,
++  fill,
++  IPHONE_UA,
++  openUrl,
++  stubDisplayMode,
++  stubUserAgent,
++  WINDOWS_UA,
++} from '../support/auth';
++import { createFakeApi, type FakeApi } from '../support/fake-api';
++import { makeMe, renderApp, renderWithServices } from '../support/render';
++
++const CODE = 'ABCDEFGHJKMNPQR0';
++const OTHER_CODE = 'ABCDEFGHJKMNPQRS';
++const LINK = '/invite#abcd-efgh-jkmn-pqrO';
++const PHRASE = 'cheval agrafe batterie correcte';
++const ASK = "Demande un nouveau code à l'administrateur.";
++const CHECK = '/api/invitations/check';
++const ACCEPT = '/api/invitations/accept';
++
++const reply = (body: unknown, status = 200) => ({ status, body });
++const memberCheck = reply({ birthDate: '2008-03-01', role: 'member' });
++const callsTo = (api: FakeApi, path: string) => api.calls.filter((c) => c.path === path);
++
++afterEach(() => {
++  vi.unstubAllGlobals();
++  vi.restoreAllMocks();
++  openUrl('/');
++});
++
++async function renderInvite(
++  o: { url?: string; standalone?: boolean; api?: FakeApi; userAgent?: string } = {},
++) {
++  stubDisplayMode(o.standalone ?? true);
++  if (o.userAgent) stubUserAgent(o.userAgent);
++  openUrl(o.url ?? '/invite');
++  const api = o.api ?? createFakeApi().on('POST', CHECK, memberCheck);
++  const view = await renderWithServices(<InvitePage />, { me: null, api });
++  return { ...view, api };
++}
++
++/** Formulaire de création affiché, case de lecture cochée. */
++async function renderForm(role: 'member' | 'admin' = 'member') {
++  const api = createFakeApi().on('POST', CHECK, reply({ birthDate: '2008-03-01', role }));
++  const view = await renderInvite({ url: LINK, api });
++  await screen.findByLabelText('Date de naissance');
++  fireEvent.click(screen.getByLabelText("J'ai lu la page Confidentialité et règles"));
++  return view;
++}
++
++const submitWith = (username: string, password: string, confirm = password) => {
++  fill('Pseudo', username);
++  fill('Mot de passe', password);
++  fill('Confirmation', confirm);
++  click('Créer mon compte');
++};
++
++describe('accueil (03 §13.1, R-ARR-1)', () => {
++  it('porteur, rappel « pas un service médical », lien vers Confidentialité', async () => {
++    await renderInvite();
++    const text = document.body.textContent ?? '';
++    expect(text).toContain(
++      "appsport est un outil de suivi entre proches, hébergé chez l'administrateur. Ce n'est pas un service médical.",
++    );
++    expect(screen.getByRole('link', { name: 'Confidentialité et règles' }).getAttribute('href')).toBe(
++      '/privacy',
++    );
++  });
++
++  it("route /invite de l'appli, sans session", async () => {
++    stubDisplayMode(true);
++    openUrl('/invite');
++    await renderApp({ path: '/invite', me: null });
++    await screen.findByLabelText("Lien ou code d'invitation");
++    expect(screen.queryByText('Page introuvable')).toBeNull();
++  });
++});
++
++describe("lien d'invitation dans l'appli installée (R-ARR-1, R-INV-4)", () => {
++  it('vérifie le code du fragment, efface le fragment, affiche la date de naissance en lecture seule', async () => {
++    const { api } = await renderInvite({ url: LINK });
++    await screen.findByLabelText('Date de naissance');
++    expect(callsTo(api, CHECK)).toHaveLength(1);
++    expect(callsTo(api, CHECK)[0]?.body).toEqual({ code: CODE });
++    expect(callsTo(api, CHECK)[0]?.query.toString()).toBe('');
++    expect(callsTo(api, CHECK)[0]?.method).toBe('POST');
++    expect(window.location.hash).toBe('');
++    const birth = screen.getByLabelText('Date de naissance') as HTMLInputElement;
++    expect(birth.readOnly).toBe(true);
++    expect(birth.value).toBe('01/03/2008');
++    expect(screen.getByText("Renseignée par l'administrateur. Une erreur ? Préviens-le.")).toBeTruthy();
++    expect(document.body.textContent).toContain('4 mots');
++    // Le code n'est plus saisissable ni lisible une fois vérifié.
++    expect(screen.queryByLabelText("Lien ou code d'invitation")).toBeNull();
++  });
++
++  it("« Créer mon compte » désactivé tant que la page Confidentialité n'est pas lue", async () => {
++    await renderInvite({ url: LINK });
++    await screen.findByLabelText('Date de naissance');
++    const submit = screen.getByRole('button', { name: 'Créer mon compte' }) as HTMLButtonElement;
++    const box = screen.getByLabelText("J'ai lu la page Confidentialité et règles") as HTMLInputElement;
++    expect(submit.disabled).toBe(true);
++    fireEvent.click(box);
++    expect(submit.disabled).toBe(false);
++    fireEvent.click(box);
++    expect(submit.disabled).toBe(true);
++  });
++
++  it("création : accept avec la version du texte, puis l'onboarding", async () => {
++    const { api, location, db } = await renderForm();
++    api.on('POST', ACCEPT, reply(makeMe({ id: 'u-9', username: 'lea', onboardingCompletedAt: null })));
++    submitWith('lea', PHRASE);
++    await waitFor(() => expect(location()).toBe('/onboarding'));
++    expect(callsTo(api, ACCEPT)).toHaveLength(1);
++    expect(callsTo(api, ACCEPT)[0]?.body).toEqual({
++      code: CODE,
++      username: 'lea',
++      password: PHRASE,
++      termsVersion: '1.0',
++    });
++    expect((await db.meta.get('userId'))?.value).toBe('u-9');
++  });
++
++  it("invitation d'amorçage (admin) : 13 caractères refusés sans requête, 14 acceptés", async () => {
++    const { api, location } = await renderForm('admin');
++    api.on('POST', ACCEPT, reply(makeMe({ id: 'u-9', role: 'admin', onboardingCompletedAt: null })));
++    submitWith('boss', 'abcdefghijklm');
++    expect((await screen.findByRole('alert')).textContent).toBe('14 caractères au moins.');
++    expect(callsTo(api, ACCEPT)).toHaveLength(0);
++    submitWith('boss', 'abcdefghijklmn');
++    await waitFor(() => expect(location()).toBe('/onboarding'));
++    expect(callsTo(api, ACCEPT)[0]?.body).toMatchObject({ password: 'abcdefghijklmn' });
++  });
++
++  it("sous StrictMode (appli réelle) : une seule vérification, le formulaire s'affiche, fragment effacé", async () => {
++    stubDisplayMode(true);
++    openUrl(LINK);
++    const api = createFakeApi().on('POST', CHECK, memberCheck);
++    await renderWithServices(
++      <StrictMode>
++        <InvitePage />
++      </StrictMode>,
++      { me: null, api },
++    );
++    await screen.findByLabelText('Date de naissance');
++    expect(callsTo(api, CHECK)).toHaveLength(1);
++    expect(callsTo(api, CHECK)[0]?.body).toEqual({ code: CODE });
++    expect(window.location.hash).toBe('');
++  });
++
++  it("429 au contrôle du code : « Trop d'essais depuis cet appareil. »", async () => {
++    const api = createFakeApi().on('POST', CHECK, reply({ error: 'rate_limited', retryAfterS: 600 }, 429));
++    await renderInvite({ url: LINK, api });
++    expect((await screen.findByRole('alert')).textContent).toBe("Trop d'essais depuis cet appareil.");
++    expect(screen.queryByLabelText('Date de naissance')).toBeNull();
++  });
++});
++
++describe("navigateur : aide à l'installation (R-ARR-2, 02 §15 n°5)", () => {
++  const browser = (userAgent: string) =>
++    renderInvite({ url: '/invite#abcd-efgh-jkmn-pqrs', standalone: false, userAgent });
++  const bodyText = () => document.body.textContent ?? '';
++
++  it('iPhone : consigne iOS, code en clair avec « Copier », ni formulaire ni requête', async () => {
++    const { api } = await browser(IPHONE_UA);
++    expect(bodyText()).toContain("Sur l'écran d'accueil");
++    expect(bodyText()).not.toContain("Installer l'application");
++    expect(screen.getByText('ABCD-EFGH-JKMN-PQRS')).toBeTruthy();
++    expect(screen.getByRole('button', { name: 'Copier' })).toBeTruthy();
++    expect(screen.queryByLabelText('Pseudo')).toBeNull();
++    expect(screen.queryByLabelText("Lien ou code d'invitation")).toBeNull();
++    expect(api.calls).toHaveLength(0);
++    expect(window.location.hash).toBe('');
++  });
++
++  it('Android : consigne Android', async () => {
++    await browser(ANDROID_UA);
++    expect(bodyText()).toContain("Installer l'application");
++    expect(bodyText()).not.toContain("Sur l'écran d'accueil");
++  });
++
++  it('autre système : les deux consignes', async () => {
++    await browser(WINDOWS_UA);
++    expect(bodyText()).toContain("Sur l'écran d'accueil");
++    expect(bodyText()).toContain("Installer l'application");
++  });
++
++  it('sans fragment : consigne et « Continuer dans ce navigateur », sans code ni champ', async () => {
++    const { api } = await renderInvite({ standalone: false, userAgent: IPHONE_UA });
++    expect(bodyText()).toContain("Sur l'écran d'accueil");
++    expect(screen.queryByRole('button', { name: 'Copier' })).toBeNull();
++    expect(screen.queryByLabelText("Lien ou code d'invitation")).toBeNull();
++    expect(api.calls).toHaveLength(0);
++  });
++
++  it('« Continuer dans ce navigateur » : avertissement, puis la vérification du code et le formulaire', async () => {
++    const { api } = await browser(IPHONE_UA);
++    const warning = "Attention : sur téléphone, tes données ne seront pas dans l'appli installée.";
++    expect(screen.getByText(warning).closest('[role="status"]')).not.toBeNull();
++    click('Continuer dans ce navigateur');
++    await screen.findByLabelText('Date de naissance');
++    expect(screen.getByText(warning)).toBeTruthy();
++    expect(callsTo(api, CHECK)[0]?.body).toEqual({ code: OTHER_CODE });
++    expect(screen.queryByRole('button', { name: 'Continuer dans ce navigateur' })).toBeNull();
++  });
++
++  it('sans fragment, « Continuer dans ce navigateur » ouvre la saisie du code', async () => {
++    await renderInvite({ standalone: false, userAgent: WINDOWS_UA });
++    click('Continuer dans ce navigateur');
++    expect(await screen.findByLabelText("Lien ou code d'invitation")).toBeTruthy();
++  });
++
++  it("l'appli installée n'affiche ni aide ni avertissement", async () => {
++    await renderInvite({ userAgent: IPHONE_UA });
++    expect(bodyText()).not.toContain("Sur l'écran d'accueil");
++    expect(bodyText()).not.toContain("tes données ne seront pas dans l'appli installée");
++  });
++});
++
++describe('saisie du code (R-INV-5, 02 §15 n°3)', () => {
++  const field = () => screen.getByLabelText("Lien ou code d'invitation");
++
++  it('code trop court : « Code incomplet », aucune requête', async () => {
++    const { api } = await renderInvite();
++    fill("Lien ou code d'invitation", 'ABC');
++    click('Suivant');
++    expect(await screen.findByText('Code incomplet : il faut 16 caractères.')).toBeTruthy();
++    expect(field().getAttribute('aria-invalid')).toBe('true');
++    expect(api.calls).toHaveLength(0);
++  });
++
++  it('code en minuscules, espaces et confusions de lecture', async () => {
++    const { api } = await renderInvite();
++    fill("Lien ou code d'invitation", 'abcd efgh jkmn pqrs');
++    click('Suivant');
++    await screen.findByLabelText('Date de naissance');
++    expect(callsTo(api, CHECK)[0]?.body).toEqual({ code: OTHER_CODE });
++  });
++
++  it('lien complet collé', async () => {
++    const { api } = await renderInvite();
++    fill("Lien ou code d'invitation", 'https://appsport.exemple.ts.net/invite#abcd-efgh-jkmn-pqrs');
++    click('Suivant');
++    await screen.findByLabelText('Date de naissance');
++    expect(callsTo(api, CHECK)[0]?.body).toEqual({ code: OTHER_CODE });
++  });
++
++  it('fragment illisible : « Code incomplet » et saisie, aucune requête', async () => {
++    const { api } = await renderInvite({ url: '/invite#abc' });
++    expect(await screen.findByText('Code incomplet : il faut 16 caractères.')).toBeTruthy();
++    expect(field()).toBeTruthy();
++    expect(api.calls).toHaveLength(0);
++    expect(window.location.hash).toBe('');
++  });
++
++  it.each([
++    ['invitation_expired', 'Cette invitation a expiré.'],
++    ['invitation_used', 'Cette invitation a déjà été utilisée.'],
++    ['invitation_revoked', 'Cette invitation a été révoquée.'],
++    ['invitation_unknown', 'Ce code est inconnu.'],
++  ])(
++    "%s : « %s » suivi de la demande à l'administrateur, nouvelle saisie possible",
++    async (error, message) => {
++      const api = createFakeApi().on('POST', CHECK, reply({ error }, 400));
++      await renderInvite({ url: LINK, api });
++      const alert = await screen.findByRole('alert');
++      expect(alert.textContent).toBe(`${message} ${ASK}`);
++      expect(field()).toBeTruthy();
++    },
++  );
++
++  it('après une erreur, un autre code peut être essayé', async () => {
++    const api = createFakeApi().on('POST', CHECK, reply({ error: 'invitation_unknown' }, 400));
++    await renderInvite({ url: LINK, api });
++    await screen.findByRole('alert');
++    api.on('POST', CHECK, memberCheck);
++    fill("Lien ou code d'invitation", 'abcd-efgh-jkmn-pqrs');
++    click('Suivant');
++    await screen.findByLabelText('Date de naissance');
++    expect(screen.queryByRole('alert')).toBeNull();
++  });
++});
++
++describe('création du compte : contrôles locaux et erreurs du serveur (R-CPT-1, R-MDP-1 à R-MDP-3)', () => {
++  const alertText = async () => (await screen.findByRole('alert')).textContent;
++
++  it('11 caractères : « 12 caractères au moins. », aucune requête', async () => {
++    const { api } = await renderForm();
++    submitWith('lea', 'a1b2c3d4e5f');
++    expect(await alertText()).toBe('12 caractères au moins.');
++    expect(callsTo(api, ACCEPT)).toHaveLength(0);
++  });
++
++  it('confirmation différente', async () => {
++    const { api } = await renderForm();
++    submitWith('lea', PHRASE, 'cheval agrafe batterie');
++    expect(await alertText()).toBe('Les deux mots de passe ne correspondent pas.');
++    expect(callsTo(api, ACCEPT)).toHaveLength(0);
++  });
++
++  it('mot de passe contenant le pseudo', async () => {
++    const { api } = await renderForm();
++    submitWith('lea', 'bonjour lea 123456');
++    expect(await alertText()).toBe(PASSWORD_MESSAGES.contains_username);
++    expect(callsTo(api, ACCEPT)).toHaveLength(0);
++  });
++
++  it.each([
++    ['ab', USERNAME_MESSAGES.length],
++    ['a'.repeat(25), USERNAME_MESSAGES.length],
++    ['Admin', USERNAME_MESSAGES.reserved],
++    ['le a', USERNAME_MESSAGES.characters],
++    ['léa$', USERNAME_MESSAGES.characters],
++  ])('pseudo %j refusé sans requête', async (username, message) => {
++    const { api } = await renderForm();
++    submitWith(username, PHRASE);
++    expect(await alertText()).toBe(message);
++    expect(callsTo(api, ACCEPT)).toHaveLength(0);
++  });
++
++  it('409 username_taken : message, formulaire gardé', async () => {
++    const { api } = await renderForm();
++    api.on('POST', ACCEPT, reply({ error: 'username_taken' }, 409));
++    submitWith('lea', PHRASE);
++    expect(await alertText()).toBe('Ce pseudo est déjà pris.');
++    expect((screen.getByLabelText('Pseudo') as HTMLInputElement).value).toBe('lea');
++    expect((screen.getByLabelText('Mot de passe') as HTMLInputElement).value).toBe(PHRASE);
++    expect((screen.getByRole('button', { name: 'Créer mon compte' }) as HTMLButtonElement).disabled).toBe(
++      false,
++    );
++  });
++
++  it('password_rejected et username_invalid du serveur lisent le motif', async () => {
++    const { api } = await renderForm();
++    api.on('POST', ACCEPT, reply({ error: 'password_rejected', reason: 'common' }, 400));
++    submitWith('lea', PHRASE);
++    expect(await alertText()).toBe(PASSWORD_MESSAGES.common);
++    api.on('POST', ACCEPT, reply({ error: 'username_invalid', reason: 'reserved' }, 400));
++    click('Créer mon compte');
++    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe(USERNAME_MESSAGES.reserved));
++  });
++
++  it("invitation utilisée entre-temps : message d'invitation", async () => {
++    const { api } = await renderForm();
++    api.on('POST', ACCEPT, reply({ error: 'invitation_used' }, 400));
++    submitWith('lea', PHRASE);
++    expect(await alertText()).toBe(`Cette invitation a déjà été utilisée. ${ASK}`);
++  });
++
++  it('hors ligne : « Nécessite le réseau », formulaire gardé', async () => {
++    const { api } = await renderForm();
++    api.setOffline('reject');
++    submitWith('lea', PHRASE);
++    expect(await alertText()).toBe('Nécessite le réseau');
++    expect((screen.getByLabelText('Pseudo') as HTMLInputElement).value).toBe('lea');
++  });
++
++  it("champs nommés pour les lecteurs d'écran et les gestionnaires de mots de passe", async () => {
++    await renderForm();
++    const password = screen.getByLabelText('Mot de passe') as HTMLInputElement;
++    expect(password.type).toBe('password');
++    expect(password.autocomplete).toBe('new-password');
++    expect((screen.getByLabelText('Confirmation') as HTMLInputElement).type).toBe('password');
++    expect((screen.getByLabelText('Pseudo') as HTMLInputElement).autocomplete).toBe('username');
++    expect(screen.getByText(/Astuce : une phrase de 4 mots ou plus/)).toBeTruthy();
++  });
++});
+diff --git a/apps/web/test/auth/login.test.tsx b/apps/web/test/auth/login.test.tsx
+new file mode 100644
+index 0000000..7356d79
+--- /dev/null
++++ b/apps/web/test/auth/login.test.tsx
+@@ -0,0 +1,208 @@
++import { fireEvent, screen, waitFor, within } from '@testing-library/react';
++import { afterEach, describe, expect, it } from 'vitest';
++import { LoginPage } from '../../src/features/auth/LoginPage';
++import { deleteMeta, getMeta } from '../../src/local-db/meta';
++import { click, fill, openUrl } from '../support/auth';
++import { createFakeApi, createFakeSyncEngine, type FakeApi } from '../support/fake-api';
++import { makeMe, type RenderAppOptions, renderApp, renderWithServices } from '../support/render';
++import { seedOutbox } from '../support/seed';
++
++const LOGIN = '/api/auth/login';
++const reply = (body: unknown, status = 200) => ({ status, body });
++const loginCalls = (api: FakeApi) => api.calls.filter((c) => c.path === LOGIN);
++const renderLogin = (opts: RenderAppOptions = {}) =>
++  renderWithServices(<LoginPage />, { path: '/login', ...opts });
++const lea = makeMe({ id: 'u-1', username: 'lea' });
++const max = makeMe({ id: 'u-2', username: 'max' });
++
++afterEach(() => openUrl('/'));
++
++const signIn = (username: string, password = 'mot de passe correct') => {
++  fill('Pseudo', username);
++  fill('Mot de passe', password);
++  click('Se connecter');
++};
++
++describe('connexion (R-AUTH-1, R-AUTH-5)', () => {
++  it('Pseudo, Mot de passe, Se connecter → POST /api/auth/login puis accueil', async () => {
++    const api = createFakeApi().on('POST', LOGIN, reply(lea));
++    const { location } = await renderLogin({ me: null, api });
++    const password = screen.getByLabelText('Mot de passe') as HTMLInputElement;
++    expect(password.type).toBe('password');
++    expect(password.autocomplete).toBe('current-password');
++    expect((screen.getByLabelText('Pseudo') as HTMLInputElement).autocomplete).toBe('username');
++    signIn('lea', 'cheval agrafe batterie correcte');
++    await waitFor(() => expect(location()).toBe('/'));
++    expect(loginCalls(api)[0]?.body).toEqual({
++      username: 'lea',
++      password: 'cheval agrafe batterie correcte',
++    });
++  });
++
++  it('401 invalid_credentials : message unique, formulaire gardé', async () => {
++    const api = createFakeApi().on('POST', LOGIN, reply({ error: 'invalid_credentials' }, 401));
++    const { location } = await renderLogin({ me: null, api });
++    signIn('lea');
++    expect((await screen.findByRole('alert')).textContent).toBe('Pseudo ou mot de passe incorrect');
++    expect((screen.getByLabelText('Pseudo') as HTMLInputElement).value).toBe('lea');
++    expect(location()).toBe('/login');
++    expect(screen.getByRole('button', { name: 'Se connecter' })).toBeTruthy();
++  });
++
++  it('403 account_disabled', async () => {
++    const api = createFakeApi().on('POST', LOGIN, reply({ error: 'account_disabled' }, 403));
++    await renderLogin({ me: null, api });
++    signIn('lea');
++    expect((await screen.findByRole('alert')).textContent).toBe(
++      "Compte désactivé, contacte l'administrateur",
++    );
++  });
++
++  it('429 rate_limited : minutes arrondies au supérieur (R-AUTH-2)', async () => {
++    const api = createFakeApi().on('POST', LOGIN, reply({ error: 'rate_limited', retryAfterS: 61 }, 429));
++    await renderLogin({ me: null, api });
++    signIn('lea');
++    expect((await screen.findByRole('alert')).textContent).toBe('Trop de tentatives. Réessaie dans 2 min.');
++  });
++
++  it('hors ligne : « Nécessite le réseau »', async () => {
++    const api = createFakeApi();
++    api.setOffline('reject');
++    await renderLogin({ me: null, api });
++    signIn('lea');
++    expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
++  });
++
++  it("liens vers la saisie d'un code d'invitation et d'un lien de réinitialisation", async () => {
++    await renderLogin({ me: null });
++    expect(screen.getByRole('link', { name: "J'ai un code d'invitation" }).getAttribute('href')).toBe(
++      '/invite',
++    );
++    expect(screen.getByRole('link', { name: "J'ai un lien de réinitialisation" }).getAttribute('href')).toBe(
++      '/reset',
++    );
++  });
++});
++
++describe('autre pseudo sur un appareil qui a des données non envoyées (R-AUTH-8, P-AUT-6)', () => {
++  async function renderWithPending(n = 2) {
++    const api = createFakeApi().on('POST', LOGIN, reply(max));
++    const view = await renderLogin({ me: lea, api });
++    await seedOutbox(view.db, 'u-1', n);
++    return { ...view, api };
++  }
++
++  it('avertit avant toute requête ; Annuler : aucune requête, file gardée', async () => {
++    const { api, db, location } = await renderWithPending();
++    signIn('max');
++    const dialog = await screen.findByRole('dialog');
++    expect(dialog.textContent).toContain('2 éléments non envoyés de lea seront effacés de cet appareil');
++    expect(loginCalls(api)).toHaveLength(0);
++    fireEvent.click(within(dialog).getByRole('button', { name: 'Annuler' }));
++    expect(screen.queryByRole('dialog')).toBeNull();
++    expect(loginCalls(api)).toHaveLength(0);
++    expect(await db.outbox.count()).toBe(2);
++    expect(location()).toBe('/login');
++    expect((screen.getByLabelText('Pseudo') as HTMLInputElement).value).toBe('max');
++  });
++
++  it('Continuer : connexion, accueil, file effacée', async () => {
++    const { api, db, location } = await renderWithPending();
++    signIn('max');
++    const dialog = await screen.findByRole('dialog');
++    fireEvent.click(within(dialog).getByRole('button', { name: 'Continuer' }));
++    await waitFor(() => expect(location()).toBe('/'));
++    await waitFor(async () => expect(await db.outbox.count()).toBe(0));
++    expect(loginCalls(api)).toHaveLength(1);
++    expect(await getMeta(db, 'userId')).toBe('u-2');
++  });
++
++  it('Continuer puis identifiants refusés : la file reste', async () => {
++    const { api, db } = await renderWithPending();
++    api.on('POST', LOGIN, reply({ error: 'invalid_credentials' }, 401));
++    signIn('max');
++    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Continuer' }));
++    expect((await screen.findByRole('alert')).textContent).toBe('Pseudo ou mot de passe incorrect');
++    expect(screen.queryByRole('dialog')).toBeNull();
++    expect(await db.outbox.count()).toBe(2);
++  });
++
++  it('1 seul élément : forme du singulier', async () => {
++    await renderWithPending(1);
++    signIn('max');
++    expect((await screen.findByRole('dialog')).textContent).toContain(
++      '1 élément non envoyé de lea sera effacé de cet appareil',
++    );
++  });
++
++  it("même pseudo en casse différente : pas d'avertissement, file gardée", async () => {
++    const { api, db, location } = await renderWithPending();
++    api.on('POST', LOGIN, reply(lea));
++    signIn('LEA');
++    await waitFor(() => expect(location()).toBe('/'));
++    expect(screen.queryByRole('dialog')).toBeNull();
++    expect(await db.outbox.count()).toBe(2);
++    expect(await getMeta(db, 'userId')).toBe('u-1');
++  });
++
++  it("autre pseudo sans rien en attente : pas d'avertissement", async () => {
++    const api = createFakeApi().on('POST', LOGIN, reply(max));
++    const { location } = await renderLogin({ me: lea, api });
++    signIn('max');
++    await waitFor(() => expect(location()).toBe('/'));
++    expect(screen.queryByRole('dialog')).toBeNull();
++  });
++
++  it("propriétaire sans nom connu : l'avertissement garde un nom lisible", async () => {
++    const { db } = await renderWithPending();
++    await deleteMeta(db, 'me');
++    signIn('max');
++    expect((await screen.findByRole('dialog')).textContent).toContain(
++      "2 éléments non envoyés de l'ancien compte seront effacés de cet appareil",
++    );
++  });
++});
++
++describe('session perdue et compte supprimé (R-AUTH-8, P-DRT-4)', () => {
++  it('?reason=account_deleted : « Ce compte a été supprimé »', async () => {
++    await renderLogin({ me: null, path: '/login?reason=account_deleted' });
++    expect(screen.getByText('Ce compte a été supprimé')).toBeTruthy();
++  });
++
++  it('autre raison ou aucune : pas de message', async () => {
++    await renderLogin({ me: null, path: '/login?reason=autre' });
++    expect(screen.queryByText('Ce compte a été supprimé')).toBeNull();
++    expect(screen.queryByText('Ta session a expiré. Reconnecte-toi.')).toBeNull();
++  });
++
++  it('connexion « unauthenticated » : « Ta session a expiré. Reconnecte-toi. »', async () => {
++    const sync = createFakeSyncEngine({ connection: 'unauthenticated' });
++    await renderLogin({ me: lea, sync });
++    expect(screen.getByText('Ta session a expiré. Reconnecte-toi.')).toBeTruthy();
++  });
++
++  it("après un compte supprimé : une nouvelle session s'ouvre et le moteur repart", async () => {
++    const api = createFakeApi().on('POST', LOGIN, reply(max));
++    const sync = createFakeSyncEngine({ connection: 'account_deleted' });
++    const { location, db } = await renderLogin({
++      me: null,
++      sync,
++      api,
++      path: '/login?reason=account_deleted',
++    });
++    expect(screen.getByText('Ce compte a été supprimé')).toBeTruthy();
++    signIn('max');
++    await waitFor(() => expect(location()).toBe('/'));
++    expect(sync.started).toBe(true);
++    expect(sync.triggers).toContain('manual');
++    expect(await getMeta(db, 'userId')).toBe('u-2');
++  });
++});
++
++describe("route /login de l'appli", () => {
++  it('sans session : le formulaire dans le cadre public', async () => {
++    await renderApp({ path: '/login', me: null });
++    expect(await screen.findByRole('button', { name: 'Se connecter' })).toBeTruthy();
++    expect(screen.queryByText('Page introuvable')).toBeNull();
++  });
++});
+diff --git a/apps/web/test/auth/logout-reset.test.tsx b/apps/web/test/auth/logout-reset.test.tsx
+new file mode 100644
+index 0000000..8dfec59
+--- /dev/null
++++ b/apps/web/test/auth/logout-reset.test.tsx
+@@ -0,0 +1,231 @@
++import { fireEvent, screen, waitFor, within } from '@testing-library/react';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { LogoutDialog } from '../../src/features/auth/LogoutDialog';
++import { PASSWORD_MESSAGES, pendingWarning } from '../../src/features/auth/messages';
++import { ResetPage } from '../../src/features/auth/ResetPage';
++import { getMeta } from '../../src/local-db/meta';
++import { click, fill, openUrl } from '../support/auth';
++import { createFakeApi, type FakeApi } from '../support/fake-api';
++import { createTestLocalDb } from '../support/local-db';
++import { makeMe, renderApp, renderWithServices } from '../support/render';
++import { seedOutbox } from '../support/seed';
++
++const reply = (body?: unknown, status = 200) => ({ status, body });
++const callsTo = (api: FakeApi, path: string) => api.calls.filter((c) => c.path === path);
++const lea = makeMe({ id: 'u-1', username: 'lea' });
++
++afterEach(() => openUrl('/'));
++
++describe('LogoutDialog (R-AUTH-9, R-SYN-14)', () => {
++  async function renderDialog(mode: 'current' | 'all', pending: number, open = true) {
++    const db = createTestLocalDb();
++    if (pending > 0) await seedOutbox(db, 'u-1', pending);
++    const api = createFakeApi()
++      .on('POST', '/api/auth/logout', reply(undefined, 204))
++      .on('POST', '/api/auth/logout-all', reply(undefined, 204));
++    const onClose = vi.fn();
++    const view = await renderWithServices(<LogoutDialog mode={mode} open={open} onClose={onClose} />, {
++      me: lea,
++      api,
++      db,
++      path: '/profile',
++    });
++    return { ...view, api, db, onClose };
++  }
++
++  it('avec 3 éléments en attente : avertissement, export, Annuler, « Se déconnecter quand même »', async () => {
++    const { api, db, onClose } = await renderDialog('current', 3);
++    const dialog = await screen.findByRole('dialog');
++    expect(dialog.textContent).toContain(pendingWarning(3, 'lea'));
++    const exportLink = within(dialog).getByRole('link', { name: 'Exporter mes données' });
++    expect(exportLink.getAttribute('href')).toBe('/profile/privacy');
++    expect(within(dialog).queryByRole('button', { name: 'Se déconnecter' })).toBeNull();
++    fireEvent.click(within(dialog).getByRole('button', { name: 'Annuler' }));
++    expect(onClose).toHaveBeenCalledTimes(1);
++    expect(api.calls).toHaveLength(0);
++    expect(await db.outbox.count()).toBe(3);
++  });
++
++  it('confirmation : POST /api/auth/logout {}, file vidée, profil local effacé, écran de connexion', async () => {
++    const { api, db, location } = await renderDialog('current', 3);
++    const dialog = await screen.findByRole('dialog');
++    fireEvent.click(within(dialog).getByRole('button', { name: 'Se déconnecter quand même' }));
++    await waitFor(() => expect(location()).toBe('/login'));
++    expect(callsTo(api, '/api/auth/logout')).toHaveLength(1);
++    expect(callsTo(api, '/api/auth/logout')[0]?.body).toEqual({});
++    expect(await db.outbox.count()).toBe(0);
++    expect(await getMeta(db, 'me')).toBeUndefined();
++    expect(await getMeta(db, 'userId')).toBeUndefined();
++  });
++
++  it('sans élément en attente : « Se déconnecter de cet appareil ? » et « Se déconnecter »', async () => {
++    const { api, location } = await renderDialog('current', 0);
++    const dialog = await screen.findByRole('dialog', { name: 'Se déconnecter de cet appareil ?' });
++    expect(within(dialog).queryByRole('link', { name: 'Exporter mes données' })).toBeNull();
++    expect(dialog.textContent).not.toContain('non envoy');
++    fireEvent.click(within(dialog).getByRole('button', { name: 'Se déconnecter' }));
++    await waitFor(() => expect(location()).toBe('/login'));
++    expect(callsTo(api, '/api/auth/logout')).toHaveLength(1);
++  });
++
++  it('mode « all » : POST /api/auth/logout-all', async () => {
++    const { api, location } = await renderDialog('all', 0);
++    const dialog = await screen.findByRole('dialog', { name: 'Déconnecter tous les appareils ?' });
++    fireEvent.click(within(dialog).getByRole('button', { name: 'Déconnecter tous les appareils' }));
++    await waitFor(() => expect(location()).toBe('/login'));
++    expect(callsTo(api, '/api/auth/logout-all')).toHaveLength(1);
++    expect(callsTo(api, '/api/auth/logout')).toHaveLength(0);
++  });
++
++  it('mode « all » avec des éléments en attente : même avertissement', async () => {
++    const { api } = await renderDialog('all', 1);
++    const dialog = await screen.findByRole('dialog');
++    expect(dialog.textContent).toContain(pendingWarning(1, 'lea'));
++    fireEvent.click(within(dialog).getByRole('button', { name: 'Se déconnecter quand même' }));
++    await waitFor(() => expect(callsTo(api, '/api/auth/logout-all')).toHaveLength(1));
++  });
++
++  it('hors ligne : « Nécessite le réseau », file et profil intacts, dialogue ouvert', async () => {
++    const { api, db, location } = await renderDialog('current', 3);
++    api.setOffline('reject');
++    const dialog = await screen.findByRole('dialog');
++    fireEvent.click(within(dialog).getByRole('button', { name: 'Se déconnecter quand même' }));
++    expect((await within(dialog).findByRole('alert')).textContent).toBe('Nécessite le réseau');
++    expect(await db.outbox.count()).toBe(3);
++    expect((await getMeta(db, 'me'))?.username).toBe('lea');
++    expect(location()).toBe('/profile');
++    expect(screen.getByRole('dialog')).toBeTruthy();
++  });
++
++  it("fermé : rien à l'écran", async () => {
++    await renderDialog('current', 2, false);
++    expect(screen.queryByRole('dialog')).toBeNull();
++  });
++});
++
++describe('ResetPage (R-RST-1, R-RST-3)', () => {
++  const CHECK = '/api/auth/reset/check';
++  const RESET = '/api/auth/reset';
++  const CODE = 'ABCDEFGHJKMNPQRS';
++  const PHRASE = 'cheval agrafe batterie correcte';
++  const memberCheck = reply({ username: 'lea', role: 'member' });
++
++  async function renderReset(o: { url?: string; api?: FakeApi } = {}) {
++    openUrl(o.url ?? '/reset#abcd-efgh-jkmn-pqrs');
++    const api = o.api ?? createFakeApi().on('POST', CHECK, memberCheck).on('POST', RESET, reply(lea));
++    const view = await renderWithServices(<ResetPage />, { me: null, api, path: '/reset' });
++    return { ...view, api };
++  }
++  const alertText = async () => (await screen.findByRole('alert')).textContent;
++
++  it('lien : vérification du fragment, fragment effacé, nouveau mot de passe pour le pseudo', async () => {
++    const { api, location } = await renderReset();
++    const password = (await screen.findByLabelText('Nouveau mot de passe pour lea')) as HTMLInputElement;
++    expect(callsTo(api, CHECK)).toHaveLength(1);
++    expect(callsTo(api, CHECK)[0]?.body).toEqual({ code: CODE });
++    expect(window.location.hash).toBe('');
++    expect(password.type).toBe('password');
++    expect(password.autocomplete).toBe('new-password');
++    expect(document.body.textContent).toContain('4 mots');
++    fill('Nouveau mot de passe pour lea', PHRASE);
++    fill('Confirmation', PHRASE);
++    click('Changer le mot de passe');
++    await waitFor(() => expect(location()).toBe('/'));
++    expect(callsTo(api, RESET)).toHaveLength(1);
++    expect(callsTo(api, RESET)[0]?.body).toEqual({ code: CODE, newPassword: PHRASE });
++  });
++
++  it('admin : 13 caractères refusés sans requête, 14 acceptés', async () => {
++    const api = createFakeApi()
++      .on('POST', CHECK, reply({ username: 'boss', role: 'admin' }))
++      .on('POST', RESET, reply(makeMe({ id: 'u-3', username: 'boss', role: 'admin' })));
++    const { location } = await renderReset({ api });
++    await screen.findByLabelText('Nouveau mot de passe pour boss');
++    fill('Nouveau mot de passe pour boss', 'abcdefghijklm');
++    fill('Confirmation', 'abcdefghijklm');
++    click('Changer le mot de passe');
++    expect(await alertText()).toBe('14 caractères au moins.');
++    expect(callsTo(api, RESET)).toHaveLength(0);
++    fill('Nouveau mot de passe pour boss', 'abcdefghijklmn');
++    fill('Confirmation', 'abcdefghijklmn');
++    click('Changer le mot de passe');
++    await waitFor(() => expect(location()).toBe('/'));
++    expect(callsTo(api, RESET)[0]?.body).toEqual({ code: CODE, newPassword: 'abcdefghijklmn' });
++  });
++
++  it('contrôles locaux : 11 caractères, confirmation, pseudo contenu', async () => {
++    const { api } = await renderReset();
++    await screen.findByLabelText('Nouveau mot de passe pour lea');
++    fill('Nouveau mot de passe pour lea', 'a1b2c3d4e5f');
++    fill('Confirmation', 'a1b2c3d4e5f');
++    click('Changer le mot de passe');
++    expect(await alertText()).toBe('12 caractères au moins.');
++    fill('Nouveau mot de passe pour lea', PHRASE);
++    fill('Confirmation', 'autre chose entièrement');
++    click('Changer le mot de passe');
++    await waitFor(() =>
++      expect(screen.getByRole('alert').textContent).toBe('Les deux mots de passe ne correspondent pas.'),
++    );
++    fill('Nouveau mot de passe pour lea', 'bonjour lea 123456');
++    fill('Confirmation', 'bonjour lea 123456');
++    click('Changer le mot de passe');
++    await waitFor(() =>
++      expect(screen.getByRole('alert').textContent).toBe(PASSWORD_MESSAGES.contains_username),
++    );
++    expect(callsTo(api, RESET)).toHaveLength(0);
++  });
++
++  const INVALID = "Ce lien n'est plus valable. Demande un nouveau lien à l'administrateur.";
++
++  it("reset_invalid à la vérification : message, saisie d'un autre code possible", async () => {
++    const api = createFakeApi().on('POST', CHECK, reply({ error: 'reset_invalid' }, 400));
++    await renderReset({ api });
++    expect(await alertText()).toBe(INVALID);
++    expect(screen.getByLabelText('Lien ou code de réinitialisation')).toBeTruthy();
++  });
++
++  it('reset_invalid à la validation : message, formulaire gardé', async () => {
++    const { api } = await renderReset();
++    await screen.findByLabelText('Nouveau mot de passe pour lea');
++    api.on('POST', RESET, reply({ error: 'reset_invalid' }, 400));
++    fill('Nouveau mot de passe pour lea', PHRASE);
++    fill('Confirmation', PHRASE);
++    click('Changer le mot de passe');
++    expect(await alertText()).toBe(INVALID);
++    expect((screen.getByLabelText('Nouveau mot de passe pour lea') as HTMLInputElement).value).toBe(PHRASE);
++  });
++
++  it('password_rejected du serveur : motif lu dans le corps', async () => {
++    const { api } = await renderReset();
++    await screen.findByLabelText('Nouveau mot de passe pour lea');
++    api.on('POST', RESET, reply({ error: 'password_rejected', reason: 'common' }, 400));
++    fill('Nouveau mot de passe pour lea', PHRASE);
++    fill('Confirmation', PHRASE);
++    click('Changer le mot de passe');
++    expect(await alertText()).toBe(PASSWORD_MESSAGES.common);
++  });
++
++  it("429 à la vérification : « Trop d'essais depuis cet appareil. »", async () => {
++    const api = createFakeApi().on('POST', CHECK, reply({ error: 'rate_limited', retryAfterS: 30 }, 429));
++    await renderReset({ api });
++    expect(await alertText()).toBe("Trop d'essais depuis cet appareil.");
++  });
++
++  it('sans fragment : champ « Lien ou code de réinitialisation », code incomplet sans requête, puis code valide', async () => {
++    const { api } = await renderReset({ url: '/reset' });
++    fill('Lien ou code de réinitialisation', 'ABC');
++    click('Suivant');
++    expect(await screen.findByText('Code incomplet : il faut 16 caractères.')).toBeTruthy();
++    expect(api.calls).toHaveLength(0);
++    fill('Lien ou code de réinitialisation', 'https://appsport.exemple.ts.net/reset#abcd-efgh-jkmn-pqrs');
++    click('Suivant');
++    await screen.findByLabelText('Nouveau mot de passe pour lea');
++    expect(callsTo(api, CHECK)[0]?.body).toEqual({ code: CODE });
++  });
++
++  it("route /reset de l'appli, sans session", async () => {
++    await renderApp({ path: '/reset', me: null });
++    expect(await screen.findByLabelText('Lien ou code de réinitialisation')).toBeTruthy();
++    expect(screen.queryByText('Page introuvable')).toBeNull();
++  });
++});
+diff --git a/apps/web/test/auth/messages.test.ts b/apps/web/test/auth/messages.test.ts
+new file mode 100644
+index 0000000..31e0580
+--- /dev/null
++++ b/apps/web/test/auth/messages.test.ts
+@@ -0,0 +1,205 @@
++import { describe, expect, it } from 'vitest';
++import { ApiError, NetworkRequiredError } from '../../src/api/client';
++import { detectPlatform, installHelp, isStandalone } from '../../src/features/auth/install-help';
++import {
++  accessErrorMessage,
++  checkNewPassword,
++  INCOMPLETE_CODE_MESSAGE,
++  invitationErrorMessage,
++  loginErrorMessage,
++  PASSWORD_MESSAGES,
++  PASSWORD_MISMATCH_MESSAGE,
++  passwordMessage,
++  pendingWarning,
++  USERNAME_MESSAGES,
++} from '../../src/features/auth/messages';
++import { ANDROID_UA, IPHONE_UA, WINDOWS_UA } from '../support/auth';
++
++describe('pendingWarning (R-AUTH-8, R-AUTH-9)', () => {
++  it('singulier et pluriel accordés', () => {
++    expect(pendingWarning(1, 'lea')).toBe('1 élément non envoyé de lea sera effacé de cet appareil');
++    expect(pendingWarning(2, 'lea')).toBe('2 éléments non envoyés de lea seront effacés de cet appareil');
++  });
++});
++
++describe('plateforme et mode installé (R-ARR-2)', () => {
++  it('detectPlatform', () => {
++    expect(detectPlatform(IPHONE_UA)).toBe('ios');
++    expect(detectPlatform('Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15')).toBe('ios');
++    expect(detectPlatform(ANDROID_UA)).toBe('android');
++    expect(detectPlatform(WINDOWS_UA)).toBe('other');
++    expect(detectPlatform('')).toBe('other');
++  });
++
++  it("installHelp : une consigne par système, les deux sinon (texte d'origine)", () => {
++    expect(installHelp('ios')).toEqual([
++      "Sur iPhone : touche Partager, puis « Sur l'écran d'accueil ». Ouvre ensuite appsport depuis l'écran d'accueil et colle le code.",
++    ]);
++    expect(installHelp('android')).toEqual([
++      "Sur Android : ouvre le menu ⋮ puis « Installer l'application ».",
++    ]);
++    expect(installHelp('other')).toHaveLength(2);
++  });
++
++  const win = (standalone: boolean | undefined, displayMode: boolean) =>
++    ({
++      matchMedia: (q: string) => ({ matches: displayMode && q === '(display-mode: standalone)' }),
++      navigator: { standalone },
++    }) as unknown as Window;
++
++  it('isStandalone : display-mode ou navigator.standalone (iOS)', () => {
++    expect(isStandalone(win(undefined, true))).toBe(true);
++    expect(isStandalone(win(true, false))).toBe(true);
++    expect(isStandalone(win(false, false))).toBe(false);
++    expect(isStandalone(win(undefined, false))).toBe(false);
++  });
++
++  it('isStandalone : sans matchMedia, seul navigator.standalone compte', () => {
++    expect(isStandalone({ navigator: { standalone: true } } as unknown as Window)).toBe(true);
++    expect(isStandalone({ navigator: {} } as unknown as Window)).toBe(false);
++  });
++});
++
++describe('mots de passe (R-MDP-1, R-MDP-3)', () => {
++  it('passwordMessage : le minimum suit le rôle', () => {
++    expect(passwordMessage('too_short', 'admin')).toBe('14 caractères au moins.');
++    expect(passwordMessage('too_short', 'member')).toBe('12 caractères au moins.');
++    expect(passwordMessage('contains_username', 'admin')).toBe(PASSWORD_MESSAGES.contains_username);
++  });
++
++  it('un message par motif de rejet', () => {
++    expect(Object.keys(PASSWORD_MESSAGES).sort()).toEqual([
++      'common',
++      'contains_appsport',
++      'contains_username',
++      'single_char',
++      'too_long',
++      'too_short',
++    ]);
++    for (const text of Object.values(PASSWORD_MESSAGES)) expect(text).not.toBe('');
++  });
++
++  const base = {
++    password: 'cheval agrafe batterie correcte',
++    confirm: '',
++    username: 'lea',
++    role: 'member',
++  } as const;
++
++  it('checkNewPassword : un seul caractère répété', () => {
++    expect(
++      checkNewPassword({
++        password: 'a'.repeat(12),
++        confirm: 'a'.repeat(12),
++        username: 'lea',
++        role: 'member',
++      }),
++    ).toBe(PASSWORD_MESSAGES.single_char);
++  });
++
++  it('checkNewPassword : longueur selon le rôle, avant la confirmation', () => {
++    expect(checkNewPassword({ ...base, password: 'a1b2c3d4e5f', confirm: '' })).toBe(
++      '12 caractères au moins.',
++    );
++    const thirteen = 'abcdefghijklm';
++    expect(checkNewPassword({ ...base, password: thirteen, confirm: thirteen, role: 'admin' })).toBe(
++      '14 caractères au moins.',
++    );
++    expect(checkNewPassword({ ...base, password: thirteen, confirm: thirteen })).toBeNull();
++  });
++
++  it('checkNewPassword : pseudo contenu, confirmation différente, tout bon', () => {
++    expect(checkNewPassword({ ...base, password: 'bonjour lea 12345', confirm: 'bonjour lea 12345' })).toBe(
++      PASSWORD_MESSAGES.contains_username,
++    );
++    expect(checkNewPassword({ ...base, confirm: 'cheval agrafe batterie' })).toBe(PASSWORD_MISMATCH_MESSAGE);
++    expect(PASSWORD_MISMATCH_MESSAGE).toBe('Les deux mots de passe ne correspondent pas.');
++    expect(checkNewPassword({ ...base, confirm: base.password })).toBeNull();
++  });
++
++  it('checkNewPassword : pseudo encore vide : aucun rejet sur le pseudo', () => {
++    expect(checkNewPassword({ ...base, username: '', confirm: base.password })).toBeNull();
++  });
++});
++
++describe('pseudo (R-CPT-3)', () => {
++  it('un message par motif', () => {
++    expect(USERNAME_MESSAGES).toEqual({
++      length: '3 à 24 caractères.',
++      characters: 'Lettres (accents admis), chiffres, « . », « _ » et « - » seulement.',
++      reserved: 'Ce pseudo est réservé.',
++    });
++  });
++});
++
++describe('codes (R-INV-8, R-RST-1)', () => {
++  it("invitationErrorMessage : cause puis « Demande un nouveau code à l'administrateur. »", () => {
++    const ask = " Demande un nouveau code à l'administrateur.";
++    expect(invitationErrorMessage('invitation_expired')).toBe(`Cette invitation a expiré.${ask}`);
++    expect(invitationErrorMessage('invitation_used')).toBe(`Cette invitation a déjà été utilisée.${ask}`);
++    expect(invitationErrorMessage('invitation_revoked')).toBe(`Cette invitation a été révoquée.${ask}`);
++    expect(invitationErrorMessage('invitation_unknown')).toBe(`Ce code est inconnu.${ask}`);
++    expect(invitationErrorMessage('rate_limited')).toBe("Trop d'essais depuis cet appareil.");
++    expect(invitationErrorMessage('internal')).toBe('Le serveur a rencontré une erreur.');
++  });
++
++  it('code illisible', () => {
++    expect(INCOMPLETE_CODE_MESSAGE).toBe('Code incomplet : il faut 16 caractères.');
++  });
++
++  it('accessErrorMessage : motif du corps, rôle, lien de réinitialisation, réseau', () => {
++    const api = (status: number, error: string, extra: object = {}) =>
++      new ApiError(status, error as ApiError['code'], { error, ...extra });
++    expect(accessErrorMessage(api(400, 'password_rejected', { reason: 'too_short' }), 'admin')).toBe(
++      '14 caractères au moins.',
++    );
++    expect(accessErrorMessage(api(400, 'password_rejected', { reason: 'common' }), 'member')).toBe(
++      PASSWORD_MESSAGES.common,
++    );
++    expect(accessErrorMessage(api(400, 'password_rejected', { reason: '???' }), 'member')).toBe(
++      'Ce mot de passe ne convient pas.',
++    );
++    expect(accessErrorMessage(api(400, 'username_invalid', { reason: 'reserved' }), 'member')).toBe(
++      USERNAME_MESSAGES.reserved,
++    );
++    expect(accessErrorMessage(api(400, 'username_invalid'), 'member')).toBe("Ce pseudo n'est pas valide.");
++    expect(accessErrorMessage(api(409, 'username_taken'), 'member')).toBe('Ce pseudo est déjà pris.');
++    expect(accessErrorMessage(api(400, 'reset_invalid'), 'member')).toBe(
++      "Ce lien n'est plus valable. Demande un nouveau lien à l'administrateur.",
++    );
++    expect(accessErrorMessage(api(429, 'rate_limited', { retryAfterS: 30 }), 'member')).toBe(
++      "Trop d'essais depuis cet appareil.",
++    );
++    expect(accessErrorMessage(new NetworkRequiredError(), 'member')).toBe('Nécessite le réseau');
++    expect(accessErrorMessage(new Error('boom'), 'member')).toBe('Une erreur inattendue est survenue.');
++  });
++});
++
++describe('connexion (R-AUTH-1, R-AUTH-2, R-AUTH-5)', () => {
++  const api = (status: number, error: string, extra: object = {}) =>
++    new ApiError(status, error as ApiError['code'], { error, ...extra });
++
++  it('429 : minutes arrondies au supérieur, au moins une', () => {
++    const wait = (s: number) => loginErrorMessage(api(429, 'rate_limited', { retryAfterS: s }));
++    expect(wait(61)).toBe('Trop de tentatives. Réessaie dans 2 min.');
++    expect(wait(60)).toBe('Trop de tentatives. Réessaie dans 1 min.');
++    expect(wait(1)).toBe('Trop de tentatives. Réessaie dans 1 min.');
++    expect(wait(0)).toBe('Trop de tentatives. Réessaie dans 1 min.');
++    expect(wait(3600)).toBe('Trop de tentatives. Réessaie dans 60 min.');
++  });
++
++  it('429 sans durée lisible', () => {
++    expect(loginErrorMessage(api(429, 'rate_limited'))).toBe('Trop de tentatives. Réessaie plus tard.');
++    expect(loginErrorMessage(api(429, 'rate_limited', { retryAfterS: 'bientôt' }))).toBe(
++      'Trop de tentatives. Réessaie plus tard.',
++    );
++  });
++
++  it('autres erreurs : messages communs', () => {
++    expect(loginErrorMessage(api(401, 'invalid_credentials'))).toBe('Pseudo ou mot de passe incorrect');
++    expect(loginErrorMessage(api(403, 'account_disabled'))).toBe(
++      "Compte désactivé, contacte l'administrateur",
++    );
++    expect(loginErrorMessage(new NetworkRequiredError())).toBe('Nécessite le réseau');
++  });
++});
+diff --git a/apps/web/test/support/auth.ts b/apps/web/test/support/auth.ts
+new file mode 100644
+index 0000000..2321b14
+--- /dev/null
++++ b/apps/web/test/support/auth.ts
+@@ -0,0 +1,36 @@
++import { fireEvent, screen } from '@testing-library/react';
++import { vi } from 'vitest';
++
++export const IPHONE_UA =
++  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
++export const ANDROID_UA =
++  'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
++export const WINDOWS_UA =
++  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
++
++/** Mode d'affichage de la page : appli installée (`standalone`) ou onglet de navigateur. */
++export function stubDisplayMode(standalone: boolean): void {
++  vi.stubGlobal('matchMedia', (query: string) => ({
++    matches: standalone && query === '(display-mode: standalone)',
++    media: query,
++    addEventListener: () => {},
++    removeEventListener: () => {},
++  }));
++}
++
++export function stubUserAgent(userAgent: string): void {
++  vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(userAgent);
++}
++
++/** Adresse de la page avec son fragment, comme à l'ouverture d'un lien d'invitation. */
++export function openUrl(path: string): void {
++  window.history.replaceState(null, '', path);
++}
++
++export function fill(label: string, value: string): void {
++  fireEvent.change(screen.getByLabelText(label), { target: { value } });
++}
++
++export function click(name: string): void {
++  fireEvent.click(screen.getByRole('button', { name }));
++}

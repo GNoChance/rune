@@ -1,0 +1,98 @@
+<style>
+  .rn { --bg:#070A12; --card:#0E1424; --line:rgba(255,255,255,.08); --fg:#EEF6FB; --mut:#9DB0C4; --ice:#5ED8FF; --vio:#8C6BFF; --chip:#16203A; --warn:#F2B33D;
+        font-family: "Barlow", "Segoe UI", system-ui, sans-serif; color: var(--fg); }
+  .rn .phone { width: 300px; height: 640px; background: var(--bg); border-radius: 34px; border: 8px solid #1b2232; overflow: hidden; position: relative; margin: 0 auto; box-shadow: 0 20px 50px rgba(0,0,0,.35); }
+  .rn .scr { padding: 12px 14px 20px; height: 100%; overflow: hidden; display: grid; gap: 9px; align-content: start; font-size: 12.5px; line-height: 1.35; }
+  .rn .back { color: var(--ice); font-size: 12px; }
+  .rn h4 { margin: 0; font-family: "Chakra Petch", sans-serif; font-size: 21px; }
+  .rn .sub { color: var(--mut); font-size: 12px; }
+  .rn .pills { display:flex; gap:5px; flex-wrap:wrap; }
+  .rn .pill { background: var(--chip); color: var(--mut); border-radius: 999px; padding: 3px 8px; font-size: 11px; font-weight: 600; }
+  .rn .pill.k { color: var(--ice); }
+  .rn .ill { display:grid; grid-template-columns: 1fr 1fr; gap: 6px; background:#F2FDFF; border-radius: 14px; padding: 8px; }
+  .rn .ill div { height: 92px; border-radius: 8px; background: #e2ebf2; display:grid; place-items:center; color:#5b6b7f; font-size: 10px; }
+  .rn .credit { font-size: 9.5px; color: var(--mut); margin-top: -4px; }
+  .rn .sec { font-family: "Chakra Petch", sans-serif; font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--mut); margin-top: 2px; }
+  .rn ol { margin: 0; padding-left: 18px; display:grid; gap: 3px; }
+  .rn .box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; display:grid; gap: 4px; }
+  .rn .safety { border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+  .rn .safety b { color: var(--warn); }
+  .rn .mis { display:grid; gap: 1px; }
+  .rn .mis .x { color: #ff9b9b; }
+  .rn .mis .ok { color: #7fe3b3; }
+  .rn .chain { display:grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .rn .chain div { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 7px 9px; font-size: 11.5px; }
+  .rn .chain small { display:block; color: var(--mut); font-size: 10px; }
+  .rn .tabsin { display:grid; grid-template-columns: repeat(3,1fr); background: var(--card); border-radius: 999px; padding: 3px; font-size: 11.5px; text-align:center; }
+  .rn .tabsin span { padding: 6px 0; border-radius: 999px; color: var(--mut); font-weight:600; }
+  .rn .tabsin span.on { background: var(--ice); color:#05070D; }
+  .rn .step { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 10px; display:grid; gap: 8px; }
+  .rn .stepn { font-family:"Chakra Petch",sans-serif; color: var(--ice); font-weight:700; font-size: 13px; }
+  .rn .big { height: 170px; border-radius: 12px; background:#F2FDFF; display:grid; place-items:center; color:#5b6b7f; font-size: 11px; }
+  .rn .dots { display:flex; gap:5px; justify-content:center; }
+  .rn .dots i { width:7px; height:7px; border-radius:50%; background: var(--chip); display:block; }
+  .rn .dots i.on { background: var(--ice); width: 18px; border-radius: 4px; }
+  .rn .btn { background: var(--ice); color:#05070D; border-radius: 14px; text-align:center; padding: 11px; font-weight: 700; font-size: 13px; }
+  .cap { font-size: 13px; color: var(--text-secondary, #888); margin-top: 8px; }
+</style>
+
+<h2>La fiche d'un exercice : quelle forme ?</h2>
+<p class="subtitle">Choix noté : B (tuiles par muscle avec la pierre de rang), puis la liste façon A dans chaque groupe. Maintenant, la fiche qui s'ouvre quand on touche un exercice.</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image rn" style="padding:16px 0">
+      <div class="phone"><div class="scr">
+        <span class="back">‹ Jambes</span>
+        <h4>Squat goblet</h4>
+        <div class="pills"><span class="pill k">Niveau 1</span><span class="pill">Quadriceps</span><span class="pill">Fessiers</span><span class="pill">Haltère ou kettlebell</span></div>
+        <div class="ill"><div>départ</div><div>fin</div></div>
+        <div class="credit">Illustration : Everkinetic (Greg Priday) · CC BY-SA 4.0 · Crédits</div>
+        <div class="sec">Comment faire</div>
+        <ol><li>Tiens l'haltère contre ta poitrine, coudes vers le bas.</li><li>Pieds largeur d'épaules, pointes un peu ouvertes.</li><li>Descends en poussant les hanches en arrière.</li><li>Remonte en poussant le sol avec tout le pied.</li></ol>
+        <div class="sec">Erreurs fréquentes</div>
+        <div class="box mis"><span class="x">✕ Les genoux rentrent vers l'intérieur</span><span class="ok">✓ Pousse les genoux dans l'axe des pieds</span></div>
+        <div class="box safety"><b>Sécurité</b>Arrête si tu sens une douleur vive au genou ou au dos.</div>
+        <div class="sec">Plus facile · plus dur</div>
+        <div class="chain"><div><small>Plus facile</small>Squat sur chaise</div><div><small>Plus dur</small>Fente arrière</div></div>
+      </div></div>
+    </div>
+    <div class="card-body"><h3>A · Une page qui défile</h3><p>Tout sur une seule page : illustrations en haut, puis consignes, erreurs fréquentes, sécurité bien visible, respiration, et la chaîne « plus facile / plus dur » en bas. Simple, lisible hors ligne.</p></div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image rn" style="padding:16px 0">
+      <div class="phone"><div class="scr">
+        <span class="back">‹ Jambes</span>
+        <h4>Squat goblet</h4>
+        <div class="pills"><span class="pill k">Niveau 1</span><span class="pill">Quadriceps</span><span class="pill">Fessiers</span></div>
+        <div class="ill"><div>départ</div><div>fin</div></div>
+        <div class="tabsin"><span class="on">Comment faire</span><span>Erreurs</span><span>Variantes</span></div>
+        <ol><li>Tiens l'haltère contre ta poitrine, coudes vers le bas.</li><li>Pieds largeur d'épaules, pointes un peu ouvertes.</li><li>Descends en poussant les hanches en arrière.</li><li>Remonte en poussant le sol avec tout le pied.</li></ol>
+        <div class="box"><b>Points clés</b>Dos droit, poitrine haute. Talons au sol.</div>
+        <div class="box safety"><b>Sécurité</b>Arrête si tu sens une douleur vive au genou ou au dos.</div>
+      </div></div>
+    </div>
+    <div class="card-body"><h3>B · Onglets dans la fiche</h3><p>La fiche tient sur un écran : onglets « Comment faire », « Erreurs », « Variantes ». Plus compact, mais une partie du contenu est cachée derrière un onglet.</p></div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image rn" style="padding:16px 0">
+      <div class="phone"><div class="scr">
+        <span class="back">‹ Jambes</span>
+        <h4>Squat goblet</h4>
+        <div class="step">
+          <span class="stepn">Étape 2 sur 4</span>
+          <div class="big">illustration de l'étape</div>
+          <div>Pieds largeur d'épaules, pointes un peu ouvertes.</div>
+          <div class="dots"><i></i><i class="on"></i><i></i><i></i></div>
+        </div>
+        <div class="box safety"><b>Sécurité</b>Arrête si tu sens une douleur vive au genou ou au dos.</div>
+        <div class="btn">Voir toute la fiche</div>
+      </div></div>
+    </div>
+    <div class="card-body"><h3>C · Pas à pas, une étape par écran</h3><p>On fait glisser les étapes une à une, avec une grande illustration. Très guidant en pleine séance, mais nos illustrations n'ont que 2 ou 3 poses par exercice, pas une par étape.</p></div>
+  </div>
+</div>
+
+<p class="cap">Textes d'exemple écrits pour la maquette, pas encore relus. Basse fidélité : couleurs et polices finales selon les thèmes de la refonte.</p>

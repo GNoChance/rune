@@ -1,0 +1,549 @@
+# Review package: c515c37..HEAD
+
+## Commits
+5121f28 fix(privacy): garde C2 relue dans la transaction d'écriture
+
+## Files changed
+ apps/server/src/privacy/consent-routes.ts        | 101 ++++++--------------
+ apps/server/src/privacy/consent.ts               | 112 ++++++++++++++++++++++-
+ apps/server/test/privacy/consent.test.ts         |  52 +++++++++++
+ apps/server/test/privacy/replay-withdraw.test.ts |  11 +++
+ packages/contracts/src/api/consent.ts            |  10 +-
+ packages/contracts/test/consent.test.ts          |  25 +++++
+ 6 files changed, 235 insertions(+), 76 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/privacy/consent-routes.ts b/apps/server/src/privacy/consent-routes.ts
+index ac3042d..dc28542 100644
+--- a/apps/server/src/privacy/consent-routes.ts
++++ b/apps/server/src/privacy/consent-routes.ts
+@@ -1,59 +1,64 @@
+ import {
+   CODE_CHECKS_PER_HOUR,
+   GrantConsentRequest,
+   HEALTH_CONSENT_TEXT,
+   HEALTH_QUESTIONNAIRE,
+   HealthScreeningRequest,
+   LimitationInput,
+   LimitationPatch,
+-  LOGIN_LIMITS,
+   ReplayWithdrawRequest,
+   WithdrawConsentRequest,
+ } from '@appsport/contracts';
+ import { type Context, Hono } from 'hono';
+ import type { AppEnv, SessionUser } from '../app-env';
+ import { createIpLimiter, type IpLimiter } from '../auth/limiter';
+ import { buildMe, verifyUserPassword } from '../auth/me';
+ import { requireUser } from '../auth/session';
+-import { writeStamp } from '../db/rev';
+ import type { DbExecutor } from '../db/schema';
+ import { getServerMeta } from '../db/server-meta';
+ import type { AppDeps } from '../deps';
+ import { validClientIp } from '../http/client-ip';
+ import { httpError } from '../http/errors';
+ import { parseJson } from '../http/validate';
+-import { grantConsent, latestGrant, withdrawHealthConsent } from './consent';
++import {
++  assertHealthConsent,
++  createLimitation,
++  deleteLimitation,
++  grantConsent,
++  latestGrant,
++  saveHealthScreening,
++  updateLimitation,
++  withdrawHealthConsent,
++} from './consent';
+ import { isHealthConsentActive } from './consent-state';
+ 
+-/** Limiteur propre au renvoi du retrait (20 par heure et par IP), un par jeu de dépendances. */
++/** Fenêtre du limiteur de renvoi : la règle est de CODE_CHECKS_PER_HOUR (20) appels par heure et par IP. */
++const REPLAY_WINDOW_MS = 60 * 60 * 1000;
++
++/** Limiteur propre au renvoi du retrait, un par jeu de dépendances. */
+ const replayLimiters = new WeakMap<AppDeps, IpLimiter>();
+ function replayLimiter(deps: AppDeps): IpLimiter {
+   let limiter = replayLimiters.get(deps);
+   if (!limiter) {
+-    limiter = createIpLimiter(deps.clock, { limit: CODE_CHECKS_PER_HOUR, windowMs: LOGIN_LIMITS.windowMs });
++    limiter = createIpLimiter(deps.clock, { limit: CODE_CHECKS_PER_HOUR, windowMs: REPLAY_WINDOW_MS });
+     replayLimiters.set(deps, limiter);
+   }
+   return limiter;
+ }
+ 
+ const userOf = (c: Context<AppEnv>): SessionUser => {
+   const user = c.get('user');
+   if (!user) throw httpError('unauthenticated');
+   return user;
+ };
+ 
+-/** Garde C2 (R-CST-4, P-CST-2). */
+-async function requireHealthConsent(db: DbExecutor, userId: string): Promise<void> {
+-  if (!(await isHealthConsentActive(db, userId))) throw httpError('health_consent_required');
+-}
+-
+ /** Limitation vivante de l'utilisateur ; sinon 404 (absente, supprimée ou à un autre, P-ADM-2). */
+ async function loadOwnLimitation(db: DbExecutor, userId: string, id: string): Promise<void> {
+   const row = await db
+     .selectFrom('limitation')
+     .select(['id', 'ownerId'])
+     .where('id', '=', id)
+     .where('deletedAt', 'is', null)
+     .executeTakeFirst();
+   if (!row || row.ownerId !== userId) throw httpError('not_found');
+ }
+@@ -103,106 +108,54 @@ export function consentRoutes(deps: AppDeps): Hono<AppEnv> {
+         withdrawnAt > new Date(grant.createdAt).getTime() &&
+         withdrawnAt < new Date(epochStartedAt).getTime();
+       if (!accepted) throw httpError('conflict');
+       await withdrawHealthConsent(trx, deps, user.id, { actorId: user.id, ip }, { replay: true });
+     });
+     return c.json(await me(user));
+   });
+ 
+   routes.put('/health-screening', requireUser, async (c) => {
+     const user = userOf(c);
+-    await requireHealthConsent(deps.db, user.id);
++    await assertHealthConsent(deps.db, user.id);
+     const body = await parseJson(c, HealthScreeningRequest);
+     if (body.questionnaireVersion !== HEALTH_QUESTIONNAIRE.version) {
+       throw httpError('validation', { field: 'questionnaireVersion' });
+     }
+     // Seul le résultat est gardé : les réponses ne sont jamais stockées (02 §12 E7).
+     const caution = body.answers.some(Boolean);
+-    await deps.db.transaction().execute(async (trx) => {
+-      const stamp = await writeStamp(trx, deps, user.id);
+-      const content = {
+-        caution: caution ? 1 : 0,
+-        questionnaireVersion: body.questionnaireVersion,
+-        answeredAt: stamp.updatedAt,
+-        deletedAt: null,
+-        ...stamp,
+-      };
+-      await trx
+-        .insertInto('healthScreening')
+-        .values({ id: user.id, ownerId: user.id, createdAt: stamp.updatedAt, ...content })
+-        .onConflict((oc) => oc.column('id').doUpdateSet(content))
+-        .execute();
+-    });
++    await deps.db
++      .transaction()
++      .execute((trx) =>
++        saveHealthScreening(trx, deps, user.id, { caution, questionnaireVersion: body.questionnaireVersion }),
++      );
+     return c.json({ caution });
+   });
+ 
+   routes.post('/limitations', requireUser, async (c) => {
+     const user = userOf(c);
+-    await requireHealthConsent(deps.db, user.id);
++    await assertHealthConsent(deps.db, user.id);
+     const body = await parseJson(c, LimitationInput);
+-    const id = deps.ids.uuidv7();
+-    await deps.db.transaction().execute(async (trx) => {
+-      const stamp = await writeStamp(trx, deps, user.id);
+-      await trx
+-        .insertInto('limitation')
+-        .values({
+-          id,
+-          ownerId: user.id,
+-          createdAt: stamp.updatedAt,
+-          bodyArea: body.bodyArea,
+-          side: body.side,
+-          severity: body.severity,
+-          note: body.note ?? null,
+-          active: body.active === false ? 0 : 1,
+-          ...stamp,
+-        })
+-        .execute();
+-    });
++    const id = await deps.db.transaction().execute((trx) => createLimitation(trx, deps, user.id, body));
+     return c.json({ id }, 201);
+   });
+ 
+   routes.patch('/limitations/:id', requireUser, async (c) => {
+     const user = userOf(c);
+     const id = c.req.param('id');
+     await loadOwnLimitation(deps.db, user.id, id);
+-    await requireHealthConsent(deps.db, user.id);
++    await assertHealthConsent(deps.db, user.id);
+     const body = await parseJson(c, LimitationPatch);
+-    const { active, ...rest } = body;
+-    await deps.db.transaction().execute(async (trx) => {
+-      const stamp = await writeStamp(trx, deps, user.id);
+-      await trx
+-        .updateTable('limitation')
+-        .set({ ...rest, ...(active === undefined ? {} : { active: active ? 1 : 0 }), ...stamp })
+-        .where('id', '=', id)
+-        .where('deletedAt', 'is', null)
+-        .execute();
+-    });
++    await deps.db.transaction().execute((trx) => updateLimitation(trx, deps, user.id, id, body));
+     return c.body(null, 204);
+   });
+ 
+   routes.delete('/limitations/:id', requireUser, async (c) => {
+     const user = userOf(c);
+     const id = c.req.param('id');
+     await loadOwnLimitation(deps.db, user.id, id);
+-    await requireHealthConsent(deps.db, user.id);
+-    await deps.db.transaction().execute(async (trx) => {
+-      const stamp = await writeStamp(trx, deps, user.id);
+-      await trx
+-        .updateTable('limitation')
+-        .set({
+-          bodyArea: null,
+-          side: null,
+-          severity: null,
+-          note: null,
+-          active: null,
+-          deletedAt: stamp.updatedAt,
+-          ...stamp,
+-        })
+-        .where('id', '=', id)
+-        .where('deletedAt', 'is', null)
+-        .execute();
+-    });
++    await assertHealthConsent(deps.db, user.id);
++    await deps.db.transaction().execute((trx) => deleteLimitation(trx, deps, user.id, id));
+     return c.body(null, 204);
+   });
+ 
+   return routes;
+ }
+diff --git a/apps/server/src/privacy/consent.ts b/apps/server/src/privacy/consent.ts
+index 857a7d0..8344b6f 100644
+--- a/apps/server/src/privacy/consent.ts
++++ b/apps/server/src/privacy/consent.ts
+@@ -1,16 +1,22 @@
+-import { type EntityRule, SYNC_COLUMNS } from '@appsport/contracts';
++import {
++  type EntityRule,
++  type LimitationInput,
++  type LimitationPatch,
++  SYNC_COLUMNS,
++} from '@appsport/contracts';
+ import { type RawBuilder, sql, type Transaction } from 'kysely';
+ import { logSecurityEvent } from '../auth/security-log';
+ import { writeStamp } from '../db/rev';
+ import type { Database, DbExecutor } from '../db/schema';
+ import type { AppDeps } from '../deps';
++import { httpError } from '../http/errors';
+ import { type ConsentType, getConsentState, isHealthConsentActive } from './consent-state';
+ 
+ export type HealthWithdrawHook = (trx: Transaction<Database>, deps: AppDeps, userId: string) => Promise<void>;
+ export type HealthWithdrawHooks = Readonly<Record<string /* table SQL */, HealthWithdrawHook>>;
+ 
+ /** Vide au socle ; une entrée remplace la règle générique du retrait pour sa table (briques 3 et 5, 09 §8). */
+ export const HEALTH_WITHDRAW_HOOKS: HealthWithdrawHooks = {};
+ 
+ const SYNC: readonly string[] = SYNC_COLUMNS;
+ 
+@@ -167,10 +173,114 @@ export async function withdrawHealthConsent(
+   await insertConsentEvent(trx, deps, userId, 'health', 'withdraw', grant?.textVersion ?? '');
+   await logSecurityEvent(trx, deps, {
+     type: 'consent_revoked',
+     actorId: actor.actorId,
+     targetId: userId,
+     ip: actor.ip,
+     outcome: 'success',
+     details: { consentType: 'health', ...(opts.replay ? { replay: true } : {}) },
+   });
+ }
++
++/**
++ * Garde C2 (R-CST-4, P-CST-2). Les routes l'appliquent avant parseJson (ordre des erreurs) ;
++ * chaque écriture C2 la relit en premier dans sa transaction, pour qu'un retrait validé entre-temps
++ * ne laisse ni ressusciter un questionnaire ni écrire une limitation sans accord.
++ */
++export async function assertHealthConsent(db: DbExecutor, userId: string): Promise<void> {
++  if (!(await isHealthConsentActive(db, userId))) throw httpError('health_consent_required');
++}
++
++/** Upsert du questionnaire sur id = owner_id ; réactive la tombstone d'un retrait antérieur. */
++export async function saveHealthScreening(
++  trx: Transaction<Database>,
++  deps: AppDeps,
++  userId: string,
++  input: { caution: boolean; questionnaireVersion: string },
++): Promise<void> {
++  await assertHealthConsent(trx, userId);
++  const stamp = await writeStamp(trx, deps, userId);
++  const content = {
++    caution: input.caution ? 1 : 0,
++    questionnaireVersion: input.questionnaireVersion,
++    answeredAt: stamp.updatedAt,
++    deletedAt: null,
++    ...stamp,
++  };
++  await trx
++    .insertInto('healthScreening')
++    .values({ id: userId, ownerId: userId, createdAt: stamp.updatedAt, ...content })
++    .onConflict((oc) => oc.column('id').doUpdateSet(content))
++    .execute();
++}
++
++export async function createLimitation(
++  trx: Transaction<Database>,
++  deps: AppDeps,
++  userId: string,
++  input: LimitationInput,
++): Promise<string> {
++  await assertHealthConsent(trx, userId);
++  const id = deps.ids.uuidv7();
++  const stamp = await writeStamp(trx, deps, userId);
++  await trx
++    .insertInto('limitation')
++    .values({
++      id,
++      ownerId: userId,
++      createdAt: stamp.updatedAt,
++      bodyArea: input.bodyArea,
++      side: input.side,
++      severity: input.severity,
++      note: input.note ?? null,
++      active: input.active === false ? 0 : 1,
++      ...stamp,
++    })
++    .execute();
++  return id;
++}
++
++/** La route a vérifié que la limitation est vivante et à l'utilisateur. */
++export async function updateLimitation(
++  trx: Transaction<Database>,
++  deps: AppDeps,
++  userId: string,
++  id: string,
++  patch: LimitationPatch,
++): Promise<void> {
++  await assertHealthConsent(trx, userId);
++  const { active, ...rest } = patch;
++  const stamp = await writeStamp(trx, deps, userId);
++  await trx
++    .updateTable('limitation')
++    .set({ ...rest, ...(active === undefined ? {} : { active: active ? 1 : 0 }), ...stamp })
++    .where('id', '=', id)
++    .where('ownerId', '=', userId)
++    .where('deletedAt', 'is', null)
++    .execute();
++}
++
++/** Tombstone sans contenu (R-SYN-9, P-CST-3). */
++export async function deleteLimitation(
++  trx: Transaction<Database>,
++  deps: AppDeps,
++  userId: string,
++  id: string,
++): Promise<void> {
++  await assertHealthConsent(trx, userId);
++  const stamp = await writeStamp(trx, deps, userId);
++  await trx
++    .updateTable('limitation')
++    .set({
++      bodyArea: null,
++      side: null,
++      severity: null,
++      note: null,
++      active: null,
++      deletedAt: stamp.updatedAt,
++      ...stamp,
++    })
++    .where('id', '=', id)
++    .where('ownerId', '=', userId)
++    .where('deletedAt', 'is', null)
++    .execute();
++}
+diff --git a/apps/server/test/privacy/consent.test.ts b/apps/server/test/privacy/consent.test.ts
+index e12ba19..fc7e07a 100644
+--- a/apps/server/test/privacy/consent.test.ts
++++ b/apps/server/test/privacy/consent.test.ts
+@@ -1,11 +1,18 @@
+ import { afterEach, describe, expect, it } from 'vitest';
++import { HttpError } from '../../src/http/errors';
++import {
++  deleteLimitation,
++  saveHealthScreening,
++  updateLimitation,
++  createLimitation as writeLimitation,
++} from '../../src/privacy/consent';
+ import {
+   createTestContext,
+   createUser,
+   createUserAndLogin,
+   insertFixtureRow,
+   login,
+   type TestContext,
+ } from '../support';
+ 
+ let ctx: TestContext;
+@@ -205,10 +212,55 @@ describe('/api/me/limitations', () => {
+         await call({ cookie }, '/api/me/consents', 'POST', { type: 'health', textVersion: '1.0' });
+       for (const method of ['PATCH', 'DELETE']) {
+         const res = await call({ cookie }, path, method, {});
+         expect(res.status, `${method} accord=${withConsent}`).toBe(404);
+         expect(await res.json()).toEqual({ error: 'not_found' });
+       }
+     }
+     expect(await limitation(row.id as string)).toEqual(row);
+   });
+ });
++
++describe('garde C2 dans la transaction d’écriture (course avec un retrait)', () => {
++  it('chaque écriture C2 relit l’accord et refuse après un retrait', async () => {
++    const u = await setup();
++    await grant(u);
++    await screening(u, [true, false, false, false]);
++    const { id } = (await (await createLimitation(u, KNEE)).json()) as { id: string };
++    const withdrawn = await call(u, '/api/me/consents/withdraw', 'POST', {
++      type: 'health',
++      password: u.password,
++    });
++    expect(withdrawn.status).toBe(200);
++    const { db } = ctx.deps;
++    const dump = async () => ({
++      screening: await db.selectFrom('healthScreening').selectAll().execute(),
++      limitations: await db.selectFrom('limitation').selectAll().execute(),
++    });
++    const before = await dump();
++    const writes: [string, (trx: Parameters<typeof deleteLimitation>[0]) => Promise<unknown>][] = [
++      [
++        'questionnaire',
++        (trx) => saveHealthScreening(trx, ctx.deps, u.id, { caution: true, questionnaireVersion: '1.0' }),
++      ],
++      [
++        'création',
++        (trx) => writeLimitation(trx, ctx.deps, u.id, { bodyArea: 'hip', side: 'both', severity: 'mild' }),
++      ],
++      ['modification', (trx) => updateLimitation(trx, ctx.deps, u.id, id, { severity: 'severe' })],
++      ['suppression', (trx) => deleteLimitation(trx, ctx.deps, u.id, id)],
++    ];
++    for (const [label, write] of writes) {
++      const error = await db
++        .transaction()
++        .execute(write)
++        .then(
++          () => null,
++          (e: unknown) => e,
++        );
++      expect(error, label).toBeInstanceOf(HttpError);
++      expect((error as HttpError).status, label).toBe(403);
++      expect((error as HttpError).code, label).toBe('health_consent_required');
++    }
++    expect(await dump()).toEqual(before);
++  });
++});
+diff --git a/apps/server/test/privacy/replay-withdraw.test.ts b/apps/server/test/privacy/replay-withdraw.test.ts
+index ddbac26..4b26c96 100644
+--- a/apps/server/test/privacy/replay-withdraw.test.ts
++++ b/apps/server/test/privacy/replay-withdraw.test.ts
+@@ -90,20 +90,31 @@ describe('POST /api/me/consents/health/replay-withdraw (R-SYN-28)', () => {
+       password: u.password,
+     });
+     expect(withdraw.status).toBe(200);
+     const before = await state(u.id);
+     const res = await replay(u, '2026-10-06T11:00:00.000Z');
+     expect(res.status).toBe(409);
+     expect(await res.json()).toEqual({ error: 'conflict' });
+     expect(await state(u.id)).toEqual(before);
+   });
+ 
++  it('refuse quand aucun accord n’a jamais existé', async () => {
++    ctx = await createTestContext();
++    const u = await createUserAndLogin(ctx);
++    ctx.clock.set('2026-10-06T12:30:00.000Z');
++    const before = await state(u.id);
++    const res = await replay(u, '2026-10-06T09:00:00.000Z');
++    expect(res.status).toBe(409);
++    expect(await res.json()).toEqual({ error: 'conflict' });
++    expect(await state(u.id)).toEqual(before);
++  });
++
+   it('refuse une date illisible', async () => {
+     const u = await setup();
+     expect((await replay(u, 'hier')).status).toBe(400);
+   });
+ 
+   it('limite à 20 appels par heure et par IP', async () => {
+     const u = await setup();
+     for (let i = 0; i < 20; i += 1) expect((await replay(u, 'hier')).status).toBe(400);
+     const res = await replay(u, '2026-10-06T11:00:00.000Z');
+     expect(res.status).toBe(429);
+diff --git a/packages/contracts/src/api/consent.ts b/packages/contracts/src/api/consent.ts
+index 285699d..4dda67a 100644
+--- a/packages/contracts/src/api/consent.ts
++++ b/packages/contracts/src/api/consent.ts
+@@ -56,33 +56,41 @@ export type GrantConsentRequest = z.infer<typeof GrantConsentRequest>;
+ export const WithdrawConsentRequest = z.strictObject({
+   type: z.literal('health'),
+   password: z.string().min(1).max(1024),
+ });
+ export type WithdrawConsentRequest = z.infer<typeof WithdrawConsentRequest>;
+ 
+ /** Renvoi d'un retrait fait avant une restauration (R-SYN-28), sans mot de passe. */
+ export const ReplayWithdrawRequest = z.strictObject({ withdrawnAt: z.iso.datetime() });
+ export type ReplayWithdrawRequest = z.infer<typeof ReplayWithdrawRequest>;
+ 
++/** Une réponse par question de HEALTH_QUESTIONNAIRE (longueur vérifiée par test/consent.test.ts). */
+ export const HealthScreeningRequest = z.strictObject({
+   answers: z.tuple([z.boolean(), z.boolean(), z.boolean(), z.boolean()]),
+   questionnaireVersion: z.string(),
+ });
+ export type HealthScreeningRequest = z.infer<typeof HealthScreeningRequest>;
+ 
+ export const HealthScreeningResponse = z.object({ caution: z.boolean() });
+ export type HealthScreeningResponse = z.infer<typeof HealthScreeningResponse>;
+ 
+ export const LimitationInput = z.strictObject({
+   bodyArea: BodyArea,
+   side: LimitationSide,
+   severity: LimitationSeverity,
+-  note: z.string().trim().max(LIMITATION_NOTE_MAX).nullable().optional(),
++  // Une note vide ou faite d'espaces est enregistrée comme absente.
++  note: z
++    .string()
++    .trim()
++    .max(LIMITATION_NOTE_MAX)
++    .transform((n) => (n === '' ? null : n))
++    .nullable()
++    .optional(),
+   active: z.boolean().optional(),
+ });
+ export type LimitationInput = z.infer<typeof LimitationInput>;
+ 
+ export const LimitationPatch = LimitationInput.partial().refine((v) => Object.keys(v).length > 0);
+ export type LimitationPatch = z.infer<typeof LimitationPatch>;
+ 
+ export const CreateLimitationResponse = z.object({ id: z.string() });
+ export type CreateLimitationResponse = z.infer<typeof CreateLimitationResponse>;
+diff --git a/packages/contracts/test/consent.test.ts b/packages/contracts/test/consent.test.ts
+new file mode 100644
+index 0000000..325f63a
+--- /dev/null
++++ b/packages/contracts/test/consent.test.ts
+@@ -0,0 +1,25 @@
++import { describe, expect, it } from 'vitest';
++import { HealthScreeningRequest, LimitationInput, LimitationPatch } from '../src/api/consent';
++import { HEALTH_QUESTIONNAIRE } from '../src/texts';
++
++describe('HealthScreeningRequest', () => {
++  it('attend exactement une réponse par question de HEALTH_QUESTIONNAIRE', () => {
++    const n = HEALTH_QUESTIONNAIRE.questions.length;
++    const answers = (k: number) => Array.from({ length: k }, () => false);
++    const parse = (k: number) =>
++      HealthScreeningRequest.safeParse({ answers: answers(k), questionnaireVersion: '1.0' }).success;
++    expect(parse(n)).toBe(true);
++    expect(parse(n - 1)).toBe(false);
++    expect(parse(n + 1)).toBe(false);
++  });
++});
++
++describe('note de limitation', () => {
++  it('une note vide ou faite d’espaces devient null', () => {
++    const base = { bodyArea: 'knee', side: 'left', severity: 'mild' } as const;
++    expect(LimitationInput.parse({ ...base, note: '   ' }).note).toBeNull();
++    expect(LimitationInput.parse({ ...base, note: '' }).note).toBeNull();
++    expect(LimitationInput.parse({ ...base, note: '  gêne  ' }).note).toBe('gêne');
++    expect(LimitationPatch.parse({ note: ' \t ' }).note).toBeNull();
++  });
++});

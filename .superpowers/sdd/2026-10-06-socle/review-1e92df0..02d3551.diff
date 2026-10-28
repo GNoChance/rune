@@ -1,0 +1,2285 @@
+# Review package: 1e92df0..HEAD
+
+## Commits
+02d3551 fix(profil): erreurs locales liées aux champs, mode prudent sans envoi croisé, obligation levée hors ligne
+d3fccca fix(salles): focus des formulaires de lieux et de salle, salle supprimée, champs changés depuis l'ouverture
+
+## Files changed
+ apps/web/src/features/auth/PasswordFields.tsx   |   7 +-
+ apps/web/src/features/onboarding/GoalStep.tsx   |  22 +--
+ apps/web/src/features/onboarding/HealthStep.tsx |  10 +-
+ apps/web/src/features/places/GymPage.tsx        | 102 +++++++++----
+ apps/web/src/features/places/PlacesPage.tsx     | 136 ++++++++++++++---
+ apps/web/src/features/profile/ProfilePage.tsx   |  61 ++++++--
+ apps/web/src/repos/gyms-repo.ts                 |   9 +-
+ apps/web/src/repos/me-repo.ts                   |   8 +-
+ apps/web/test/places/gym-page.test.tsx          | 161 +++++++++++++++++--
+ apps/web/test/places/places-page.test.tsx       | 195 +++++++++++++++++++++---
+ apps/web/test/profile/profile-page.test.tsx     |  89 +++++++++--
+ apps/web/test/repos/me-repo.test.ts             |  13 ++
+ apps/web/test/repos/profile-places-gyms.test.ts |  24 ++-
+ 13 files changed, 696 insertions(+), 141 deletions(-)
+
+## Diff
+diff --git a/apps/web/src/features/auth/PasswordFields.tsx b/apps/web/src/features/auth/PasswordFields.tsx
+index 1046676..38ddbe8 100644
+--- a/apps/web/src/features/auth/PasswordFields.tsx
++++ b/apps/web/src/features/auth/PasswordFields.tsx
+@@ -1,40 +1,41 @@
+ import type { Role } from '@appsport/contracts';
+ import { Field } from '../../ui';
+ 
+ export const PASSWORD_HINT =
+   'Astuce : une phrase de 4 mots ou plus, par exemple « cheval agrafe batterie correcte », est facile à retenir et solide. Les espaces sont acceptés.';
+ 
+ /**
+  * Mot de passe et confirmation (R-MDP-2). Les règles se contrôlent à l'envoi, par le formulaire
+  * (`checkNewPassword` avec le même `username` et le même `role`) : un seul message à la fois,
+- * pas d'erreur en double.
++ * pas d'erreur en double. `errors` : message lié au champ en cause (aria-invalid, description).
+  */
+ export function PasswordFields(p: {
+   username: string;
+   role: Role;
+   password: string;
+   confirm: string;
+   onChange(v: { password: string; confirm: string }): void;
+   label?: string;
++  errors?: { password?: string | null; confirm?: string | null };
+ }) {
+   return (
+     <>
+-      <Field label={p.label ?? 'Mot de passe'} hint={PASSWORD_HINT}>
++      <Field label={p.label ?? 'Mot de passe'} hint={PASSWORD_HINT} error={p.errors?.password}>
+         <input
+           type="password"
+           autoComplete="new-password"
+           value={p.password}
+           onChange={(e) => p.onChange({ password: e.target.value, confirm: p.confirm })}
+         />
+       </Field>
+-      <Field label="Confirmation">
++      <Field label="Confirmation" error={p.errors?.confirm}>
+         <input
+           type="password"
+           autoComplete="new-password"
+           value={p.confirm}
+           onChange={(e) => p.onChange({ password: p.password, confirm: e.target.value })}
+         />
+       </Field>
+     </>
+   );
+ }
+diff --git a/apps/web/src/features/onboarding/GoalStep.tsx b/apps/web/src/features/onboarding/GoalStep.tsx
+index 74929c1..0454c0a 100644
+--- a/apps/web/src/features/onboarding/GoalStep.tsx
++++ b/apps/web/src/features/onboarding/GoalStep.tsx
+@@ -1,46 +1,48 @@
+ import { GOAL_LABELS, type Goal } from '@appsport/contracts';
+ import { availableGoals } from '@appsport/domain';
+-import { useState } from 'react';
++import { useContext, useState } from 'react';
+ import { useLive, useMe } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { ChoiceList } from '../../ui';
+ import { SportStep } from './SportStep';
+ import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
+-import { StepTitle } from './StepTitle';
++import { StepTitle, StepTitleContext } from './StepTitle';
+ 
+ /**
+  * E1 Objectif : « Perdre du gras » n'est pas proposé à un mineur. En édition, choisir l'objectif
+- * sportif sans sport enregistré mène d'abord au sport, puis un seul PATCH (R-ONB-3).
++ * sportif sans sport enregistré mène d'abord au sport, puis un seul PATCH (R-ONB-3) ; le titre de
++ * l'écran affiché (sport, ou objectif au retour) prend alors le focus.
+  */
+ export function GoalStep(p: StepProps) {
+   const repos = useRepos();
+   const me = useMe();
+   const profile = useLive(() => repos.profile.get(), [repos]);
+   const [choice, setChoice] = useState<Goal | null>(null);
+   const [askSport, setAskSport] = useState(false);
++  const titles = useContext(StepTitleContext);
+   const save = useSaveStep(p, 'goal');
+   if (!me || profile === undefined) return null;
+ 
+   const goals = availableGoals(me.ageBand);
+   const saved = profile?.goal ?? null;
+   const value = choice ?? (saved !== null && goals.includes(saved) ? saved : null);
+   const needsSport = p.mode === 'edit' && value === 'sport_support' && !profile?.sportCode;
+ 
++  function showSport(show: boolean) {
++    if (titles) titles.focusNext.current = true;
++    setAskSport(show);
++  }
++
+   if (askSport) {
+     return (
+-      <SportStep
+-        mode="edit"
+-        pendingGoal="sport_support"
+-        onNext={p.onNext}
+-        onBack={() => setAskSport(false)}
+-      />
++      <SportStep mode="edit" pendingGoal="sport_support" onNext={p.onNext} onBack={() => showSport(false)} />
+     );
+   }
+ 
+   return (
+     <>
+       <StepTitle>Objectif</StepTitle>
+       <ChoiceList<Goal>
+         name="goal"
+         legend="Quel est ton objectif principal ?"
+         value={value}
+@@ -49,18 +51,18 @@ export function GoalStep(p: StepProps) {
+       />
+       <StepActions
+         onBack={p.onBack}
+         pending={save.pending}
+         error={save.error}
+         primary={{
+           label: needsSport ? 'Suivant' : saveLabel(p.mode),
+           disabled: value === null,
+           onClick: () => {
+             if (value === null) return;
+-            if (needsSport) setAskSport(true);
++            if (needsSport) showSport(true);
+             else void save.run({ goal: value });
+           },
+         }}
+       />
+     </>
+   );
+ }
+diff --git a/apps/web/src/features/onboarding/HealthStep.tsx b/apps/web/src/features/onboarding/HealthStep.tsx
+index 64b7353..104d6b6 100644
+--- a/apps/web/src/features/onboarding/HealthStep.tsx
++++ b/apps/web/src/features/onboarding/HealthStep.tsx
+@@ -294,32 +294,38 @@ export function LimitationsEditor(p: { draft?: LimitationDraft } = {}) {
+         )}
+         <Button variant="secondary" disabled={!draft.complete || add.pending} onClick={() => void add.run()}>
+           Ajouter une limitation
+         </Button>
+       </div>
+     </section>
+   );
+ }
+ 
+ /** Mode prudent (E7.5, C1) : proposé à tous ; affiché imposé pour un mineur (R-CST-7). */
+-export function CautiousModeToggle(p: { value: boolean; minor: boolean; onChange(v: boolean): void }) {
++export function CautiousModeToggle(p: {
++  value: boolean;
++  minor: boolean;
++  /** Envoi en cours (Profil) : pas de nouveau choix avant la réponse. */
++  disabled?: boolean;
++  onChange(v: boolean): void;
++}) {
+   const hintId = useId();
+   const noteId = useId();
+   return (
+     <div className={styles.toggle}>
+       <label className={styles.check}>
+         <input
+           type="checkbox"
+           role="switch"
+           aria-checked={p.minor || p.value}
+           checked={p.minor || p.value}
+-          disabled={p.minor}
++          disabled={p.minor || p.disabled}
+           aria-describedby={p.minor ? `${hintId} ${noteId}` : noteId}
+           onChange={(e) => p.onChange(e.target.checked)}
+         />
+         <span>Je préfère une progression plus prudente</span>
+       </label>
+       {p.minor ? (
+         <span id={hintId} className={styles.note}>
+           Imposé jusqu'à 18 ans
+         </span>
+       ) : null}
+diff --git a/apps/web/src/features/places/GymPage.tsx b/apps/web/src/features/places/GymPage.tsx
+index 74a9083..7fd2584 100644
+--- a/apps/web/src/features/places/GymPage.tsx
++++ b/apps/web/src/features/places/GymPage.tsx
+@@ -3,32 +3,34 @@ import {
+   type EquipmentCode,
+   EquipmentCodeSchema,
+   GYM_CITY_MAX,
+   GYM_CITY_MIN,
+   GYM_NAME_MAX,
+   GYM_NAME_MIN,
+   type GymDetail,
+   type GymHistoryAction,
+   type UpdateGymRequest,
+ } from '@appsport/contracts';
+-import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react';
++import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react';
+ import { z } from 'zod';
++import { ApiError } from '../../api/client';
+ import { useRepos } from '../../repos';
+ import { Banner, Button, errorMessage, Field, formatDateTime, Page, useAction } from '../../ui';
+ import { EquipmentChecklist, EquipmentList } from './EquipmentChecklist';
+ import styles from './places.module.css';
+ 
+ /** Entrées d'historique affichées (R-SAL-6). */
+ export const GYM_HISTORY_LIMIT = 10;
+ 
+ export const OFFLINE_GYM_TEXT = 'Hors ligne : dernière version connue.';
+ export const GYM_RIGHTS_TEXT = 'Seuls les membres qui ont cette salle parmi leurs lieux peuvent la modifier.';
++export const GYM_DELETED_TEXT = 'Cette salle a été supprimée.';
+ 
+ const ACTION_LABELS: Record<GymHistoryAction, string> = {
+   create: 'Création de la salle',
+   update_info: 'Nom ou ville modifiés',
+   add_equipment: 'Matériel ajouté',
+   remove_equipment: 'Matériel retiré',
+   update_load_settings: 'Réglages de charge modifiés',
+ };
+ 
+ const EquipmentDetail = z.object({ code: EquipmentCodeSchema });
+@@ -47,119 +49,144 @@ function actionText(h: HistoryEntry): string {
+  * supprimé, ou auteur invisible à cette salle : le serveur ne le dit pas, R-VIS-4) : « un membre ».
+  */
+ export function historyLine(h: HistoryEntry): string {
+   return `${formatDateTime(h.at)} — ${actionText(h)} — modifié par ${h.authorUsername ?? 'un membre'}`;
+ }
+ 
+ const lengthError = (value: string, min: number, max: number) =>
+   value.length < min || value.length > max ? `${min} à ${max} caractères.` : null;
+ 
+ type Loaded = { detail: GymDetail; offline: boolean };
++/** Échec du chargement ; « Réessayer » sauf pour une salle inconnue, qui ne viendra pas. */
++type Failure = { message: string; retry: boolean };
+ 
+ /**
+  * Fiche d'une salle (02 §10.4, §10.6) : nom, ville, matériel, « Qui va à cette salle » (pour tout
+  * membre connecté, R-VIS-2) et les dernières modifications. Les membres qui l'ont parmi leurs lieux
+  * (et les admins) la modifient en ligne (R-SAL-4) ; hors ligne, dernière version connue des miroirs,
+- * en lecture seule (§1 principe 4).
++ * en lecture seule (§1 principe 4). Salle supprimée (R-SAL-7) : signalée, en lecture seule, sans
++ * liste des membres. « Modifier » ouvre le formulaire avec le focus sur le nom ; à la fermeture, le
++ * focus revient au bouton.
+  */
+ export function GymPage(p: { params: { id: string } }) {
+   const repos = useRepos();
+   const id = p.params.id;
+-  const [state, setState] = useState<{ loaded: Loaded | null; error: string | null }>({
++  const [state, setState] = useState<{ loaded: Loaded | null; error: Failure | null }>({
+     loaded: null,
+     error: null,
+   });
+   const [reload, setReload] = useState(0);
+   const [editing, setEditing] = useState(false);
++  const editId = useId();
++  const returnFocus = useRef(false);
+   const refresh = () => setReload((n) => n + 1);
+ 
++  useEffect(() => {
++    if (editing || !returnFocus.current) return;
++    returnFocus.current = false;
++    document.getElementById(editId)?.focus();
++  }, [editing, editId]);
++
++  function closeEditor() {
++    returnFocus.current = true;
++    setEditing(false);
++  }
++
+   // biome-ignore lint/correctness/useExhaustiveDependencies: `reload` relit la fiche
+   useEffect(() => {
+     let current = true;
+     repos.gyms.detail(id).then(
+       (loaded) => {
+         if (current) setState({ loaded, error: null });
+       },
+       (error: unknown) => {
+-        if (current)
+-          setState((s) => ({ ...s, error: errorMessage(error, { not_found: 'Salle introuvable.' }) }));
++        if (!current) return;
++        const message = errorMessage(error, { not_found: 'Salle introuvable.' });
++        const retry = !(error instanceof ApiError && error.code === 'not_found');
++        setState((s) => ({ ...s, error: { message, retry } }));
+       },
+     );
+     return () => {
+       current = false;
+     };
+   }, [repos, id, reload]);
+ 
+   const failure = state.error ? (
+     <>
+-      <Banner tone="error">{state.error}</Banner>
+-      <Button variant="secondary" onClick={refresh}>
+-        Réessayer
+-      </Button>
++      <Banner tone="error">{state.error.message}</Banner>
++      {state.error.retry ? (
++        <Button variant="secondary" onClick={refresh}>
++          Réessayer
++        </Button>
++      ) : null}
+     </>
+   ) : null;
+ 
+   if (!state.loaded) {
+     return failure ? (
+       <Page title="Salle" back="/profile/places">
+         {failure}
+       </Page>
+     ) : null;
+   }
+ 
+   const { detail, offline } = state.loaded;
+   const editable = detail.canEdit && !offline;
++  const deleted = detail.deletedAt !== null;
+ 
+   return (
+     <Page title={detail.name} back="/profile/places">
+       {offline ? <Banner tone="info">{OFFLINE_GYM_TEXT}</Banner> : null}
+       {failure}
+       {editing && editable ? (
+         <GymInfoForm
+           detail={detail}
+-          onCancel={() => setEditing(false)}
++          onCancel={closeEditor}
+           onSaved={() => {
+-            setEditing(false);
++            closeEditor();
+             refresh();
+           }}
+         />
+       ) : (
+         <p className={styles.meta}>{detail.city}</p>
+       )}
+       {editable && !editing ? (
+         <div className={styles.actions}>
+-          <Button variant="secondary" onClick={() => setEditing(true)}>
++          <Button id={editId} variant="secondary" onClick={() => setEditing(true)}>
+             Modifier
+           </Button>
+         </div>
+       ) : null}
+-      {offline || detail.canEdit ? null : <p className={styles.hint}>{GYM_RIGHTS_TEXT}</p>}
++      {deleted ? <Banner tone="warning">{GYM_DELETED_TEXT}</Banner> : null}
++      {offline || deleted || detail.canEdit ? null : <p className={styles.hint}>{GYM_RIGHTS_TEXT}</p>}
+       <GymSection title="Matériel">
+         {editable ? (
+           <GymEquipment detail={detail} onSaved={refresh} />
+         ) : (
+           <EquipmentList value={detail.equipment} />
+         )}
+       </GymSection>
+-      <GymSection title="Qui va à cette salle">
+-        {offline ? (
+-          <p>Liste disponible en ligne</p>
+-        ) : detail.visibleMembers.length === 0 ? (
+-          <p>Personne n'est visible pour l'instant.</p>
+-        ) : (
+-          <ul className={styles.members}>
+-            {detail.visibleMembers.map((m) => (
+-              <li key={m}>{m}</li>
+-            ))}
+-          </ul>
+-        )}
+-      </GymSection>
++      {deleted ? null : (
++        <GymSection title="Qui va à cette salle">
++          {offline ? (
++            <p>Liste disponible en ligne</p>
++          ) : detail.visibleMembers.length === 0 ? (
++            <p>Personne n'est visible pour l'instant.</p>
++          ) : (
++            <ul className={styles.members}>
++              {detail.visibleMembers.map((m) => (
++                <li key={m}>{m}</li>
++              ))}
++            </ul>
++          )}
++        </GymSection>
++      )}
+       <GymSection title="Dernières modifications">
+         {offline ? (
+           <p>Historique disponible en ligne</p>
+         ) : detail.history.length === 0 ? (
+           <p>Aucune modification.</p>
+         ) : (
+           <ol className={styles.history}>
+             {detail.history.slice(0, GYM_HISTORY_LIMIT).map((h, i) => (
+               // biome-ignore lint/suspicious/noArrayIndexKey: entrées sans identifiant, liste en lecture seule remplacée d'un bloc
+               <li key={i}>{historyLine(h)}</li>
+@@ -174,56 +201,67 @@ export function GymPage(p: { params: { id: string } }) {
+ function GymSection(p: { title: string; children: ReactNode }) {
+   const id = useId();
+   return (
+     <section aria-labelledby={id} className={styles.section}>
+       <h2 id={id}>{p.title}</h2>
+       {p.children}
+     </section>
+   );
+ }
+ 
+-/** Nom et ville (R-SAL-2 : 2 à 60 caractères) ; seuls les champs changés partent (R-SAL-5). */
++/**
++ * Nom et ville (R-SAL-2 : 2 à 60 caractères) ; seuls les champs changés depuis l'ouverture partent
++ * (R-SAL-5) : une fiche relue entre-temps (matériel coché) ne renvoie pas un nom changé par un autre.
++ */
+ function GymInfoForm(p: { detail: GymDetail; onCancel(): void; onSaved(): void }) {
+   const repos = useRepos();
+-  const [name, setName] = useState(p.detail.name);
+-  const [city, setCity] = useState(p.detail.city);
++  const [initial] = useState(() => ({ name: p.detail.name, city: p.detail.city }));
++  const [name, setName] = useState(initial.name);
++  const [city, setCity] = useState(initial.city);
++  const focusOnMount = useCallback((el: HTMLInputElement | null) => el?.focus(), []);
+   const [errors, setErrors] = useState<{ name: string | null; city: string | null }>({
+     name: null,
+     city: null,
+   });
+   const save = useAction(async (r: UpdateGymRequest) => {
+     await repos.gyms.update(p.detail.id, r);
+     p.onSaved();
+   });
+ 
+   function submit(e: FormEvent) {
+     e.preventDefault();
+     const n = name.trim();
+     const c = city.trim();
+     const next = {
+       name: lengthError(n, GYM_NAME_MIN, GYM_NAME_MAX),
+       city: lengthError(c, GYM_CITY_MIN, GYM_CITY_MAX),
+     };
+     setErrors(next);
+     if (next.name || next.city) return;
+     const patch = {
+-      ...(n !== p.detail.name ? { name: n } : {}),
+-      ...(c !== p.detail.city ? { city: c } : {}),
++      ...(n !== initial.name ? { name: n } : {}),
++      ...(c !== initial.city ? { city: c } : {}),
+     };
+     if (Object.keys(patch).length === 0) p.onCancel();
+     else void save.run(patch);
+   }
+ 
+   return (
+     <form className={styles.form} noValidate onSubmit={submit}>
+       <Field label="Nom de la salle" error={errors.name}>
+-        <input type="text" maxLength={GYM_NAME_MAX} value={name} onChange={(e) => setName(e.target.value)} />
++        <input
++          ref={focusOnMount}
++          type="text"
++          maxLength={GYM_NAME_MAX}
++          value={name}
++          onChange={(e) => setName(e.target.value)}
++        />
+       </Field>
+       <Field label="Ville" error={errors.city}>
+         <input type="text" maxLength={GYM_CITY_MAX} value={city} onChange={(e) => setCity(e.target.value)} />
+       </Field>
+       {save.error ? <Banner tone="error">{save.error}</Banner> : null}
+       <div className={styles.actions}>
+         <Button type="submit" disabled={save.pending}>
+           Enregistrer
+         </Button>
+         <Button variant="secondary" onClick={p.onCancel} disabled={save.pending}>
+diff --git a/apps/web/src/features/places/PlacesPage.tsx b/apps/web/src/features/places/PlacesPage.tsx
+index 6c85660..a238ded 100644
+--- a/apps/web/src/features/places/PlacesPage.tsx
++++ b/apps/web/src/features/places/PlacesPage.tsx
+@@ -2,255 +2,341 @@ import {
+   type ApiErrorCode,
+   type EquipmentCode,
+   HOME_DEFAULT_PRESET,
+   HOME_PLACE_DEFAULT_NAME,
+   PLACE_NAME_MAX,
+   PRESET_IDS,
+   PRESETS,
+   type PresetId,
+   type UpdatePlaceRequest,
+ } from '@appsport/contracts';
+-import { type FormEvent, useEffect, useId, useState } from 'react';
++import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
+ import { Link } from 'wouter';
+ import { useLive, useMe } from '../../app-services';
+ import { type PlaceView, useRepos } from '../../repos';
+ import { Banner, Button, ChoiceList, Dialog, Field, Page, useAction } from '../../ui';
+ import { EquipmentChecklist, sortEquipment } from './EquipmentChecklist';
+ import { GymPicker, MINOR_VISIBILITY_HINT } from './GymPicker';
+ import styles from './places.module.css';
+ 
+ export const KEEP_ONE_PLACE = 'Tu dois garder au moins un lieu.';
+ export const CHOOSE_PRIMARY_FIRST = "Choisis d'abord un nouveau lieu principal.";
+ const NAME_REQUIRED = 'Donne un nom à ce lieu.';
++export const VISIBLE_HINT = 'Coché : ton pseudo apparaît dans « Qui va à cette salle ».';
+ const HOME_PRESETS = PRESET_IDS.filter((id) => PRESETS[id].kind === 'home');
+ 
+ /** Refus du serveur sur les lieux, avec les mots de cet écran (R-LIEU-1, R-LIEU-4). */
+ const PLACE_ERRORS: Partial<Record<ApiErrorCode, string>> = {
+   last_place: KEEP_ONE_PLACE,
+   primary_required: CHOOSE_PRIMARY_FIRST,
+ };
+ 
+-const ignore = () => {};
++/** Ref de rappel : l'élément prend le focus dès qu'il apparaît (formulaire ouvert par un bouton). */
++const focusOnMount = (el: HTMLElement | null) => el?.focus();
+ 
+ /**
+  * Profil › Lieux (02 §11) : le principal d'abord ; choisir le principal, renommer une maison, régler
+  * la visibilité d'une salle, supprimer (jamais le dernier lieu, le principal seulement avec un
+  * successeur), ajouter une salle ou une maison. Chaque écriture demande le réseau (§1 principe 4).
++ * Focus : un formulaire ouvert le prend (titre ou champ) et le rend au bouton qui l'a ouvert ; après
++ * une suppression, il va au lieu suivant.
+  */
+ export function PlacesPage() {
+   const repos = useRepos();
+   const me = useMe();
+   const places = useLive(() => repos.places.list(), [repos]);
+   const [adding, setAdding] = useState<'gym' | 'home' | null>(null);
+   const addId = useId();
++  const addGymId = useId();
++  const addHomeId = useId();
++  const returnTo = useRef<'gym' | 'home' | null>(null);
++  const listRef = useRef<HTMLUListElement>(null);
++
++  useEffect(() => {
++    if (adding !== null || returnTo.current === null) return;
++    document.getElementById(returnTo.current === 'gym' ? addGymId : addHomeId)?.focus();
++    returnTo.current = null;
++  }, [adding, addGymId, addHomeId]);
++
+   if (!me || places === undefined) return null;
+   const minor = me.ageBand === 'minor';
+ 
++  function closeAdd() {
++    returnTo.current = adding;
++    setAdding(null);
++  }
++
++  /** Lieu supprimé : le focus va au lien du lieu suivant (du précédent pour le dernier). */
++  function removed(id: string) {
++    const list = places ?? [];
++    const i = list.findIndex((o) => o.id === id);
++    const next = list[i + 1] ?? list[i - 1];
++    const links = listRef.current?.querySelectorAll<HTMLElement>('[data-place]') ?? [];
++    Array.from(links)
++      .find((a) => a.dataset.place === next?.id)
++      ?.focus();
++  }
++
+   return (
+     <Page title="Lieux" back="/profile">
+       {places.length > 0 ? (
+-        <ul className={styles.places}>
++        <ul ref={listRef} className={styles.places}>
+           {places.map((place) => (
+             <PlaceItem
+               key={place.id}
+               place={place}
+               others={places.filter((o) => o.id !== place.id)}
+               minor={minor}
++              onRemoved={() => removed(place.id)}
+             />
+           ))}
+         </ul>
+       ) : (
+         <p className={styles.hint}>Aucun lieu.</p>
+       )}
+       {adding === 'gym' ? (
+         <section aria-labelledby={addId} className={styles.section}>
+-          <h2 id={addId}>Ajouter une salle</h2>
+-          <GymPicker isPrimary={false} defaultVisible={!minor} onDone={() => setAdding(null)} />
+-          <Button variant="secondary" onClick={() => setAdding(null)}>
++          <h2 id={addId} ref={focusOnMount} tabIndex={-1}>
++            Ajouter une salle
++          </h2>
++          <GymPicker isPrimary={false} defaultVisible={!minor} onDone={closeAdd} />
++          <Button variant="secondary" onClick={closeAdd}>
+             Annuler
+           </Button>
+         </section>
+       ) : null}
+-      {adding === 'home' ? <HomeCreate onDone={() => setAdding(null)} /> : null}
++      {adding === 'home' ? <HomeCreate onDone={closeAdd} /> : null}
+       {adding === null ? (
+         <div className={styles.actions}>
+-          <Button variant="secondary" onClick={() => setAdding('gym')}>
++          <Button id={addGymId} variant="secondary" onClick={() => setAdding('gym')}>
+             Ajouter une salle
+           </Button>
+-          <Button variant="secondary" onClick={() => setAdding('home')}>
++          <Button id={addHomeId} variant="secondary" onClick={() => setAdding('home')}>
+             Ajouter une maison
+           </Button>
+         </div>
+       ) : null}
+     </Page>
+   );
+ }
+ 
+-/** Un lieu de la liste ; ses boutons sont décrits par son nom (plusieurs « Supprimer » à l'écran). */
+-function PlaceItem(p: { place: PlaceView; others: PlaceView[]; minor: boolean }) {
++/**
++ * Un lieu de la liste ; ses boutons et sa case sont décrits par son nom (plusieurs « Supprimer » à
++ * l'écran). Renommage ou boîte de suppression fermés : le focus revient au bouton qui les a ouverts.
++ */
++function PlaceItem(p: { place: PlaceView; others: PlaceView[]; minor: boolean; onRemoved(): void }) {
+   const repos = useRepos();
+   const { place } = p;
+   const nameId = useId();
+   const reasonId = useId();
+   const visibleHintId = useId();
+   const minorHintId = useId();
++  const renameId = useId();
++  const removeId = useId();
++  const returnTo = useRef<'rename' | 'remove' | null>(null);
+   const [renaming, setRenaming] = useState(false);
+   const [name, setName] = useState(place.name);
+   const [nameError, setNameError] = useState<string | null>(null);
+   const [visibleDraft, setVisibleDraft] = useState<boolean | null>(null);
+   const [deleting, setDeleting] = useState(false);
+   const update = useAction(async (r: UpdatePlaceRequest) => {
+     await repos.places.update(place.id, r);
+     return true;
+   }, PLACE_ERRORS);
+   const last = p.others.length === 0;
+ 
+   // Visibilité : le choix s'affiche jusqu'à la relecture du miroir (pull après l'envoi).
+   // biome-ignore lint/correctness/useExhaustiveDependencies: chaque lecture du lieu efface le brouillon
+   useEffect(() => setVisibleDraft(null), [place]);
+ 
++  useEffect(() => {
++    if (renaming || deleting || returnTo.current === null) return;
++    document.getElementById(returnTo.current === 'rename' ? renameId : removeId)?.focus();
++    returnTo.current = null;
++  }, [renaming, deleting, renameId, removeId]);
++
++  // Stable : la boîte de dialogue reprend le focus à chaque nouveau `onClose`.
++  const closeDelete = useCallback(() => {
++    returnTo.current = 'remove';
++    setDeleting(false);
++  }, []);
++
++  function closeRename() {
++    returnTo.current = 'rename';
++    setRenaming(false);
++  }
++
+   async function changeVisible(visibleAtGym: boolean) {
+     setVisibleDraft(visibleAtGym);
+     if (!(await update.run({ visibleAtGym }))) setVisibleDraft(null);
+   }
+ 
+   function startRename() {
+     update.reset();
+     setName(place.name);
+     setNameError(null);
+     setRenaming(true);
+   }
+ 
+   async function submitRename(e: FormEvent) {
+     e.preventDefault();
+     const next = name.trim();
+     if (next === '') {
+       setNameError(NAME_REQUIRED);
+       return;
+     }
+     setNameError(null);
+-    if (next === place.name || (await update.run({ name: next }))) setRenaming(false);
++    if (next === place.name || (await update.run({ name: next }))) closeRename();
+   }
+ 
+   return (
+     <li className={styles.place}>
+       <div className={styles.placeHead}>
+-        <Link id={nameId} href={`/profile/places/${place.id}`} className={styles.placeName}>
++        <Link
++          id={nameId}
++          data-place={place.id}
++          href={`/profile/places/${place.id}`}
++          className={styles.placeName}
++        >
+           {place.name}
+         </Link>
+         {place.isPrimary ? <span className={styles.badge}>Principal</span> : null}
+       </div>
+       <p className={styles.meta}>
+         {place.kind === 'gym' ? (place.city ? `Salle · ${place.city}` : 'Salle') : 'Maison'}
+       </p>
+       {place.kind === 'gym' ? (
+         <div className={styles.visibility}>
+           <label className={styles.item}>
+             <input
+               type="checkbox"
+               checked={visibleDraft ?? place.visibleAtGym === true}
+               disabled={update.pending}
+-              aria-describedby={p.minor ? `${visibleHintId} ${minorHintId}` : visibleHintId}
++              aria-describedby={[nameId, visibleHintId, p.minor ? minorHintId : null]
++                .filter(Boolean)
++                .join(' ')}
+               onChange={(e) => void changeVisible(e.target.checked)}
+             />
+             Visible à la salle
+           </label>
+           <span id={visibleHintId} className={styles.hint}>
+-            Ton pseudo apparaît dans « Qui va à cette salle ».
++            {VISIBLE_HINT}
+           </span>
+           {p.minor ? (
+             <span id={minorHintId} className={styles.hint}>
+               {MINOR_VISIBILITY_HINT}
+             </span>
+           ) : null}
+         </div>
+       ) : null}
+       {renaming ? (
+         <form className={styles.form} noValidate onSubmit={(e) => void submitRename(e)}>
+           <Field label="Nom du lieu" error={nameError}>
+             <input
++              ref={focusOnMount}
+               type="text"
+               maxLength={PLACE_NAME_MAX}
+               value={name}
+               onChange={(e) => setName(e.target.value)}
+             />
+           </Field>
+           <div className={styles.actions}>
+-            <Button type="submit" disabled={update.pending}>
++            <Button type="submit" aria-describedby={nameId} disabled={update.pending}>
+               Enregistrer
+             </Button>
+-            <Button variant="secondary" onClick={() => setRenaming(false)} disabled={update.pending}>
++            <Button
++              variant="secondary"
++              aria-describedby={nameId}
++              onClick={closeRename}
++              disabled={update.pending}
++            >
+               Annuler
+             </Button>
+           </div>
+         </form>
+       ) : null}
+       {update.error ? <Banner tone="error">{update.error}</Banner> : null}
+       <div className={styles.actions}>
+         {place.isPrimary ? null : (
+           <Button
+             variant="secondary"
+             aria-describedby={nameId}
+             disabled={update.pending}
+             onClick={() => void update.run({ isPrimary: true })}
+           >
+             Définir comme principal
+           </Button>
+         )}
+         {place.kind === 'home' && !renaming ? (
+-          <Button variant="secondary" aria-describedby={nameId} onClick={startRename}>
++          <Button id={renameId} variant="secondary" aria-describedby={nameId} onClick={startRename}>
+             Renommer
+           </Button>
+         ) : null}
+         <Button
++          id={removeId}
+           variant="danger"
+           aria-describedby={last ? `${nameId} ${reasonId}` : nameId}
+           disabled={last}
+           onClick={() => setDeleting(true)}
+         >
+           Supprimer
+         </Button>
+       </div>
+       {last ? (
+         <p id={reasonId} className={styles.hint}>
+           {KEEP_ONE_PLACE}
+         </p>
+       ) : null}
+       {deleting ? (
+-        <DeletePlaceDialog place={place} others={p.others} onClose={() => setDeleting(false)} />
++        <DeletePlaceDialog
++          place={place}
++          others={p.others}
++          onClose={closeDelete}
++          onDeleted={() => {
++            setDeleting(false);
++            p.onRemoved();
++          }}
++        />
+       ) : null}
+     </li>
+   );
+ }
+ 
+ /**
+  * Suppression d'un lieu (R-LIEU-4, R-LIEU-5) : le principal exige d'en désigner un autre ; le lieu
+- * est marqué supprimé, les séances passées y restent rattachées.
++ * est marqué supprimé, les séances passées y restent rattachées. `onClose` donné à la boîte reste
++ * le même pendant l'envoi (la boîte reprendrait sinon le focus) : l'envoi en cours est lu dans une ref.
+  */
+-function DeletePlaceDialog(p: { place: PlaceView; others: PlaceView[]; onClose(): void }) {
++function DeletePlaceDialog(p: { place: PlaceView; others: PlaceView[]; onClose(): void; onDeleted(): void }) {
+   const repos = useRepos();
+   const choiceName = useId();
+   const [newPrimary, setNewPrimary] = useState<string | null>(null);
+   const remove = useAction(async () => {
+     await repos.places.remove(
+       p.place.id,
+       p.place.isPrimary && newPrimary !== null ? { newPrimaryId: newPrimary } : {},
+     );
+-    p.onClose();
++    p.onDeleted();
+   }, PLACE_ERRORS);
+   const blocked = p.place.isPrimary && newPrimary === null;
++  const pending = useRef(false);
++  pending.current = remove.pending;
++  const { onClose } = p;
++  const close = useCallback(() => {
++    if (!pending.current) onClose();
++  }, [onClose]);
+ 
+   return (
+     <Dialog
+       open
+       title={`Supprimer ${p.place.name} ?`}
+-      onClose={remove.pending ? ignore : p.onClose}
++      onClose={close}
+       actions={
+         <>
+           <Button variant="secondary" onClick={p.onClose} disabled={remove.pending}>
+             Annuler
+           </Button>
+           <Button variant="danger" onClick={() => void remove.run()} disabled={blocked || remove.pending}>
+             Supprimer
+           </Button>
+         </>
+       }
+@@ -296,21 +382,23 @@ function HomeCreate(p: { onDone(): void }) {
+     if (name.trim() === '') {
+       setNameError(NAME_REQUIRED);
+       return;
+     }
+     setNameError(null);
+     void create.run();
+   }
+ 
+   return (
+     <section aria-labelledby={titleId} className={styles.section}>
+-      <h2 id={titleId}>Ajouter une maison</h2>
++      <h2 id={titleId} ref={focusOnMount} tabIndex={-1}>
++        Ajouter une maison
++      </h2>
+       <Field label="Nom du lieu" error={nameError}>
+         <input
+           type="text"
+           maxLength={PLACE_NAME_MAX}
+           value={name}
+           onChange={(e) => setName(e.target.value)}
+         />
+       </Field>
+       <ChoiceList<PresetId>
+         name="home-preset"
+diff --git a/apps/web/src/features/profile/ProfilePage.tsx b/apps/web/src/features/profile/ProfilePage.tsx
+index 9f587ed..4e4a644 100644
+--- a/apps/web/src/features/profile/ProfilePage.tsx
++++ b/apps/web/src/features/profile/ProfilePage.tsx
+@@ -1,20 +1,26 @@
+ import { EXPERIENCE_LABELS, GOAL_LABELS, type MeResponse, type Role, SPORTS } from '@appsport/contracts';
+ import { validateUsername } from '@appsport/domain';
+ import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
+ import { Link } from 'wouter';
+ import { ApiError } from '../../api/client';
+ import { useLive, useMe } from '../../app-services';
+ import { type TrainingProfileView, useRepos } from '../../repos';
+ import { Banner, Button, Field, formatDate, Page, plural, useAction } from '../../ui';
+ import { LogoutDialog } from '../auth/LogoutDialog';
+-import { accessErrorMessage, checkNewPassword, loginErrorMessage, USERNAME_MESSAGES } from '../auth/messages';
++import {
++  accessErrorMessage,
++  checkNewPassword,
++  loginErrorMessage,
++  PASSWORD_MISMATCH_MESSAGE,
++  USERNAME_MESSAGES,
++} from '../auth/messages';
+ import { PasswordFields } from '../auth/PasswordFields';
+ import { AvailabilityStep } from '../onboarding/AvailabilityStep';
+ import { ExperienceStep } from '../onboarding/ExperienceStep';
+ import { GoalStep } from '../onboarding/GoalStep';
+ import { CautiousModeToggle } from '../onboarding/HealthStep';
+ import { SportStep } from '../onboarding/SportStep';
+ import type { StepProps } from '../onboarding/StepActions';
+ import { StepTitleContext } from '../onboarding/StepTitle';
+ import styles from './profile.module.css';
+ 
+@@ -73,56 +79,64 @@ function AccountSection(p: { me: MeResponse }) {
+         </Button>
+         <Button variant="danger" onClick={() => setLogout('all')}>
+           Déconnecter tous mes appareils
+         </Button>
+       </div>
+       <LogoutDialog mode={logout ?? 'current'} open={logout !== null} onClose={() => setLogout(null)} />
+     </Section>
+   );
+ }
+ 
+-/** Pseudo : contrôlé ici (R-CPT-2), puis PATCH /api/me ; le refus du serveur garde la saisie. */
++/**
++ * Pseudo : contrôlé ici (R-CPT-2), message lié au champ, qui prend le focus ; puis PATCH /api/me.
++ * Le refus du serveur (ou le réseau) s'affiche en alerte et garde la saisie.
++ */
+ function UsernameForm(p: { me: MeResponse }) {
+   const repos = useRepos();
+   const [draft, setDraft] = useState<string | null>(null);
+   const [busy, setBusy] = useState(false);
++  const [fieldError, setFieldError] = useState<string | null>(null);
+   const [error, setError] = useState<string | null>(null);
+   const [saved, setSaved] = useState(false);
++  const inputRef = useRef<HTMLInputElement>(null);
+   const value = draft ?? p.me.username;
+ 
+   async function submit(e: FormEvent) {
+     e.preventDefault();
+     if (busy || value === p.me.username) return;
+     setSaved(false);
++    setError(null);
+     const check = validateUsername(value);
+     if (!check.ok) {
+-      setError(USERNAME_MESSAGES[check.reason]);
++      setFieldError(USERNAME_MESSAGES[check.reason]);
++      inputRef.current?.focus();
+       return;
+     }
++    setFieldError(null);
+     setBusy(true);
+-    setError(null);
+     try {
+       await repos.me.updateUsername(value);
+       setDraft(null);
+       setSaved(true);
+     } catch (err) {
+       // username_invalid : motif du serveur (body.reason) ; username_taken, réseau : message commun.
+       setError(accessErrorMessage(err, p.me.role));
+     } finally {
+       setBusy(false);
+     }
+   }
+ 
+   return (
+     <form className={styles.form} noValidate onSubmit={(e) => void submit(e)}>
+-      <Field label="Pseudo">
++      <Field label="Pseudo" error={fieldError}>
+         <input
++          ref={inputRef}
+           type="text"
+           value={value}
+           autoComplete="username"
+           autoCapitalize="none"
+           autoCorrect="off"
+           spellCheck={false}
+           onChange={(e) => {
+             setDraft(e.target.value);
+             setSaved(false);
+           }}
+@@ -137,75 +151,89 @@ function UsernameForm(p: { me: MeResponse }) {
+   );
+ }
+ 
+ /** Erreur d'un changement de mot de passe : mot de passe actuel, attente ou motif du refus. */
+ function passwordChangeError(e: unknown, role: Role): string {
+   if (e instanceof ApiError && e.code === 'invalid_credentials') return WRONG_CURRENT_PASSWORD;
+   if (e instanceof ApiError && e.code === 'rate_limited') return loginErrorMessage(e);
+   return accessErrorMessage(e, role);
+ }
+ 
++type PasswordFieldErrors = { current?: string; password?: string; confirm?: string };
++
+ /**
+  * Mot de passe (R-MDP-6) : l'actuel, puis le nouveau contrôlé ici (`checkNewPassword`, 14
+- * caractères pour un admin). Réussite : champs vidés et autres appareils déconnectés.
++ * caractères pour un admin) ; un refus local est lié à son champ, qui prend le focus. Le refus du
++ * serveur ou le réseau s'affichent en alerte. Réussite : champs vidés, autres appareils déconnectés.
+  */
+ function PasswordSection(p: { me: MeResponse }) {
+   const repos = useRepos();
+   const [current, setCurrent] = useState('');
+   const [passwords, setPasswords] = useState({ password: '', confirm: '' });
+   const [busy, setBusy] = useState(false);
++  const [fieldErrors, setFieldErrors] = useState<PasswordFieldErrors>({});
+   const [error, setError] = useState<string | null>(null);
+   const [done, setDone] = useState(false);
++  const formRef = useRef<HTMLFormElement>(null);
++
++  // Refus local : le champ en cause (marqué aria-invalid au rendu) prend le focus.
++  // biome-ignore lint/correctness/useExhaustiveDependencies: chaque refus local relance la recherche
++  useEffect(() => {
++    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
++  }, [fieldErrors]);
+ 
+   async function submit(e: FormEvent) {
+     e.preventDefault();
+     if (busy) return;
+     setDone(false);
+-    const problem =
+-      current === ''
+-        ? CURRENT_PASSWORD_REQUIRED
+-        : checkNewPassword({ ...passwords, username: p.me.username, role: p.me.role });
++    setError(null);
++    if (current === '') {
++      setFieldErrors({ current: CURRENT_PASSWORD_REQUIRED });
++      return;
++    }
++    const problem = checkNewPassword({ ...passwords, username: p.me.username, role: p.me.role });
+     if (problem) {
+-      setError(problem);
++      setFieldErrors(problem === PASSWORD_MISMATCH_MESSAGE ? { confirm: problem } : { password: problem });
+       return;
+     }
++    setFieldErrors({});
+     setBusy(true);
+-    setError(null);
+     try {
+       await repos.me.changePassword({ currentPassword: current, newPassword: passwords.password });
+       setCurrent('');
+       setPasswords({ password: '', confirm: '' });
+       setDone(true);
+     } catch (err) {
+       setError(passwordChangeError(err, p.me.role));
+     } finally {
+       setBusy(false);
+     }
+   }
+ 
+   return (
+     <Section title="Mot de passe">
+-      <form className={styles.form} noValidate onSubmit={(e) => void submit(e)}>
+-        <Field label="Mot de passe actuel">
++      <form ref={formRef} className={styles.form} noValidate onSubmit={(e) => void submit(e)}>
++        <Field label="Mot de passe actuel" error={fieldErrors.current}>
+           <input
+             type="password"
+             autoComplete="current-password"
+             value={current}
+             onChange={(e) => setCurrent(e.target.value)}
+           />
+         </Field>
+         <PasswordFields
+           username={p.me.username}
+           role={p.me.role}
+           {...passwords}
+           onChange={setPasswords}
+           label="Nouveau mot de passe"
++          errors={fieldErrors}
+         />
+         {error ? <Banner tone="error">{error}</Banner> : null}
+         {done ? <Banner tone="info">{PASSWORD_CHANGED_TEXT}</Banner> : null}
+         <Button type="submit" disabled={busy}>
+           Changer le mot de passe
+         </Button>
+       </form>
+     </Section>
+   );
+ }
+@@ -237,21 +265,23 @@ function summaryValue(key: Editor, profile: TrainingProfileView | null): string
+     case 'availability':
+       return profile.daysPerWeek && profile.sessionMinutes
+         ? `${profile.daysPerWeek} ${plural(profile.daysPerWeek, 'séance', 'séances')} de ${profile.sessionMinutes} min`
+         : NOT_SET;
+   }
+ }
+ 
+ /**
+  * Entraînement (R-ONB-3) : chaque réponse se modifie avec l'écran de l'onboarding en édition, à la
+  * place du résumé. Le titre de l'écran prend le focus à l'ouverture (« Entraînement <titre> ») ; à la
+- * fermeture, le focus revient au bouton « Modifier … ». Mode prudent envoyé au changement.
++ * fermeture, le focus revient au bouton « Modifier … ». Mode prudent envoyé au changement,
++ * interrupteur désactivé pendant l'envoi (deux envois croisés laisseraient un état ou une erreur
++ * périmés).
+  */
+ function TrainingSection(p: { me: MeResponse }) {
+   const repos = useRepos();
+   const profile = useLive(() => repos.profile.get(), [repos]);
+   const headingId = useId();
+   const [editing, setEditing] = useState<Editor | null>(null);
+   const focusNext = useRef(false);
+   const returnTo = useRef<Editor | null>(null);
+   const summaryRef = useRef<HTMLDListElement>(null);
+   const titles = useMemo(() => ({ progressId: headingId, focusNext }), [headingId]);
+@@ -310,20 +340,21 @@ function TrainingSection(p: { me: MeResponse }) {
+             {editing === 'goal' ? <GoalStep {...step} /> : null}
+             {editing === 'sport' ? <SportStep {...step} /> : null}
+             {editing === 'experience' ? <ExperienceStep {...step} /> : null}
+             {editing === 'availability' ? <AvailabilityStep {...step} /> : null}
+           </div>
+         </StepTitleContext.Provider>
+       )}
+       <CautiousModeToggle
+         value={cautiousDraft ?? profile?.cautiousMode ?? false}
+         minor={p.me.ageBand === 'minor'}
++        disabled={cautious.pending}
+         onChange={(v) => void changeCautious(v)}
+       />
+       {cautious.error ? <Banner tone="error">{cautious.error}</Banner> : null}
+     </Section>
+   );
+ }
+ 
+ const LINKS: readonly { href: string; label: string }[] = [
+   { href: '/profile/places', label: 'Lieux' },
+   { href: '/profile/health', label: 'Santé' },
+diff --git a/apps/web/src/repos/gyms-repo.ts b/apps/web/src/repos/gyms-repo.ts
+index 0cbbcc9..cb2fa7b 100644
+--- a/apps/web/src/repos/gyms-repo.ts
++++ b/apps/web/src/repos/gyms-repo.ts
+@@ -5,51 +5,52 @@ import {
+   type EquipmentCode,
+   GymDetail,
+   GymSummary,
+   LoadSettingsSchema,
+   type UpdateGymRequest,
+ } from '@appsport/contracts';
+ import { z } from 'zod';
+ import { NetworkRequiredError } from '../api/client';
+ import type { AppServices } from '../app-services';
+ import { equipmentOf } from './places-repo';
+-import { parseJsonColumn, sendThenPull, text } from './rows';
++import { isLive, parseJsonColumn, sendThenPull, text } from './rows';
+ 
+ export interface GymsRepo {
+   search(q: string): Promise<GymSummary[]>;
+   similar(name: string, city: string): Promise<GymSummary[]>;
+   create(r: CreateGymRequest): Promise<CreateGymResponse>;
+   /**
+    * En ligne : fiche du serveur. Hors ligne : fiche tirée des miroirs (`offline: true`), sans droit
+    * d'édition, historique ni membres visibles ; l'écran affiche alors « Liste disponible en ligne »
+-   * au lieu de la liste vide. Salle absente des miroirs : l'erreur réseau est relancée.
++   * au lieu de la liste vide. Salle absente des miroirs ou supprimée (R-SAL-7) : l'erreur réseau est
++   * relancée.
+    */
+   detail(id: string): Promise<{ detail: GymDetail; offline: boolean }>;
+   update(id: string, r: UpdateGymRequest): Promise<void>;
+   setEquipment(id: string, code: EquipmentCode, present: boolean): Promise<void>;
+ }
+ 
+ const GymSummaries = z.array(GymSummary);
+ 
+ export function createGymsRepo(s: AppServices): GymsRepo {
+   const { db, api } = s;
+   const gymPath = (id: string) => `/api/gyms/${encodeURIComponent(id)}`;
+ 
+   async function offlineDetail(id: string): Promise<GymDetail | null> {
+     const gym = await db.mirror('gym').get(id);
+-    if (!gym) return null;
++    if (!gym || !isLive(gym)) return null;
+     return {
+       id: gym.id,
+       name: text(gym.name) ?? '',
+       city: text(gym.city) ?? '',
+       loadSettings: parseJsonColumn(gym.loadSettings, LoadSettingsSchema) ?? defaultLoadSettings('gym'),
+-      deletedAt: gym.deletedAt,
++      deletedAt: null,
+       equipment: await equipmentOf(db, 'gym_equipment', 'gymId', gym.id),
+       canEdit: false,
+       visibleMembers: [],
+       history: [],
+     };
+   }
+ 
+   return {
+     search: (q) => api.get(`/api/gyms?${new URLSearchParams({ q })}`, GymSummaries),
+     similar: (name, city) =>
+diff --git a/apps/web/src/repos/me-repo.ts b/apps/web/src/repos/me-repo.ts
+index 399a6d2..ea4b307 100644
+--- a/apps/web/src/repos/me-repo.ts
++++ b/apps/web/src/repos/me-repo.ts
+@@ -30,21 +30,24 @@ export interface MeRepo {
+   /** GET /api/me ; hors ligne → cache ; ApiError → null sans effacer le cache. */
+   refresh(): Promise<MeResponse | null>;
+   /** Propriétaire des données de l'appareil, pour avertir avant qu'un autre pseudo se connecte (P-AUT-6). */
+   deviceOwner(): Promise<DeviceOwner>;
+   login(r: LoginRequest): Promise<MeResponse>;
+   checkInvitation(code: string): Promise<InvitationCheckResponse>;
+   acceptInvitation(r: AcceptInvitationRequest): Promise<MeResponse>;
+   checkReset(code: string): Promise<ResetCheckResponse>;
+   resetPassword(r: ResetPasswordRequest): Promise<MeResponse>;
+   updateUsername(u: string): Promise<MeResponse>;
+-  /** 204 → refresh() puis synchro manuelle (débloquée après R-MDP-1). */
++  /**
++   * 204 → meta.me sans `mustChangePassword` (même si la relecture échoue ensuite), refresh() puis
++   * synchro manuelle (débloquée après R-MDP-1).
++   */
+   changePassword(r: ChangePasswordRequest): Promise<void>;
+   logout(mode: 'current' | 'all'): Promise<void>;
+   exportData(): Promise<ExportV1>;
+   deleteAccount(password: string): Promise<void>;
+   /** Message des 18 ans à afficher : tranche vue « minor » sur l'appareil, « adult » maintenant (R-AGE-6). */
+   adultNotice(): Promise<boolean>;
+   dismissAdultNotice(): Promise<void>;
+ }
+ 
+ export function createMeRepo(s: AppServices): MeRepo {
+@@ -137,20 +140,23 @@ export function createMeRepo(s: AppServices): MeRepo {
+     checkReset: (code) => api.send('POST', '/api/auth/reset/check', { code }, ResetCheckResponse),
+     resetPassword: (r) => openSession(() => api.send('POST', '/api/auth/reset', r, MeResponse)),
+     async updateUsername(username) {
+       const me = await api.send('PATCH', '/api/me', { username }, MeResponse);
+       await rememberMe(me);
+       await sync.pullNow();
+       return me;
+     },
+     async changePassword(r) {
+       await api.send('POST', '/api/auth/password', r);
++      // Le serveur a levé l'obligation (R-MDP-1) : hors ligne, refresh() rendrait l'ancien meta.me.
++      const cached = await current();
++      if (cached?.mustChangePassword) await rememberMe({ ...cached, mustChangePassword: false });
+       await repo.refresh();
+       void sync.syncNow('manual');
+     },
+     logout: (mode) =>
+       withEngineStopped(async () => {
+         try {
+           await api.send('POST', mode === 'all' ? '/api/auth/logout-all' : '/api/auth/logout');
+         } catch (error) {
+           // Session déjà fermée ou compte supprimé : rien à fermer côté serveur, les données locales
+           // partent quand même (R-AUTH-9, P-DRT-4). Le 410 reste une erreur : le client API mène à
+diff --git a/apps/web/test/places/gym-page.test.tsx b/apps/web/test/places/gym-page.test.tsx
+index 60bee3f..834a76c 100644
+--- a/apps/web/test/places/gym-page.test.tsx
++++ b/apps/web/test/places/gym-page.test.tsx
+@@ -1,14 +1,16 @@
+ import { defaultLoadSettings, EQUIPMENT_LABELS, type GymDetail } from '@appsport/contracts';
+ import { fireEvent, screen, within } from '@testing-library/react';
+ import { describe, expect, it } from 'vitest';
+-import { GYM_HISTORY_LIMIT, GymPage, historyLine } from '../../src/features/places/GymPage';
++import { GymPage, historyLine } from '../../src/features/places/GymPage';
++import type { AppDb } from '../../src/local-db/db';
++import { useRepos } from '../../src/repos';
+ import { fill } from '../support/auth';
+ import { createFakeApi, type FakeApi } from '../support/fake-api';
+ import { createTestLocalDb } from '../support/local-db';
+ import { button, checkbox } from '../support/onboarding';
+ import { renderApp, renderWithServices } from '../support/render';
+ import { seedMirror } from '../support/seed';
+ import { until } from '../support/wait';
+ 
+ type HistoryEntry = GymDetail['history'][number];
+ 
+@@ -48,20 +50,36 @@ function detail(o: Partial<GymDetail> = {}): GymDetail {
+ }
+ 
+ async function renderGym(o: { detail?: GymDetail; api?: FakeApi } = {}) {
+   const api = o.api ?? createFakeApi();
+   api.on('GET', '/api/gyms/:id', { status: 200, body: o.detail ?? detail() });
+   const rendered = await renderWithServices(<GymPage params={{ id: 'g-1' }} />, { api });
+   await screen.findByRole('heading', { level: 1 });
+   return rendered;
+ }
+ 
++/** Miroirs de la salle g-1 « Basic Fit » (Lyon) avec la barre. */
++async function seedGymMirror(db: AppDb, o: { deletedAt?: string } = {}) {
++  await seedMirror(db, 'gym', [
++    {
++      id: 'g-1',
++      name: 'Basic Fit',
++      nameKey: 'basic fit',
++      city: 'Lyon',
++      cityKey: 'lyon',
++      loadSettings: defaultLoadSettings('gym'),
++      ...o,
++    },
++  ]);
++  await seedMirror(db, 'gym_equipment', [{ id: 'g-1:barbell', gymId: 'g-1', equipmentCode: 'barbell' }]);
++}
++
+ const section = (name: string) => within(screen.getByRole('region', { name }));
+ const sent = (api: FakeApi, method: string, path: string) =>
+   api.calls.filter((c) => c.method === method && c.path === path).map((c) => c.body);
+ 
+ describe('historyLine (R-SAL-6)', () => {
+   const entry = (o: Partial<HistoryEntry>): HistoryEntry => ({
+     at: '2026-10-06T12:05:00.000Z',
+     action: 'create',
+     authorUsername: 'lea',
+     detail: {},
+@@ -85,24 +103,20 @@ describe('historyLine (R-SAL-6)', () => {
+     );
+     expect(action({ action: 'update_load_settings' })).toBe('Réglages de charge modifiés');
+     expect(action({ action: 'add_equipment', detail: { code: 'inconnu' } })).toBe('Matériel ajouté');
+   });
+ 
+   it('auteur absent (compte supprimé ou invisible) : « un membre »', () => {
+     expect(historyLine(entry({ authorUsername: null }))).toBe(
+       '06/10/2026 à 14:05 — Création de la salle — modifié par un membre',
+     );
+   });
+-
+-  it('au plus 10 entrées', () => {
+-    expect(GYM_HISTORY_LIMIT).toBe(10);
+-  });
+ });
+ 
+ describe('GymPage (R-SAL-4, R-SAL-6, R-VIS-1 à R-VIS-4)', () => {
+   it('nom, ville, matériel, « Qui va à cette salle » et les 10 dernières modifications', async () => {
+     await renderGym();
+     expect(screen.getByRole('heading', { level: 1, name: 'Basic Fit' })).toBeTruthy();
+     expect(screen.getByText('Lyon')).toBeTruthy();
+     expect(checkbox(EQUIPMENT_LABELS.barbell).checked).toBe(true);
+     const members = section('Qui va à cette salle').getAllByRole('listitem');
+     expect(members.map((li) => li.textContent)).toEqual(['lea', 'max']);
+@@ -143,68 +157,183 @@ describe('GymPage (R-SAL-4, R-SAL-6, R-VIS-1 à R-VIS-4)', () => {
+       .on('DELETE', '/api/gyms/:id/equipment/:code', { status: 204 });
+     await renderGym({ api });
+     expect(screen.queryByRole('checkbox', { name: EQUIPMENT_LABELS.chair })).toBeNull();
+     fireEvent.click(checkbox(EQUIPMENT_LABELS.kettlebell));
+     await until(() => sent(api, 'PUT', '/api/gyms/g-1/equipment/kettlebell').length === 1);
+     await until(() => !checkbox(EQUIPMENT_LABELS.flat_bench).disabled);
+     fireEvent.click(checkbox(EQUIPMENT_LABELS.flat_bench));
+     await until(() => sent(api, 'DELETE', '/api/gyms/g-1/equipment/flat_bench').length === 1);
+   });
+ 
++  it('matériel hors ligne : « Nécessite le réseau » dans Matériel, la case revient', async () => {
++    const api = createFakeApi();
++    await renderGym({ api });
++    api.setOffline('reject');
++    fireEvent.click(checkbox(EQUIPMENT_LABELS.kettlebell));
++    expect((await section('Matériel').findByRole('alert')).textContent).toBe('Nécessite le réseau');
++    await until(() => !checkbox(EQUIPMENT_LABELS.kettlebell).disabled);
++    expect(checkbox(EQUIPMENT_LABELS.kettlebell).checked).toBe(false);
++  });
++
++  it('« Enregistrer » hors ligne : « Nécessite le réseau », le formulaire reste ouvert avec la saisie', async () => {
++    const api = createFakeApi();
++    await renderGym({ api });
++    fireEvent.click(button('Modifier'));
++    api.setOffline('reject');
++    fill('Nom de la salle', 'Basic Fit Part-Dieu');
++    fireEvent.click(button('Enregistrer'));
++    expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
++    expect((screen.getByLabelText('Nom de la salle') as HTMLInputElement).value).toBe('Basic Fit Part-Dieu');
++    expect(api.calls.filter((c) => c.method === 'GET' && c.path === '/api/gyms/g-1')).toHaveLength(1);
++  });
++
++  it('409 gym_duplicate : « Cette salle existe déjà. », le formulaire reste ouvert', async () => {
++    const api = createFakeApi().on('PATCH', '/api/gyms/:id', {
++      status: 409,
++      body: { error: 'gym_duplicate', gymId: 'g-2' },
++    });
++    await renderGym({ api });
++    fireEvent.click(button('Modifier'));
++    fill('Nom de la salle', 'Fitness Park');
++    fireEvent.click(button('Enregistrer'));
++    expect((await screen.findByRole('alert')).textContent).toBe('Cette salle existe déjà.');
++    expect((screen.getByLabelText('Nom de la salle') as HTMLInputElement).value).toBe('Fitness Park');
++  });
++
++  it("« Modifier » : seuls les champs changés depuis l'ouverture partent, même après une relecture de la fiche (R-SAL-5)", async () => {
++    const api = createFakeApi()
++      .on('PUT', '/api/gyms/:id/equipment/:code', { status: 204 })
++      .on('PATCH', '/api/gyms/:id', { status: 204 });
++    await renderGym({ api });
++    fireEvent.click(button('Modifier'));
++    // Un autre membre renomme la salle ; la fiche est relue après l'ajout du kettlebell.
++    api.on('GET', '/api/gyms/:id', { status: 200, body: detail({ name: 'Basic Fit Part-Dieu' }) });
++    fireEvent.click(checkbox(EQUIPMENT_LABELS.kettlebell));
++    await screen.findByRole('heading', { level: 1, name: 'Basic Fit Part-Dieu' });
++    fill('Ville', 'Villeurbanne');
++    fireEvent.click(button('Enregistrer'));
++    await until(() => sent(api, 'PATCH', '/api/gyms/g-1').length === 1);
++    expect(sent(api, 'PATCH', '/api/gyms/g-1')).toEqual([{ city: 'Villeurbanne' }]);
++  });
++
++  it('matériel relu : la fiche du serveur remplace le choix affiché (R-SAL-5)', async () => {
++    const api = createFakeApi().on('PUT', '/api/gyms/:id/equipment/:code', { status: 204 });
++    await renderGym({ api });
++    fireEvent.click(checkbox(EQUIPMENT_LABELS.kettlebell));
++    await until(() => api.calls.filter((c) => c.method === 'GET' && c.path === '/api/gyms/g-1').length === 2);
++    // La fiche relue (sans kettlebell : un autre membre l'a retiré entre-temps) fait foi.
++    await until(() => !checkbox(EQUIPMENT_LABELS.kettlebell).checked);
++    await until(() => !checkbox(EQUIPMENT_LABELS.kettlebell).disabled);
++    expect(checkbox(EQUIPMENT_LABELS.kettlebell).checked).toBe(false);
++  });
++
++  it('« Modifier » : le focus va au nom, puis revient à « Modifier » après « Annuler » ou « Enregistrer »', async () => {
++    const api = createFakeApi().on('PATCH', '/api/gyms/:id', { status: 204 });
++    await renderGym({ api });
++    fireEvent.click(button('Modifier'));
++    expect(document.activeElement).toBe(screen.getByLabelText('Nom de la salle'));
++    fireEvent.click(button('Annuler'));
++    expect(document.activeElement).toBe(button('Modifier'));
++    fireEvent.click(button('Modifier'));
++    fill('Ville', 'Villeurbanne');
++    fireEvent.click(button('Enregistrer'));
++    await until(() => document.activeElement === screen.queryByRole('button', { name: 'Modifier' }));
++  });
++
+   it('sans droit : ni « Modifier » ni case, la raison, la liste des membres visibles (R-VIS-2)', async () => {
+     await renderGym({ detail: detail({ canEdit: false }) });
+     expect(screen.queryByRole('button', { name: 'Modifier' })).toBeNull();
+     expect(screen.queryByRole('checkbox')).toBeNull();
+     expect(screen.getByText(RIGHTS_TEXT)).toBeTruthy();
+     expect(screen.getByText(EQUIPMENT_LABELS.barbell)).toBeTruthy();
+     const members = section('Qui va à cette salle').getAllByRole('listitem');
+     expect(members.map((li) => li.textContent)).toEqual(['lea', 'max']);
+   });
+ 
+   it("personne de visible : « Personne n'est visible pour l'instant. » (R-VIS-4)", async () => {
+     await renderGym({ detail: detail({ visibleMembers: [] }) });
+     expect(section('Qui va à cette salle').getByText(NOBODY)).toBeTruthy();
+   });
+ 
+   it('hors ligne : dernière version connue du miroir, aucune case, « Liste disponible en ligne »', async () => {
+     const db = createTestLocalDb();
+-    await seedMirror(db, 'gym', [
+-      {
+-        id: 'g-1',
+-        name: 'Basic Fit',
+-        nameKey: 'basic fit',
+-        city: 'Lyon',
+-        cityKey: 'lyon',
+-        loadSettings: defaultLoadSettings('gym'),
+-      },
+-    ]);
+-    await seedMirror(db, 'gym_equipment', [{ id: 'g-1:barbell', gymId: 'g-1', equipmentCode: 'barbell' }]);
++    await seedGymMirror(db);
+     const api = createFakeApi();
+     api.setOffline('reject');
+     await renderWithServices(<GymPage params={{ id: 'g-1' }} />, { api, db });
+     expect(await screen.findByRole('heading', { level: 1, name: 'Basic Fit' })).toBeTruthy();
+     expect(screen.getByText('Hors ligne : dernière version connue.')).toBeTruthy();
+     expect(screen.getByText(EQUIPMENT_LABELS.barbell)).toBeTruthy();
+     expect(screen.queryByRole('checkbox')).toBeNull();
+     expect(screen.queryByRole('button', { name: 'Modifier' })).toBeNull();
+     expect(screen.queryByText(RIGHTS_TEXT)).toBeNull();
+     expect(section('Qui va à cette salle').getByText('Liste disponible en ligne')).toBeTruthy();
+     expect(screen.queryByText(NOBODY)).toBeNull();
++    expect(section('Dernières modifications').getByText('Historique disponible en ligne')).toBeTruthy();
++    expect(screen.queryByText('Aucune modification.')).toBeNull();
++  });
++
++  it("hors ligne avec un droit de modifier : ni « Modifier » ni case (l'écran ne s'en remet pas au dépôt)", async () => {
++    /** Dépôt qui rendrait une fiche hors ligne marquée modifiable. */
++    function OfflineEditable() {
++      const repos = useRepos();
++      repos.gyms.detail = async () => ({ detail: detail({ canEdit: true }), offline: true });
++      return <GymPage params={{ id: 'g-1' }} />;
++    }
++    await renderWithServices(<OfflineEditable />);
++    expect(await screen.findByRole('heading', { level: 1, name: 'Basic Fit' })).toBeTruthy();
++    expect(screen.getByText('Hors ligne : dernière version connue.')).toBeTruthy();
++    expect(screen.queryByRole('checkbox')).toBeNull();
++    expect(screen.queryByRole('button', { name: 'Modifier' })).toBeNull();
++    expect(section('Dernières modifications').getByText('Historique disponible en ligne')).toBeTruthy();
++    expect(screen.queryByText('Aucune modification.')).toBeNull();
+   });
+ 
+   it('hors ligne, salle absente du miroir : « Nécessite le réseau » et « Réessayer »', async () => {
+     const api = createFakeApi();
+     api.setOffline('reject');
+     await renderWithServices(<GymPage params={{ id: 'g-1' }} />, { api });
+     expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
+     api.setOffline(false);
+     api.on('GET', '/api/gyms/:id', { status: 200, body: detail() });
+     fireEvent.click(button('Réessayer'));
+     expect(await screen.findByRole('heading', { level: 1, name: 'Basic Fit' })).toBeTruthy();
+   });
+ 
++  it('hors ligne, salle supprimée dans le miroir : traitée comme absente (R-SAL-7)', async () => {
++    const db = createTestLocalDb();
++    await seedGymMirror(db, { deletedAt: '2026-10-01T10:00:00.000Z' });
++    const api = createFakeApi();
++    api.setOffline('reject');
++    await renderWithServices(<GymPage params={{ id: 'g-1' }} />, { api, db });
++    expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
++    expect(screen.queryByRole('heading', { level: 1, name: 'Basic Fit' })).toBeNull();
++    expect(screen.queryByText('Hors ligne : dernière version connue.')).toBeNull();
++  });
++
++  it('salle inconnue (404) : « Salle introuvable. », sans « Réessayer » ni bandeau hors ligne', async () => {
++    const api = createFakeApi();
++    await renderWithServices(<GymPage params={{ id: 'g-9' }} />, { api });
++    expect((await screen.findByRole('alert')).textContent).toBe('Salle introuvable.');
++    expect(screen.queryByRole('button', { name: 'Réessayer' })).toBeNull();
++    expect(screen.queryByText('Hors ligne : dernière version connue.')).toBeNull();
++  });
++
++  it('salle supprimée : « Cette salle a été supprimée. », sans la raison des droits ni « Qui va à cette salle » (R-SAL-7)', async () => {
++    await renderGym({
++      detail: detail({ deletedAt: '2026-10-01T10:00:00.000Z', canEdit: false, visibleMembers: [] }),
++    });
++    expect(screen.getByText('Cette salle a été supprimée.')).toBeTruthy();
++    expect(screen.queryByText(RIGHTS_TEXT)).toBeNull();
++    expect(screen.queryByRole('region', { name: 'Qui va à cette salle' })).toBeNull();
++    expect(screen.queryByText(NOBODY)).toBeNull();
++    expect(screen.queryByRole('button', { name: 'Modifier' })).toBeNull();
++    expect(screen.queryByRole('checkbox')).toBeNull();
++    expect(screen.getByText(EQUIPMENT_LABELS.barbell)).toBeTruthy();
++  });
++
+   it('/gyms/:id dans la coquille', async () => {
+     const api = createFakeApi().on('GET', '/api/gyms/:id', { status: 200, body: detail() });
+     await renderApp({ path: '/gyms/g-1', api });
+     expect(await screen.findByRole('heading', { level: 1, name: 'Basic Fit' })).toBeTruthy();
+   });
+ });
+diff --git a/apps/web/test/places/places-page.test.tsx b/apps/web/test/places/places-page.test.tsx
+index e8efb9a..db22984 100644
+--- a/apps/web/test/places/places-page.test.tsx
++++ b/apps/web/test/places/places-page.test.tsx
+@@ -1,58 +1,81 @@
+ import { defaultLoadSettings, EQUIPMENT_LABELS, type MeResponse } from '@appsport/contracts';
+ import { fireEvent, screen, within } from '@testing-library/react';
+ import { describe, expect, it } from 'vitest';
+ import { PlaceDetail } from '../../src/features/places/PlaceDetail';
+ import { PlacesPage } from '../../src/features/places/PlacesPage';
+ import type { AppDb } from '../../src/local-db/db';
+-import { fill } from '../support/auth';
++import { fill, settle } from '../support/auth';
+ import { createFakeApi, type FakeApi } from '../support/fake-api';
+ import { createTestLocalDb } from '../support/local-db';
+ import { button, checkbox, choose, seedPrimaryGym } from '../support/onboarding';
+ import { makeMe, renderApp, renderWithServices } from '../support/render';
+ import { seedMirror } from '../support/seed';
+ import { until } from '../support/wait';
+ 
+ const VISIBLE = 'Visible à la salle';
+ const KEEP_ONE = 'Tu dois garder au moins un lieu.';
+ const MINOR_HINT = 'Désactivé par défaut pour les moins de 18 ans.';
+ 
+-/** p-1 : salle « Basic Fit » (Lyon), principale et visible ; p-2 : maison « Garage » (sauf `single`). */
+-async function seedPlaces(db: AppDb, o: { single?: boolean } = {}) {
++const GYM_PLACE = {
++  id: 'p-1',
++  ownerId: 'u-1',
++  kind: 'gym',
++  gymId: 'g-1',
++  name: null,
++  isPrimary: true,
++  visibleAtGym: true,
++  loadSettings: null,
++};
++const HOME_PLACE = {
++  id: 'p-2',
++  ownerId: 'u-1',
++  kind: 'home',
++  gymId: null,
++  name: 'Garage',
++  isPrimary: false,
++  visibleAtGym: null,
++  loadSettings: defaultLoadSettings('home'),
++};
++
++/**
++ * p-1 : salle « Basic Fit » (Lyon), principale et visible ; p-2 : maison « Garage » (sauf `single`).
++ * `garagePrimary` : « Garage » principale, alors qu'elle vient après « Basic Fit » par l'id et le nom.
++ */
++async function seedPlaces(db: AppDb, o: { single?: boolean; garagePrimary?: boolean } = {}) {
+   await seedPrimaryGym(db);
+   await seedMirror(db, 'gym_equipment', [
+     { id: 'g-1:barbell', gymId: 'g-1', equipmentCode: 'barbell' },
+     { id: 'g-1:flat_bench', gymId: 'g-1', equipmentCode: 'flat_bench' },
+   ]);
+   if (o.single) return;
+-  await seedMirror(db, 'place', [
+-    {
+-      id: 'p-2',
+-      ownerId: 'u-1',
+-      kind: 'home',
+-      gymId: null,
+-      name: 'Garage',
+-      isPrimary: false,
+-      visibleAtGym: null,
+-      loadSettings: defaultLoadSettings('home'),
+-    },
+-  ]);
++  await seedMirror(db, 'place', [HOME_PLACE]);
+   await seedMirror(db, 'home_equipment', [
+     { id: 'p-2:chair', ownerId: 'u-1', placeId: 'p-2', equipmentCode: 'chair' },
+   ]);
++  if (o.garagePrimary) {
++    await seedMirror(db, 'place', [
++      { ...GYM_PLACE, isPrimary: false },
++      { ...HOME_PLACE, isPrimary: true },
++    ]);
++  }
+ }
+ 
+-async function renderPlaces(o: { me?: MeResponse; api?: FakeApi; single?: boolean } = {}) {
++async function renderPlaces(
++  o: { me?: MeResponse; api?: FakeApi; single?: boolean; garagePrimary?: boolean } = {},
++) {
+   const db = createTestLocalDb();
+   await seedPlaces(db, o);
+   const rendered = await renderWithServices(<PlacesPage />, { me: o.me, db, api: o.api });
+   await screen.findByRole('link', { name: 'Basic Fit' });
++  // Relectures de la liste déclenchées par l'amorçage du miroir : passées avant toute action.
++  await settle();
+   return rendered;
+ }
+ 
+ async function renderDetail(id: string, o: { api?: FakeApi } = {}) {
+   const db = createTestLocalDb();
+   await seedPlaces(db);
+   return renderWithServices(<PlaceDetail params={{ id }} />, { db, api: o.api });
+ }
+ 
+ /** Élément de liste du lieu nommé `name`. */
+@@ -60,25 +83,26 @@ function place(name: string) {
+   const item = screen.getByRole('link', { name }).closest('li');
+   if (!item) throw new Error(`lieu ${name} introuvable`);
+   return within(item);
+ }
+ 
+ const sent = (api: FakeApi, method: string, path: string) =>
+   api.calls.filter((c) => c.method === method && c.path === path).map((c) => c.body);
+ 
+ describe('PlacesPage (02 §11 Lieux, R-LIEU-1 à R-LIEU-4)', () => {
+   it("le principal d'abord avec le badge « Principal », puis les autres", async () => {
+-    await renderPlaces();
++    // « Garage » principale vient après « Basic Fit » par l'id, le nom et l'ordre d'écriture.
++    await renderPlaces({ garagePrimary: true });
+     const names = screen.getAllByRole('listitem').map((li) => li.querySelector('a')?.textContent);
+-    expect(names).toEqual(['Basic Fit', 'Garage']);
+-    expect(place('Basic Fit').getByText('Principal')).toBeTruthy();
+-    expect(place('Garage').queryByText('Principal')).toBeNull();
++    expect(names).toEqual(['Garage', 'Basic Fit']);
++    expect(place('Garage').getByText('Principal')).toBeTruthy();
++    expect(place('Basic Fit').queryByText('Principal')).toBeNull();
+     expect(place('Basic Fit').getByText('Salle · Lyon')).toBeTruthy();
+     expect(place('Garage').getByText('Maison')).toBeTruthy();
+     expect(screen.getByRole('link', { name: 'Garage' }).getAttribute('href')).toBe('/profile/places/p-2');
+   });
+ 
+   it('« Définir comme principal » → PATCH { isPrimary: true } ; absent sur le principal', async () => {
+     const api = createFakeApi().on('PATCH', '/api/places/:id', { status: 204 });
+     await renderPlaces({ api });
+     expect(place('Basic Fit').queryByRole('button', { name: 'Définir comme principal' })).toBeNull();
+     fireEvent.click(place('Garage').getByRole('button', { name: 'Définir comme principal' }));
+@@ -94,43 +118,89 @@ describe('PlacesPage (02 §11 Lieux, R-LIEU-1 à R-LIEU-4)', () => {
+     const name = place('Garage').getByLabelText('Nom du lieu') as HTMLInputElement;
+     expect(name.value).toBe('Garage');
+     expect(name.maxLength).toBe(30);
+     fireEvent.change(name, { target: { value: 'Cave' } });
+     fireEvent.click(place('Garage').getByRole('button', { name: 'Enregistrer' }));
+     await until(() => sent(api, 'PATCH', '/api/places/p-2').length === 1);
+     expect(sent(api, 'PATCH', '/api/places/p-2')).toEqual([{ name: 'Cave' }]);
+     await until(() => place('Garage').queryByLabelText('Nom du lieu') === null);
+   });
+ 
++  it('renommer hors ligne : « Nécessite le réseau », le formulaire garde la saisie', async () => {
++    const api = createFakeApi();
++    await renderPlaces({ api });
++    fireEvent.click(place('Garage').getByRole('button', { name: 'Renommer' }));
++    api.setOffline('reject');
++    fireEvent.change(place('Garage').getByLabelText('Nom du lieu'), { target: { value: 'Cave' } });
++    fireEvent.click(place('Garage').getByRole('button', { name: 'Enregistrer' }));
++    expect((await place('Garage').findByRole('alert')).textContent).toBe('Nécessite le réseau');
++    expect((place('Garage').getByLabelText('Nom du lieu') as HTMLInputElement).value).toBe('Cave');
++  });
++
++  it('« Renommer » : le focus va au champ, puis revient à « Renommer » après « Annuler » ou « Enregistrer »', async () => {
++    const api = createFakeApi().on('PATCH', '/api/places/:id', { status: 204 });
++    await renderPlaces({ api });
++    fireEvent.click(place('Garage').getByRole('button', { name: 'Renommer' }));
++    expect(document.activeElement).toBe(place('Garage').getByLabelText('Nom du lieu'));
++    fireEvent.click(place('Garage').getByRole('button', { name: 'Annuler' }));
++    expect(document.activeElement).toBe(place('Garage').getByRole('button', { name: 'Renommer' }));
++    fireEvent.click(place('Garage').getByRole('button', { name: 'Renommer' }));
++    fireEvent.change(place('Garage').getByLabelText('Nom du lieu'), { target: { value: 'Cave' } });
++    fireEvent.click(place('Garage').getByRole('button', { name: 'Enregistrer' }));
++    await until(() => document.activeElement === place('Garage').queryByRole('button', { name: 'Renommer' }));
++  });
++
++  it('renommage : « Enregistrer » et « Annuler » décrits par le nom du lieu', async () => {
++    await renderPlaces();
++    fireEvent.click(place('Garage').getByRole('button', { name: 'Renommer' }));
++    const nameId = screen.getByRole('link', { name: 'Garage' }).id;
++    for (const name of ['Enregistrer', 'Annuler']) {
++      const described = place('Garage').getByRole('button', { name }).getAttribute('aria-describedby');
++      expect(described?.split(' ')).toContain(nameId);
++    }
++  });
++
+   it('nom vide : message local, aucune requête', async () => {
+     const api = createFakeApi();
+     await renderPlaces({ api });
+     fireEvent.click(place('Garage').getByRole('button', { name: 'Renommer' }));
+     fireEvent.change(place('Garage').getByLabelText('Nom du lieu'), { target: { value: '  ' } });
+     fireEvent.click(place('Garage').getByRole('button', { name: 'Enregistrer' }));
+     expect(place('Garage').getByText('Donne un nom à ce lieu.')).toBeTruthy();
+     expect(sent(api, 'PATCH', '/api/places/p-2')).toEqual([]);
+   });
+ 
+   it('« Visible à la salle » décoché → PATCH { visibleAtGym: false } (R-VIS-3) ; pas de case pour une maison', async () => {
+     const api = createFakeApi().on('PATCH', '/api/places/:id', { status: 204 });
+-    await renderPlaces({ api });
++    const { db } = await renderPlaces({ api });
+     expect(place('Garage').queryByRole('checkbox')).toBeNull();
+     const visible = place('Basic Fit').getByRole('checkbox', { name: VISIBLE }) as HTMLInputElement;
+     expect(visible.checked).toBe(true);
+     expect(screen.queryByText(MINOR_HINT)).toBeNull();
+     fireEvent.click(visible);
+     await until(() => sent(api, 'PATCH', '/api/places/p-1').length === 1);
+     expect(sent(api, 'PATCH', '/api/places/p-1')).toEqual([{ visibleAtGym: false }]);
+     // Envoi réussi, miroir pas encore relu : la case garde le choix.
+     await until(() => !visible.disabled);
+     expect(visible.checked).toBe(false);
++    // Miroir relu (un autre appareil a remis la visibilité) : il fait foi.
++    await seedMirror(db, 'place', [{ ...GYM_PLACE, visibleAtGym: true }]);
++    await until(() => visible.checked);
++  });
++
++  it("« Visible à la salle » : décrite par le nom du lieu et par l'aide « Coché : … »", async () => {
++    await renderPlaces();
++    const visible = place('Basic Fit').getByRole('checkbox', { name: VISIBLE });
++    const described = visible.getAttribute('aria-describedby')?.split(' ') ?? [];
++    expect(described).toContain(screen.getByRole('link', { name: 'Basic Fit' }).id);
++    const hint = place('Basic Fit').getByText('Coché : ton pseudo apparaît dans « Qui va à cette salle ».');
++    expect(described).toContain(hint.id);
+   });
+ 
+   it('« Visible à la salle » hors ligne : « Nécessite le réseau », la case revient', async () => {
+     const api = createFakeApi();
+     await renderPlaces({ api });
+     api.setOffline('reject');
+     const visible = place('Basic Fit').getByRole('checkbox', { name: VISIBLE }) as HTMLInputElement;
+     fireEvent.click(visible);
+     expect((await place('Basic Fit').findByRole('alert')).textContent).toBe('Nécessite le réseau');
+     expect(visible.checked).toBe(true);
+@@ -170,20 +240,59 @@ describe('PlacesPage (02 §11 Lieux, R-LIEU-1 à R-LIEU-4)', () => {
+     const dialog = within(await screen.findByRole('dialog', { name: 'Supprimer Basic Fit ?' }));
+     const choices = within(dialog.getByRole('group', { name: 'Nouveau lieu principal' }));
+     expect(choices.getAllByRole('radio').map((r) => r.closest('label')?.textContent)).toEqual(['Garage']);
+     expect((dialog.getByRole('button', { name: 'Supprimer' }) as HTMLButtonElement).disabled).toBe(true);
+     choose('Garage');
+     fireEvent.click(dialog.getByRole('button', { name: 'Supprimer' }));
+     await until(() => sent(api, 'DELETE', '/api/places/p-1').length === 1);
+     expect(sent(api, 'DELETE', '/api/places/p-1')).toEqual([{ newPrimaryId: 'p-2' }]);
+   });
+ 
++  it('suppression : le focus va au lieu restant ; « Annuler » le rend à « Supprimer »', async () => {
++    const api = createFakeApi();
++    const { db } = await renderPlaces({ api });
++    // Le pull qui suit la suppression retire le lieu du miroir.
++    api.on('DELETE', '/api/places/:id', async () => {
++      await seedMirror(db, 'place', [{ ...HOME_PLACE, deletedAt: '2026-10-06T12:00:00.000Z' }]);
++      return { status: 204 };
++    });
++    fireEvent.click(place('Garage').getByRole('button', { name: 'Supprimer' }));
++    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Annuler' }));
++    expect(document.activeElement).toBe(place('Garage').getByRole('button', { name: 'Supprimer' }));
++    fireEvent.click(place('Garage').getByRole('button', { name: 'Supprimer' }));
++    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Supprimer' }));
++    await until(() => screen.queryByRole('link', { name: 'Garage' }) === null);
++    expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Basic Fit' }));
++  });
++
++  it('boîte de suppression : une relecture de la liste ou un envoi ne reprend pas le focus', async () => {
++    const api = createFakeApi().on('DELETE', '/api/places/:id', {
++      status: 409,
++      body: { error: 'primary_required' },
++    });
++    const { db } = await renderPlaces({ api });
++    fireEvent.click(place('Basic Fit').getByRole('button', { name: 'Supprimer' }));
++    const dialog = within(await screen.findByRole('dialog'));
++    const garage = dialog.getByRole('radio', { name: 'Garage' });
++    fireEvent.click(garage);
++    garage.focus();
++    // Pull en arrière-plan : la liste des lieux est relue et rendue de nouveau.
++    await seedMirror(db, 'home_equipment', [
++      { id: 'p-2:table', ownerId: 'u-1', placeId: 'p-2', equipmentCode: 'table' },
++    ]);
++    await settle();
++    expect(document.activeElement).toBe(garage);
++    fireEvent.click(dialog.getByRole('button', { name: 'Supprimer' }));
++    await dialog.findByRole('alert');
++    expect(document.activeElement).toBe(garage);
++  });
++
+   it('un seul lieu : « Supprimer » désactivé, « Tu dois garder au moins un lieu. »', async () => {
+     await renderPlaces({ single: true });
+     const remove = place('Basic Fit').getByRole('button', { name: 'Supprimer' }) as HTMLButtonElement;
+     expect(remove.disabled).toBe(true);
+     const reason = place('Basic Fit').getByText(KEEP_ONE);
+     expect(remove.getAttribute('aria-describedby')?.split(' ')).toContain(reason.id);
+   });
+ 
+   it('409 last_place : même message', async () => {
+     const api = createFakeApi().on('DELETE', '/api/places/:id', {
+@@ -222,20 +331,52 @@ describe('PlacesPage (02 §11 Lieux, R-LIEU-1 à R-LIEU-4)', () => {
+     const gym = 'Fitness Park · Lyon · 0 membre visible';
+     await screen.findByRole('radio', { name: gym });
+     expect(checkbox('Apparaître dans « Qui va à cette salle »').checked).toBe(true);
+     choose(gym);
+     fireEvent.click(button('Valider'));
+     await until(() => sent(api, 'POST', '/api/places').length === 1);
+     expect(sent(api, 'POST', '/api/places')).toEqual([
+       { kind: 'gym', gymId: 'g-2', isPrimary: false, visibleAtGym: true },
+     ]);
+     await until(() => screen.queryByRole('button', { name: 'Valider' }) === null);
++    await until(() => document.activeElement === screen.queryByRole('button', { name: 'Ajouter une salle' }));
++  });
++
++  it('« Ajouter une salle » : le focus va au titre du formulaire, puis revient au bouton après « Annuler »', async () => {
++    const api = createFakeApi().on('GET', '/api/gyms', { status: 200, body: [] });
++    await renderPlaces({ api });
++    fireEvent.click(button('Ajouter une salle'));
++    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Ajouter une salle' }));
++    fireEvent.click(button('Annuler'));
++    expect(document.activeElement).toBe(button('Ajouter une salle'));
++  });
++
++  it('« Ajouter une maison » : le focus va au titre du formulaire, puis revient au bouton après « Annuler »', async () => {
++    await renderPlaces();
++    fireEvent.click(button('Ajouter une maison'));
++    expect(document.activeElement).toBe(
++      screen.getByRole('heading', { level: 2, name: 'Ajouter une maison' }),
++    );
++    fireEvent.click(button('Annuler'));
++    expect(document.activeElement).toBe(button('Ajouter une maison'));
++  });
++
++  it('« Ajouter une maison » hors ligne : « Nécessite le réseau », le formulaire garde la saisie', async () => {
++    const api = createFakeApi();
++    await renderPlaces({ api });
++    fireEvent.click(button('Ajouter une maison'));
++    api.setOffline('reject');
++    fill('Nom du lieu', 'Garage 2');
++    fireEvent.click(button('Ajouter la maison'));
++    expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
++    expect(button('Ajouter la maison')).toBeTruthy();
++    expect((screen.getByLabelText('Nom du lieu') as HTMLInputElement).value).toBe('Garage 2');
+   });
+ 
+   it('« Ajouter une salle » pour un mineur : case décochée par défaut', async () => {
+     const api = createFakeApi().on('GET', '/api/gyms', { status: 200, body: [] });
+     await renderPlaces({ api, me: makeMe({ ageBand: 'minor' }) });
+     fireEvent.click(button('Ajouter une salle'));
+     await screen.findByText('Aucune salle trouvée.');
+     expect(checkbox('Apparaître dans « Qui va à cette salle »').checked).toBe(false);
+   });
+ 
+@@ -252,35 +393,45 @@ describe('PlacesPage (02 §11 Lieux, R-LIEU-1 à R-LIEU-4)', () => {
+     await until(() => sent(api, 'POST', '/api/places').length === 1);
+     expect(sent(api, 'POST', '/api/places')).toEqual([
+       {
+         kind: 'home',
+         name: 'Garage 2',
+         equipment: ['chair', 'table', 'resistance_band', 'dumbbells', 'kettlebell', 'pull_up_bar'],
+         isPrimary: false,
+       },
+     ]);
+     await until(() => screen.queryByRole('button', { name: 'Ajouter la maison' }) === null);
++    await until(
++      () => document.activeElement === screen.queryByRole('button', { name: 'Ajouter une maison' }),
++    );
+   });
+ });
+ 
+ describe('PlaceDetail', () => {
+   it('maison : cocher → PUT …/equipment/<code> {} ; décocher → DELETE (R-LIEU-3)', async () => {
+     const api = createFakeApi()
+       .on('PUT', '/api/places/:id/equipment/:code', { status: 204 })
+       .on('DELETE', '/api/places/:id/equipment/:code', { status: 204 });
+-    await renderDetail('p-2', { api });
++    const { db } = await renderDetail('p-2', { api });
+     expect(await screen.findByRole('heading', { level: 1, name: 'Garage' })).toBeTruthy();
+     expect(checkbox(EQUIPMENT_LABELS.chair).checked).toBe(true);
+     fireEvent.click(checkbox(EQUIPMENT_LABELS.dumbbells));
+     await until(() => sent(api, 'PUT', '/api/places/p-2/equipment/dumbbells').length === 1);
+     expect(sent(api, 'PUT', '/api/places/p-2/equipment/dumbbells')).toEqual([{}]);
+     await until(() => !checkbox(EQUIPMENT_LABELS.chair).disabled);
++    // Envoi réussi, miroir pas encore relu : la case garde le choix.
++    expect(checkbox(EQUIPMENT_LABELS.dumbbells).checked).toBe(true);
++    // Miroir relu sans haltères (retirés depuis un autre appareil) : il fait foi.
++    await seedMirror(db, 'home_equipment', [
++      { id: 'p-2:chair', ownerId: 'u-1', placeId: 'p-2', equipmentCode: 'chair' },
++    ]);
++    await until(() => !checkbox(EQUIPMENT_LABELS.dumbbells).checked);
+     fireEvent.click(checkbox(EQUIPMENT_LABELS.chair));
+     await until(() => sent(api, 'DELETE', '/api/places/p-2/equipment/chair').length === 1);
+   });
+ 
+   it('maison hors ligne : « Nécessite le réseau », la case revient', async () => {
+     const api = createFakeApi();
+     await renderDetail('p-2', { api });
+     await screen.findByRole('heading', { level: 1, name: 'Garage' });
+     api.setOffline('reject');
+     fireEvent.click(checkbox(EQUIPMENT_LABELS.dumbbells));
+diff --git a/apps/web/test/profile/profile-page.test.tsx b/apps/web/test/profile/profile-page.test.tsx
+index c546f1d..7cfba62 100644
+--- a/apps/web/test/profile/profile-page.test.tsx
++++ b/apps/web/test/profile/profile-page.test.tsx
+@@ -1,18 +1,18 @@
+ import type { MeResponse } from '@appsport/contracts';
+ import { fireEvent, screen, within } from '@testing-library/react';
+ import { describe, expect, it } from 'vitest';
+ import { ProfilePage } from '../../src/features/profile/ProfilePage';
+ import { fill, settle } from '../support/auth';
+ import { createFakeApi, type FakeApi } from '../support/fake-api';
+ import { createTestLocalDb } from '../support/local-db';
+-import { button, choose, isChecked, seedProfile, serveProfile } from '../support/onboarding';
++import { button, choose, isChecked, PROFILE_PATH, seedProfile, serveProfile } from '../support/onboarding';
+ import { makeMe, renderApp, renderWithServices } from '../support/render';
+ import { until } from '../support/wait';
+ 
+ const TRAINING = { goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45 } as const;
+ const FORCED_BANNER =
+   'Ton mot de passe doit être changé avant de continuer (14 caractères au moins pour un administrateur).';
+ const CHANGED = 'Mot de passe changé. Tes autres appareils ont été déconnectés.';
+ const CAUTIOUS = 'Je préfère une progression plus prudente';
+ const OLD_PASSWORD = 'ancien mot de passe ok';
+ const NEW_PASSWORD = 'cheval agrafe batterie correcte';
+@@ -27,20 +27,35 @@ async function renderProfile(
+   const server = serveProfile(api, db, me);
+   const rendered = await renderWithServices(<ProfilePage />, { me, db, api, path: '/profile' });
+   await screen.findByRole('heading', { level: 1, name: 'Profil' });
+   return { ...rendered, ...server };
+ }
+ 
+ const calls = (api: FakeApi, method: string, path: string) =>
+   api.calls.filter((c) => c.method === method && c.path === path);
+ const input = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
+ const heading = (name: string) => screen.queryByRole('heading', { level: 2, name });
++/** Textes qui décrivent un champ (aide, erreur), via aria-describedby. */
++const description = (el: Element) =>
++  (el.getAttribute('aria-describedby') ?? '')
++    .split(' ')
++    .map((id) => document.getElementById(id)?.textContent ?? '')
++    .join(' ');
++
++/** Erreur locale liée au champ `label` (aria-invalid, description), focus sur le champ, pas d'alerte. */
++async function expectFieldError(label: string, message: string) {
++  const field = input(label);
++  await until(() => field.getAttribute('aria-invalid') === 'true');
++  expect(description(field)).toContain(message);
++  expect(document.activeElement).toBe(field);
++  expect(screen.queryByRole('alert')).toBeNull();
++}
+ 
+ function changePassword(current = OLD_PASSWORD, next = NEW_PASSWORD, confirm = next) {
+   fill('Mot de passe actuel', current);
+   fill('Nouveau mot de passe', next);
+   fill('Confirmation', confirm);
+   fireEvent.click(button('Changer le mot de passe'));
+ }
+ 
+ describe('ProfilePage › Compte (02 §11, R-CPT-3)', () => {
+   it('pseudo modifiable, date de naissance en lecture seule avec sa raison', async () => {
+@@ -57,34 +72,35 @@ describe('ProfilePage › Compte (02 §11, R-CPT-3)', () => {
+     const api = createFakeApi().on('PATCH', '/api/me', { status: 200, body: makeMe({ username: 'leo' }) });
+     const { sync } = await renderProfile({ api });
+     expect(button('Enregistrer le pseudo').disabled).toBe(true);
+     fill('Pseudo', 'leo');
+     fireEvent.click(button('Enregistrer le pseudo'));
+     await screen.findByText('Pseudo enregistré.');
+     expect(calls(api, 'PATCH', '/api/me').map((c) => c.body)).toEqual([{ username: 'leo' }]);
+     expect(sync.pullCount).toBe(1);
+   });
+ 
+-  it('pseudo invalide : message local, aucune requête', async () => {
++  it('pseudo invalide : message local lié au champ, aucune requête', async () => {
+     const { api } = await renderProfile();
+     fill('Pseudo', 'le');
+     fireEvent.click(button('Enregistrer le pseudo'));
+-    expect((await screen.findByRole('alert')).textContent).toBe('3 à 24 caractères.');
++    await expectFieldError('Pseudo', '3 à 24 caractères.');
+     expect(calls(api, 'PATCH', '/api/me')).toHaveLength(0);
+   });
+ 
+   it('hors ligne : alerte « Nécessite le réseau »', async () => {
+     const { api } = await renderProfile();
+     api.setOffline('reject');
+     fill('Pseudo', 'leo');
+     fireEvent.click(button('Enregistrer le pseudo'));
+     expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
++    expect(input('Pseudo').value).toBe('leo');
+   });
+ 
+   it('409 username_taken : « Ce pseudo est déjà pris. »', async () => {
+     const api = createFakeApi().on('PATCH', '/api/me', { status: 409, body: { error: 'username_taken' } });
+     await renderProfile({ api });
+     fill('Pseudo', 'max');
+     fireEvent.click(button('Enregistrer le pseudo'));
+     expect((await screen.findByRole('alert')).textContent).toBe('Ce pseudo est déjà pris.');
+   });
+ 
+@@ -128,56 +144,77 @@ describe('ProfilePage › Mot de passe (R-MDP-6)', () => {
+   it('401 invalid_credentials : « Mot de passe actuel incorrect. »', async () => {
+     const api = createFakeApi().on('POST', '/api/auth/password', {
+       status: 401,
+       body: { error: 'invalid_credentials' },
+     });
+     await renderProfile({ api });
+     changePassword('mauvais mot de passe');
+     expect((await screen.findByRole('alert')).textContent).toBe('Mot de passe actuel incorrect.');
+   });
+ 
+-  it('confirmation différente : message local, aucune requête', async () => {
++  it('confirmation différente : message local lié à « Confirmation », aucune requête', async () => {
+     const { api } = await renderProfile();
+     changePassword(OLD_PASSWORD, NEW_PASSWORD, 'autre chose encore');
+-    expect((await screen.findByRole('alert')).textContent).toBe(
+-      'Les deux mots de passe ne correspondent pas.',
+-    );
++    await expectFieldError('Confirmation', 'Les deux mots de passe ne correspondent pas.');
++    expect(calls(api, 'POST', '/api/auth/password')).toHaveLength(0);
++  });
++
++  it('mot de passe actuel vide : message local lié au champ, aucune requête', async () => {
++    const { api } = await renderProfile();
++    changePassword('');
++    await expectFieldError('Mot de passe actuel', 'Saisis ton mot de passe actuel.');
+     expect(calls(api, 'POST', '/api/auth/password')).toHaveLength(0);
+   });
+ 
+   it('mustChangePassword (R-MDP-1) : bandeau et seule la section mot de passe ; après le changement, tout réapparaît', async () => {
+     const admin = makeMe({ role: 'admin', mustChangePassword: true });
+     const api = createFakeApi()
+       .on('POST', '/api/auth/password', { status: 204 })
+       .on('GET', '/api/me', { status: 200, body: { ...admin, mustChangePassword: false } });
+     const { sync } = await renderProfile({ me: admin, api });
+     expect(screen.getByText(FORCED_BANNER)).toBeTruthy();
+     expect(heading('Mot de passe')).toBeTruthy();
+     expect(heading('Compte')).toBeNull();
+     expect(heading('Entraînement')).toBeNull();
+     expect(screen.queryByLabelText('Pseudo')).toBeNull();
+     expect(screen.queryByRole('link', { name: 'Lieux' })).toBeNull();
+     expect(screen.queryByRole('button', { name: 'Déconnecter tous mes appareils' })).toBeNull();
+ 
+     changePassword();
+     await until(() => screen.queryByText(FORCED_BANNER) === null);
+-    expect(screen.getByText(CHANGED)).toBeTruthy();
++    expect(await screen.findByText(CHANGED)).toBeTruthy();
+     expect(heading('Compte')).toBeTruthy();
+     expect(await screen.findByRole('heading', { level: 2, name: 'Entraînement' })).toBeTruthy();
+     expect(screen.getByRole('link', { name: 'Lieux' })).toBeTruthy();
+     expect(sync.triggers).toContain('manual');
+   });
+ 
++  it('mustChangePassword : GET /api/me en échec après le changement réussi, le bandeau disparaît quand même', async () => {
++    const admin = makeMe({ role: 'admin', mustChangePassword: true });
++    const api = createFakeApi();
++    // Le réseau tombe juste après la réponse du serveur.
++    api.on('POST', '/api/auth/password', () => {
++      api.setOffline('reject');
++      return { status: 204 };
++    });
++    await renderProfile({ me: admin, api });
++    changePassword();
++    await until(() => screen.queryByText(FORCED_BANNER) === null);
++    expect(await screen.findByText(CHANGED)).toBeTruthy();
++    expect(calls(api, 'GET', '/api/me')).toHaveLength(1);
++    expect(heading('Compte')).toBeTruthy();
++  });
++
+   it('administrateur : 13 caractères refusés localement (R-MDP-1)', async () => {
+     const { api } = await renderProfile({ me: makeMe({ role: 'admin' }) });
+     changePassword(OLD_PASSWORD, 'cheval agrafe', 'cheval agrafe');
+-    expect((await screen.findByRole('alert')).textContent).toBe('14 caractères au moins.');
++    await expectFieldError('Nouveau mot de passe', '14 caractères au moins.');
+     expect(calls(api, 'POST', '/api/auth/password')).toHaveLength(0);
+   });
+ });
+ 
+ describe('ProfilePage › Entraînement (R-ONB-3)', () => {
+   it('résumé : objectif, sport, niveau, disponibilité', async () => {
+     await renderProfile();
+     await screen.findByText('Prendre du muscle');
+     expect(screen.getByText('Jamais')).toBeTruthy();
+     expect(screen.getByText('3 séances de 45 min')).toBeTruthy();
+@@ -202,20 +239,33 @@ describe('ProfilePage › Entraînement (R-ONB-3)', () => {
+     choose('Me renforcer pour mon sport');
+     fireEvent.click(button('Suivant'));
+     await screen.findByRole('radio', { name: 'Course à pied' });
+     expect(t.patches).toEqual([]);
+     choose('Course à pied');
+     fireEvent.click(button('Enregistrer'));
+     await screen.findByRole('button', { name: "Modifier l'objectif" });
+     expect(t.patches).toEqual([{ goal: 'sport_support', sportCode: 'running', sportOtherLabel: null }]);
+   });
+ 
++  it("objectif sportif sans sport : le focus va au titre du sport, puis revient à l'objectif avec « Retour »", async () => {
++    await renderProfile();
++    fireEvent.click(await screen.findByRole('button', { name: "Modifier l'objectif" }));
++    await until(() => isChecked('Prendre du muscle'));
++    choose('Me renforcer pour mon sport');
++    fireEvent.click(button('Suivant'));
++    await screen.findByRole('radio', { name: 'Course à pied' });
++    expect(document.activeElement?.textContent).toBe('Autre sport');
++    fireEvent.click(button('Retour'));
++    await screen.findByRole('radio', { name: 'Me renforcer pour mon sport' });
++    expect(document.activeElement?.textContent).toBe('Objectif');
++  });
++
+   it('« Modifier le sport » → SportStep en édition → PATCH { sportCode, sportOtherLabel }', async () => {
+     const t = await renderProfile();
+     fireEvent.click(await screen.findByRole('button', { name: 'Modifier le sport' }));
+     await until(() => isChecked('Non'));
+     choose('Oui');
+     choose('Course à pied');
+     fireEvent.click(button('Enregistrer'));
+     await screen.findByRole('button', { name: 'Modifier le sport' });
+     expect(t.patches).toEqual([{ sportCode: 'running', sportOtherLabel: null }]);
+     expect(await screen.findByText('Course à pied')).toBeTruthy();
+@@ -247,26 +297,43 @@ describe('ProfilePage › Entraînement (R-ONB-3)', () => {
+     const t = await renderProfile();
+     fireEvent.click(await screen.findByRole('button', { name: 'Modifier le niveau' }));
+     await until(() => isChecked('Jamais'));
+     expect(document.activeElement?.textContent).toBe('Niveau');
+     fireEvent.click(button('Retour'));
+     const back = await screen.findByRole('button', { name: 'Modifier le niveau' });
+     expect(document.activeElement).toBe(back);
+     expect(t.patches).toEqual([]);
+   });
+ 
+-  it('mode prudent → PATCH { cautiousMode: true }', async () => {
++  it('mode prudent → PATCH { cautiousMode: true } ; le miroir relu fait foi', async () => {
+     const t = await renderProfile();
+     fireEvent.click(await screen.findByRole('switch', { name: CAUTIOUS }));
+     await until(() => t.patches.length === 1);
+     expect(t.patches).toEqual([{ cautiousMode: true }]);
+-    await until(() => (screen.getByRole('switch', { name: CAUTIOUS }) as HTMLInputElement).checked);
++    const toggle = () => screen.getByRole('switch', { name: CAUTIOUS }) as HTMLInputElement;
++    await settle(); // réponse reçue, miroir écrit par le faux serveur
++    expect(toggle().checked).toBe(true);
++    // Un autre appareil remet le mode prudent à non : la relecture du profil le montre.
++    await seedProfile(t.db, { ...TRAINING, cautiousMode: false });
++    await until(() => !toggle().checked);
++  });
++
++  it("mode prudent : l'interrupteur est désactivé pendant l'envoi, pas de deuxième PATCH", async () => {
++    const { api } = await renderProfile();
++    const toggle = (await screen.findByRole('switch', { name: CAUTIOUS })) as HTMLInputElement;
++    api.setOffline('hang');
++    fireEvent.click(toggle);
++    await until(() => calls(api, 'PATCH', PROFILE_PATH).length === 1);
++    expect(toggle.disabled).toBe(true);
++    fireEvent.click(toggle);
++    await settle();
++    expect(calls(api, 'PATCH', PROFILE_PATH)).toHaveLength(1);
+   });
+ 
+   it("mode prudent hors ligne : « Nécessite le réseau », l'interrupteur revient", async () => {
+     const { api } = await renderProfile();
+     api.setOffline('reject');
+     const toggle = (await screen.findByRole('switch', { name: CAUTIOUS })) as HTMLInputElement;
+     fireEvent.click(toggle);
+     expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
+     await settle();
+     expect((screen.getByRole('switch', { name: CAUTIOUS }) as HTMLInputElement).checked).toBe(false);
+diff --git a/apps/web/test/repos/me-repo.test.ts b/apps/web/test/repos/me-repo.test.ts
+index b93c868..2fdaf74 100644
+--- a/apps/web/test/repos/me-repo.test.ts
++++ b/apps/web/test/repos/me-repo.test.ts
+@@ -214,20 +214,33 @@ describe('MeRepo : changement de compte (P-AUT-6)', () => {
+     const { services, api, sync, db } = await createTestServices({
+       me: { ...lea, mustChangePassword: true },
+     });
+     api.on('POST', '/api/auth/password', { status: 204 });
+     api.on('GET', '/api/me', ok(lea));
+     await createRepos(services).me.changePassword({ currentPassword: 'a', newPassword: 'b' });
+     expect(api.calls.map((c) => `${c.method} ${c.path}`)).toEqual(['POST /api/auth/password', 'GET /api/me']);
+     expect((await getMeta(db, 'me'))?.mustChangePassword).toBe(false);
+     expect(sync.triggers).toContain('manual');
+   });
++
++  it('changePassword : GET /api/me hors ligne après le 204 → meta.me sans mustChangePassword (R-MDP-1)', async () => {
++    const { services, api, db } = await createTestServices({
++      me: { ...lea, mustChangePassword: true },
++    });
++    api.on('POST', '/api/auth/password', () => {
++      api.setOffline('reject');
++      return { status: 204 };
++    });
++    await createRepos(services).me.changePassword({ currentPassword: 'a', newPassword: 'b' });
++    expect(api.calls.map((c) => `${c.method} ${c.path}`)).toEqual(['POST /api/auth/password', 'GET /api/me']);
++    expect((await getMeta(db, 'me'))?.mustChangePassword).toBe(false);
++  });
+ });
+ 
+ describe('MeRepo : session ouverte, état de connexion remis à zéro (R-AUTH-8, P-DRT-4)', () => {
+   const CODE = 'ABCDEFGHJKMNPQRS';
+   const opens: [string, string, (r: Repos) => Promise<MeResponse>][] = [
+     ['login', '/api/auth/login', (r) => r.me.login({ username: 'lea', password: 'pw' })],
+     [
+       'acceptInvitation',
+       '/api/invitations/accept',
+       (r) => r.me.acceptInvitation({ code: CODE, username: 'lea', password: 'pw', termsVersion: '1.0' }),
+diff --git a/apps/web/test/repos/profile-places-gyms.test.ts b/apps/web/test/repos/profile-places-gyms.test.ts
+index d7a14b7..24b83f0 100644
+--- a/apps/web/test/repos/profile-places-gyms.test.ts
++++ b/apps/web/test/repos/profile-places-gyms.test.ts
+@@ -1,13 +1,13 @@
+ import { defaultLoadSettings, EQUIPMENT, type GymDetail, LoadSettingsSchema } from '@appsport/contracts';
+ import { describe, expect, it } from 'vitest';
+-import { ApiError } from '../../src/api/client';
++import { ApiError, NetworkRequiredError } from '../../src/api/client';
+ import type { MirrorRow } from '../../src/local-db/db';
+ import { getMeta } from '../../src/local-db/meta';
+ import { createRepos } from '../../src/repos';
+ import { isLive, parseJsonColumn } from '../../src/repos/rows';
+ import { createTestServices, makeMe } from '../support/render';
+ import { seedMirror } from '../support/seed';
+ 
+ const GYM_LS = defaultLoadSettings('gym');
+ const HOME_LS = { ...defaultLoadSettings('home'), dumbbellsG: [2000, 4000] };
+ const DELETED = '2026-10-01T10:00:00.000Z';
+@@ -173,20 +173,34 @@ describe('PlacesRepo', () => {
+         isPrimary: false,
+         visibleAtGym: null,
+         loadSettings: HOME_LS,
+         equipment: ['chair'],
+       },
+     ]);
+     expect(await repos.places.get('p-3')).toBeNull();
+     expect((await repos.places.get('p-2'))?.name).toBe('Garage');
+   });
+ 
++  it("list : le principal d'abord, même quand son id et son nom viennent après", async () => {
++    const { repos, db } = await setup();
++    const p1 = await db.mirror('place').get('p-1');
++    const p2 = await db.mirror('place').get('p-2');
++    await seedMirror(db, 'place', [
++      { ...p1, isPrimary: false },
++      { ...p2, isPrimary: true },
++    ]);
++    expect((await repos.places.list()).map((p) => [p.id, p.name, p.isPrimary])).toEqual([
++      ['p-2', 'Garage', true],
++      ['p-1', 'Basic Fit', false],
++    ]);
++  });
++
+   it('create, update, remove et matériel : API puis pull', async () => {
+     const { repos, api, sync } = await setup();
+     api.on('POST', '/api/places', { status: 201, body: { id: 'p-9' } });
+     api.on('PATCH', '/api/places/:id', { status: 204 });
+     api.on('DELETE', '/api/places/:id', { status: 204 });
+     api.on('DELETE', '/api/places/:id/equipment/:code', { status: 204 });
+     await repos.places.create({ kind: 'home', equipment: [], isPrimary: false });
+     await repos.places.update('p-2', { name: 'Cave' });
+     await repos.places.remove('p-2', {});
+     await repos.places.setEquipment('p-2', 'chair', false);
+@@ -230,20 +244,28 @@ describe('GymsRepo', () => {
+         loadSettings: GYM_LS,
+         deletedAt: null,
+         equipment: gymCodes,
+         canEdit: false,
+         visibleMembers: [],
+         history: [],
+       },
+     });
+   });
+ 
++  it('detail hors ligne, salle supprimée dans le miroir : erreur réseau relancée (R-SAL-7)', async () => {
++    const { repos, api, db } = await setup();
++    const gym = await db.mirror('gym').get('g-1');
++    await seedMirror(db, 'gym', [{ ...gym, deletedAt: DELETED }]);
++    api.setOffline('reject');
++    await expect(repos.gyms.detail('g-1')).rejects.toBeInstanceOf(NetworkRequiredError);
++  });
++
+   it('create : 409 gym_duplicate → ApiError avec gymId, aucun pull', async () => {
+     const { repos, api, sync } = await setup();
+     api.on('POST', '/api/gyms', { status: 409, body: { error: 'gym_duplicate', gymId: 'g-1' } });
+     const error = await repos.gyms
+       .create({ name: 'Basic Fit', city: 'Lyon', equipment: [], isPrimary: true })
+       .catch((e: unknown) => e);
+     expect(error).toBeInstanceOf(ApiError);
+     expect((error as ApiError).body.gymId).toBe('g-1');
+     expect(sync.pullCount).toBe(0);
+   });

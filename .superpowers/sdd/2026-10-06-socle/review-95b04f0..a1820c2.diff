@@ -1,0 +1,417 @@
+# Review package: 95b04f0..HEAD
+
+## Commits
+a1820c2 fix(synchro): writeLocal rend null quand rien n'est mis en file
+c5ba675 fix(synchro): suppression C2 admise sans accord, patch vidé non mis en file
+
+## Files changed
+ apps/web/src/local-db/c2.ts              | 19 ++++++++++++
+ apps/web/src/local-db/wipe.ts            | 21 ++-----------
+ apps/web/src/sync/outbox.ts              | 19 +++++++++---
+ apps/web/test/local-db/frozen-v1.test.ts |  7 ++++-
+ apps/web/test/support/local-db.ts        |  5 ---
+ apps/web/test/sync/outbox.test.ts        | 52 ++++++++++++++++++++++++++++----
+ vitest.config.ts                         |  1 +
+ 7 files changed, 88 insertions(+), 36 deletions(-)
+
+## Diff
+diff --git a/apps/web/src/local-db/c2.ts b/apps/web/src/local-db/c2.ts
+new file mode 100644
+index 0000000..078aca4
+--- /dev/null
++++ b/apps/web/src/local-db/c2.ts
+@@ -0,0 +1,19 @@
++import { camelToSnake, type EntityRule } from '@appsport/contracts';
++
++/** Valeur de santé dans une table non C2 : colonne `c2Columns`, ou valeur `c2Values` (clé camelCase). */
++export function isC2Value(rule: EntityRule, key: string, value: unknown): boolean {
++  if (value === null || value === undefined) return false;
++  const column = camelToSnake(key);
++  if (rule.c2Columns.includes(column)) return true;
++  const values = rule.c2Values && Object.hasOwn(rule.c2Values, column) ? rule.c2Values[column] : undefined;
++  return typeof value === 'string' && values !== undefined && values.includes(value);
++}
++
++/** Champs sans leurs valeurs de santé ; `stripped` dit si une clé a été retirée. */
++export function stripC2Fields(
++  rule: EntityRule,
++  fields: Record<string, unknown>,
++): { fields: Record<string, unknown>; stripped: boolean } {
++  const kept = Object.fromEntries(Object.entries(fields).filter(([k, v]) => !isC2Value(rule, k, v)));
++  return { fields: kept, stripped: Object.keys(kept).length !== Object.keys(fields).length };
++}
+diff --git a/apps/web/src/local-db/wipe.ts b/apps/web/src/local-db/wipe.ts
+index f88c00c..0903730 100644
+--- a/apps/web/src/local-db/wipe.ts
++++ b/apps/web/src/local-db/wipe.ts
+@@ -1,32 +1,15 @@
+-import { camelToSnake, type EntityRule, type EntityRulesMap, entityRules } from '@appsport/contracts';
++import { type EntityRule, type EntityRulesMap, entityRules } from '@appsport/contracts';
++import { isC2Value, stripC2Fields } from './c2';
+ import { type AppDb, mirrorStoreNames } from './db';
+ import { USER_META_KEYS } from './meta';
+ 
+-/** Valeur de santé dans une table non C2 : colonne `c2Columns`, ou valeur `c2Values` (clé camelCase). */
+-export function isC2Value(rule: EntityRule, key: string, value: unknown): boolean {
+-  if (value === null || value === undefined) return false;
+-  const column = camelToSnake(key);
+-  if (rule.c2Columns.includes(column)) return true;
+-  const values = rule.c2Values && Object.hasOwn(rule.c2Values, column) ? rule.c2Values[column] : undefined;
+-  return typeof value === 'string' && values !== undefined && values.includes(value);
+-}
+-
+-/** Champs sans leurs valeurs de santé ; `stripped` dit si une clé a été retirée. */
+-export function stripC2Fields(
+-  rule: EntityRule,
+-  fields: Record<string, unknown>,
+-): { fields: Record<string, unknown>; stripped: boolean } {
+-  const kept = Object.fromEntries(Object.entries(fields).filter(([k, v]) => !isC2Value(rule, k, v)));
+-  return { fields: kept, stripped: Object.keys(kept).length !== Object.keys(fields).length };
+-}
+-
+ /** Efface les données de l'utilisateur ; l'appareil (deviceId) et le catalogue restent. */
+ export async function wipeUserData(db: AppDb, opts: { keepOutbox: boolean }): Promise<void> {
+   await db.transaction('rw', db.tables, async () => {
+     for (const store of mirrorStoreNames(db)) await db.mirror(store).clear();
+     await db.meta.bulkDelete([...USER_META_KEYS]);
+     if (!opts.keepOutbox) {
+       await db.outbox.clear();
+       await db.deadletter.clear();
+     }
+   });
+diff --git a/apps/web/src/sync/outbox.ts b/apps/web/src/sync/outbox.ts
+index 375a2af..e7f3bb9 100644
+--- a/apps/web/src/sync/outbox.ts
++++ b/apps/web/src/sync/outbox.ts
+@@ -1,65 +1,74 @@
+ import { camelToSnake, type EntityRulesMap, entityRules, SYNC_PROTOCOL, SyncOp } from '@appsport/contracts';
++import { stripC2Fields } from '../local-db/c2';
+ import type { AppDb, MirrorRow, OutboxOp } from '../local-db/db';
+-import { stripC2Fields } from '../local-db/wipe';
+ 
+ export interface LocalChange {
+   entity: string;
+   id: string;
+   kind: 'create' | 'patch' | 'delete';
+   fields: Record<string, unknown>;
+ }
+ 
+ export class HealthConsentRequiredError extends Error {
+   constructor() {
+     super('health_consent_required');
+     this.name = 'HealthConsentRequiredError';
+   }
+ }
+ 
+ /**
+  * Écriture locale d'une table J : ligne miroir et op d'outbox dans une seule transaction
+- * (R-SYN-11 à R-SYN-14). Sans accord santé, une table C2 est refusée et les valeurs C2 retirées.
++ * (R-SYN-11 à R-SYN-14). Sans accord santé, une table C2 est refusée (sauf suppression) et les
++ * valeurs C2 retirées ; un patch ainsi vidé n'est ni écrit ni mis en file (rend null).
+  */
+ export async function writeLocal(
+   db: AppDb,
+   change: LocalChange,
+   ctx: {
+     userId: string;
+     now: () => string;
+     newOpId: () => string;
+     healthConsentActive: boolean;
+     rules?: EntityRulesMap;
+   },
+-): Promise<OutboxOp> {
++): Promise<OutboxOp | null> {
+   const rules = ctx.rules ?? entityRules;
+   const rule = Object.hasOwn(rules, change.entity) ? rules[change.entity] : undefined;
+   if (rule?.syncClass !== 'J') throw new Error('entity_not_journal');
+   for (const key of Object.keys(change.fields)) {
+     if (!rule.clientWritable.includes(camelToSnake(key))) throw new Error(`field_not_writable:${key}`);
+   }
+-  if (!ctx.healthConsentActive && rule.category === 'C2') throw new HealthConsentRequiredError();
+-  const fields = ctx.healthConsentActive ? { ...change.fields } : stripC2Fields(rule, change.fields).fields;
++  // P-CST-2 : sans accord, création et modification C2 écartées ; une suppression reste admise.
++  if (!ctx.healthConsentActive && rule.category === 'C2' && change.kind !== 'delete') {
++    throw new HealthConsentRequiredError();
++  }
++  const { fields, stripped } = ctx.healthConsentActive
++    ? { fields: { ...change.fields }, stripped: false }
++    : stripC2Fields(rule, change.fields);
+ 
+   const now = ctx.now();
+   const op = SyncOp.parse({
+     opId: ctx.newOpId(),
+     userId: ctx.userId,
+     entity: change.entity,
+     id: change.id,
+     kind: change.kind,
+     fields,
+     clientTs: now,
+     protocol: SYNC_PROTOCOL,
+     attempts: 0,
+   });
+ 
++  // Patch vidé par le retrait des valeurs C2 : rien à écrire (comme purgeHealthData), op non mise en file.
++  if (change.kind === 'patch' && stripped && Object.keys(fields).length === 0) return null;
++
+   const mirror = db.mirror(change.entity);
+   await db.transaction('rw', db.outbox, mirror, async () => {
+     if (change.kind === 'create') {
+       const row: MirrorRow = {
+         ...fields,
+         id: change.id,
+         ownerId: ctx.userId,
+         serverRevSeen: null,
+         deletedAt: null,
+         updatedAt: now,
+diff --git a/apps/web/test/local-db/frozen-v1.test.ts b/apps/web/test/local-db/frozen-v1.test.ts
+index 24fd65c..75aecad 100644
+--- a/apps/web/test/local-db/frozen-v1.test.ts
++++ b/apps/web/test/local-db/frozen-v1.test.ts
+@@ -1,21 +1,26 @@
+ import { afterEach, expect, it } from 'vitest';
+-import { type AppDb, createAppDb, LOCAL_DB_VERSION } from '../../src/local-db/db';
++import { type AppDb, createAppDb, LOCAL_DB_VERSION, STORE_SCHEMAS } from '../../src/local-db/db';
+ import { getMeta } from '../../src/local-db/meta';
+ import { convertOutboxOp } from '../../src/sync/protocol-converters';
+ import { loadFrozenLocalDb, readFrozenDump } from '../support/local-db';
+ 
+ let db: AppDb | undefined;
+ afterEach(async () => {
+   await db?.delete();
+ });
+ 
++// Même version ⇒ même schéma : tant que LOCAL_DB_VERSION vaut 1, STORE_SCHEMAS ne bouge pas.
++it.runIf(LOCAL_DB_VERSION === 1)('STORE_SCHEMAS est celui du jeu figé v1', async () => {
++  expect((await readFrozenDump(1)).stores).toEqual(STORE_SCHEMAS);
++});
++
+ // R-VER-5 : une base locale v1 figée s'ouvre avec la version courante, sans perte.
+ it('ouvre le jeu figé v1 avec la version courante', async () => {
+   const name = `frozen-v1-${crypto.randomUUID()}`;
+   await loadFrozenLocalDb(1, name);
+   const dump = await readFrozenDump(1);
+   db = createAppDb(name);
+   await db.open();
+   expect(db.verno).toBe(LOCAL_DB_VERSION);
+   expect(await db.outbox.toArray()).toEqual(dump.outbox.map((op) => convertOutboxOp(op)));
+   for (const [store, rows] of Object.entries(dump.mirrors)) {
+diff --git a/apps/web/test/support/local-db.ts b/apps/web/test/support/local-db.ts
+index ba48027..c7a4307 100644
+--- a/apps/web/test/support/local-db.ts
++++ b/apps/web/test/support/local-db.ts
+@@ -1,25 +1,20 @@
+-import 'fake-indexeddb/auto';
+ import Dexie from 'dexie';
+ import {
+   type AppDb,
+   createAppDb,
+   type DeadletterEntry,
+   type MirrorRow,
+   type OutboxOp,
+ } from '../../src/local-db/db';
+ import dumpV1 from '../fixtures/local-db/v1/dump.json';
+ 
+-// Dexie lit indexedDB au chargement du module : un import antérieur à fake-indexeddb le laisserait vide.
+-Dexie.dependencies.indexedDB = indexedDB;
+-Dexie.dependencies.IDBKeyRange = IDBKeyRange;
+-
+ /** Miroirs des tables J de test (`SYNC_FIXTURE_RULES`). */
+ export const FIXTURE_MIRRORS: Record<string, string> = {
+   fixture_note: 'id',
+   fixture_note_item: 'id, noteId',
+   fixture_c2_log: 'id',
+ };
+ 
+ let counter = 0;
+ const uniqueName = (prefix: string): string => `${prefix}-${++counter}-${crypto.randomUUID()}`;
+ 
+diff --git a/apps/web/test/sync/outbox.test.ts b/apps/web/test/sync/outbox.test.ts
+index 44df235..a31ccd1 100644
+--- a/apps/web/test/sync/outbox.test.ts
++++ b/apps/web/test/sync/outbox.test.ts
+@@ -1,13 +1,13 @@
+ import { SYNC_FIXTURE_RULES, seqIds } from '@appsport/server/testing';
+ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+-import type { AppDb } from '../../src/local-db/db';
++import type { AppDb, OutboxOp } from '../../src/local-db/db';
+ import { HealthConsentRequiredError, pendingCount, writeLocal } from '../../src/sync/outbox';
+ import { createFixtureLocalDb } from '../support/local-db';
+ 
+ const NOW = '2026-10-06T10:00:00.000Z';
+ const LATER = '2026-10-06T11:00:00.000Z';
+ 
+ let db: AppDb;
+ let ctx: Parameters<typeof writeLocal>[2];
+ 
+ beforeEach(() => {
+@@ -18,22 +18,29 @@ beforeEach(() => {
+     now: () => NOW,
+     newOpId: ids.uuidv7,
+     healthConsentActive: true,
+     rules: SYNC_FIXTURE_RULES,
+   };
+ });
+ afterEach(async () => {
+   await db.delete();
+ });
+ 
++/** writeLocal dont l'op doit être mise en file. */
++async function queued(...args: Parameters<typeof writeLocal>): Promise<OutboxOp> {
++  const op = await writeLocal(...args);
++  if (!op) throw new Error('op non mise en file');
++  return op;
++}
++
+ const createNote = () =>
+-  writeLocal(db, { entity: 'fixture_note', id: 'n1', kind: 'create', fields: { title: 't' } }, ctx);
++  queued(db, { entity: 'fixture_note', id: 'n1', kind: 'create', fields: { title: 't' } }, ctx);
+ 
+ describe('writeLocal', () => {
+   it('écrit la ligne miroir et l’op dans l’outbox', async () => {
+     const op = await createNote();
+     expect(await db.mirror('fixture_note').get('n1')).toEqual({
+       id: 'n1',
+       ownerId: 'u1',
+       title: 't',
+       serverRevSeen: null,
+       deletedAt: null,
+@@ -91,57 +98,90 @@ describe('writeLocal', () => {
+     ).rejects.toThrow('entity_not_journal');
+     await expect(
+       writeLocal(db, { entity: 'nope', id: 'x', kind: 'create', fields: {} }, ctx),
+     ).rejects.toThrow('entity_not_journal');
+     expect(await db.outbox.count()).toBe(0);
+     expect(await db.mirror('fixture_note').count()).toBe(0);
+   });
+ 
+   it('sans consentement : champs et valeurs C2 retirés, table C2 refusée', async () => {
+     const noConsent = { ...ctx, healthConsentActive: false };
+-    const op = await writeLocal(
++    const op = await queued(
+       db,
+       {
+         entity: 'fixture_note_item',
+         id: 'i1',
+         kind: 'create',
+         fields: { noteId: 'n1', label: 'x', painNote: 'TEMOIN', reason: 'pain' },
+       },
+       noConsent,
+     );
+     expect(op.fields).toEqual({ noteId: 'n1', label: 'x' });
+     const row = await db.mirror('fixture_note_item').get('i1');
+     expect(row).not.toHaveProperty('painNote');
+     expect(row).not.toHaveProperty('reason');
+ 
+-    const kept = await writeLocal(
++    const kept = await queued(
+       db,
+       {
+         entity: 'fixture_note_item',
+         id: 'i2',
+         kind: 'create',
+         fields: { noteId: 'n1', label: 'y', reason: 'fatigue' },
+       },
+       noConsent,
+     );
+     expect(kept.fields).toEqual({ noteId: 'n1', label: 'y', reason: 'fatigue' });
+     expect(await db.mirror('fixture_note_item').get('i2')).toMatchObject({ reason: 'fatigue' });
+ 
+     await expect(
+       writeLocal(db, { entity: 'fixture_c2_log', id: 'c1', kind: 'create', fields: { value: 3 } }, noConsent),
+     ).rejects.toBeInstanceOf(HealthConsentRequiredError);
+     expect(await db.mirror('fixture_c2_log').count()).toBe(0);
+     expect(await db.outbox.count()).toBe(2);
+   });
+ 
+-  it('avec consentement : champs C2 gardés', async () => {
++  it('sans consentement : suppression d’une ligne C2 admise (P-CST-2)', async () => {
++    await writeLocal(db, { entity: 'fixture_c2_log', id: 'c1', kind: 'create', fields: { value: 3 } }, ctx);
++    const later = { ...ctx, healthConsentActive: false, now: () => LATER };
++    const del = await queued(db, { entity: 'fixture_c2_log', id: 'c1', kind: 'delete', fields: {} }, later);
++    expect(await db.outbox.get(del.opId)).toMatchObject({ kind: 'delete', entity: 'fixture_c2_log' });
++    expect(await db.mirror('fixture_c2_log').get('c1')).toMatchObject({ deletedAt: LATER, updatedAt: LATER });
++  });
++
++  it('sans consentement : un patch vidé de ses champs C2 n’est pas mis en file', async () => {
++    await writeLocal(
++      db,
++      { entity: 'fixture_note_item', id: 'i1', kind: 'create', fields: { noteId: 'n1', label: 'x' } },
++      ctx,
++    );
++    const later = { ...ctx, healthConsentActive: false, now: () => LATER };
+     const op = await writeLocal(
++      db,
++      { entity: 'fixture_note_item', id: 'i1', kind: 'patch', fields: { painNote: 'TEMOIN' } },
++      later,
++    );
++    expect(op).toBeNull();
++    expect(await db.outbox.count()).toBe(1);
++    expect(await db.mirror('fixture_note_item').get('i1')).toEqual({
++      id: 'i1',
++      ownerId: 'u1',
++      noteId: 'n1',
++      label: 'x',
++      serverRevSeen: null,
++      deletedAt: null,
++      updatedAt: NOW,
++    });
++  });
++
++  it('avec consentement : champs C2 gardés', async () => {
++    const op = await queued(
+       db,
+       {
+         entity: 'fixture_note_item',
+         id: 'i1',
+         kind: 'create',
+         fields: { noteId: 'n1', label: 'x', painNote: 'p' },
+       },
+       ctx,
+     );
+     expect(op.fields).toEqual({ noteId: 'n1', label: 'x', painNote: 'p' });
+@@ -154,21 +194,21 @@ describe('writeLocal', () => {
+     expect(await db.mirror('fixture_note').get('n1')).toEqual({
+       id: 'n1',
+       ownerId: 'u1',
+       title: 't',
+       body: 'b',
+       serverRevSeen: null,
+       deletedAt: null,
+       updatedAt: LATER,
+     });
+     const end = '2026-10-06T12:00:00.000Z';
+-    const del = await writeLocal(
++    const del = await queued(
+       db,
+       { entity: 'fixture_note', id: 'n1', kind: 'delete', fields: {} },
+       {
+         ...ctx,
+         now: () => end,
+       },
+     );
+     expect(del.kind).toBe('delete');
+     expect(await db.mirror('fixture_note').get('n1')).toMatchObject({
+       deletedAt: end,
+diff --git a/vitest.config.ts b/vitest.config.ts
+index c624f85..226f00d 100644
+--- a/vitest.config.ts
++++ b/vitest.config.ts
+@@ -6,17 +6,18 @@ export default defineConfig({
+     globals: false,
+     projects: [
+       { test: { name: 'contracts', root: 'packages/contracts', environment: 'node' } },
+       { test: { name: 'domain', root: 'packages/domain', environment: 'node' } },
+       { test: { name: 'server', root: 'apps/server', environment: 'node' } },
+       {
+         test: {
+           name: 'web',
+           root: 'apps/web',
+           environment: 'happy-dom',
++          setupFiles: ['fake-indexeddb/auto'],
+           include: ['test/**/*.test.{ts,tsx}', 'src/**/*.test.{ts,tsx}'],
+           exclude: ['e2e/**', '**/node_modules/**'],
+         },
+       },
+     ],
+   },
+ });

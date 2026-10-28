@@ -1,0 +1,743 @@
+# Review package: b969e92..HEAD
+
+## Commits
+19836e1 feat(profil): taxonomie du matériel, préréglages, réglages de charge et textes versionnés
+
+## Files changed
+ packages/contracts/src/index.ts               |   5 +
+ packages/contracts/src/load-settings.ts       |  24 ++++
+ packages/contracts/src/presets.ts             |  84 +++++++++++
+ packages/contracts/src/sports.ts              |  30 ++++
+ packages/contracts/src/taxonomy.ts            | 108 ++++++++++++++
+ packages/contracts/src/texts.ts               |  27 ++++
+ packages/contracts/test/load-settings.test.ts |  72 ++++++++++
+ packages/contracts/test/sports-texts.test.ts  |  71 ++++++++++
+ packages/contracts/test/taxonomy.test.ts      | 193 ++++++++++++++++++++++++++
+ packages/domain/src/index.ts                  |   1 +
+ packages/domain/src/text.ts                   |   8 ++
+ packages/domain/test/text.test.ts             |  13 ++
+ 12 files changed, 636 insertions(+)
+
+## Diff
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index 081098f..e8d2c73 100644
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -1,10 +1,15 @@
+ export * from './api/admin';
+ export * from './api/auth';
+ export * from './api/errors';
+ export * from './api/export';
+ export * from './api/health';
+ export * from './auth-constants';
+ export * from './case';
+ export * from './constants';
+ export * from './entity-rules';
++export * from './load-settings';
+ export * from './ops';
++export * from './presets';
++export * from './sports';
++export * from './taxonomy';
++export * from './texts';
+diff --git a/packages/contracts/src/load-settings.ts b/packages/contracts/src/load-settings.ts
+new file mode 100644
+index 0000000..51aa535
+--- /dev/null
++++ b/packages/contracts/src/load-settings.ts
+@@ -0,0 +1,24 @@
++import { z } from 'zod';
++
++export const LoadSettingsSchema = z.strictObject({
++  barG: z.number().int().min(5000).max(25000),
++  smallestPlateG: z.number().int().min(250).max(5000),
++  dumbbellsG: z
++    .array(z.number().int().min(500).max(80000))
++    .max(60)
++    .refine((a) => a.every((v, i) => i === 0 || v > (a[i - 1] as number)), {
++      message: 'dumbbellsG doit être strictement croissant',
++    }),
++  machineStepG: z.number().int().min(500).max(10000),
++});
++
++export type LoadSettings = z.infer<typeof LoadSettingsSchema>;
++
++export function defaultLoadSettings(kind: 'gym' | 'home'): LoadSettings {
++  return {
++    barG: 20000,
++    smallestPlateG: 1250,
++    dumbbellsG: kind === 'gym' ? Array.from({ length: 20 }, (_, i) => 2000 * (i + 1)) : [],
++    machineStepG: 5000,
++  };
++}
+diff --git a/packages/contracts/src/presets.ts b/packages/contracts/src/presets.ts
+new file mode 100644
+index 0000000..00b25a8
+--- /dev/null
++++ b/packages/contracts/src/presets.ts
+@@ -0,0 +1,84 @@
++import { z } from 'zod';
++import { EQUIPMENT, EQUIPMENT_CATEGORIES, type EquipmentCode, REFERENCE_PROFILES } from './taxonomy';
++
++export const PRESET_IDS = [
++  'gym_large',
++  'gym_small',
++  'gym_crossfit',
++  'gym_other',
++  'home_none',
++  'home_small',
++  'home_gym',
++] as const;
++
++export type PresetId = (typeof PRESET_IDS)[number];
++export const PresetIdSchema = z.enum(PRESET_IDS);
++
++export const HOME_DEFAULT_PRESET = 'home_none' satisfies PresetId;
++
++export interface Preset {
++  readonly kind: 'gym' | 'home';
++  readonly label: string;
++  readonly equipment: readonly EquipmentCode[];
++}
++
++const HOUSEHOLD: readonly EquipmentCode[] = EQUIPMENT_CATEGORIES.household;
++
++export const PRESETS: Record<PresetId, Preset> = {
++  gym_large: {
++    kind: 'gym',
++    label: 'Grande salle ou chaîne',
++    equipment: EQUIPMENT.filter((c) => !HOUSEHOLD.includes(c)),
++  },
++  gym_small: {
++    kind: 'gym',
++    label: 'Petite salle de quartier',
++    equipment: [
++      'dumbbells',
++      'barbell',
++      'ez_bar',
++      'flat_bench',
++      'adjustable_bench',
++      'squat_rack',
++      'cable_station',
++      'lat_pulldown',
++      'seated_row',
++      'leg_press',
++      'pull_up_bar',
++      'dip_station',
++    ],
++  },
++  gym_crossfit: {
++    kind: 'gym',
++    label: 'Box de cross-training',
++    equipment: [
++      'barbell',
++      'squat_rack',
++      'dumbbells',
++      'kettlebell',
++      'flat_bench',
++      'pull_up_bar',
++      'suspension_trainer',
++      'box',
++      'resistance_band',
++    ],
++  },
++  gym_other: { kind: 'gym', label: 'Autre', equipment: [] },
++  home_none: { kind: 'home', label: 'Sans matériel', equipment: REFERENCE_PROFILES.home_bodyweight },
++  home_small: { kind: 'home', label: 'Petit matériel', equipment: REFERENCE_PROFILES.home_small_equipment },
++  home_gym: {
++    kind: 'home',
++    label: 'Home gym',
++    equipment: [
++      'chair',
++      'table',
++      'pull_up_bar',
++      'resistance_band',
++      'dumbbells',
++      'kettlebell',
++      'barbell',
++      'squat_rack',
++      'flat_bench',
++    ],
++  },
++};
+diff --git a/packages/contracts/src/sports.ts b/packages/contracts/src/sports.ts
+new file mode 100644
+index 0000000..9e36de7
+--- /dev/null
++++ b/packages/contracts/src/sports.ts
+@@ -0,0 +1,30 @@
++import { z } from 'zod';
++
++export const SPORTS = [
++  { code: 'running', label: 'Course à pied' },
++  { code: 'cycling', label: 'Vélo' },
++  { code: 'swimming', label: 'Natation' },
++  { code: 'football', label: 'Football' },
++  { code: 'rugby', label: 'Rugby' },
++  { code: 'basketball', label: 'Basket' },
++  { code: 'handball', label: 'Handball' },
++  { code: 'tennis', label: 'Tennis' },
++  { code: 'padel', label: 'Padel' },
++  { code: 'badminton', label: 'Badminton' },
++  { code: 'combat_sports', label: 'Sports de combat' },
++  { code: 'climbing', label: 'Escalade' },
++  { code: 'skiing', label: 'Ski' },
++  { code: 'dance', label: 'Danse' },
++  { code: 'other', label: 'Autre' },
++] as const;
++
++export const SPORT_CODES = SPORTS.map((s) => s.code) as unknown as readonly [
++  (typeof SPORTS)[number]['code'],
++  ...(typeof SPORTS)[number]['code'][],
++];
++
++export type SportCode = (typeof SPORTS)[number]['code'];
++export const SportCodeSchema = z.enum(SPORT_CODES);
++
++export const SPORTS_LIST_VERSION = 1;
++export const SPORT_OTHER_LABEL_MAX = 40;
+diff --git a/packages/contracts/src/taxonomy.ts b/packages/contracts/src/taxonomy.ts
+new file mode 100644
+index 0000000..4b6a6e2
+--- /dev/null
++++ b/packages/contracts/src/taxonomy.ts
+@@ -0,0 +1,108 @@
++import { z } from 'zod';
++
++export const EQUIPMENT_CATEGORIES = {
++  household: ['chair', 'table'],
++  small_equipment: ['resistance_band', 'dumbbells', 'kettlebell', 'pull_up_bar', 'suspension_trainer', 'box'],
++  benches_racks: ['flat_bench', 'adjustable_bench', 'squat_rack', 'dip_station', 'back_extension_bench'],
++  free_weights: ['barbell', 'ez_bar'],
++  machines: [
++    'cable_station',
++    'lat_pulldown',
++    'seated_row',
++    'leg_press',
++    'smith_machine',
++    'leg_extension',
++    'leg_curl',
++    'upper_body_machines',
++  ],
++} as const;
++
++export type EquipmentCategory = keyof typeof EQUIPMENT_CATEGORIES;
++
++export const EQUIPMENT_CATEGORY_LABELS: Record<EquipmentCategory, string> = {
++  household: 'Objets du quotidien',
++  small_equipment: 'Petit matériel',
++  benches_racks: 'Bancs et supports',
++  free_weights: 'Charges libres',
++  machines: 'Poulies et machines',
++};
++
++export const EQUIPMENT = [
++  'chair',
++  'table',
++  'resistance_band',
++  'dumbbells',
++  'kettlebell',
++  'pull_up_bar',
++  'suspension_trainer',
++  'box',
++  'flat_bench',
++  'adjustable_bench',
++  'squat_rack',
++  'dip_station',
++  'back_extension_bench',
++  'barbell',
++  'ez_bar',
++  'cable_station',
++  'lat_pulldown',
++  'seated_row',
++  'leg_press',
++  'smith_machine',
++  'leg_extension',
++  'leg_curl',
++  'upper_body_machines',
++] as const;
++
++export type EquipmentCode = (typeof EQUIPMENT)[number];
++export const EquipmentCodeSchema = z.enum(EQUIPMENT);
++
++export const EQUIPMENT_LABELS: Record<EquipmentCode, string> = {
++  chair: 'Chaise ou banc stable',
++  table: 'Table solide (rowing sous la table)',
++  resistance_band: 'Élastiques (bandes, avec poignées ou mini-bandes)',
++  dumbbells: 'Haltères fixes ou réglables',
++  kettlebell: 'Kettlebell',
++  pull_up_bar: 'Barre de traction',
++  suspension_trainer: 'Sangles de suspension ou anneaux',
++  box: 'Box ou step stable',
++  flat_bench: 'Banc plat',
++  adjustable_bench: 'Banc inclinable',
++  squat_rack: 'Cage ou supports à squat avec sécurités',
++  dip_station: 'Barres parallèles',
++  back_extension_bench: 'Banc à lombaires (45° ou GHD)',
++  barbell: 'Barre droite et disques',
++  ez_bar: 'Barre EZ',
++  cable_station: 'Poulie réglable ou vis-à-vis',
++  lat_pulldown: 'Tirage vertical',
++  seated_row: 'Tirage horizontal assis',
++  leg_press: 'Presse à cuisses',
++  smith_machine: 'Barre guidée (Smith)',
++  leg_extension: 'Leg extension',
++  leg_curl: 'Leg curl',
++  upper_body_machines: 'Machines guidées du haut du corps (développé, pec deck, épaules)',
++};
++
++export const EQUIPMENT_IMPLIES: Partial<Record<EquipmentCode, readonly EquipmentCode[]>> = {
++  adjustable_bench: ['flat_bench'],
++};
++
++export const REFERENCE_PROFILES = {
++  home_bodyweight: ['chair', 'table'],
++  home_small_equipment: ['chair', 'table', 'pull_up_bar', 'resistance_band', 'dumbbells'],
++  gym_reference: [
++    'dumbbells',
++    'barbell',
++    'squat_rack',
++    'flat_bench',
++    'adjustable_bench',
++    'dip_station',
++    'pull_up_bar',
++    'cable_station',
++    'lat_pulldown',
++    'seated_row',
++    'leg_press',
++    'leg_extension',
++    'leg_curl',
++    'upper_body_machines',
++  ],
++} as const satisfies Record<string, readonly EquipmentCode[]>;
+diff --git a/packages/contracts/src/texts.ts b/packages/contracts/src/texts.ts
+new file mode 100644
+index 0000000..c1407ee
+--- /dev/null
++++ b/packages/contracts/src/texts.ts
+@@ -0,0 +1,27 @@
++export interface VersionedText {
++  readonly version: string;
++  readonly text: string;
++}
++
++export const HEALTH_CONSENT_TEXT: VersionedText = {
++  version: '1.0',
++  text: "J'accepte qu'appsport enregistre mes données de santé : limitations et zones sensibles, réponses de prudence, douleurs signalées pendant les séances, taille, poids, profil et suivi nutritionnels. Elles servent uniquement à adapter mes séances et mes repères. Elles restent sur le serveur du cercle et l'administrateur ne les consulte pas dans l'appli. Je peux retirer cet accord à tout moment : elles seront alors supprimées.",
++};
++
++// À faire relire par l'admin avant la mise en service (ce qui changera la version).
++export const HEALTH_QUESTIONNAIRE = {
++  version: '1.0',
++  questions: [
++    'As-tu un problème cardiaque connu, ou pratiques-tu une activité physique sous surveillance médicale ?',
++    'As-tu ressenti une douleur à la poitrine pendant un effort, ou perdu connaissance, au cours des 12 derniers mois ?',
++    'As-tu une maladie ou un traitement qui limite ton activité physique ?',
++    "As-tu un problème d'os, d'articulation ou de muscle qui s'aggrave à l'effort ?",
++  ],
++} as const;
++
++const VERSION = /^\d+\.\d+$/;
++
++export function majorOf(version: string): number {
++  if (!VERSION.test(version)) throw new RangeError(`version invalide : ${version}`);
++  return Number(version.split('.')[0]);
++}
+diff --git a/packages/contracts/test/load-settings.test.ts b/packages/contracts/test/load-settings.test.ts
+new file mode 100644
+index 0000000..7593ab8
+--- /dev/null
++++ b/packages/contracts/test/load-settings.test.ts
+@@ -0,0 +1,72 @@
++import { describe, expect, it } from 'vitest';
++import { defaultLoadSettings, LoadSettingsSchema } from '../src/load-settings';
++
++const ok = { barG: 20000, smallestPlateG: 1250, dumbbellsG: [2000, 4000], machineStepG: 5000 };
++
++describe('load-settings', () => {
++  it('fournit les défauts salle et domicile', () => {
++    expect(defaultLoadSettings('gym')).toEqual({
++      barG: 20000,
++      smallestPlateG: 1250,
++      dumbbellsG: Array.from({ length: 20 }, (_, i) => 2000 * (i + 1)),
++      machineStepG: 5000,
++    });
++    expect(defaultLoadSettings('home')).toEqual({
++      barG: 20000,
++      smallestPlateG: 1250,
++      dumbbellsG: [],
++      machineStepG: 5000,
++    });
++  });
++
++  it('renvoie une copie neuve à chaque appel', () => {
++    const a = defaultLoadSettings('gym');
++    a.dumbbellsG.push(1);
++    expect(defaultLoadSettings('gym').dumbbellsG).toHaveLength(20);
++    const h = defaultLoadSettings('home');
++    h.dumbbellsG.push(1);
++    expect(defaultLoadSettings('home').dumbbellsG).toEqual([]);
++  });
++
++  it('valide les défauts', () => {
++    expect(LoadSettingsSchema.safeParse(defaultLoadSettings('gym')).success).toBe(true);
++    expect(LoadSettingsSchema.safeParse(defaultLoadSettings('home')).success).toBe(true);
++  });
++
++  it.each([
++    ['barG 4999', { ...ok, barG: 4999 }],
++    ['barG 25001', { ...ok, barG: 25001 }],
++    ['barG décimal', { ...ok, barG: 20000.5 }],
++    ['smallestPlateG 249', { ...ok, smallestPlateG: 249 }],
++    ['smallestPlateG 5001', { ...ok, smallestPlateG: 5001 }],
++    ['machineStepG 499', { ...ok, machineStepG: 499 }],
++    ['machineStepG 10001', { ...ok, machineStepG: 10001 }],
++    ['haltères décroissants', { ...ok, dumbbellsG: [4000, 2000] }],
++    ['haltères dupliqués', { ...ok, dumbbellsG: [2000, 2000] }],
++    ['61 haltères', { ...ok, dumbbellsG: Array.from({ length: 61 }, (_, i) => 500 + 100 * i) }],
++    ['haltère 400', { ...ok, dumbbellsG: [400] }],
++    ['haltère 80500', { ...ok, dumbbellsG: [80500] }],
++    ['clé inconnue', { barKg: 20, smallestPlateG: 1250, dumbbellsG: [], machineStepG: 5000 }],
++    ['clé en trop', { ...ok, extra: 1 }],
++    ['champ manquant', { barG: 20000, smallestPlateG: 1250, dumbbellsG: [] }],
++  ])('refuse %s', (_name, value) => {
++    expect(LoadSettingsSchema.safeParse(value).success).toBe(false);
++  });
++
++  it('accepte les bornes', () => {
++    const sixty = Array.from({ length: 60 }, (_, i) => 500 + i * 500);
++    expect(sixty[59]).toBe(30000);
++    expect(LoadSettingsSchema.safeParse({ ...ok, dumbbellsG: sixty }).success).toBe(true);
++    for (const v of [
++      { barG: 5000 },
++      { barG: 25000 },
++      { smallestPlateG: 250 },
++      { smallestPlateG: 5000 },
++      { machineStepG: 500 },
++      { machineStepG: 10000 },
++      { dumbbellsG: [80000] },
++    ]) {
++      expect(LoadSettingsSchema.safeParse({ ...ok, ...v }).success).toBe(true);
++    }
++  });
++});
+diff --git a/packages/contracts/test/sports-texts.test.ts b/packages/contracts/test/sports-texts.test.ts
+new file mode 100644
+index 0000000..fc8b1dd
+--- /dev/null
++++ b/packages/contracts/test/sports-texts.test.ts
+@@ -0,0 +1,71 @@
++import { describe, expect, it } from 'vitest';
++import {
++  SPORT_CODES,
++  SPORT_OTHER_LABEL_MAX,
++  SPORTS,
++  SPORTS_LIST_VERSION,
++  SportCodeSchema,
++} from '../src/sports';
++import { HEALTH_CONSENT_TEXT, HEALTH_QUESTIONNAIRE, majorOf } from '../src/texts';
++
++describe('sports', () => {
++  it('liste 15 sports figés', () => {
++    expect(SPORTS).toHaveLength(15);
++    expect(SPORTS.map((s) => s.code)).toEqual([...SPORT_CODES]);
++    expect(SPORTS.map((s) => [s.code, s.label])).toEqual([
++      ['running', 'Course à pied'],
++      ['cycling', 'Vélo'],
++      ['swimming', 'Natation'],
++      ['football', 'Football'],
++      ['rugby', 'Rugby'],
++      ['basketball', 'Basket'],
++      ['handball', 'Handball'],
++      ['tennis', 'Tennis'],
++      ['padel', 'Padel'],
++      ['badminton', 'Badminton'],
++      ['combat_sports', 'Sports de combat'],
++      ['climbing', 'Escalade'],
++      ['skiing', 'Ski'],
++      ['dance', 'Danse'],
++      ['other', 'Autre'],
++    ]);
++    expect(SPORTS_LIST_VERSION).toBe(1);
++    expect(SPORT_OTHER_LABEL_MAX).toBe(40);
++    expect(SportCodeSchema.safeParse('golf').success).toBe(false);
++    expect(SportCodeSchema.safeParse('padel').success).toBe(true);
++  });
++});
++
++describe('textes versionnés', () => {
++  it('consentement santé', () => {
++    expect(HEALTH_CONSENT_TEXT.version).toBe('1.0');
++    expect(HEALTH_CONSENT_TEXT.text).toBe(
++      "J'accepte qu'appsport enregistre mes données de santé : limitations et zones sensibles, réponses de prudence, douleurs signalées pendant les séances, taille, poids, profil et suivi nutritionnels. Elles servent uniquement à adapter mes séances et mes repères. Elles restent sur le serveur du cercle et l'administrateur ne les consulte pas dans l'appli. Je peux retirer cet accord à tout moment : elles seront alors supprimées.",
++    );
++    expect(HEALTH_CONSENT_TEXT.text).toMatch(/^J'accepte qu'appsport enregistre mes données de santé/);
++    expect(HEALTH_CONSENT_TEXT.text).toMatch(/elles seront alors supprimées\.$/);
++    expect(HEALTH_CONSENT_TEXT.text).not.toContain('’');
++  });
++
++  it('questionnaire de prudence', () => {
++    expect(HEALTH_QUESTIONNAIRE.version).toBe('1.0');
++    expect(HEALTH_QUESTIONNAIRE.questions).toHaveLength(4);
++    expect([...HEALTH_QUESTIONNAIRE.questions]).toEqual([
++      'As-tu un problème cardiaque connu, ou pratiques-tu une activité physique sous surveillance médicale ?',
++      'As-tu ressenti une douleur à la poitrine pendant un effort, ou perdu connaissance, au cours des 12 derniers mois ?',
++      'As-tu une maladie ou un traitement qui limite ton activité physique ?',
++      "As-tu un problème d'os, d'articulation ou de muscle qui s'aggrave à l'effort ?",
++    ]);
++    for (const q of HEALTH_QUESTIONNAIRE.questions) {
++      expect(q.endsWith('?')).toBe(true);
++      expect(q).not.toContain('’');
++    }
++  });
++
++  it('majorOf extrait la version majeure', () => {
++    expect(majorOf('1.2')).toBe(1);
++    expect(majorOf('12.0')).toBe(12);
++    expect(() => majorOf('abc')).toThrow();
++    expect(() => majorOf('1')).toThrow();
++  });
++});
+diff --git a/packages/contracts/test/taxonomy.test.ts b/packages/contracts/test/taxonomy.test.ts
+new file mode 100644
+index 0000000..956f3a9
+--- /dev/null
++++ b/packages/contracts/test/taxonomy.test.ts
+@@ -0,0 +1,193 @@
++import { describe, expect, it } from 'vitest';
++import { HOME_DEFAULT_PRESET, PRESET_IDS, PRESETS, PresetIdSchema } from '../src/presets';
++import {
++  EQUIPMENT,
++  EQUIPMENT_CATEGORIES,
++  EQUIPMENT_CATEGORY_LABELS,
++  EQUIPMENT_IMPLIES,
++  EQUIPMENT_LABELS,
++  EquipmentCodeSchema,
++  REFERENCE_PROFILES,
++} from '../src/taxonomy';
++
++describe('taxonomy', () => {
++  it('fige codes, ordre et catégories (R-EQ-1)', () => {
++    expect(EQUIPMENT).toEqual(Object.values(EQUIPMENT_CATEGORIES).flat());
++    expect(EQUIPMENT).toHaveLength(23);
++    expect(EQUIPMENT_CATEGORIES).toEqual({
++      household: ['chair', 'table'],
++      small_equipment: [
++        'resistance_band',
++        'dumbbells',
++        'kettlebell',
++        'pull_up_bar',
++        'suspension_trainer',
++        'box',
++      ],
++      benches_racks: ['flat_bench', 'adjustable_bench', 'squat_rack', 'dip_station', 'back_extension_bench'],
++      free_weights: ['barbell', 'ez_bar'],
++      machines: [
++        'cable_station',
++        'lat_pulldown',
++        'seated_row',
++        'leg_press',
++        'smith_machine',
++        'leg_extension',
++        'leg_curl',
++        'upper_body_machines',
++      ],
++    });
++    expect(EQUIPMENT_CATEGORY_LABELS).toEqual({
++      household: 'Objets du quotidien',
++      small_equipment: 'Petit matériel',
++      benches_racks: 'Bancs et supports',
++      free_weights: 'Charges libres',
++      machines: 'Poulies et machines',
++    });
++  });
++
++  it('porte les libellés exacts', () => {
++    expect(EQUIPMENT_LABELS.squat_rack).toBe('Cage ou supports à squat avec sécurités');
++    expect(EQUIPMENT_LABELS.chair).toBe('Chaise ou banc stable');
++    expect(Object.keys(EQUIPMENT_LABELS)).toEqual([...EQUIPMENT]);
++    expect(EQUIPMENT_LABELS).toEqual({
++      chair: 'Chaise ou banc stable',
++      table: 'Table solide (rowing sous la table)',
++      resistance_band: 'Élastiques (bandes, avec poignées ou mini-bandes)',
++      dumbbells: 'Haltères fixes ou réglables',
++      kettlebell: 'Kettlebell',
++      pull_up_bar: 'Barre de traction',
++      suspension_trainer: 'Sangles de suspension ou anneaux',
++      box: 'Box ou step stable',
++      flat_bench: 'Banc plat',
++      adjustable_bench: 'Banc inclinable',
++      squat_rack: 'Cage ou supports à squat avec sécurités',
++      dip_station: 'Barres parallèles',
++      back_extension_bench: 'Banc à lombaires (45° ou GHD)',
++      barbell: 'Barre droite et disques',
++      ez_bar: 'Barre EZ',
++      cable_station: 'Poulie réglable ou vis-à-vis',
++      lat_pulldown: 'Tirage vertical',
++      seated_row: 'Tirage horizontal assis',
++      leg_press: 'Presse à cuisses',
++      smith_machine: 'Barre guidée (Smith)',
++      leg_extension: 'Leg extension',
++      leg_curl: 'Leg curl',
++      upper_body_machines: 'Machines guidées du haut du corps (développé, pec deck, épaules)',
++    });
++  });
++
++  it('banc inclinable implique banc plat (R-EQ-2)', () => {
++    expect(EQUIPMENT_IMPLIES).toEqual({ adjustable_bench: ['flat_bench'] });
++  });
++
++  it('fige les profils de référence', () => {
++    expect(REFERENCE_PROFILES.home_bodyweight).toEqual(['chair', 'table']);
++    expect(REFERENCE_PROFILES.home_small_equipment).toEqual([
++      'chair',
++      'table',
++      'pull_up_bar',
++      'resistance_band',
++      'dumbbells',
++    ]);
++    expect(REFERENCE_PROFILES.gym_reference).toEqual([
++      'dumbbells',
++      'barbell',
++      'squat_rack',
++      'flat_bench',
++      'adjustable_bench',
++      'dip_station',
++      'pull_up_bar',
++      'cable_station',
++      'lat_pulldown',
++      'seated_row',
++      'leg_press',
++      'leg_extension',
++      'leg_curl',
++      'upper_body_machines',
++    ]);
++  });
++
++  it('refuse un code inconnu', () => {
++    expect(EquipmentCodeSchema.safeParse('cardio').success).toBe(false);
++    expect(EquipmentCodeSchema.safeParse('barbell').success).toBe(true);
++  });
++});
++
++describe('presets', () => {
++  it('porte les 7 préréglages (R-MAT-2)', () => {
++    expect([...PRESET_IDS]).toEqual([
++      'gym_large',
++      'gym_small',
++      'gym_crossfit',
++      'gym_other',
++      'home_none',
++      'home_small',
++      'home_gym',
++    ]);
++    expect(HOME_DEFAULT_PRESET).toBe('home_none');
++    expect(PresetIdSchema.safeParse('gym_huge').success).toBe(false);
++  });
++
++  it('compose le matériel de chaque préréglage', () => {
++    const household: readonly string[] = EQUIPMENT_CATEGORIES.household;
++    expect(PRESETS.gym_large.equipment).toEqual(EQUIPMENT.filter((c) => !household.includes(c)));
++    expect(PRESETS.home_none.equipment).toEqual(REFERENCE_PROFILES.home_bodyweight);
++    expect(PRESETS.home_small.equipment).toEqual(REFERENCE_PROFILES.home_small_equipment);
++    expect(PRESETS.gym_small.equipment).toEqual([
++      'dumbbells',
++      'barbell',
++      'ez_bar',
++      'flat_bench',
++      'adjustable_bench',
++      'squat_rack',
++      'cable_station',
++      'lat_pulldown',
++      'seated_row',
++      'leg_press',
++      'pull_up_bar',
++      'dip_station',
++    ]);
++    expect(PRESETS.gym_crossfit.equipment).toEqual([
++      'barbell',
++      'squat_rack',
++      'dumbbells',
++      'kettlebell',
++      'flat_bench',
++      'pull_up_bar',
++      'suspension_trainer',
++      'box',
++      'resistance_band',
++    ]);
++    expect(PRESETS.home_gym.equipment).toEqual([
++      'chair',
++      'table',
++      'pull_up_bar',
++      'resistance_band',
++      'dumbbells',
++      'kettlebell',
++      'barbell',
++      'squat_rack',
++      'flat_bench',
++    ]);
++    expect(PRESETS.gym_other.equipment).toEqual([]);
++  });
++
++  it('porte libellés et kind, sans household en salle (R-EQ-3)', () => {
++    expect(PRESETS.gym_large.label).toBe('Grande salle ou chaîne');
++    expect(PRESETS.gym_small.label).toBe('Petite salle de quartier');
++    expect(PRESETS.gym_crossfit.label).toBe('Box de cross-training');
++    expect(PRESETS.gym_other.label).toBe('Autre');
++    expect(PRESETS.home_none.label).toBe('Sans matériel');
++    expect(PRESETS.home_small.label).toBe('Petit matériel');
++    expect(PRESETS.home_gym.label).toBe('Home gym');
++    const household: readonly string[] = EQUIPMENT_CATEGORIES.household;
++    for (const id of PRESET_IDS) {
++      const p = PRESETS[id];
++      expect(p.kind).toBe(id.startsWith('gym_') ? 'gym' : 'home');
++      if (p.kind === 'gym') {
++        for (const c of p.equipment) expect(household).not.toContain(c);
++      }
++    }
++  });
++});
+diff --git a/packages/domain/src/index.ts b/packages/domain/src/index.ts
+index 8cc1347..d33bcc3 100644
+--- a/packages/domain/src/index.ts
++++ b/packages/domain/src/index.ts
+@@ -1,6 +1,7 @@
+ export * from './age';
+ export * from './auth/password';
+ export * from './auth/secret-code';
+ export * from './auth/username';
+ export * from './cautious';
+ export * from './ids';
++export * from './text';
+diff --git a/packages/domain/src/text.ts b/packages/domain/src/text.ts
+new file mode 100644
+index 0000000..44dc314
+--- /dev/null
++++ b/packages/domain/src/text.ts
+@@ -0,0 +1,8 @@
++export function normalize(input: string): string {
++  return input
++    .toLowerCase()
++    .normalize('NFD')
++    .replace(/\p{M}/gu, '')
++    .replace(/[^\p{L}\p{N}]+/gu, ' ')
++    .trim();
++}
+diff --git a/packages/domain/test/text.test.ts b/packages/domain/test/text.test.ts
+new file mode 100644
+index 0000000..5ac3d5e
+--- /dev/null
++++ b/packages/domain/test/text.test.ts
+@@ -0,0 +1,13 @@
++import { describe, expect, it } from 'vitest';
++import { normalize } from '../src/text';
++
++describe('normalize (R-SAL-3)', () => {
++  it.each([
++    ['Basic-Fit  Lyon Part-Dieu', 'basic fit lyon part dieu'],
++    ['Salle Énergie', 'salle energie'],
++    ["L'Orange Bleue — Saint-Étienne", 'l orange bleue saint etienne'],
++    ['  Fitness   Park!! ', 'fitness park'],
++    ['Crossfit 69', 'crossfit 69'],
++    ['', ''],
++  ])('%s → %s', (i, o) => expect(normalize(i)).toBe(o));
++});

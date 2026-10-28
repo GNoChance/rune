@@ -1,0 +1,1193 @@
+# Review package: cfda9c6..HEAD
+
+## Commits
+89d4a9a test(pwa): harnais E2E, arrivée et hors ligne sous Chromium et WebKit
+
+## Files changed
+ .github/workflows/ci.yml             |  23 +++
+ apps/web/e2e/arrival.spec.ts         | 119 +++++++++++++
+ apps/web/e2e/offline.spec.ts         |  70 ++++++++
+ apps/web/e2e/support/fixtures.ts     |  82 +++++++++
+ apps/web/e2e/support/flows.ts        |  99 +++++++++++
+ apps/web/e2e/support/global-setup.ts |  20 +++
+ apps/web/e2e/support/pwa.ts          | 177 +++++++++++++++++++
+ apps/web/e2e/support/server.ts       | 318 +++++++++++++++++++++++++++++++++++
+ apps/web/package.json                |   2 +
+ apps/web/playwright.config.ts        |  27 +++
+ pnpm-lock.yaml                       |  28 +++
+ 11 files changed, 965 insertions(+)
+
+## Diff
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 44a789d..88a68c4 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -47,10 +47,33 @@ jobs:
+     runs-on: ubuntu-latest
+     steps:
+       - uses: actions/checkout@v4
+       - uses: pnpm/action-setup@v4
+       - uses: actions/setup-node@v4
+         with:
+           node-version-file: .node-version
+           cache: pnpm
+       - run: pnpm install --frozen-lockfile
+       - run: pnpm test
++
++  # R-TST-1 : E2E Chromium (Pixel 7) et WebKit (iPhone 14), bloquant ; WebKit avec service worker fait foi ici.
++  e2e:
++    runs-on: ubuntu-latest
++    timeout-minutes: 30
++    steps:
++      - uses: actions/checkout@v4
++      - uses: pnpm/action-setup@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version-file: .node-version
++          cache: pnpm
++      - run: pnpm install --frozen-lockfile
++      - run: pnpm --filter @appsport/web exec playwright install --with-deps chromium webkit
++      - run: pnpm --filter @appsport/web test:e2e
++      - if: failure()
++        uses: actions/upload-artifact@v4
++        with:
++          name: playwright-report
++          path: |
++            apps/web/playwright-report
++            apps/web/test-results
++          retention-days: 7
+diff --git a/apps/web/e2e/arrival.spec.ts b/apps/web/e2e/arrival.spec.ts
+new file mode 100644
+index 0000000..3da7230
+--- /dev/null
++++ b/apps/web/e2e/arrival.spec.ts
+@@ -0,0 +1,119 @@
++import type { Locator, Page } from '@playwright/test';
++import { expect, test } from './support/fixtures';
++import { completeOnboardingViaUi, createAccountViaUi } from './support/flows';
++import {
++  emulateStandalone,
++  metaValue,
++  requireServiceWorker,
++  swStatus,
++  waitForController,
++} from './support/pwa';
++import { bootstrapAdmin } from './support/server';
++
++/** Paysage (WCAG 2.1 SC 1.3.4) : pas de défilement horizontal, action principale entière dans la largeur. */
++async function expectUsableInLandscape(page: Page, action: Locator): Promise<void> {
++  // Largeur de l'appareil, pas `innerWidth` : en émulation mobile, Chromium élargit la vue de mise en page
++  // au contenu qui déborde.
++  const width = page.viewportSize()?.width ?? 0;
++  const scrollWidth = await page.evaluate(
++    () => (document.scrollingElement ?? document.documentElement).scrollWidth,
++  );
++  expect(scrollWidth).toBeLessThanOrEqual(width);
++  await action.scrollIntoViewIfNeeded();
++  await expect(action).toBeVisible();
++  await expect(action).toBeEnabled();
++  const box = await action.boundingBox();
++  expect(box).not.toBeNull();
++  expect(box && box.x >= 0 && box.x + box.width <= width).toBe(true);
++}
++
++// 01 §9.1.6 scénario 1 (sans séance, brique 3) ; 02 §3 (R-ARR-1, R-INV-4, R-INV-5, R-CPT-2), §8 E8 ;
++// R-SYN-31, R-SYN-33 ; Review Focus 5 (cookie et Origin sous WebKit).
++test('arrivée : admin installé, session protégée, puis un membre invité par code', async ({
++  server,
++  context,
++  page,
++  newContext,
++  browserName,
++}) => {
++  await test.step("admin : lien d'amorçage dans l'appli installée, compte puis onboarding", async () => {
++    await emulateStandalone(context);
++    const { link } = await bootstrapAdmin(server);
++    await page.goto(link);
++    await requireServiceWorker(page);
++    // R-INV-4 : le fragment qui porte le code quitte l'adresse dès la lecture.
++    await expect(page).toHaveURL(`${server.url}/invite`);
++    // R-ARR-1 : dans l'appli installée, le lien mène directement à la création du compte.
++    await createAccountViaUi(page, 'camille');
++    await expect(page.getByTestId('onboarding-step')).toHaveAttribute('data-step', 'goal');
++    await completeOnboardingViaUi(page, {
++      place: { kind: 'gym', name: 'Fitness Park Nation', city: 'Paris' },
++    });
++    await expect(page).toHaveURL(`${server.url}/`);
++    await waitForController(page);
++    expect((await swStatus(page))?.shellCached).toBe(true);
++    // R-CPT-2, R-SYN-31 : stockage persistant demandé, résultat noté (accordé ou non).
++    await expect.poll(async () => typeof (await metaValue(page, 'persistGranted'))).toBe('boolean');
++  });
++
++  await test.step("session : cookie dev-session et contrôle de l'Origin", async () => {
++    const cookies = await context.cookies(server.url);
++    expect(cookies.find((c) => c.name === '__Host-session')).toBeUndefined();
++    // WebKit sous Windows (WinCairo) ne garde pas SameSite (lu « None ») : la CI Linux fait foi.
++    const sameSiteKept = !(browserName === 'webkit' && process.platform === 'win32');
++    expect(cookies.find((c) => c.name === 'dev-session')).toMatchObject({
++      httpOnly: true,
++      secure: false,
++      path: '/',
++      ...(sameSiteKept ? { sameSite: 'Lax' } : {}),
++    });
++    const sameOrigin = await page.evaluate(async () => {
++      const res = await fetch('/api/me', {
++        method: 'PATCH',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ username: 'camille' }),
++      });
++      return res.status;
++    });
++    expect(sameOrigin).toBe(200);
++    const forged = await page.request.patch(`${server.url}/api/me`, {
++      headers: { Origin: 'http://evil.example' },
++      data: { username: 'camille' },
++    });
++    expect(forged.status()).toBe(403);
++    expect(await forged.json()).toEqual({ error: 'origin_mismatch' });
++  });
++
++  await test.step('membre : code saisi en minuscules avec espaces, puis onboarding maison', async () => {
++    const created = await page.request.post(`${server.url}/api/admin/invitations`, {
++      headers: { Origin: server.url },
++      data: { birthDate: '1995-03-14' },
++    });
++    expect(created.status()).toBe(201);
++    const { code } = (await created.json()) as { code: string };
++
++    const memberContext = await newContext();
++    await emulateStandalone(memberContext);
++    const member = await memberContext.newPage();
++    await member.goto(`${server.url}/invite`);
++    await requireServiceWorker(member);
++    await expect(member.getByText('hébergé chez Alex')).toBeVisible();
++
++    // WCAG 2.1 SC 1.3.4 : l'écran reste utilisable une fois le téléphone tourné.
++    const portrait = member.viewportSize();
++    if (!portrait) throw new Error('viewport du projet absent');
++    await member.setViewportSize({ width: portrait.height, height: portrait.width });
++    // R-INV-5 : saisie tolérante (casse, espaces à la place des tirets).
++    await member
++      .getByLabel("Lien ou code d'invitation", { exact: true })
++      .fill(code.toLowerCase().replaceAll('-', ' '));
++    const next = member.getByRole('button', { name: 'Suivant', exact: true });
++    await expectUsableInLandscape(member, next);
++    await next.click();
++    await member.setViewportSize(portrait);
++
++    await createAccountViaUi(member, 'lea');
++    await completeOnboardingViaUi(member, { place: { kind: 'home' } });
++    await expect(member).toHaveURL(`${server.url}/`);
++  });
++});
+diff --git a/apps/web/e2e/offline.spec.ts b/apps/web/e2e/offline.spec.ts
+new file mode 100644
+index 0000000..2db12fb
+--- /dev/null
++++ b/apps/web/e2e/offline.spec.ts
+@@ -0,0 +1,70 @@
++import { expect, test } from './support/fixtures';
++import { loginViaUi, setupOnboardedAdmin } from './support/flows';
++import { idbGetAll, triggerForeground } from './support/pwa';
++
++// 01 §9.1.6 scénario 2 (sans séance, brique 3) : hors ligne simulé par `context.setOffline(true)` puis par
++// des requêtes qui n'aboutissent pas (délai de 4 s, R-SYN-30), retour du réseau, vue d'un second contexte.
++test('hors ligne : coquille du cache, état de connexion, profil et second appareil', async ({
++  server,
++  context,
++  newContext,
++}) => {
++  const page = await setupOnboardedAdmin(server, context);
++  const connection = page.getByTestId('connection-status');
++  const username = page.getByLabel('Pseudo', { exact: true });
++  const saveUsername = page.getByRole('button', { name: 'Enregistrer le pseudo', exact: true });
++
++  // Pas de navigation sous `setOffline` : WebKit y fait échouer même une navigation servie par le SW
++  // (« WebKit encountered an internal error »). Le rechargement à froid hors ligne passe par l'étape suivante.
++  await test.step('réseau coupé (context.setOffline)', async () => {
++    await context.setOffline(true);
++    await triggerForeground(page);
++    await expect(connection).toHaveAttribute('data-state', 'offline', { timeout: 5_000 });
++    await page.getByRole('link', { name: 'Profil', exact: true }).click();
++    await expect(username).toHaveValue('camille');
++    // Classe E (API en ligne) : refusée hors ligne avec « Nécessite le réseau ».
++    await username.fill('camille-sans-reseau');
++    await saveUsername.click();
++    await expect(page.getByText('Nécessite le réseau', { exact: true })).toBeVisible();
++    await context.setOffline(false);
++    await expect(connection).toHaveAttribute('data-state', 'online', { timeout: 15_000 });
++  });
++
++  await test.step('requêtes sans réponse (VPN coupé) alors que navigator.onLine reste vrai', async () => {
++    server.setFault({ kind: 'blackhole' });
++    await page.reload({ waitUntil: 'domcontentloaded' });
++    await connection.waitFor({ state: 'attached' });
++    await expect(connection).toHaveAttribute('data-state', 'offline', { timeout: 5_000 });
++    expect(await page.evaluate(() => navigator.onLine)).toBe(true);
++    await page.goto(`${server.url}/profile`, { waitUntil: 'domcontentloaded' });
++    await expect(username).toHaveValue('camille');
++    server.setFault(null);
++    await triggerForeground(page);
++    await expect(connection).toHaveAttribute('data-state', 'online', { timeout: 15_000 });
++  });
++
++  await test.step('second appareil : le nouveau pseudo arrive par la synchro', async () => {
++    const otherContext = await newContext();
++    const other = await otherContext.newPage();
++    await other.goto(`${server.url}/login`);
++    await loginViaUi(other, 'camille');
++    await expect(other).toHaveURL(`${server.url}/`);
++
++    await username.fill('camille2');
++    const [renamed] = await Promise.all([
++      page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().endsWith('/api/me')),
++      saveUsername.click(),
++    ]);
++    expect(renamed.status()).toBe(200);
++
++    await expect
++      .poll(
++        async () => {
++          await triggerForeground(other);
++          return (await idbGetAll<{ username: string }>(other, 'user')).map((u) => u.username);
++        },
++        { timeout: 15_000 },
++      )
++      .toContain('camille2');
++  });
++});
+diff --git a/apps/web/e2e/support/fixtures.ts b/apps/web/e2e/support/fixtures.ts
+new file mode 100644
+index 0000000..312e222
+--- /dev/null
++++ b/apps/web/e2e/support/fixtures.ts
+@@ -0,0 +1,82 @@
++import { type BrowserContext, test as base, expect } from '@playwright/test';
++import { type E2EServer, startE2EServer } from './server';
++
++export { expect } from '@playwright/test';
++export { DEFAULT_PUBLIC_DIR, REPO_ROOT } from './server';
++
++const CSP_MARKER = 'Content Security Policy';
++
++interface E2EFixtures {
++  /** Options de `startE2EServer` (`test.use({ serverOptions: … })`). */
++  serverOptions: Parameters<typeof startE2EServer>[0];
++  /** Serveur neuf par test, fermé (`close()`) à la fin. */
++  server: E2EServer;
++  /**
++   * Second appareil : contexte avec les options du projet (appareil, langue, fuseau, SW), surveillé comme
++   * `context`, fermé à la fin du test. `browser.newContext()` seul n'hérite pas de ces options.
++   */
++  newContext(): Promise<BrowserContext>;
++  /** Messages de console qui citent la CSP (P-LOG-4), tous contextes confondus ; le test échoue s'il y en a. */
++  cspViolations: string[];
++}
++
++function watchCsp(context: BrowserContext, violations: string[]): void {
++  context.on('console', (message) => {
++    if (message.text().includes(CSP_MARKER)) violations.push(message.text());
++  });
++}
++
++export const test = base.extend<E2EFixtures>({
++  serverOptions: [{}, { option: true }],
++  server: async ({ serverOptions }, use) => {
++    const server = await startE2EServer(serverOptions);
++    try {
++      await use(server);
++    } finally {
++      await server.close();
++    }
++  },
++  // biome-ignore lint/correctness/noEmptyPattern: Playwright exige un premier argument déstructuré.
++  cspViolations: async ({}, use) => {
++    const violations: string[] = [];
++    await use(violations);
++    expect(violations, CSP_MARKER).toEqual([]);
++  },
++  context: async ({ context, cspViolations }, use) => {
++    watchCsp(context, cspViolations);
++    await use(context);
++  },
++  newContext: async (
++    {
++      browser,
++      cspViolations,
++      viewport,
++      userAgent,
++      deviceScaleFactor,
++      isMobile,
++      hasTouch,
++      locale,
++      timezoneId,
++      serviceWorkers,
++    },
++    use,
++  ) => {
++    const created: BrowserContext[] = [];
++    await use(async () => {
++      const context = await browser.newContext({
++        viewport,
++        userAgent,
++        deviceScaleFactor,
++        isMobile,
++        hasTouch,
++        locale,
++        timezoneId,
++        serviceWorkers,
++      });
++      created.push(context);
++      watchCsp(context, cspViolations);
++      return context;
++    });
++    await Promise.all(created.map((context) => context.close()));
++  },
++});
+diff --git a/apps/web/e2e/support/flows.ts b/apps/web/e2e/support/flows.ts
+new file mode 100644
+index 0000000..d67207d
+--- /dev/null
++++ b/apps/web/e2e/support/flows.ts
+@@ -0,0 +1,99 @@
++import { EXPERIENCE_LABELS, GOAL_LABELS, PRESETS } from '@appsport/contracts';
++import { type BrowserContext, expect, type Page } from '@playwright/test';
++import { emulateStandalone, requireServiceWorker, waitForController } from './pwa';
++import { bootstrapAdmin, type E2EServer } from './server';
++
++// Parcours d'écran communs aux E2E, par les libellés exacts des composants (Interfaces §6, `exact: true`).
++
++/** 31 points de code : au-dessus du minimum admin de 14 (R-MDP-1), pas de changement imposé. */
++export const E2E_PASSWORD = 'cheval agrafe batterie correcte';
++
++const READY_TIMEOUT_MS = 30_000;
++
++const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
++
++/** Formulaire « Crée ton compte » déjà affiché ; attend l'onboarding (R-CPT-2). */
++export async function createAccountViaUi(page: Page, username: string): Promise<void> {
++  await page.getByLabel('Pseudo', { exact: true }).fill(username);
++  await page.getByLabel('Mot de passe', { exact: true }).fill(E2E_PASSWORD);
++  await page.getByLabel('Confirmation', { exact: true }).fill(E2E_PASSWORD);
++  await page.getByLabel("J'ai lu la page Confidentialité et règles", { exact: true }).check();
++  await button(page, 'Créer mon compte').click();
++  await page.waitForURL((url) => url.pathname === '/onboarding');
++}
++
++/**
++ * Les 8 écrans de l'onboarding (02 §8) depuis l'objectif : chaque écran est attendu par son `data-step`,
++ * puis E8 « Commencer » une fois le voyant « Prêt hors ligne » au vert (R-SYN-33) ; attend l'accueil.
++ */
++export async function completeOnboardingViaUi(
++  page: Page,
++  o: { place: { kind: 'gym'; name: string; city: string } | { kind: 'home' } },
++): Promise<void> {
++  const current = page.getByTestId('onboarding-step');
++  const at = (step: string) => expect(current).toHaveAttribute('data-step', step);
++  const choose = (name: string) => current.getByRole('radio', { name, exact: true }).check();
++  const next = () => button(page, 'Suivant').click();
++
++  await at('goal');
++  await choose(GOAL_LABELS.muscle);
++  await next();
++  await at('sport');
++  await choose('Non');
++  await next();
++  await at('place_kind');
++  await choose(o.place.kind === 'gym' ? 'À la salle' : 'À la maison');
++  await next();
++  await at('place');
++  if (o.place.kind === 'gym') {
++    await button(page, "Ma salle n'est pas dans la liste").click();
++    await page.getByLabel('Nom de la salle', { exact: true }).fill(o.place.name);
++    await page.getByLabel('Ville', { exact: true }).fill(o.place.city);
++    await button(page, 'Continuer').click();
++    await choose(PRESETS.gym_small.label);
++    // La salle créée valide l'écran : pas de « Suivant ».
++    await button(page, 'Créer la salle').click();
++  } else {
++    // « Nom du lieu » prérempli.
++    await next();
++  }
++  await at('experience');
++  await choose(EXPERIENCE_LABELS.none);
++  await next();
++  await at('availability');
++  await choose('3');
++  await choose('45 min');
++  await next();
++  await at('health');
++  await next();
++  await at('ready');
++  await expect(page.getByTestId('offline-ready')).toHaveAttribute('data-state', 'ready', {
++    timeout: READY_TIMEOUT_MS,
++  });
++  await button(page, 'Commencer').click();
++  await page.waitForURL((url) => url.pathname === '/');
++}
++
++/** Administrateur amorcé (lien), compte créé et onboarding fini (maison) dans l'appli installée ; page contrôlée par le SW. */
++export async function setupOnboardedAdmin(
++  server: E2EServer,
++  context: BrowserContext,
++  username = 'camille',
++): Promise<Page> {
++  await emulateStandalone(context);
++  const { link } = await bootstrapAdmin(server);
++  const page = await context.newPage();
++  await page.goto(link);
++  await requireServiceWorker(page);
++  await createAccountViaUi(page, username);
++  await completeOnboardingViaUi(page, { place: { kind: 'home' } });
++  await waitForController(page);
++  return page;
++}
++
++/** Formulaire de connexion déjà affiché (/login). */
++export async function loginViaUi(page: Page, username: string): Promise<void> {
++  await page.getByLabel('Pseudo', { exact: true }).fill(username);
++  await page.getByLabel('Mot de passe', { exact: true }).fill(E2E_PASSWORD);
++  await button(page, 'Se connecter').click();
++}
+diff --git a/apps/web/e2e/support/global-setup.ts b/apps/web/e2e/support/global-setup.ts
+new file mode 100644
+index 0000000..a2964e6
+--- /dev/null
++++ b/apps/web/e2e/support/global-setup.ts
+@@ -0,0 +1,20 @@
++import { mkdirSync } from 'node:fs';
++import { build } from 'vite';
++import { E2E_DATA_DIR, WEB_DIR } from './server';
++
++/**
++ * Build de production dans apps/web/dist, avec le chargeur de configuration du script `build` du paquet
++ * (`vite build --configLoader runner`) ; prénom du porteur « Alex » (page d'invitation : « hébergé chez
++ * Alex »). Puis `.e2e-data/`, où chaque serveur de test crée son dossier de données.
++ */
++export default async function globalSetup(): Promise<void> {
++  const previous = process.env.VITE_OWNER_FIRST_NAME;
++  process.env.VITE_OWNER_FIRST_NAME = 'Alex';
++  try {
++    await build({ root: WEB_DIR, configLoader: 'runner', logLevel: 'error' });
++  } finally {
++    if (previous === undefined) delete process.env.VITE_OWNER_FIRST_NAME;
++    else process.env.VITE_OWNER_FIRST_NAME = previous;
++  }
++  mkdirSync(E2E_DATA_DIR, { recursive: true });
++}
+diff --git a/apps/web/e2e/support/pwa.ts b/apps/web/e2e/support/pwa.ts
+new file mode 100644
+index 0000000..cd6a16b
+--- /dev/null
++++ b/apps/web/e2e/support/pwa.ts
+@@ -0,0 +1,177 @@
++import { SYNC_PROTOCOL, SyncOp } from '@appsport/contracts';
++import { type BrowserContext, expect, type Page, test } from '@playwright/test';
++import type { OutboxOp } from '../../src/local-db/db';
++import type { SwStatus } from '../../src/sw/protocol';
++
++// Outils PWA des E2E : appli installée, service worker, caches et base locale lus depuis la page.
++
++const LOCAL_DB_NAME = 'appsport';
++const SW_SKIP_REASON = 'WebKit sous Windows : la CI Linux fait foi';
++
++/** Appli installée (R-ARR-1) : `display-mode: standalone` et `navigator.standalone`, avant tout script de la page. */
++export async function emulateStandalone(context: BrowserContext): Promise<void> {
++  await context.addInitScript(() => {
++    const original = window.matchMedia.bind(window);
++    window.matchMedia = (query: string): MediaQueryList => {
++      if (!/display-mode:\s*standalone/.test(query)) return original(query);
++      return {
++        matches: true,
++        media: query,
++        onchange: null,
++        addListener: () => {},
++        removeListener: () => {},
++        addEventListener: () => {},
++        removeEventListener: () => {},
++        dispatchEvent: () => false,
++      };
++    };
++    Object.defineProperty(navigator, 'standalone', { configurable: true, get: () => true });
++  });
++}
++
++/**
++ * Service worker exigé (R-TST-1) : sans lui, erreur en CI ; ailleurs le test est sauté (WebKit sous
++ * Windows n'a pas de SW, la CI Linux fait foi).
++ */
++export async function requireServiceWorker(page: Page): Promise<void> {
++  if (await page.evaluate(() => 'serviceWorker' in navigator)) return;
++  if (process.env.CI)
++    throw new Error('Service worker indisponible dans ce navigateur : exigé en CI (R-TST-1).');
++  test.skip(true, SW_SKIP_REASON);
++}
++
++export async function waitForController(page: Page): Promise<void> {
++  await page.waitForFunction(() => navigator.serviceWorker?.controller != null);
++}
++
++/** `GET_STATUS` au SW qui contrôle la page ; `null` sans contrôleur ou sans réponse en 1 s. */
++export async function swStatus(page: Page): Promise<SwStatus | null> {
++  return page.evaluate(
++    () =>
++      new Promise<SwStatus | null>((resolve) => {
++        const controller = navigator.serviceWorker?.controller;
++        if (!controller) {
++          resolve(null);
++          return;
++        }
++        const channel = new MessageChannel();
++        const timer = setTimeout(() => resolve(null), 1000);
++        channel.port1.onmessage = (event: MessageEvent) => {
++          clearTimeout(timer);
++          resolve(event.data as SwStatus);
++        };
++        controller.postMessage({ type: 'GET_STATUS' }, [channel.port2]);
++      }),
++  );
++}
++
++export async function waitForWaitingWorker(page: Page): Promise<void> {
++  await expect
++    .poll(() => page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.waiting != null))
++    .toBe(true);
++}
++
++export async function registrationCount(page: Page): Promise<number> {
++  return page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length);
++}
++
++export async function cacheNames(page: Page): Promise<string[]> {
++  return page.evaluate(() => caches.keys());
++}
++
++type IdbAction =
++  | { op: 'getAll'; store: string }
++  | { op: 'get'; store: string; key: string }
++  | { op: 'put'; store: string; value: unknown }
++  | { op: 'version' };
++
++/** Accès direct à la base Dexie de la page (IndexedDB natif, version courante, sans montée de version). */
++function idb(page: Page, action: IdbAction): Promise<unknown> {
++  return page.evaluate(
++    ({ name, action }) =>
++      new Promise<unknown>((resolve, reject) => {
++        const open = indexedDB.open(name);
++        open.onerror = () => reject(open.error);
++        open.onsuccess = () => {
++          const db = open.result;
++          if (action.op === 'version') {
++            db.close();
++            resolve(db.version);
++            return;
++          }
++          const tx = db.transaction(action.store, action.op === 'put' ? 'readwrite' : 'readonly');
++          const store = tx.objectStore(action.store);
++          const request =
++            action.op === 'getAll'
++              ? store.getAll()
++              : action.op === 'get'
++                ? store.get(action.key)
++                : store.put(action.value);
++          let result: unknown;
++          request.onsuccess = () => {
++            result = request.result;
++          };
++          tx.oncomplete = () => {
++            db.close();
++            resolve(result);
++          };
++          tx.onerror = () => {
++            db.close();
++            reject(tx.error);
++          };
++        };
++      }),
++    { name: LOCAL_DB_NAME, action },
++  );
++}
++
++export async function idbGetAll<T = Record<string, unknown>>(page: Page, store: string): Promise<T[]> {
++  return (await idb(page, { op: 'getAll', store })) as T[];
++}
++
++export async function idbPut(page: Page, store: string, value: unknown): Promise<void> {
++  await idb(page, { op: 'put', store, value });
++}
++
++/** Version IndexedDB : Dexie stocke `LOCAL_DB_VERSION * 10`. */
++export async function idbVersion(page: Page): Promise<number> {
++  return (await idb(page, { op: 'version' })) as number;
++}
++
++/** Valeur de `meta` (`{ key, value }`) ; `undefined` si la clé est absente. */
++export async function metaValue(page: Page, key: string): Promise<unknown> {
++  const row = (await idb(page, { op: 'get', store: 'meta', key })) as { value: unknown } | undefined;
++  return row?.value;
++}
++
++/** Retour au premier plan (`visibilitychange`, page visible) : déclencheur de synchro (R-SYN-29). */
++export async function triggerForeground(page: Page): Promise<void> {
++  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
++}
++
++const FAKE_TS = '2026-10-06T10:00:00.000Z';
++
++/** UUIDv7 fixe : horodatage de FAKE_TS, `tag` (4 bits) et `n` pour distinguer les identifiants. */
++function fakeUuidV7(tag: number, n: number): string {
++  const ms = Date.parse(FAKE_TS).toString(16).padStart(12, '0');
++  const tail = n.toString(16).padStart(12, '0');
++  return `${ms.slice(0, 8)}-${ms.slice(8)}-7000-${(0x8000 | tag).toString(16)}-${tail}`;
++}
++
++/**
++ * Opération d'outbox factice et valide (SyncOp) : patch de `sync_rejection` qui ne pose que `dismissedAt`,
++ * seule écriture client de la classe J au socle ; `n` distingue les opérations.
++ */
++export function fakeOutboxOp(userId: string, n = 1): OutboxOp {
++  return SyncOp.parse({
++    opId: fakeUuidV7(0, n),
++    userId,
++    entity: 'sync_rejection',
++    id: fakeUuidV7(1, n),
++    kind: 'patch',
++    fields: { dismissedAt: FAKE_TS },
++    clientTs: FAKE_TS,
++    protocol: SYNC_PROTOCOL,
++    attempts: 0,
++  });
++}
+diff --git a/apps/web/e2e/support/server.ts b/apps/web/e2e/support/server.ts
+new file mode 100644
+index 0000000..9ed1f6d
+--- /dev/null
++++ b/apps/web/e2e/support/server.ts
+@@ -0,0 +1,318 @@
++import { type ChildProcess, spawn } from 'node:child_process';
++import { randomBytes } from 'node:crypto';
++import { mkdirSync, writeFileSync } from 'node:fs';
++import http, { type IncomingHttpHeaders } from 'node:http';
++import { type AddressInfo, createServer as createNetServer, type Socket } from 'node:net';
++import { dirname, join, resolve } from 'node:path';
++import { fileURLToPath } from 'node:url';
++
++export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
++export const WEB_DIR = join(REPO_ROOT, 'apps', 'web');
++const SERVER_DIR = join(REPO_ROOT, 'apps', 'server');
++/** Build de production écrit par global-setup. */
++export const DEFAULT_PUBLIC_DIR = join(WEB_DIR, 'dist');
++/** Données des serveurs de test (ignoré par git) : un dossier par serveur, gardé pour l'enquête. */
++export const E2E_DATA_DIR = join(REPO_ROOT, '.e2e-data');
++
++const HEALTH_TIMEOUT_MS = 30_000;
++const STOP_TIMEOUT_MS = 10_000;
++const LOG_TAIL_LINES = 40;
++
++/** Panne simulée par le proxy : requêtes sans réponse (VPN coupé), ou réponse imposée pour un préfixe. */
++export type E2EFault =
++  | null
++  | { kind: 'blackhole' }
++  | { kind: 'status'; pathPrefix: string; status: number; body: unknown };
++
++export interface E2EServer {
++  /** Origine vue par le navigateur (`http://localhost:<port du proxy>`) = APP_ORIGIN. */
++  url: string;
++  dataDir: string;
++  publicDir: string;
++  /** Arrête le serveur seul : le proxy reste et répond 502, `dataDir` est gardé. */
++  stop(): Promise<void>;
++  /** Relance le serveur, `env` fusionné à l'environnement courant (`''` retire la variable) ; même URL. */
++  restart(env?: Record<string, string>): Promise<void>;
++  /** Arrête le serveur et le proxy. */
++  close(): Promise<void>;
++  /** CLI du serveur (`node --import tsx src/main.ts <args>`) sur les mêmes données. */
++  cli(args: string[]): Promise<{ code: number; stdout: string; stderr: string }>;
++  setFault(f: E2EFault): void;
++}
++
++type Env = Record<string, string | undefined>;
++
++/** `''` retire la variable. */
++function mergeEnv(base: Env, extra: Record<string, string> = {}): Env {
++  const env = { ...base };
++  for (const [key, value] of Object.entries(extra)) {
++    if (value === '') delete env[key];
++    else env[key] = value;
++  }
++  return env;
++}
++
++async function freePort(): Promise<number> {
++  const probe = createNetServer();
++  await new Promise<void>((done, fail) => {
++    probe.once('error', fail);
++    probe.listen(0, '127.0.0.1', done);
++  });
++  const { port } = probe.address() as AddressInfo;
++  await new Promise<void>((done) => probe.close(() => done()));
++  return port;
++}
++
++function spawnServer(args: string[], env: Env): ChildProcess {
++  return spawn(process.execPath, ['--import', 'tsx', 'src/main.ts', ...args], {
++    cwd: SERVER_DIR,
++    env,
++    stdio: ['ignore', 'pipe', 'pipe'],
++  });
++}
++
++function runCli(args: string[], env: Env): Promise<{ code: number; stdout: string; stderr: string }> {
++  return new Promise((done, fail) => {
++    const child = spawnServer(args, env);
++    let stdout = '';
++    let stderr = '';
++    child.stdout?.setEncoding('utf8').on('data', (chunk: string) => {
++      stdout += chunk;
++    });
++    child.stderr?.setEncoding('utf8').on('data', (chunk: string) => {
++      stderr += chunk;
++    });
++    child.once('error', fail);
++    child.once('close', (code) => done({ code: code ?? 1, stdout, stderr }));
++  });
++}
++
++function healthy(port: number): Promise<boolean> {
++  return new Promise((done) => {
++    const req = http.get({ host: '127.0.0.1', port, path: '/api/health', agent: false }, (res) => {
++      res.resume();
++      done(res.statusCode === 200);
++    });
++    req.setTimeout(1000, () => req.destroy());
++    req.once('error', () => done(false));
++  });
++}
++
++interface Backend {
++  child: ChildProcess;
++  exited: Promise<void>;
++}
++
++/** Serveur sur `port` ; prêt quand /api/health répond 200 (30 s au plus). Journal : dernières lignes. */
++async function startBackend(port: number, env: Env, log: string[]): Promise<Backend> {
++  const child = spawnServer([], { ...env, PORT: String(port) });
++  const keep = (chunk: string) => {
++    log.push(...chunk.split('\n').filter((line) => line !== ''));
++    log.splice(0, Math.max(0, log.length - LOG_TAIL_LINES));
++  };
++  child.stdout?.setEncoding('utf8').on('data', keep);
++  child.stderr?.setEncoding('utf8').on('data', keep);
++  let alive = true;
++  const exited = new Promise<void>((done) => {
++    child.once('exit', () => {
++      alive = false;
++      done();
++    });
++  });
++  const deadline = Date.now() + HEALTH_TIMEOUT_MS;
++  while (Date.now() < deadline) {
++    if (!alive) throw new Error(`Le serveur s'est arrêté au démarrage :\n${log.join('\n')}`);
++    if (await healthy(port)) return { child, exited };
++    await new Promise((r) => setTimeout(r, 100));
++  }
++  child.kill('SIGKILL');
++  throw new Error(`Serveur sans /api/health en ${HEALTH_TIMEOUT_MS / 1000} s :\n${log.join('\n')}`);
++}
++
++async function stopBackend(backend: Backend): Promise<void> {
++  if (backend.child.exitCode !== null || backend.child.signalCode !== null) return;
++  backend.child.kill('SIGTERM');
++  const timer = setTimeout(() => backend.child.kill('SIGKILL'), STOP_TIMEOUT_MS);
++  await backend.exited;
++  clearTimeout(timer);
++}
++
++// En-têtes propres à une connexion : jamais relayés (RFC 9110 §7.6.1).
++const HOP_BY_HOP = new Set([
++  'connection',
++  'keep-alive',
++  'proxy-authenticate',
++  'proxy-authorization',
++  'te',
++  'trailer',
++  'transfer-encoding',
++  'upgrade',
++]);
++
++function endToEnd(headers: IncomingHttpHeaders): IncomingHttpHeaders {
++  return Object.fromEntries(Object.entries(headers).filter(([name]) => !HOP_BY_HOP.has(name)));
++}
++
++/**
++ * Serveur réel (`node --import tsx src/main.ts`, cwd apps/server) sur une base neuve (`init`), derrière un
++ * proxy `node:http` qui relaie tout (Host, Origin, Cookie compris) et simule les pannes : le navigateur
++ * n'utilise que `url` (localhost), jamais 127.0.0.1.
++ */
++export async function startE2EServer(
++  opts: { env?: Record<string, string>; publicDir?: string; port?: number } = {},
++): Promise<E2EServer> {
++  let fault: E2EFault = null;
++  let backend: Backend | null = null;
++  const held = new Set<Socket>();
++  const log: string[] = [];
++  const backendPort = await freePort();
++
++  const reply = (res: http.ServerResponse, status: number, type: string, body: string) => {
++    res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
++    res.end(body);
++  };
++
++  const handle = (req: http.IncomingMessage, res: http.ServerResponse) => {
++    const current = fault;
++    if (current?.kind === 'blackhole') {
++      // Requête gardée ouverte sans réponse ; libérée (socket détruite) par setFault(null) ou close().
++      held.add(req.socket);
++      req.socket.once('close', () => held.delete(req.socket));
++      return;
++    }
++    if (current?.kind === 'status' && (req.url ?? '/').startsWith(current.pathPrefix)) {
++      req.resume();
++      reply(res, current.status, 'application/json', JSON.stringify(current.body));
++      return;
++    }
++    if (!backend) {
++      req.resume();
++      reply(res, 502, 'text/plain; charset=utf-8', 'Bad Gateway');
++      return;
++    }
++    const upstream = http.request(
++      {
++        host: '127.0.0.1',
++        port: backendPort,
++        method: req.method,
++        path: req.url,
++        headers: endToEnd(req.headers),
++        agent: false,
++      },
++      (up) => {
++        res.writeHead(up.statusCode ?? 502, endToEnd(up.headers));
++        up.pipe(res);
++      },
++    );
++    upstream.once('error', () => {
++      if (res.headersSent) res.destroy();
++      else reply(res, 502, 'text/plain; charset=utf-8', 'Bad Gateway');
++    });
++    req.pipe(upstream);
++  };
++
++  // localhost : IPv4 d'abord, IPv6 en plus quand la machine l'a (le navigateur peut essayer ::1).
++  const proxies: http.Server[] = [];
++  const listen = (host: string, port: number) =>
++    new Promise<number>((done, fail) => {
++      const proxy = http.createServer(handle);
++      proxy.once('error', fail);
++      proxy.listen(port, host, () => {
++        proxies.push(proxy);
++        done((proxy.address() as AddressInfo).port);
++      });
++    });
++  const proxyPort = await listen('127.0.0.1', opts.port ?? 0);
++  await listen('::1', proxyPort).catch(() => {});
++
++  const url = `http://localhost:${proxyPort}`;
++  const dataDir = join(
++    E2E_DATA_DIR,
++    `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomBytes(4).toString('hex')}`,
++  );
++  mkdirSync(dataDir, { recursive: true });
++  writeFileSync(join(dataDir, '.appsport-volume'), '');
++  const publicDir = opts.publicDir ?? DEFAULT_PUBLIC_DIR;
++  let env = mergeEnv(
++    {
++      ...process.env,
++      APP_ORIGIN: url,
++      PORT: String(backendPort),
++      HOST: '127.0.0.1',
++      APPSPORT_DATA_DIR: dataDir,
++      APPSPORT_PUBLIC_DIR: publicDir,
++      APPSPORT_CONTENT_DIR: join(REPO_ROOT, 'data'),
++      APP_VERSION: 'e2e',
++    },
++    opts.env,
++  );
++
++  const releaseHeld = () => {
++    for (const socket of held) socket.destroy();
++    held.clear();
++  };
++  const stop = async () => {
++    const running = backend;
++    backend = null;
++    if (running) await stopBackend(running);
++  };
++  const closeProxies = async () => {
++    releaseHeld();
++    await Promise.all(
++      proxies.map(
++        (proxy) =>
++          new Promise<void>((done) => {
++            proxy.close(() => done());
++            proxy.closeAllConnections();
++          }),
++      ),
++    );
++  };
++
++  try {
++    const init = await runCli(['init'], env);
++    if (init.code !== 0) throw new Error(`init a échoué (code ${init.code}) : ${init.stderr}`);
++    backend = await startBackend(backendPort, env, log);
++  } catch (error) {
++    await closeProxies();
++    throw error;
++  }
++
++  return {
++    url,
++    dataDir,
++    publicDir,
++    stop,
++    async restart(extra) {
++      await stop();
++      env = mergeEnv(env, extra);
++      backend = await startBackend(backendPort, env, log);
++    },
++    async close() {
++      await stop();
++      await closeProxies();
++    },
++    cli: (args) => runCli(args, env),
++    setFault(f) {
++      fault = f;
++      if (f === null) releaseHeld();
++    },
++  };
++}
++
++/**
++ * `admin:bootstrap --birth-date <date>` : lien et code de l'invitation administrateur. Code de sortie non
++ * nul : erreur avec stderr (jamais stdout, qui porte le code).
++ */
++export async function bootstrapAdmin(
++  s: E2EServer,
++  birthDate = '1990-01-01',
++): Promise<{ code: string; link: string }> {
++  const r = await s.cli(['admin:bootstrap', '--birth-date', birthDate]);
++  if (r.code !== 0) throw new Error(`admin:bootstrap a échoué (code ${r.code}) : ${r.stderr}`);
++  const link = /^Lien : (.+)$/m.exec(r.stdout)?.[1]?.trim();
++  const code = /^Code : (.+)$/m.exec(r.stdout)?.[1]?.trim();
++  if (!link || !code)
++    throw new Error('admin:bootstrap : lignes « Lien : » et « Code : » absentes de la sortie');
++  return { code, link };
++}
+diff --git a/apps/web/package.json b/apps/web/package.json
+index 4e90342..d9c352f 100644
+--- a/apps/web/package.json
++++ b/apps/web/package.json
+@@ -1,31 +1,33 @@
+ {
+   "name": "@appsport/web",
+   "version": "0.0.0",
+   "private": true,
+   "type": "module",
+   "scripts": {
+     "typecheck": "tsc --noEmit -p tsconfig.json",
+     "test": "vitest run --root ../.. --project web",
++    "test:e2e": "playwright test",
+     "build": "vite build --configLoader runner"
+   },
+   "dependencies": {
+     "@appsport/contracts": "workspace:*",
+     "@appsport/domain": "workspace:*",
+     "dexie": "^4.4.6",
+     "react": "^19.3.0",
+     "react-dom": "^19.3.0",
+     "wouter": "^3.13.0",
+     "zod": "^4.6.5"
+   },
+   "devDependencies": {
+     "@appsport/server": "workspace:*",
++    "@playwright/test": "~1.63.0",
+     "@testing-library/react": "^16.3.3",
+     "@types/react": "^19.3.0",
+     "@types/react-dom": "^19.3.0",
+     "@vitejs/plugin-react": "^6.1.2",
+     "esbuild": "^0.28.2",
+     "fake-indexeddb": "^6.2.5",
+     "fast-check": "^4.10.2",
+     "happy-dom": "^20",
+     "vite": "^8.3.3"
+   }
+diff --git a/apps/web/playwright.config.ts b/apps/web/playwright.config.ts
+new file mode 100644
+index 0000000..f7e81b9
+--- /dev/null
++++ b/apps/web/playwright.config.ts
+@@ -0,0 +1,27 @@
++import { defineConfig, devices } from '@playwright/test';
++
++const CI = Boolean(process.env.CI);
++
++// E2E de la PWA (01 §9.1.6, R-TST-1) : build de production servi par le vrai serveur derrière un proxy
++// local (pannes réseau), Chromium (Pixel 7) et WebKit (iPhone 14), un seul worker.
++export default defineConfig({
++  testDir: './e2e',
++  globalSetup: './e2e/support/global-setup.ts',
++  workers: 1,
++  fullyParallel: false,
++  timeout: 120_000,
++  expect: { timeout: 10_000 },
++  retries: CI ? 1 : 0,
++  // Rapport HTML en CI seulement : publié par le job e2e en cas d'échec.
++  reporter: CI ? [['list'], ['html', { open: 'never' }]] : 'list',
++  use: {
++    serviceWorkers: 'allow',
++    locale: 'fr-FR',
++    timezoneId: 'Europe/Paris',
++    trace: 'retain-on-failure',
++  },
++  projects: [
++    { name: 'chromium', use: { ...devices['Pixel 7'] } },
++    { name: 'webkit', use: { ...devices['iPhone 14'] } },
++  ],
++});
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 40e083e..202b8be 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -72,20 +72,23 @@ importers:
+       wouter:
+         specifier: ^3.13.0
+         version: 3.13.0(react@19.3.0)
+       zod:
+         specifier: ^4.6.5
+         version: 4.6.5
+     devDependencies:
+       '@appsport/server':
+         specifier: workspace:*
+         version: link:../server
++      '@playwright/test':
++        specifier: ~1.63.0
++        version: 1.63.0
+       '@testing-library/react':
+         specifier: ^16.3.3
+         version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+       '@types/react':
+         specifier: ^19.3.0
+         version: 19.3.0
+       '@types/react-dom':
+         specifier: ^19.3.0
+         version: 19.3.0(@types/react@19.3.0)
+       '@vitejs/plugin-react':
+@@ -362,20 +365,25 @@ packages:
+ 
+   '@jridgewell/sourcemap-codec@1.6.0':
+     resolution: {integrity: sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==}
+ 
+   '@jridgewell/trace-mapping@0.3.31':
+     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+ 
+   '@oxc-project/types@0.152.0':
+     resolution: {integrity: sha512-oM/5rLBm2tPkg0iBgkH/FOeR3PCDpY19GTgAZjMFM8h9WI9VW7cLgzp6nwtarYKmovavIQZ+Fe/RKX/8C8O/Rw==}
+ 
++  '@playwright/test@1.63.0':
++    resolution: {integrity: sha512-oxMK4vllB9RK5NQ2l1pq1IfOf2AvnEuj/vYGDj0H2nMtmtZpKtCwt/l00GEO6xjGfpBNAvjovvYdCm50dRQkpQ==}
++    engines: {node: '>=20'}
++    hasBin: true
++
+   '@rolldown/binding-android-arm-eabi@1.2.12':
+     resolution: {integrity: sha512-dB/a1214qKfHMXCpgqR4OZT+jS4kTyEXbQGJPqzobt5EwH5rX080pxE37alt3RzvR1bf1Yz/yGqRfrYAxuPw0A==}
+     engines: {node: ^20.19.0 || >=22.12.0}
+     cpu: [arm]
+     os: [android]
+ 
+   '@rolldown/binding-android-arm64@1.2.12':
+     resolution: {integrity: sha512-7KHFgQ5VJxIHcLlrwrc3Xbds7oTNQT7Pgi9gQCJKrd2VGab/UksIOYp6VD8MzCstGxOKMgNamPwUCfxPdP1OHg==}
+     engines: {node: ^20.19.0 || >=22.12.0}
+     cpu: [arm64]
+@@ -863,20 +871,30 @@ packages:
+     resolution: {integrity: sha512-XrsrhT5sybtKI6wakr2SPOlGZWWYbUXZ7a0jT8/QOeAPau+1X/bSegNe5YR75oJmEZQbKningirmGOEJCIk61Q==}
+     engines: {node: '>=12.20.0'}
+ 
+   picocolors@1.1.1:
+     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
+ 
+   picomatch@4.0.7:
+     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
+     engines: {node: '>=12'}
+ 
++  playwright-core@1.63.0:
++    resolution: {integrity: sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==}
++    engines: {node: '>=20'}
++    hasBin: true
++
++  playwright@1.63.0:
++    resolution: {integrity: sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg==}
++    engines: {node: '>=20'}
++    hasBin: true
++
+   postcss@8.5.29:
+     resolution: {integrity: sha512-49cGhUbXj8Qenv0iTMxA1cFBzxXoctpC9Ujd77t1WcbJIr6nF/eI7g/8MgxrYldFRuAXvja7xQRwavoW7kgrxQ==}
+     engines: {node: ^10 || ^12 || >=14}
+ 
+   pretty-format@27.5.1:
+     resolution: {integrity: sha512-Qb1gy5OrP5+zDf2Bvnzdl3jsTf1qXVMazbvCoKhtKqVs4/YK4ozX4gKQJJVyNe+cajNPn0KoC0MC3FUmaHWEmQ==}
+     engines: {node: ^10.13.0 || ^12.13.0 || ^14.15.0 || >=15.0.0}
+ 
+   pure-rand@8.4.2:
+     resolution: {integrity: sha512-vvuOGgcuPJAirlHvuQw1TrOiw7ptaIXXmIbNuiNOY6lNGJJH49PQ1Kj4nd783nPdQhQdicgOjVI2yI/9BD6/Ng==}
+@@ -1188,20 +1206,24 @@ snapshots:
+ 
+   '@jridgewell/sourcemap-codec@1.6.0': {}
+ 
+   '@jridgewell/trace-mapping@0.3.31':
+     dependencies:
+       '@jridgewell/resolve-uri': 3.1.2
+       '@jridgewell/sourcemap-codec': 1.6.0
+ 
+   '@oxc-project/types@0.152.0': {}
+ 
++  '@playwright/test@1.63.0':
++    dependencies:
++      playwright: 1.63.0
++
+   '@rolldown/binding-android-arm-eabi@1.2.12':
+     optional: true
+ 
+   '@rolldown/binding-android-arm64@1.2.12':
+     optional: true
+ 
+   '@rolldown/binding-darwin-arm64@1.2.12':
+     optional: true
+ 
+   '@rolldown/binding-darwin-x64@1.2.12':
+@@ -1531,20 +1553,26 @@ snapshots:
+   nanoid@3.3.20: {}
+ 
+   node-addon-api@8.9.2: {}
+ 
+   obug@2.2.1: {}
+ 
+   picocolors@1.1.1: {}
+ 
+   picomatch@4.0.7: {}
+ 
++  playwright-core@1.63.0: {}
++
++  playwright@1.63.0:
++    dependencies:
++      playwright-core: 1.63.0
++
+   postcss@8.5.29:
+     dependencies:
+       nanoid: 3.3.20
+       picocolors: 1.1.1
+       source-map-js: 1.2.2
+ 
+   pretty-format@27.5.1:
+     dependencies:
+       ansi-regex: 5.0.1
+       ansi-styles: 5.2.0

@@ -1,0 +1,255 @@
+# Review package: 0e0a496..HEAD
+
+## Commits
+665dd3d fix(privacy): --since comparé sous forme canonique
+
+## Files changed
+ apps/server/src/cli.ts                   |  3 ++-
+ apps/server/src/privacy/reapply.ts       | 16 +++++++++---
+ apps/server/test/cli/privacy-cli.test.ts | 43 ++++++++++++++++++++++++++++++++
+ apps/server/test/privacy/reapply.test.ts | 12 ++++++++-
+ 4 files changed, 69 insertions(+), 5 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/cli.ts b/apps/server/src/cli.ts
+index fa13d12..6fb30b7 100644
+--- a/apps/server/src/cli.ts
++++ b/apps/server/src/cli.ts
+@@ -10,20 +10,21 @@ import { type AppConfig, loadConfig } from './config';
+ import { migrate } from './db/migrate';
+ import { MIGRATIONS, type Migration } from './db/migrations/index';
+ import { openDatabase } from './db/open';
+ import type { Database } from './db/schema';
+ import { initServerMeta } from './db/server-meta';
+ import { NodeSqliteDialect } from './db/sqlite-dialect';
+ import { type AppDeps, createAppDeps, cryptoIds, systemClock } from './deps';
+ import { HttpError } from './http/errors';
+ import { createLogger } from './logger';
+ import {
++  canonicalInstant,
+   collectPrivacyEvents,
+   hasActiveAdmin,
+   PrivacyEventList,
+   reapplyPrivacyEvents,
+ } from './privacy/reapply';
+ import { openMigrated } from './startup';
+ import { assertStartupPreconditions } from './startup-guard';
+ 
+ export interface CliContext {
+   env: Record<string, string | undefined>;
+@@ -152,21 +153,21 @@ async function runAdminReset(args: string[], ctx: CliContext): Promise<number> {
+   ctx.out(`Code : ${created.code}`);
+   return 0;
+ }
+ 
+ /**
+  * Lecture seule, sans garde, pragma ni migration : la source peut être un instantané ou une base
+  * portant une migration inconnue ; elle n'est jamais modifiée (ni date, ni passage en WAL).
+  */
+ async function runPrivacyCollect(args: string[], ctx: CliContext): Promise<number> {
+   const { flags } = parseFlags(args);
+-  const since = z.iso.datetime().safeParse(flags.since);
++  const since = z.iso.datetime().transform(canonicalInstant).safeParse(flags.since);
+   if (!since.success) {
+     ctx.err('Date --since invalide (format ISO 8601 attendu)');
+     return 1;
+   }
+   const out = flags.out;
+   if (!out) {
+     ctx.err('Option --out obligatoire');
+     return 1;
+   }
+   const source = flags.source || loadConfig(ctx.env).dbPath;
+diff --git a/apps/server/src/privacy/reapply.ts b/apps/server/src/privacy/reapply.ts
+index 1fe9dca..b25e7da 100644
+--- a/apps/server/src/privacy/reapply.ts
++++ b/apps/server/src/privacy/reapply.ts
+@@ -1,20 +1,28 @@
+ import { z } from 'zod';
+ import type { DbExecutor } from '../db/schema';
+ import type { AppDeps } from '../deps';
+ import { withdrawHealthConsent } from './consent';
+ import { isHealthConsentActive } from './consent-state';
+ import { deleteAccount } from './delete-account';
+ 
++/**
++ * Forme canonique `toISOString()` (millisecondes, Z), celle de `security_event.at` : les dates se
++ * comparent comme chaînes, et '…:00Z' contre '…:00.400Z' se comparerait mal ('.' < 'Z').
++ */
++export function canonicalInstant(iso: string): string {
++  return new Date(iso).toISOString();
++}
++
+ /** Liste écrite par `privacy:collect` et relue par `privacy:reapply` : identifiants, types et dates seulement. */
+ export const PrivacyEventList = z.object({
+-  since: z.iso.datetime(),
++  since: z.iso.datetime().transform(canonicalInstant),
+   collectedAt: z.iso.datetime(),
+   source: z.string(),
+   events: z.array(
+     z.object({
+       type: z.enum(['account_deleted', 'consent_revoked']),
+       at: z.string(),
+       targetId: z.string(),
+       consentType: z.enum(['health', 'ai_coach']).optional(),
+     }),
+   ),
+@@ -32,21 +40,21 @@ function consentTypeOf(details: string | null): PrivacyEvent['consentType'] {
+   }
+ }
+ 
+ /** Suppressions de compte et retraits d'accord réussis après `since` (03 §8 étape 1), par date puis id. */
+ export async function collectPrivacyEvents(db: DbExecutor, since: string): Promise<PrivacyEvent[]> {
+   const rows = await db
+     .selectFrom('securityEvent')
+     .select(['type', 'at', 'targetId', 'details'])
+     .where('type', 'in', ['account_deleted', 'consent_revoked'])
+     .where('outcome', '=', 'success')
+-    .where('at', '>', since)
++    .where('at', '>', canonicalInstant(since))
+     .where('targetId', 'is not', null)
+     .orderBy('at')
+     .orderBy('id')
+     .execute();
+   return rows.map((row) => {
+     const event: PrivacyEvent = {
+       type: row.type as PrivacyEvent['type'],
+       at: row.at,
+       targetId: row.targetId as string,
+     };
+@@ -56,31 +64,33 @@ export async function collectPrivacyEvents(db: DbExecutor, since: string): Promi
+     }
+     return event;
+   });
+ }
+ 
+ /**
+  * Réapplique, après restauration, les suppressions et retraits survenus depuis la sauvegarde
+  * (03 §8 étapes 3-4, R-SUP-6, P-DRT-3, P-CST-3). Une transaction, dans l'ordre de la liste ;
+  * idempotent. Le dernier admin peut être supprimé : la CLI signale alors l'absence d'admin.
+  * `ai_coach` est ignoré : aucun accord coach n'existe avant la brique 4.
++ * Un accord santé retiré puis redonné après la sauvegarde est retiré de nouveau (fail-closed, voulu).
+  */
+ export async function reapplyPrivacyEvents(
+   deps: AppDeps,
+   list: PrivacyEventList,
+ ): Promise<{ accountsDeleted: number; consentsWithdrawn: number }> {
+   const actor = { actorId: null, ip: null };
++  const since = canonicalInstant(list.since);
+   return deps.db.transaction().execute(async (trx) => {
+     let accountsDeleted = 0;
+     let consentsWithdrawn = 0;
+     for (const event of list.events) {
+-      if (event.at <= list.since) continue;
++      if (event.at <= since) continue;
+       const exists = await trx
+         .selectFrom('user')
+         .select('id')
+         .where('id', '=', event.targetId)
+         .executeTakeFirst();
+       if (!exists) continue;
+       if (event.type === 'account_deleted') {
+         await deleteAccount(trx, deps, event.targetId, actor, { enforceLastAdmin: false });
+         accountsDeleted += 1;
+       } else if (event.consentType === 'health' && (await isHealthConsentActive(trx, event.targetId))) {
+diff --git a/apps/server/test/cli/privacy-cli.test.ts b/apps/server/test/cli/privacy-cli.test.ts
+index 2f0fa70..97eaf99 100644
+--- a/apps/server/test/cli/privacy-cli.test.ts
++++ b/apps/server/test/cli/privacy-cli.test.ts
+@@ -159,10 +159,53 @@ describe('privacy:reapply', () => {
+     writeFileSync(bad, '{ pas du json');
+     const wrong = join(dir, 'wrong.json');
+     writeFileSync(wrong, JSON.stringify({ since: 'hier', events: [] }));
+     for (const args of [[bad], [wrong], [join(dir, 'absent.json')], []]) {
+       errors = [];
+       expect(await cli('privacy:reapply', ...args)).toBe(1);
+       expect(errors).toEqual(['Fichier de réapplication invalide']);
+     }
+   });
+ });
++
++describe('--since sans millisecondes (comparaison canonique)', () => {
++  const BOUNDARY = '2026-10-07T03:30:00Z';
++
++  it("garde l'événement de la première seconde, exclut celui pile à since, à la collecte et à la réapplication", async () => {
++    const { sqlite, db } = openDatabase(dbPath);
++    await insertFixtureRow(db, 'user', { id: 'u-a', username: 'alba', usernameKey: 'alba' });
++    await insertFixtureRow(db, 'user', { id: 'u-b', username: 'bruno', usernameKey: 'bruno' });
++    await insertFixtureRow(db, 'user', { username: 'chef', usernameKey: 'chef', role: 'admin' });
++    const insert = sqlite.prepare(
++      "INSERT INTO security_event (id, at, type, actor_id, target_id, tailnet_ip, outcome, details) VALUES (?, ?, 'account_deleted', NULL, ?, NULL, 'success', NULL)",
++    );
++    insert.run('ev-a', '2026-10-07T03:30:00.500Z', 'u-a');
++    insert.run('ev-b', '2026-10-07T03:30:00.000Z', 'u-b');
++    sqlite.close();
++
++    const out = join(dir, 'l.json');
++    expect(await cli('privacy:collect', '--since', BOUNDARY, '--out', out)).toBe(0);
++    const list = readList(out);
++    expect(list.since).toBe('2026-10-07T03:30:00.000Z');
++    expect(list.events.map((ev) => ev.targetId)).toEqual(['u-a']);
++
++    const handmade = join(dir, 'main.json');
++    writeFileSync(
++      handmade,
++      JSON.stringify({
++        since: BOUNDARY,
++        collectedAt: '2026-10-07T04:00:00Z',
++        source: 'main',
++        events: [
++          { type: 'account_deleted', at: '2026-10-07T03:30:00.000Z', targetId: 'u-b' },
++          { type: 'account_deleted', at: '2026-10-07T03:30:00.500Z', targetId: 'u-a' },
++        ],
++      }),
++    );
++    lines = [];
++    expect(await cli('privacy:reapply', handmade)).toBe(0);
++    expect(lines).toContain('Réapplication terminée : 1 compte(s) supprimé(s), 0 accord(s) santé retiré(s).');
++    withDb((s) => {
++      expect(s.prepare("SELECT id FROM user WHERE id IN ('u-a', 'u-b')").all()).toEqual([{ id: 'u-b' }]);
++    });
++  });
++});
+diff --git a/apps/server/test/privacy/reapply.test.ts b/apps/server/test/privacy/reapply.test.ts
+index 839abb0..2121dc6 100644
+--- a/apps/server/test/privacy/reapply.test.ts
++++ b/apps/server/test/privacy/reapply.test.ts
+@@ -1,16 +1,16 @@
+ import { mkdtempSync, rmSync } from 'node:fs';
+ import { tmpdir } from 'node:os';
+ import { join } from 'node:path';
+ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+ import { logSecurityEvent } from '../../src/auth/security-log';
+-import { collectPrivacyEvents, reapplyPrivacyEvents } from '../../src/privacy/reapply';
++import { collectPrivacyEvents, PrivacyEventList, reapplyPrivacyEvents } from '../../src/privacy/reapply';
+ import {
+   createSyncTestContext,
+   createUserAndLogin,
+   dumpDatabase,
+   makeOp,
+   restoreInPlace,
+   seqIds,
+   snapshotDb,
+   syncPush,
+   type TestContext,
+@@ -189,10 +189,20 @@ describe('privacy:reapply après restauration (03 §17 n°10, P-DRT-3, P-CST-3)'
+     expect(events).toEqual([{ type: 'account_deleted', at: expect.any(String), targetId: w.id }]);
+ 
+     await restoreInPlace(ctx, S);
+     const list = { since, collectedAt: now(), source: 'test', events };
+     expect(await reapplyPrivacyEvents(ctx.deps, list)).toEqual({ accountsDeleted: 1, consentsWithdrawn: 0 });
+     expect(await userExists(w.id)).toBe(false);
+     const admins = await ctx.deps.db.selectFrom('user').select('id').where('role', '=', 'admin').execute();
+     expect(admins).toEqual([]);
+   });
+ });
++
++it('PrivacyEventList ramène since à la forme canonique', () => {
++  const list = PrivacyEventList.parse({
++    since: '2026-10-07T03:30:00Z',
++    collectedAt: '2026-10-07T04:00:00Z',
++    source: 'x',
++    events: [],
++  });
++  expect(list.since).toBe('2026-10-07T03:30:00.000Z');
++});

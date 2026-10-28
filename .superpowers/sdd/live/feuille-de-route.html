@@ -1,0 +1,423 @@
+<title>Feuille de route Rune</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: one column of phases (the brick order of the plan), each a card of task rows with a checkbox; summary, live run panel (one card per lane + event log) and filters on top. Dark-first, Rune palette. */
+:root {
+  --bg: #070A12; --card: #0E1424; --sunk: #0A0F1C; --line: rgba(255,255,255,.07); --fg: #EEF6FB; --muted: #9DB0C4;
+  --accent: #5ED8FF; --accent-ink: #05070D; --violet: #8C6BFF; --done: #3DDC97; --chip: #16203A; --amber: #F2B33D;
+  --display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --bg: #F1F3F7; --card: #FFFFFF; --sunk: #F6F8FB; --line: #DDE3EB; --fg: #10151F; --muted: #4F5C6D;
+  --accent: #1C6FB5; --accent-ink: #FFFFFF; --violet: #6A48E8; --done: #1E9E63; --chip: #E7EEF7; --amber: #B57A0E; color-scheme: light; } }
+:root[data-theme="light"] {
+  --bg: #F1F3F7; --card: #FFFFFF; --sunk: #F6F8FB; --line: #DDE3EB; --fg: #10151F; --muted: #4F5C6D;
+  --accent: #1C6FB5; --accent-ink: #FFFFFF; --violet: #6A48E8; --done: #1E9E63; --chip: #E7EEF7; --amber: #B57A0E; color-scheme: light; }
+@media (prefers-reduced-motion: reduce) { .seg.next, .live .dot, .step.now, .lchip.encours { animation: none; } }
+* { box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--fg); }
+body { font-family: var(--body); font-size: 16px; line-height: 1.45; }
+.wrap { max-width: 760px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 64px; display: grid; gap: 20px; }
+header { display: grid; gap: 14px; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 700; letter-spacing: .22em; font-size: 15px; color: var(--muted); }
+.brand svg { width: 26px; height: 26px; color: var(--accent); }
+h1 { margin: 0; font-family: var(--display); font-weight: 700; font-size: clamp(28px, 6vw, 38px); line-height: 1.1; text-wrap: balance; }
+.launch { background: linear-gradient(180deg, color-mix(in srgb, var(--card) 85%, var(--accent) 15%), var(--card)); border: 1px solid var(--line); border-radius: 18px; padding: 18px; display: grid; gap: 14px; min-width: 0; }
+.launch .top { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.pct { font-family: var(--display); font-weight: 700; font-size: clamp(44px, 12vw, 72px); line-height: .9; font-variant-numeric: tabular-nums; }
+.pct small { font-size: .42em; color: var(--muted); margin-left: 4px; }
+.launch .side { text-align: right; min-width: 0; display: grid; gap: 2px; }
+.launch .side b { font-family: var(--display); font-size: 18px; font-variant-numeric: tabular-nums; }
+.launch .side span { font-size: 14px; color: var(--muted); }
+.segbar { display: grid; grid-template-columns: repeat(var(--n, 40), minmax(0, 1fr)); gap: 3px; height: 26px; }
+.seg { border-radius: 3px; background: var(--chip); }
+.seg.done { background: linear-gradient(180deg, var(--accent), var(--violet)); }
+.seg.next { background: var(--amber); animation: blink 1.4s ease-in-out infinite; }
+.seg.later { background: repeating-linear-gradient(135deg, var(--chip) 0 4px, color-mix(in srgb, var(--chip) 40%, transparent) 4px 8px); }
+@keyframes blink { 50% { opacity: .35; } }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.now { font-size: 15px; color: var(--muted); min-height: 1.4em; }
+.now b { color: var(--fg); font-weight: 600; }
+
+/* Live run panel */
+.live { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 10px; min-width: 0; }
+.live-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.live-head b { font-family: var(--display); font-weight: 700; letter-spacing: .14em; text-transform: uppercase; font-size: 12px; color: var(--done); }
+.live .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--done); box-shadow: 0 0 0 0 color-mix(in srgb, var(--done) 60%, transparent); animation: pulse 2s ease-out infinite; flex: none; }
+.live.stale .dot { background: var(--amber); animation: none; }
+.live.stale .live-head b { color: var(--amber); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--done) 55%, transparent); } 100% { box-shadow: 0 0 0 9px transparent; } }
+.live-count { font-family: var(--display); font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
+.live-step { margin: 0; font-weight: 600; font-size: 16px; }
+.live-detail { margin: 0; font-size: 14px; color: var(--muted); }
+.live-detail:empty { display: none; }
+.live-meta { margin: 0; font-size: 14px; color: var(--muted); }
+.live-meta:empty { display: none; }
+.live-meta b { color: var(--fg); font-family: var(--display); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.lanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.lanes:empty { display: none; }
+.lane { background: var(--sunk); border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.lane-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.lane-name { font-family: var(--display); font-weight: 700; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.lchips { display: flex; gap: 4px; flex-wrap: wrap; }
+.lchip { font-family: var(--display); font-weight: 600; font-size: 11px; padding: 1px 6px; border-radius: 6px; background: var(--chip); color: var(--muted); font-variant-numeric: tabular-nums; }
+.lchip.fermee { background: linear-gradient(180deg, var(--accent), var(--violet)); color: var(--accent-ink); }
+.lchip.encours { background: transparent; color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); animation: blink 1.6s ease-in-out infinite; }
+.lane-task { margin: 0; font-weight: 600; font-size: 15px; line-height: 1.3; }
+.steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; }
+.step { height: 6px; border-radius: 3px; background: var(--chip); }
+.step.past { background: linear-gradient(90deg, var(--accent), var(--violet)); }
+.step.now { background: var(--amber); animation: blink 1.4s ease-in-out infinite; }
+.lane-stage { margin: 0; font-size: 13px; color: var(--muted); }
+.lane-stage b { color: var(--fg); font-weight: 600; }
+.agents { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.agents li { border: 0; font-size: 13px; color: var(--muted); line-height: 1.35; overflow-wrap: anywhere; }
+.agents li b { color: var(--fg); font-weight: 600; }
+.agents li span { white-space: nowrap; }
+.lane.idle .lane-task { color: var(--muted); font-weight: 500; font-size: 14px; }
+
+.feed { border-top: 1px solid var(--line); padding-top: 10px; }
+.feed summary { cursor: pointer; font-family: var(--display); font-weight: 700; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); min-height: 32px; display: flex; align-items: center; }
+.feed ol { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
+.feed li { border: 0; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; font-size: 14px; padding: 3px 0; }
+.feed li time { font-family: var(--display); font-weight: 600; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 1px; }
+.feed li span { min-width: 0; overflow-wrap: anywhere; }
+.feed li.ok span::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--done); margin-right: 7px; vertical-align: 1px; }
+.feed li.go span::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 7px; vertical-align: 1px; }
+
+.filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.filters button { font: inherit; font-size: 14px; font-weight: 600; border: 1px solid var(--line); background: var(--card); color: var(--muted); padding: 8px 14px; border-radius: 999px; cursor: pointer; min-height: 40px; }
+.filters button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+section.phase { background: var(--card); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
+.phase > header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; }
+.phase > header h2 { margin: 0; font-family: var(--display); font-weight: 700; font-size: 18px; flex: 1; min-width: 0; }
+.phase > header .count { font-family: var(--display); font-weight: 600; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.phase > header .mini { width: 70px; }
+.phase > header .chev { width: 18px; height: 18px; color: var(--muted); transition: transform .2s; flex: none; }
+.phase.closed > header .chev { transform: rotate(-90deg); }
+.phase.closed ul { display: none; }
+.phase .note { margin: -6px 16px 10px; font-size: 14px; color: var(--muted); }
+.phase.closed .note { display: none; }
+.bar { height: 8px; border-radius: 4px; background: var(--chip); overflow: hidden; }
+.bar > i { display: block; height: 100%; width: var(--w, 0%); background: linear-gradient(90deg, var(--accent), var(--violet)); transition: width .5s cubic-bezier(.2,.8,.2,1); }
+ul { list-style: none; margin: 0; padding: 0; }
+.phase li { border-top: 1px solid var(--line); }
+li label { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 16px; cursor: pointer; }
+li input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--accent); cursor: pointer; }
+li .t { min-width: 0; }
+li .t b { display: block; font-weight: 600; }
+li .t small { display: block; color: var(--muted); font-size: 14px; margin-top: 2px; }
+li.done .t b { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--muted); }
+li.current { background: color-mix(in srgb, var(--amber) 8%, transparent); }
+li.current .t b::after { content: "En cours"; margin-left: 8px; font-family: var(--display); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); vertical-align: 2px; }
+.who { font-size: 12px; font-weight: 600; letter-spacing: .04em; padding: 3px 9px; border-radius: 999px; background: var(--chip); color: var(--muted); white-space: nowrap; }
+.who.toi { color: var(--accent); }
+.who.plus-tard { opacity: .75; }
+.empty { padding: 20px 16px; color: var(--muted); }
+form.add { display: grid; gap: 10px; background: var(--card); border: 1px dashed var(--line); border-radius: 18px; padding: 16px; }
+form.add h2 { margin: 0; font-family: var(--display); font-size: 16px; }
+form.add .fields { display: flex; flex-wrap: wrap; gap: 10px; }
+form.add input, form.add select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-height: 44px; }
+form.add input { flex: 1 1 260px; min-width: 0; }
+form.add button { font: inherit; font-weight: 600; background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 12px; padding: 10px 18px; min-height: 44px; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.status { font-size: 14px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="brand"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M296.9 465.4L256 488L68 384L68 128L256 24L444 128L444 384L369.7 425.1" fill="none" stroke="currentColor" stroke-width="28"/><path d="M24 247H50V265H24ZM462 247H488V265H462Z" fill="currentColor"/><path d="M185.6 102L342.4 215.9L255.5 279.1L341.6 406.8L341.6 481.2L227.2 311.6L227.2 414L185.6 383.8ZM271.6 215.9L227.2 248.2L227.2 183.6Z" fill="currentColor" fill-rule="evenodd"/></svg>RUNE</div>
+    <h1>Feuille de route</h1>
+    <div class="launch">
+      <div class="top">
+        <div class="pct" id="pct">0<small>%</small></div>
+        <div class="side"><b><span id="doneCount">–</span> / <span id="totalCount">–</span></b><span>tâches faites</span></div>
+      </div>
+      <div class="segbar" id="segbar" role="progressbar" aria-label="Avancement tâche par tâche" aria-valuemin="0" aria-valuemax="100"></div>
+      <div class="legend">
+        <span><i style="background: linear-gradient(180deg, var(--accent), var(--violet))"></i>Fait</span>
+        <span><i style="background: var(--amber)"></i>Prochaine</span>
+        <span><i style="background: var(--chip)"></i>À venir</span>
+        <span><i class="seg later" style="display:inline-block"></i>Plus tard</span>
+      </div>
+      <div class="now" id="nextUp" aria-live="polite"></div>
+      <div class="live" id="live" hidden>
+        <div class="live-head"><span class="dot" aria-hidden="true"></span><b id="liveLabel">En direct</b><span id="liveAgo"></span><span id="liveCount"></span></div>
+        <p class="live-step" id="liveStep"></p>
+        <p class="live-detail" id="liveDetail"></p>
+        <div class="lanes" id="lanes"></div>
+        <details class="feed" id="feedBox" open hidden>
+          <summary>Journal du run</summary>
+          <ol id="feed"></ol>
+        </details>
+        <p class="live-meta" id="liveMeta"></p>
+      </div>
+    </div>
+    <div class="filters" role="group" aria-label="Filtrer">
+      <button type="button" data-f="todo" aria-pressed="true">À faire</button>
+      <button type="button" data-f="toi" aria-pressed="false">Pour toi</button>
+      <button type="button" data-f="claude" aria-pressed="false">Pour Claude</button>
+      <button type="button" data-f="all" aria-pressed="false">Tout</button>
+    </div>
+  </header>
+
+  <main id="phases"><p class="empty" id="loading">Chargement de la feuille de route…</p></main>
+
+  <form class="add" id="addForm" hidden>
+    <h2>Ajouter une tâche</h2>
+    <div class="fields">
+      <input id="newTitle" name="titre" placeholder="Intitulé de la tâche" required maxlength="140" aria-label="Intitulé de la tâche">
+      <select id="newPhase" aria-label="Étape"></select>
+      <select id="newWho" aria-label="Qui s'en charge">
+        <option value="toi">Toi</option><option value="claude">Claude</option><option value="ensemble">Ensemble</option><option value="plus-tard">Plus tard</option>
+      </select>
+      <button type="submit">Ajouter</button>
+    </div>
+    <p class="status" id="addStatus" aria-live="polite"></p>
+  </form>
+</div>
+
+<script>
+const PHASES = [
+  ['fait', 'Déjà fait', 'Le socle et l’identité de Rune.'],
+  ['refonte', 'Refonte du socle', 'Du design validé au nouveau look dans l’appli.'],
+  ['revue', 'Revue finale du socle', 'Les derniers correctifs du socle, puis la PR vers main.'],
+  ['b2', 'Brique 2 · Exercices', ''],
+  ['b3', 'Brique 3 · Programmes et séances', 'Avec la progression façon RPG.'],
+  ['b4', 'Brique 4 · Le Skald, coach IA', ''],
+  ['b5', 'Brique 5 · Nutrition', ''],
+  ['prod', 'Mise en production', 'Une fois toutes les briques finies : le serveur, la recette et les proches.'],
+  ['plus-tard', 'Plus tard', 'Des idées gardées pour la suite.'],
+];
+const WHO = { toi: 'Toi', claude: 'Claude', ensemble: 'Ensemble', 'plus-tard': 'Plus tard' };
+const STALE_MIN = 15;
+const $ = (id) => document.getElementById(id);
+let tasks = [];
+let live = null;
+let filter = 'todo';
+const closed = new Set(['fait', 'plus-tard']);
+let db = null;
+
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function chevron() { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', 'chev'); s.setAttribute('aria-hidden', 'true'); s.innerHTML = '<path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'; return s; }
+
+function visible(t) {
+  if (filter === 'todo') return !t.fait;
+  if (filter === 'toi') return !t.fait && (t.qui === 'toi' || t.qui === 'ensemble');
+  if (filter === 'claude') return !t.fait && (t.qui === 'claude' || t.qui === 'ensemble');
+  return true;
+}
+
+function minutesSince(iso) { const t = Date.parse(iso); return Number.isFinite(t) ? Math.max(0, (Date.now() - t) / 60000) : Infinity; }
+function rel(iso) {
+  const m = minutesSince(iso);
+  if (!Number.isFinite(m)) return '';
+  const s = Math.round(m * 60);
+  if (s < 10) return 'à l’instant';
+  if (s < 60) return 'il y a ' + s + ' s';
+  if (m < 60) return 'il y a ' + Math.floor(m) + ' min';
+  const h = Math.floor(m / 60), r = Math.floor(m % 60);
+  return 'il y a ' + h + ' h ' + String(r).padStart(2, '0');
+}
+function duration(iso) {
+  const m = minutesSince(iso);
+  if (!Number.isFinite(m)) return '';
+  if (m < 1) return 'depuis moins d’une minute';
+  if (m < 60) return 'depuis ' + Math.floor(m) + ' min';
+  return 'depuis ' + Math.floor(m / 60) + ' h ' + String(Math.floor(m % 60)).padStart(2, '0');
+}
+function agoText(iso) {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return { text: '', minutes: Infinity };
+  const m = minutesSince(iso);
+  const hhmm = new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  if (m < 1) return { text: '· mis à jour à l’instant (' + hhmm + ')', minutes: m };
+  if (m < 60) return { text: '· mis à jour il y a ' + Math.round(m) + ' min (' + hhmm + ')', minutes: m };
+  return { text: '· dernière mise à jour à ' + hhmm, minutes: m };
+}
+
+function laneCard(f) {
+  const card = el('article', 'lane' + (f.tache ? '' : ' idle'));
+  const top = el('div', 'lane-top');
+  top.append(el('span', 'lane-name', f.titre));
+  if (f.chips && f.chips.length) {
+    const chips = el('div', 'lchips');
+    for (const c of f.chips) {
+      const ch = el('span', 'lchip ' + c.etat, c.t);
+      ch.title = c.t + ' · ' + (c.etat === 'fermee' ? 'finie' : c.etat === 'encours' ? 'en cours' : 'à venir');
+      chips.append(ch);
+    }
+    top.append(chips);
+  }
+  card.append(top);
+  if (!f.tache) { card.append(el('p', 'lane-task', f.attente || 'En attente')); return card; }
+  card.append(el('p', 'lane-task', f.tache));
+  if (f.etapes && f.etape != null) {
+    const steps = el('div', 'steps');
+    steps.setAttribute('role', 'img');
+    steps.setAttribute('aria-label', 'Étape ' + (f.etape + 1) + ' sur ' + f.etapes.length + ' : ' + f.etapes[f.etape]);
+    f.etapes.forEach((name, k) => { const s = el('i', 'step' + (k < f.etape ? ' past' : k === f.etape ? ' now' : '')); s.title = name; steps.append(s); });
+    card.append(steps);
+  }
+  const stage = el('p', 'lane-stage');
+  if (f.etapes && f.etape != null) stage.append('Étape ' + (f.etape + 1) + '/' + f.etapes.length + ' · ');
+  stage.append(el('b', null, f.etapeTexte || ''));
+  const d = duration(f.depuis); if (d) stage.append(' · ' + d);
+  card.append(stage);
+  if (f.agents && f.agents.length) {
+    const ul = el('ul', 'agents');
+    const shown = f.agents.slice(0, 4);
+    for (const a of shown) {
+      const li = el('li');
+      li.append(el('b', null, a.qui), ' ' + a.fait + ' ');
+      const r = rel(a.depuis); if (r) li.append(el('span', null, '· ' + r));
+      ul.append(li);
+    }
+    if (f.agents.length > shown.length) ul.append(el('li', null, '+ ' + (f.agents.length - shown.length) + ' autres agents'));
+    card.append(ul);
+  } else if (f.attente) card.append(el('p', 'lane-stage', f.attente));
+  return card;
+}
+
+function renderLive() {
+  const box = $('live');
+  if (!live || !live.etape) { box.hidden = true; return; }
+  box.hidden = false;
+  const a = agoText(live.maj);
+  const stale = a.minutes > STALE_MIN;
+  box.classList.toggle('stale', stale);
+  $('liveLabel').textContent = stale ? 'En attente' : 'En direct';
+  $('liveAgo').textContent = a.text;
+  const cnt = $('liveCount'); cnt.replaceChildren();
+  if (typeof live.agentsActifs === 'number') {
+    cnt.append('· ', el('span', 'live-count', String(live.agentsActifs)), live.agentsActifs > 1 ? ' agents au travail · ' : ' agent au travail · ', el('span', 'live-count', String(live.agentsFaits || 0)), (live.agentsFaits || 0) > 1 ? ' terminés' : ' terminé');
+  }
+  $('liveStep').textContent = live.etape;
+  const hasLanes = Array.isArray(live.files) && live.files.length;
+  $('liveDetail').textContent = hasLanes ? '' : (live.detail || '');
+  $('lanes').replaceChildren(...(hasLanes ? live.files.map(laneCard) : []));
+  const feed = Array.isArray(live.fil) ? live.fil : [];
+  $('feedBox').hidden = !feed.length;
+  $('feed').replaceChildren(...feed.slice(0, 10).map((e) => {
+    const li = el('li', e.ok ? 'ok' : 'go');
+    li.append(el('time', null, e.h), el('span', null, e.t));
+    return li;
+  }));
+  const meta = $('liveMeta'); meta.replaceChildren();
+  if (live.fin) { meta.append('Fin de la refonte estimée : ', el('b', null, live.fin)); }
+}
+
+function currentIds() {
+  if (!live) return new Set();
+  const ids = Array.isArray(live.taches) ? live.taches.slice() : [];
+  if (live.tache) ids.push(live.tache);
+  return new Set(ids);
+}
+
+function render() {
+  const total = tasks.length, done = tasks.filter((t) => t.fait).length;
+  $('doneCount').textContent = done; $('totalCount').textContent = total;
+  const pct = total ? done / total * 100 : 0;
+  $('pct').firstChild.nodeValue = pct.toFixed(1).replace('.', ',');
+  const ordered = PHASES.flatMap(([k]) => tasks.filter((t) => t.phase === k).sort((a, b) => a.ordre - b.ordre));
+  const next = ordered.find((t) => !t.fait && t.qui !== 'plus-tard');
+  const bar = $('segbar'); bar.style.setProperty('--n', Math.max(1, ordered.length)); bar.setAttribute('aria-valuenow', Math.round(pct));
+  bar.replaceChildren(...ordered.map((t) => {
+    const s = el('div', 'seg' + (t.fait ? ' done' : t === next ? ' next' : t.qui === 'plus-tard' ? ' later' : ''));
+    s.title = (PHASES.find((p) => p[0] === t.phase) || [, ''])[1] + ' · ' + t.titre;
+    return s;
+  }));
+  const nx = $('nextUp'); nx.replaceChildren();
+  if (next) { nx.append('Prochaine : ', el('b', null, next.titre), ' · ' + (WHO[next.qui] || '')); }
+  else if (total) nx.textContent = 'Tout est fait.';
+  const cur = currentIds();
+  const main = $('phases'); main.replaceChildren();
+  let shown = 0;
+  for (const [key, name, note] of PHASES) {
+    const all = tasks.filter((t) => t.phase === key).sort((a, b) => a.ordre - b.ordre);
+    if (!all.length) continue;
+    const items = all.filter(visible);
+    if (!items.length && filter !== 'all') continue;
+    shown++;
+    const sec = el('section', 'phase' + (closed.has(key) && filter === 'all' ? ' closed' : ''));
+    const head = el('header'); head.setAttribute('role', 'button'); head.tabIndex = 0;
+    head.setAttribute('aria-expanded', String(!sec.classList.contains('closed')));
+    const d = all.filter((t) => t.fait).length;
+    const mini = el('div', 'bar mini'); const bi = el('i'); mini.append(bi); mini.style.setProperty('--w', Math.round(d / all.length * 100) + '%');
+    head.append(chevron(), el('h2', null, name), mini, el('span', 'count', d + ' / ' + all.length));
+    const toggle = () => { sec.classList.toggle('closed'); head.setAttribute('aria-expanded', String(!sec.classList.contains('closed'))); if (sec.classList.contains('closed')) closed.add(key); else closed.delete(key); };
+    head.addEventListener('click', toggle); head.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    sec.append(head);
+    if (note) sec.append(el('p', 'note', note));
+    const ul = el('ul');
+    for (const t of items) {
+      const li = el('li', (t.fait ? 'done' : '') + (cur.has(t.id) && !t.fait ? ' current' : ''));
+      const lab = el('label'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = !!t.fait; cb.id = 'cb-' + t.id;
+      cb.disabled = !db;
+      cb.addEventListener('change', () => setDone(t.id, cb.checked));
+      const tx = el('div', 't'); tx.append(el('b', null, t.titre)); if (t.detail) tx.append(el('small', null, t.detail));
+      lab.append(cb, tx, el('span', 'who ' + t.qui, WHO[t.qui] || t.qui));
+      li.append(lab); ul.append(li);
+    }
+    sec.append(ul); main.append(sec);
+  }
+  if (!shown) main.append(el('p', 'empty', tasks.length ? 'Rien à afficher avec ce filtre.' : 'La feuille de route est vide pour l’instant.'));
+  renderLive();
+}
+
+async function setDone(id, value) {
+  const t = tasks.find((x) => x.id === id); if (t) { t.fait = value; render(); }
+  try { await db.collection('taches').doc(id).update({ fait: value }); }
+  catch (e) { if (t) { t.fait = !value; render(); } }
+}
+
+document.querySelectorAll('.filters button').forEach((b) => b.addEventListener('click', () => {
+  filter = b.dataset.f;
+  document.querySelectorAll('.filters button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  render();
+}));
+
+const sel = $('newPhase');
+for (const [key, name] of PHASES) { if (key === 'fait') continue; const o = el('option', null, name); o.value = key; sel.append(o); }
+
+$('addForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const titre = $('newTitle').value.trim(); if (!titre || !db) return;
+  const phase = $('newPhase').value, qui = $('newWho').value;
+  const ordre = Math.max(0, ...tasks.filter((t) => t.phase === phase).map((t) => t.ordre || 0)) + 1;
+  try {
+    await db.collection('taches').add({ titre, detail: '', phase, qui, fait: false, ordre });
+    $('newTitle').value = ''; $('addStatus').textContent = 'Tâche ajoutée.';
+  } catch (err) {
+    $('addStatus').textContent = err && err.code === 'quota_exceeded' ? 'La liste est pleine : supprime des tâches avant d’en ajouter.' : 'La tâche n’a pas été ajoutée. Réessaie dans un instant.';
+  }
+});
+
+setInterval(renderLive, 10000);
+
+(async () => {
+  try { db = await window.claude?.use?.('db'); } catch (e) { db = null; }
+  if (!db) { $('loading').textContent = 'La feuille de route n’est pas disponible dans cette vue.'; return; }
+  $('addForm').hidden = false;
+  db.collection('taches').onSnapshot((snap) => {
+    tasks = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+    render();
+  }, () => { $('loading').textContent = 'Connexion à la liste perdue. Recharge la page.'; });
+  try {
+    db.collection('live').onSnapshot((snap) => {
+      const doc = snap.docs.find((d) => d.id === 'etat');
+      live = doc ? doc.data() : null;
+      render();
+    }, () => { live = null; renderLive(); });
+  } catch (e) { live = null; }
+})();
+</script>

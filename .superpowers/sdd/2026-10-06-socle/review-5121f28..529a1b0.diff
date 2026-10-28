@@ -1,0 +1,1948 @@
+# Review package: 5121f28..HEAD
+
+## Commits
+529a1b0 feat(synchro): protocole v1 et push serveur avec points de sauvegarde
+
+## Files changed
+ apps/server/src/deps.ts                      |   4 +
+ apps/server/src/privacy/consent-state.ts     |   4 +-
+ apps/server/src/privacy/consent.ts           |   3 +-
+ apps/server/src/routes.ts                    |   2 +
+ apps/server/src/sync/hooks.ts                |  34 ++
+ apps/server/src/sync/push.ts                 | 354 ++++++++++++++++++++
+ apps/server/src/sync/routes.ts               |  24 ++
+ apps/server/test/db/enum-consistency.test.ts | 120 +++++++
+ apps/server/test/support/index.ts            |   9 +
+ apps/server/test/support/sync-fixtures.ts    | 136 ++++++++
+ apps/server/test/sync/push-c2.test.ts        | 139 ++++++++
+ apps/server/test/sync/push.test.ts           | 477 +++++++++++++++++++++++++++
+ packages/contracts/src/api/auth.ts           |  17 +
+ packages/contracts/src/api/consent.ts        |  15 +-
+ packages/contracts/src/api/places.ts         |  30 +-
+ packages/contracts/src/index.ts              |   1 +
+ packages/contracts/src/sync.ts               | 105 ++++++
+ packages/contracts/test/sync.test.ts         | 104 ++++++
+ 18 files changed, 1564 insertions(+), 14 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/deps.ts b/apps/server/src/deps.ts
+index b527570..fe4e9b9 100644
+--- a/apps/server/src/deps.ts
++++ b/apps/server/src/deps.ts
+@@ -1,18 +1,19 @@
+ import { randomBytes } from 'node:crypto';
+ import type { DatabaseSync } from 'node:sqlite';
+ import { entityRules as defaultEntityRules, type EntityRulesMap } from '@appsport/contracts';
+ import { createMonotonicUuidV7 } from '@appsport/domain';
+ import type { Kysely } from 'kysely';
+ import type { AppConfig } from './config';
+ import type { Database } from './db/schema';
+ import { createLogger, type Logger } from './logger';
++import { SYNC_HOOKS, type SyncHooksMap } from './sync/hooks';
+ 
+ export interface Clock {
+   now(): Date;
+ }
+ 
+ export interface IdGen {
+   uuidv7(): string;
+   randomBytes(n: number): Uint8Array;
+ }
+ 
+@@ -40,31 +41,34 @@ export const ARGON2_PARAMS: Argon2Params = {
+ };
+ 
+ export interface AppDeps {
+   db: Kysely<Database>;
+   sqlite: DatabaseSync;
+   clock: Clock;
+   ids: IdGen;
+   config: AppConfig;
+   logger: Logger;
+   entityRules: EntityRulesMap;
++  syncHooks: SyncHooksMap;
+ }
+ 
+ export function createAppDeps(o: {
+   sqlite: DatabaseSync;
+   db: Kysely<Database>;
+   config: AppConfig;
+   clock?: Clock;
+   ids?: IdGen;
+   logger?: Logger;
+   entityRules?: EntityRulesMap;
++  syncHooks?: SyncHooksMap;
+ }): AppDeps {
+   return {
+     db: o.db,
+     sqlite: o.sqlite,
+     config: o.config,
+     clock: o.clock ?? systemClock,
+     ids: o.ids ?? cryptoIds(),
+     logger: o.logger ?? createLogger(),
+     entityRules: o.entityRules ?? defaultEntityRules,
++    syncHooks: o.syncHooks ?? SYNC_HOOKS,
+   };
+ }
+diff --git a/apps/server/src/privacy/consent-state.ts b/apps/server/src/privacy/consent-state.ts
+index 6b5a077..00d8946 100644
+--- a/apps/server/src/privacy/consent-state.ts
++++ b/apps/server/src/privacy/consent-state.ts
+@@ -1,15 +1,13 @@
+-import type { ConsentState, ConsentStatus } from '@appsport/contracts';
++import type { ConsentState, ConsentStatus, ConsentType } from '@appsport/contracts';
+ import type { DbExecutor } from '../db/schema';
+ 
+-export type ConsentType = 'health' | 'ai_coach';
+-
+ const INACTIVE: ConsentStatus = { active: false, textVersion: null, at: null };
+ 
+ async function latestEvent(db: DbExecutor, userId: string, type: ConsentType): Promise<ConsentStatus> {
+   const row = await db
+     .selectFrom('consentEvent')
+     .select(['action', 'textVersion', 'createdAt'])
+     .where('ownerId', '=', userId)
+     .where('type', '=', type)
+     .orderBy('createdAt', 'desc')
+     .orderBy('rev', 'desc')
+diff --git a/apps/server/src/privacy/consent.ts b/apps/server/src/privacy/consent.ts
+index 8344b6f..bf33a5c 100644
+--- a/apps/server/src/privacy/consent.ts
++++ b/apps/server/src/privacy/consent.ts
+@@ -1,23 +1,24 @@
+ import {
++  type ConsentType,
+   type EntityRule,
+   type LimitationInput,
+   type LimitationPatch,
+   SYNC_COLUMNS,
+ } from '@appsport/contracts';
+ import { type RawBuilder, sql, type Transaction } from 'kysely';
+ import { logSecurityEvent } from '../auth/security-log';
+ import { writeStamp } from '../db/rev';
+ import type { Database, DbExecutor } from '../db/schema';
+ import type { AppDeps } from '../deps';
+ import { httpError } from '../http/errors';
+-import { type ConsentType, getConsentState, isHealthConsentActive } from './consent-state';
++import { getConsentState, isHealthConsentActive } from './consent-state';
+ 
+ export type HealthWithdrawHook = (trx: Transaction<Database>, deps: AppDeps, userId: string) => Promise<void>;
+ export type HealthWithdrawHooks = Readonly<Record<string /* table SQL */, HealthWithdrawHook>>;
+ 
+ /** Vide au socle ; une entrée remplace la règle générique du retrait pour sa table (briques 3 et 5, 09 §8). */
+ export const HEALTH_WITHDRAW_HOOKS: HealthWithdrawHooks = {};
+ 
+ const SYNC: readonly string[] = SYNC_COLUMNS;
+ 
+ /** Dernier accord du type (created_at, puis rev), ou undefined. */
+diff --git a/apps/server/src/routes.ts b/apps/server/src/routes.ts
+index fba4bd2..568a82f 100644
+--- a/apps/server/src/routes.ts
++++ b/apps/server/src/routes.ts
+@@ -3,24 +3,26 @@ import { adminRoutes } from './admin/routes';
+ import type { AppEnv } from './app-env';
+ import { adminInvitationRoutes, invitationRoutes } from './auth/invitation-routes';
+ import { meRoutes } from './auth/me-routes';
+ import { authRoutes } from './auth/routes';
+ import type { AppDeps } from './deps';
+ import { healthRoutes } from './health/routes';
+ import { gymRoutes } from './places/gym-routes';
+ import { placeRoutes } from './places/place-routes';
+ import { consentRoutes } from './privacy/consent-routes';
+ import { profileRoutes } from './profile/routes';
++import { syncRoutes } from './sync/routes';
+ 
+ /** Un routeur par ligne ; les routeurs des tâches suivantes s'ajoutent ici. */
+ export function mountRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
+   app.route('/', healthRoutes(deps));
+   app.route('/api/auth', authRoutes(deps));
+   app.route('/api/me', meRoutes(deps));
+   app.route('/api/me', profileRoutes(deps));
+   app.route('/api/me', consentRoutes(deps));
+   app.route('/api/gyms', gymRoutes(deps));
+   app.route('/api/places', placeRoutes(deps));
+   app.route('/api/invitations', invitationRoutes(deps));
+   app.route('/api/admin/invitations', adminInvitationRoutes(deps));
+   app.route('/api/admin', adminRoutes(deps));
++  app.route('/api/sync', syncRoutes(deps));
+ }
+diff --git a/apps/server/src/sync/hooks.ts b/apps/server/src/sync/hooks.ts
+new file mode 100644
+index 0000000..a80f918
+--- /dev/null
++++ b/apps/server/src/sync/hooks.ts
+@@ -0,0 +1,34 @@
++import type { SyncOp } from '@appsport/contracts';
++import type { Transaction } from 'kysely';
++import type { Database } from '../db/schema';
++import type { AppDeps } from '../deps';
++
++export interface HookCtx {
++  trx: Transaction<Database>;
++  deps: AppDeps;
++  userId: string;
++  op: SyncOp;
++}
++
++export interface BatchCtx {
++  trx: Transaction<Database>;
++  deps: AppDeps;
++  userId: string;
++  applied: readonly { entity: string; id: string }[];
++}
++
++/** Points d'extension d'une table J ; la relation parent est lue dans `EntityRule.parent`. */
++export interface EntitySyncHooks {
++  allowedKinds?: readonly SyncOp['kind'][];
++  /** Dans le point de sauvegarde de l'op, avant l'écriture ; `fields` en snake_case, déjà filtrés. */
++  beforeApply?(ctx: HookCtx, fields: Record<string, unknown>): Promise<void>;
++  /** Après une écriture effective de l'op. */
++  afterApply?(ctx: HookCtx): Promise<void>;
++  /** Une fois par lot et par entité ayant des ops écrites. */
++  afterBatch?(b: BatchCtx): Promise<void>;
++}
++
++export type SyncHooksMap = Readonly<Record<string, EntitySyncHooks>>;
++
++/** Au socle, le client n'écrit que `dismissed_at` de ses rejets. */
++export const SYNC_HOOKS: SyncHooksMap = { sync_rejection: { allowedKinds: ['patch'] } };
+diff --git a/apps/server/src/sync/push.ts b/apps/server/src/sync/push.ts
+new file mode 100644
+index 0000000..e3a7e25
+--- /dev/null
++++ b/apps/server/src/sync/push.ts
+@@ -0,0 +1,354 @@
++import {
++  camelToSnake,
++  type EntityRule,
++  MIN_PROTOCOL,
++  type PushResult,
++  type RejectionCode,
++  SYNC_PROTOCOL,
++  SyncOp,
++  snakeToCamel,
++} from '@appsport/contracts';
++import { isUuidV7 } from '@appsport/domain';
++import { sql, type Transaction } from 'kysely';
++import type { SessionUser } from '../app-env';
++import { writeStamp } from '../db/rev';
++import type { AppliedOpTable, Database } from '../db/schema';
++import type { AppDeps } from '../deps';
++import { isHealthConsentActive } from '../privacy/consent-state';
++import type { EntitySyncHooks, HookCtx } from './hooks';
++
++/** Rejet d'une op : enregistré dans sync_rejection, le reste du lot continue. */
++export class OpRejection extends Error {
++  readonly code: RejectionCode;
++  readonly reason: string;
++
++  constructor(code: RejectionCode, reason: string) {
++    super(`${code}: ${reason}`);
++    this.name = 'OpRejection';
++    this.code = code;
++    this.reason = reason;
++  }
++}
++
++/** Op d'un autre utilisateur (opId ou userId) : refusée sans rien écrire. */
++class UnrecordedRejection extends Error {}
++
++const SQLITE_CONSTRAINT = 19;
++
++interface Batch {
++  trx: Transaction<Database>;
++  deps: AppDeps;
++  user: SessionUser;
++  consent: boolean;
++  rejectedRows: Set<string>;
++  written: Map<string, { entity: string; id: string }[]>;
++}
++
++interface Applied {
++  result: PushResult;
++  wrote?: { entity: string; id: string };
++}
++
++interface ExistingRow {
++  ownerId: string;
++  rev: number;
++  deletedAt: string | null;
++}
++
++type Raw = Record<string, unknown>;
++
++const asRecord = (v: unknown): Raw =>
++  typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Raw) : {};
++const textOf = (raw: Raw, key: string): string | null => {
++  const v = raw[key];
++  return typeof v === 'string' && v !== '' ? v : null;
++};
++const own = <T>(map: Readonly<Record<string, T>>, key: string): T | undefined =>
++  Object.hasOwn(map, key) ? map[key] : undefined;
++
++function isConstraintError(err: unknown): boolean {
++  if (typeof err !== 'object' || err === null || !('errcode' in err)) return false;
++  return typeof err.errcode === 'number' && (err.errcode & 0xff) === SQLITE_CONSTRAINT;
++}
++
++/**
++ * Applique un lot d'ops (R-SYN-16) dans une transaction, un point de sauvegarde par op.
++ * Une erreur autre qu'un rejet ou une contrainte SQLite annule tout le lot (500, le client rejoue).
++ */
++export async function applyPush(
++  deps: AppDeps,
++  user: SessionUser,
++  ops: readonly unknown[],
++): Promise<PushResult[]> {
++  const results = await deps.db.transaction().execute(async (trx) => {
++    const batch: Batch = {
++      trx,
++      deps,
++      user,
++      consent: await isHealthConsentActive(trx, user.id),
++      rejectedRows: new Set(),
++      written: new Map(),
++    };
++    const out: PushResult[] = [];
++    for (const [index, raw] of ops.entries()) out.push(await applyInSavepoint(batch, asRecord(raw), index));
++    for (const [entity, applied] of batch.written) {
++      await own(deps.syncHooks, entity)?.afterBatch?.({ trx, deps, userId: user.id, applied });
++    }
++    return out;
++  });
++  deps.logger.info('sync push', { event: 'sync_push', count: ops.length });
++  return results;
++}
++
++async function applyInSavepoint(b: Batch, raw: Raw, index: number): Promise<PushResult> {
++  const savepoint = `sync_op_${index}`;
++  await sql.raw(`SAVEPOINT ${savepoint}`).execute(b.trx);
++  let applied: Applied;
++  try {
++    applied = await applyOp(b, raw);
++  } catch (err) {
++    if (!(err instanceof OpRejection || err instanceof UnrecordedRejection || isConstraintError(err)))
++      throw err;
++    await sql.raw(`ROLLBACK TO ${savepoint}`).execute(b.trx);
++    await sql.raw(`RELEASE ${savepoint}`).execute(b.trx);
++    return reject(b, raw, err);
++  }
++  await sql.raw(`RELEASE ${savepoint}`).execute(b.trx);
++  if (applied.wrote) {
++    const list = b.written.get(applied.wrote.entity) ?? [];
++    list.push(applied.wrote);
++    b.written.set(applied.wrote.entity, list);
++  }
++  return applied.result;
++}
++
++async function reject(b: Batch, raw: Raw, err: unknown): Promise<PushResult> {
++  const rejection = err instanceof UnrecordedRejection || err instanceof OpRejection ? err : null;
++  const code: RejectionCode =
++    rejection instanceof OpRejection ? rejection.code : rejection ? 'forbidden' : 'validation';
++  const opId = textOf(raw, 'opId');
++  b.deps.logger.warn('sync op rejected', { event: 'sync_rejected', code });
++  const result: PushResult = { opId: opId ?? '', status: 'rejected', code };
++  if (err instanceof UnrecordedRejection) return result;
++
++  const reason = rejection instanceof OpRejection ? rejection.reason : 'sql_constraint';
++  const entity = textOf(raw, 'entity') ?? '';
++  const rowId = textOf(raw, 'id') ?? '';
++  b.rejectedRows.add(`${entity}:${rowId}`);
++  const detail = { kind: textOf(raw, 'kind'), fieldNames: Object.keys(asRecord(raw.fields)).sort(), reason };
++  const stamp = await writeStamp(b.trx, b.deps, b.user.id);
++  await b.trx
++    .insertInto('syncRejection')
++    .values({
++      id: b.deps.ids.uuidv7(),
++      ownerId: b.user.id,
++      opId: opId ?? '',
++      entity,
++      rowId,
++      code,
++      detailJson: JSON.stringify(detail),
++      dismissedAt: null,
++      deletedAt: null,
++      createdAt: stamp.updatedAt,
++      ...stamp,
++    })
++    .execute();
++  if (opId) await recordAppliedOp(b, opId, entity, rowId, 'rejected', null);
++  return result;
++}
++
++async function applyOp(b: Batch, raw: Raw): Promise<Applied> {
++  const { trx, deps, user } = b;
++  // 0. Idempotence.
++  const rawOpId = textOf(raw, 'opId');
++  if (rawOpId) {
++    const seen = await trx
++      .selectFrom('appliedOp')
++      .select(['userId', 'assignedRev'])
++      .where('opId', '=', rawOpId)
++      .executeTakeFirst();
++    if (seen) {
++      if (seen.userId !== user.id) throw new UnrecordedRejection();
++      const rev = seen.assignedRev ?? undefined;
++      return { result: { opId: rawOpId, status: 'duplicate', ...(rev !== undefined ? { rev } : {}) } };
++    }
++  }
++  // 1. Forme.
++  const parsed = SyncOp.safeParse(raw);
++  if (!parsed.success) throw new OpRejection('validation', 'schema');
++  const op = parsed.data;
++  const clientId = op.kind === 'create' || op.kind === 'restore_upsert';
++  if (clientId && !isUuidV7(op.id)) throw new OpRejection('validation', 'id_format');
++  // 2. Protocole.
++  if (op.protocol < MIN_PROTOCOL || op.protocol > SYNC_PROTOCOL)
++    throw new OpRejection('protocol', 'protocol');
++  // 3. Table J.
++  const rule = own(deps.entityRules, op.entity);
++  if (rule?.syncClass !== 'J' || rule.ownerColumn !== 'owner_id') {
++    throw new OpRejection('unknown_entity', 'not_journal');
++  }
++  // 4. Kinds permis.
++  const hooks: EntitySyncHooks | undefined = own(deps.syncHooks, op.entity);
++  if (hooks?.allowedKinds && !hooks.allowedKinds.includes(op.kind)) {
++    throw new OpRejection('forbidden', 'kind_not_allowed');
++  }
++  // 5. Utilisateur de la session.
++  if (op.userId !== user.id) throw new UnrecordedRejection();
++  // 6. Propriétaire de la ligne existante.
++  const existing = await readRow(trx, op.entity, op.id);
++  if (existing && existing.ownerId !== user.id) throw new OpRejection('forbidden', 'owner_mismatch');
++  // 7. Parent (à la création, et pour un patch qui change de parent).
++  if (rule.parent && (clientId || (op.kind === 'patch' && snakeToCamel(rule.parent.column) in op.fields))) {
++    await assertParent(b, rule.parent, op.fields);
++  }
++  // 8. Table C2 sans accord : op écartée, rien d'écrit.
++  if (!b.consent && rule.category === 'C2' && op.kind !== 'delete') {
++    await recordAppliedOp(b, op.opId, op.entity, op.id, 'applied_partial', null);
++    return { result: { opId: op.opId, status: 'applied_partial', dropped: true } };
++  }
++  // 9. Champs écrits par le client ; C2 à null sans accord.
++  const { fields, droppedFields } =
++    op.kind === 'delete' ? { fields: {}, droppedFields: [] } : keepFields(rule, op.fields, b.consent);
++  // 10. Écriture.
++  if (op.kind === 'restore_upsert') throw new OpRejection('validation', 'not_supported');
++  const hookCtx: HookCtx = { trx, deps, userId: user.id, op };
++  await hooks?.beforeApply?.(hookCtx, fields);
++  const outcome = await writeRow(b, op, existing, fields);
++  // 11.
++  if (outcome.wrote) await hooks?.afterApply?.(hookCtx);
++  // 12.
++  const status = droppedFields.length > 0 ? 'applied_partial' : 'applied';
++  await recordAppliedOp(b, op.opId, op.entity, op.id, status, outcome.rev);
++  return {
++    result: {
++      opId: op.opId,
++      status,
++      ...(outcome.rev !== null ? { rev: outcome.rev } : {}),
++      ...(droppedFields.length > 0 ? { droppedFields } : {}),
++    },
++    ...(outcome.wrote ? { wrote: { entity: op.entity, id: op.id } } : {}),
++  };
++}
++
++async function readRow(
++  trx: Transaction<Database>,
++  entity: string,
++  id: string,
++): Promise<ExistingRow | undefined> {
++  const r =
++    await sql<ExistingRow>`select owner_id, rev, deleted_at from ${sql.table(entity)} where id = ${id}`.execute(
++      trx,
++    );
++  return r.rows[0];
++}
++
++async function assertParent(
++  b: Batch,
++  parent: NonNullable<EntityRule['parent']>,
++  fields: Record<string, unknown>,
++): Promise<void> {
++  const parentId = fields[snakeToCamel(parent.column)];
++  if (typeof parentId !== 'string' || b.rejectedRows.has(`${parent.entity}:${parentId}`)) {
++    throw new OpRejection('parent_rejected', 'parent_rejected');
++  }
++  const row = await readRow(b.trx, parent.entity, parentId);
++  if (!row || row.ownerId !== b.user.id) throw new OpRejection('parent_rejected', 'parent_rejected');
++}
++
++function isC2Value(rule: EntityRule, column: string, value: unknown): boolean {
++  if (value === null || value === undefined) return false;
++  if (rule.c2Columns.includes(column)) return true;
++  const values = rule.c2Values && Object.hasOwn(rule.c2Values, column) ? rule.c2Values[column] : undefined;
++  return typeof value === 'string' && values !== undefined && values.includes(value);
++}
++
++function toSqlValue(value: unknown): unknown {
++  if (typeof value === 'boolean') return value ? 1 : 0;
++  if (typeof value === 'object' && value !== null) return JSON.stringify(value);
++  return value;
++}
++
++/** Garde les colonnes `clientWritable` (clés camelCase), les autres sont ignorées en silence. */
++function keepFields(
++  rule: EntityRule,
++  input: Record<string, unknown>,
++  consent: boolean,
++): { fields: Record<string, unknown>; droppedFields: string[] } {
++  const fields: Record<string, unknown> = {};
++  const droppedFields: string[] = [];
++  for (const [key, value] of Object.entries(input)) {
++    const column = camelToSnake(key);
++    if (snakeToCamel(column) !== key || !rule.clientWritable.includes(column)) continue;
++    if (!consent && isC2Value(rule, column, value)) {
++      fields[column] = null;
++      droppedFields.push(key);
++    } else {
++      fields[column] = toSqlValue(value);
++    }
++  }
++  return { fields, droppedFields };
++}
++
++async function writeRow(
++  b: Batch,
++  op: SyncOp,
++  existing: ExistingRow | undefined,
++  fields: Record<string, unknown>,
++): Promise<{ rev: number | null; wrote: boolean }> {
++  const { trx, deps, user } = b;
++  const table = sql.table(op.entity);
++  if (op.kind === 'create') {
++    if (existing) return { rev: existing.rev, wrote: false };
++    const stamp = await writeStamp(trx, deps, user.id);
++    const row: Record<string, unknown> = {
++      id: op.id,
++      owner_id: user.id,
++      ...fields,
++      rev: stamp.rev,
++      created_at: stamp.updatedAt,
++      updated_at: stamp.updatedAt,
++      updated_by: stamp.updatedBy,
++      deleted_at: null,
++    };
++    const columns = sql.join(Object.keys(row).map((c) => sql.ref(c)));
++    await sql`insert into ${table} (${columns}) values (${sql.join(Object.values(row))})`.execute(trx);
++    return { rev: stamp.rev, wrote: true };
++  }
++  if (!existing) {
++    if (op.kind === 'patch') throw new OpRejection('validation', 'row_missing');
++    return { rev: null, wrote: false };
++  }
++  if (existing.deletedAt !== null) return { rev: existing.rev, wrote: false };
++  const stamp = await writeStamp(trx, deps, user.id);
++  const set: Record<string, unknown> = {
++    ...(op.kind === 'delete' ? { deleted_at: stamp.updatedAt } : fields),
++    rev: stamp.rev,
++    updated_at: stamp.updatedAt,
++    updated_by: stamp.updatedBy,
++  };
++  const assignments = sql.join(Object.entries(set).map(([c, v]) => sql`${sql.ref(c)} = ${v}`));
++  await sql`update ${table} set ${assignments} where id = ${op.id}`.execute(trx);
++  return { rev: stamp.rev, wrote: true };
++}
++
++async function recordAppliedOp(
++  b: Batch,
++  opId: string,
++  entity: string,
++  rowId: string,
++  status: AppliedOpTable['status'],
++  assignedRev: number | null,
++): Promise<void> {
++  await b.trx
++    .insertInto('appliedOp')
++    .values({
++      opId,
++      userId: b.user.id,
++      entity,
++      rowId,
++      status,
++      assignedRev,
++      appliedAt: b.deps.clock.now().toISOString(),
++    })
++    .execute();
++}
+diff --git a/apps/server/src/sync/routes.ts b/apps/server/src/sync/routes.ts
+new file mode 100644
+index 0000000..b5b57e7
+--- /dev/null
++++ b/apps/server/src/sync/routes.ts
+@@ -0,0 +1,24 @@
++import { PushEnvelope, type PushResponse } from '@appsport/contracts';
++import { Hono } from 'hono';
++import type { AppEnv } from '../app-env';
++import { requireUser } from '../auth/session';
++import type { AppDeps } from '../deps';
++import { httpError } from '../http/errors';
++import { parseJson } from '../http/validate';
++import { applyPush } from './push';
++
++/** Monté sous /api/sync. */
++export function syncRoutes(deps: AppDeps): Hono<AppEnv> {
++  const routes = new Hono<AppEnv>();
++  routes.use('*', requireUser);
++
++  routes.post('/push', async (c) => {
++    const user = c.get('user');
++    if (!user) throw httpError('unauthenticated');
++    const { ops } = await parseJson(c, PushEnvelope);
++    const body: PushResponse = { results: await applyPush(deps, user, ops) };
++    return c.json(body);
++  });
++
++  return routes;
++}
+diff --git a/apps/server/test/db/enum-consistency.test.ts b/apps/server/test/db/enum-consistency.test.ts
+new file mode 100644
+index 0000000..df204c7
+--- /dev/null
++++ b/apps/server/test/db/enum-consistency.test.ts
+@@ -0,0 +1,120 @@
++import {
++  BODY_AREAS,
++  CONSENT_ACTIONS,
++  CONSENT_TYPES,
++  DAYS_PER_WEEK,
++  EXPERIENCES,
++  GOALS,
++  GYM_CITY_MAX,
++  GYM_CITY_MIN,
++  GYM_NAME_MAX,
++  GYM_NAME_MIN,
++  GymHistoryAction,
++  INVITATION_NOTE_MAX,
++  LIMITATION_NOTE_MAX,
++  LIMITATION_SEVERITIES,
++  LIMITATION_SIDES,
++  ONBOARDING_STEPS,
++  PLACE_KINDS,
++  PLACE_NAME_MAX,
++  PushResult,
++  RejectionCode,
++  RoleSchema,
++  SECURITY_OUTCOMES,
++  SESSION_MINUTES,
++  SESSION_REVOKED_REASONS,
++  SPORT_OTHER_LABEL_MAX,
++  UserStatusSchema,
++} from '@appsport/contracts';
++import { afterEach, describe, expect, it } from 'vitest';
++import { createTestContext, type TestContext } from '../support';
++
++// 01 §9.1.4 : chaque énumération et chaque borne du DDL a sa constante dans contracts, et les deux concordent.
++const ENUMS: Record<string, readonly (string | number)[]> = {
++  'applied_op.status': PushResult.shape.status.options,
++  'consent_event.type': CONSENT_TYPES,
++  'consent_event.action': CONSENT_ACTIONS,
++  'gym_history.action': GymHistoryAction.options,
++  'limitation.body_area': BODY_AREAS,
++  'limitation.side': LIMITATION_SIDES,
++  'limitation.severity': LIMITATION_SEVERITIES,
++  'place.kind': PLACE_KINDS,
++  'security_event.outcome': SECURITY_OUTCOMES,
++  'session.revoked_reason': SESSION_REVOKED_REASONS,
++  'sync_rejection.code': RejectionCode.options,
++  'training_profile.goal': GOALS,
++  'training_profile.experience': EXPERIENCES,
++  'training_profile.session_minutes': SESSION_MINUTES,
++  'user.role': RoleSchema.options,
++  'user.status': UserStatusSchema.options,
++  'user.onboarding_step': ONBOARDING_STEPS,
++};
++
++const BOUNDS: Record<string, { min: number | null; max: number }> = {
++  'gym.name': { min: GYM_NAME_MIN, max: GYM_NAME_MAX },
++  'gym.city': { min: GYM_CITY_MIN, max: GYM_CITY_MAX },
++  'invitation.note': { min: null, max: INVITATION_NOTE_MAX },
++  'limitation.note': { min: null, max: LIMITATION_NOTE_MAX },
++  'place.name': { min: null, max: PLACE_NAME_MAX },
++  'training_profile.days_per_week': { min: Math.min(...DAYS_PER_WEEK), max: Math.max(...DAYS_PER_WEEK) },
++  'training_profile.sport_other_label': { min: null, max: SPORT_OTHER_LABEL_MAX },
++};
++
++const IN_RE = /\b(\w+) IN \(([^)]*)\)/g;
++const BETWEEN_RE = /(?:length\((\w+)\)|\b(\w+)) BETWEEN (\d+) AND (\d+)/g;
++const MAX_RE = /length\((\w+)\) <= (\d+)/g;
++
++function parseList(raw: string): (string | number)[] {
++  return raw.split(',').map((v) => {
++    const t = v.trim();
++    return t.startsWith("'") ? t.slice(1, -1) : Number(t);
++  });
++}
++
++const sorted = (v: readonly (string | number)[]) => [...v].map(String).sort();
++
++let ctx: TestContext;
++afterEach(() => ctx?.close());
++
++async function schemaChecks() {
++  ctx = await createTestContext();
++  const tables = ctx.deps.sqlite
++    .prepare("SELECT name, sql FROM sqlite_schema WHERE type = 'table' ORDER BY name")
++    .all() as { name: string; sql: string }[];
++  const enums = new Map<string, (string | number)[]>();
++  const bounds = new Map<string, { min: number | null; max: number }>();
++  for (const { name, sql } of tables) {
++    for (const m of sql.matchAll(IN_RE)) {
++      const values = parseList(m[2] as string);
++      if (sorted(values).join() === '0,1') continue; // booléen
++      enums.set(`${name}.${m[1]}`, values);
++    }
++    for (const m of sql.matchAll(BETWEEN_RE)) {
++      bounds.set(`${name}.${m[1] ?? m[2]}`, { min: Number(m[3]), max: Number(m[4]) });
++    }
++    for (const m of sql.matchAll(MAX_RE)) bounds.set(`${name}.${m[1]}`, { min: null, max: Number(m[2]) });
++  }
++  return { enums, bounds };
++}
++
++describe('cohérence du DDL et des constantes de contracts (01 §9.1.4)', () => {
++  it('chaque énumération IN (...) du schéma égale la constante de sa colonne', async () => {
++    const { enums } = await schemaChecks();
++    expect(enums.size).toBeGreaterThan(0);
++    for (const [column, values] of enums) {
++      const expected = ENUMS[column];
++      expect(expected, `colonne sans constante : ${column}`).toBeDefined();
++      expect(sorted(values), column).toEqual(sorted(expected ?? []));
++    }
++    expect([...enums.keys()].sort()).toEqual(Object.keys(ENUMS).sort());
++  });
++
++  it('chaque borne du schéma égale la constante de sa colonne', async () => {
++    const { bounds } = await schemaChecks();
++    for (const [column, bound] of bounds) {
++      expect(BOUNDS[column], `colonne sans constante : ${column}`).toBeDefined();
++      expect(bound, column).toEqual(BOUNDS[column]);
++    }
++    expect([...bounds.keys()].sort()).toEqual(Object.keys(BOUNDS).sort());
++  });
++});
+diff --git a/apps/server/test/support/index.ts b/apps/server/test/support/index.ts
+index a29b44a..8b5715d 100644
+--- a/apps/server/test/support/index.ts
++++ b/apps/server/test/support/index.ts
+@@ -1,6 +1,15 @@
+ export { FakeClock } from './clock';
+ export { createTestContext, TEST_ARGON2, type TestContext, type TestRequestInit } from './context';
+ export { insertFixtureRow } from './factories';
+ export { seqIds } from './ids';
+ export { completeOnboarding } from './onboarding';
++export {
++  createSyncTestContext,
++  dumpDatabase,
++  makeOp,
++  PROTOCOL_HEADERS,
++  SYNC_FIXTURE_MIGRATION,
++  SYNC_FIXTURE_RULES,
++  syncPush,
++} from './sync-fixtures';
+ export { type CreateUserOptions, createUser, createUserAndLogin, login, type TestUser } from './users';
+diff --git a/apps/server/test/support/sync-fixtures.ts b/apps/server/test/support/sync-fixtures.ts
+new file mode 100644
+index 0000000..f10347c
+--- /dev/null
++++ b/apps/server/test/support/sync-fixtures.ts
+@@ -0,0 +1,136 @@
++import type { DatabaseSync } from 'node:sqlite';
++import {
++  type EntityRule,
++  type EntityRulesMap,
++  entityRules,
++  PROTOCOL_HEADER,
++  SYNC_COLUMNS,
++  SYNC_PROTOCOL,
++  type SyncOp,
++} from '@appsport/contracts';
++import { sql } from 'kysely';
++import type { Migration } from '../../src/db/migrations/index';
++import { createTestContext, type TestContext } from './context';
++import { seqIds } from './ids';
++
++/** Colonnes +SYNC de la Task 4b. */
++const SYNC_DDL =
++  'owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, ' +
++  'updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT';
++
++const FIXTURE_DDL: Record<string, string> = {
++  fixture_note: `CREATE TABLE fixture_note (id TEXT PRIMARY KEY, ${SYNC_DDL}, title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 100), body TEXT) STRICT`,
++  fixture_note_item: `CREATE TABLE fixture_note_item (id TEXT PRIMARY KEY, ${SYNC_DDL}, note_id TEXT NOT NULL REFERENCES fixture_note(id), label TEXT NOT NULL CHECK (length(label) BETWEEN 1 AND 100), pain_note TEXT, reason TEXT) STRICT`,
++  fixture_c2_log: `CREATE TABLE fixture_c2_log (id TEXT PRIMARY KEY, ${SYNC_DDL}, value INTEGER, CHECK (deleted_at IS NOT NULL OR value IS NOT NULL)) STRICT`,
++};
++
++/** Tables J de test pour la synchro (non cassante, hors MIGRATIONS). */
++export const SYNC_FIXTURE_MIGRATION: Migration = {
++  id: '9001_sync_fixtures',
++  breaking: false,
++  up: async (db) => {
++    for (const [table, ddl] of Object.entries(FIXTURE_DDL)) {
++      await sql.raw(ddl).execute(db);
++      await sql.raw(`CREATE INDEX ${table}_rev_idx ON ${table} (rev)`).execute(db);
++      await sql.raw(`CREATE INDEX ${table}_owner_rev_idx ON ${table} (owner_id, rev)`).execute(db);
++    }
++  },
++};
++
++const fixtureRule = (
++  spec: Pick<EntityRule, 'category' | 'columns' | 'clientWritable'> & Partial<EntityRule>,
++): EntityRule => ({
++  syncClass: 'J',
++  ownerColumn: 'owner_id',
++  c2Columns: [],
++  secretColumns: [],
++  exported: true,
++  onUserDelete: 'cascade',
++  ...spec,
++});
++
++export const SYNC_FIXTURE_RULES: EntityRulesMap = {
++  ...entityRules,
++  fixture_note: fixtureRule({
++    category: 'C1',
++    columns: ['id', ...SYNC_COLUMNS, 'title', 'body'],
++    clientWritable: ['title', 'body'],
++  }),
++  fixture_note_item: fixtureRule({
++    category: 'C1',
++    columns: ['id', ...SYNC_COLUMNS, 'note_id', 'label', 'pain_note', 'reason'],
++    clientWritable: ['note_id', 'label', 'pain_note', 'reason'],
++    c2Columns: ['pain_note'],
++    c2Values: { reason: ['pain'] },
++    parent: { entity: 'fixture_note', column: 'note_id' },
++  }),
++  fixture_c2_log: fixtureRule({
++    category: 'C2',
++    columns: ['id', ...SYNC_COLUMNS, 'value'],
++    clientWritable: ['value'],
++  }),
++};
++
++/** Contexte de test avec les tables et règles de synchro de test. */
++export async function createSyncTestContext(
++  opts: Parameters<typeof createTestContext>[0] = {},
++): Promise<TestContext> {
++  return createTestContext({
++    ...opts,
++    extraMigrations: [SYNC_FIXTURE_MIGRATION, ...(opts.extraMigrations ?? [])],
++    entityRules: opts.entityRules ?? SYNC_FIXTURE_RULES,
++  });
++}
++
++export const PROTOCOL_HEADERS: Record<string, string> = { [PROTOCOL_HEADER]: String(SYNC_PROTOCOL) };
++
++const opIds = seqIds(7000);
++
++export function makeOp(o: {
++  userId: string;
++  entity: string;
++  id: string;
++  kind: SyncOp['kind'];
++  fields?: Record<string, unknown>;
++  opId?: string;
++  serverRevSeen?: number | null;
++  protocol?: number;
++}): SyncOp {
++  return {
++    opId: o.opId ?? opIds.uuidv7(),
++    userId: o.userId,
++    entity: o.entity,
++    id: o.id,
++    kind: o.kind,
++    fields: o.fields ?? {},
++    clientTs: '2026-10-06T10:00:00.000Z',
++    protocol: o.protocol ?? SYNC_PROTOCOL,
++    attempts: 0,
++    serverRevSeen: o.serverRevSeen ?? null,
++  };
++}
++
++export async function syncPush(
++  ctx: TestContext,
++  cookie: string,
++  ops: unknown[],
++  // biome-ignore lint/suspicious/noExplicitAny: corps de réponse lu librement par les tests
++): Promise<{ status: number; body: any }> {
++  const res = await ctx.request('/api/sync/push', {
++    method: 'POST',
++    json: { ops },
++    cookie,
++    headers: PROTOCOL_HEADERS,
++  });
++  return { status: res.status, body: await res.json() };
++}
++
++/** JSON de toutes les lignes de toutes les tables, pour chercher des valeurs témoins. */
++export function dumpDatabase(sqlite: DatabaseSync): string {
++  const tables = sqlite
++    .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
++    .all() as { name: string }[];
++  const dump: Record<string, unknown[]> = {};
++  for (const { name } of tables) dump[name] = sqlite.prepare(`SELECT * FROM "${name}"`).all();
++  return JSON.stringify(dump);
++}
+diff --git a/apps/server/test/sync/push-c2.test.ts b/apps/server/test/sync/push-c2.test.ts
+new file mode 100644
+index 0000000..a45221e
+--- /dev/null
++++ b/apps/server/test/sync/push-c2.test.ts
+@@ -0,0 +1,139 @@
++import { HEALTH_CONSENT_TEXT } from '@appsport/contracts';
++import { afterEach, describe, expect, it } from 'vitest';
++import { createLogger } from '../../src/logger';
++import { grantConsent } from '../../src/privacy/consent';
++import {
++  createSyncTestContext,
++  createUserAndLogin,
++  dumpDatabase,
++  makeOp,
++  seqIds,
++  syncPush,
++  type TestContext,
++} from '../support';
++
++// Review Focus 3 (serveur) : une donnée C2 poussée sans accord santé n'est écrite nulle part.
++const WITNESS = 'TEMOIN-C2-7f3a';
++const WITNESS_N = 987654;
++
++type Member = Awaited<ReturnType<typeof createUserAndLogin>>;
++type Row = Record<string, unknown>;
++
++const rowIds = seqIds(8000);
++const newId = () => rowIds.uuidv7();
++
++let ctx: TestContext;
++let lines: string[];
++afterEach(() => ctx?.close());
++
++async function setup(): Promise<Member> {
++  lines = [];
++  ctx = await createSyncTestContext({ deps: { logger: createLogger((l) => lines.push(l)) } });
++  return createUserAndLogin(ctx);
++}
++
++const rowOf = (table: string, id: string) =>
++  ctx.deps.sqlite.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id) as Row | undefined;
++const rowsOf = (table: string) => ctx.deps.sqlite.prepare(`SELECT * FROM ${table}`).all() as Row[];
++
++/** Une note parente puis un élément portant `fields`. */
++async function pushItem(u: Member, fields: Row) {
++  const parent = makeOp({
++    userId: u.id,
++    entity: 'fixture_note',
++    id: newId(),
++    kind: 'create',
++    fields: { title: 'n' },
++  });
++  const item = makeOp({
++    userId: u.id,
++    entity: 'fixture_note_item',
++    id: newId(),
++    kind: 'create',
++    fields: { noteId: parent.id, label: 'l', ...fields },
++  });
++  const res = await syncPush(ctx, u.cookie, [parent, item]);
++  expect(res.status).toBe(200);
++  return { item, result: res.body.results[1] as Row };
++}
++
++function expectNoWitness() {
++  const dump = dumpDatabase(ctx.deps.sqlite);
++  const journal = lines.join('\n');
++  for (const witness of [WITNESS, String(WITNESS_N)]) {
++    expect(dump).not.toContain(witness);
++    expect(journal).not.toContain(witness);
++  }
++}
++
++describe('push et données de santé (C2)', () => {
++  it('sans accord : la colonne C2 est mise à null et signalée', async () => {
++    const a = await setup();
++    const { item, result } = await pushItem(a, { painNote: WITNESS });
++    expect(result).toEqual({
++      opId: item.opId,
++      status: 'applied_partial',
++      rev: expect.any(Number),
++      droppedFields: ['painNote'],
++    });
++    expect(result.rev as number).toBeGreaterThan(0);
++    expect(rowOf('fixture_note_item', item.id)).toMatchObject({ pain_note: null, label: 'l' });
++    expect(ctx.deps.sqlite.prepare('SELECT status FROM applied_op WHERE op_id = ?').get(item.opId)).toEqual({
++      status: 'applied_partial',
++    });
++    expect(rowsOf('sync_rejection')).toHaveLength(0);
++    expectNoWitness();
++  });
++
++  it('sans accord : une valeur C2 de c2Values est écartée, une valeur C1 gardée', async () => {
++    const a = await setup();
++    const pain = await pushItem(a, { reason: 'pain' });
++    expect(pain.result).toMatchObject({ status: 'applied_partial', droppedFields: ['reason'] });
++    expect(rowOf('fixture_note_item', pain.item.id)).toMatchObject({ reason: null });
++
++    const fatigue = await pushItem(a, { reason: 'fatigue' });
++    expect(fatigue.result.status).toBe('applied');
++    expect(fatigue.result.droppedFields).toBeUndefined();
++    expect(rowOf('fixture_note_item', fatigue.item.id)).toMatchObject({ reason: 'fatigue' });
++  });
++
++  it('sans accord : une op sur une table C2 est écartée entièrement', async () => {
++    const a = await setup();
++    const op = makeOp({
++      userId: a.id,
++      entity: 'fixture_c2_log',
++      id: newId(),
++      kind: 'create',
++      fields: { value: WITNESS_N },
++    });
++    const res = await syncPush(ctx, a.cookie, [op]);
++    expect(res.body.results).toEqual([{ opId: op.opId, status: 'applied_partial', dropped: true }]);
++    expect(rowsOf('fixture_c2_log')).toHaveLength(0);
++    expect(ctx.deps.sqlite.prepare('SELECT * FROM applied_op WHERE op_id = ?').get(op.opId)).toMatchObject({
++      status: 'applied_partial',
++      assigned_rev: null,
++    });
++    expect(rowsOf('sync_rejection')).toHaveLength(0);
++    expectNoWitness();
++  });
++
++  it('avec accord : la donnée C2 est écrite', async () => {
++    const a = await setup();
++    await grantConsent(ctx.deps.db, ctx.deps, a.id, 'health', HEALTH_CONSENT_TEXT.version, null);
++    const { item, result } = await pushItem(a, { painNote: WITNESS, reason: 'pain' });
++    expect(result).toEqual({ opId: item.opId, status: 'applied', rev: expect.any(Number) });
++    expect(rowOf('fixture_note_item', item.id)).toMatchObject({ pain_note: WITNESS, reason: 'pain' });
++
++    const log = makeOp({
++      userId: a.id,
++      entity: 'fixture_c2_log',
++      id: newId(),
++      kind: 'create',
++      fields: { value: WITNESS_N },
++    });
++    const res = await syncPush(ctx, a.cookie, [log]);
++    expect(res.body.results[0].status).toBe('applied');
++    expect(rowOf('fixture_c2_log', log.id)).toMatchObject({ value: WITNESS_N });
++    expect(lines.join('\n')).not.toContain(WITNESS);
++  });
++});
+diff --git a/apps/server/test/sync/push.test.ts b/apps/server/test/sync/push.test.ts
+new file mode 100644
+index 0000000..2b670a2
+--- /dev/null
++++ b/apps/server/test/sync/push.test.ts
+@@ -0,0 +1,477 @@
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { createLogger } from '../../src/logger';
++import { type BatchCtx, type EntitySyncHooks, SYNC_HOOKS, type SyncHooksMap } from '../../src/sync/hooks';
++import { OpRejection } from '../../src/sync/push';
++import {
++  createSyncTestContext,
++  createUserAndLogin,
++  dumpDatabase,
++  makeOp,
++  seqIds,
++  syncPush,
++  type TestContext,
++} from '../support';
++
++type Member = Awaited<ReturnType<typeof createUserAndLogin>>;
++type Row = Record<string, unknown>;
++
++const NOW = '2026-10-06T10:00:00.000Z';
++const rowIds = seqIds(8000);
++const newId = () => rowIds.uuidv7();
++
++let ctx: TestContext;
++afterEach(() => ctx?.close());
++
++async function setup(opts: Parameters<typeof createSyncTestContext>[0] = {}): Promise<Member> {
++  ctx = await createSyncTestContext(opts);
++  return createUserAndLogin(ctx);
++}
++
++const note = (u: { id: string }, fields: Record<string, unknown> = { title: 'n' }, id = newId()) =>
++  makeOp({ userId: u.id, entity: 'fixture_note', id, kind: 'create', fields });
++
++const rowOf = (table: string, id: string) =>
++  ctx.deps.sqlite.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id) as Row | undefined;
++const rowsOf = (table: string) => ctx.deps.sqlite.prepare(`SELECT * FROM ${table}`).all() as Row[];
++const appliedOp = (opId: string) =>
++  ctx.deps.sqlite.prepare('SELECT * FROM applied_op WHERE op_id = ?').get(opId) as Row | undefined;
++
++describe('POST /api/sync/push : lot et idempotence', () => {
++  it('exige une session', async () => {
++    ctx = await createSyncTestContext();
++    const res = await syncPush(ctx, '', []);
++    expect(res.status).toBe(401);
++  });
++
++  it('201 ops → 400 validation ; 200 ops → toutes appliquées', async () => {
++    const a = await setup();
++    const tooMany = await syncPush(
++      ctx,
++      a.cookie,
++      Array.from({ length: 201 }, () => note(a)),
++    );
++    expect(tooMany.status).toBe(400);
++    expect(tooMany.body.error).toBe('validation');
++
++    const ops = Array.from({ length: 200 }, () => note(a));
++    const res = await syncPush(ctx, a.cookie, ops);
++    expect(res.status).toBe(200);
++    expect(res.body.results).toHaveLength(200);
++    expect(res.body.results.every((r: Row) => r.status === 'applied')).toBe(true);
++    expect(rowsOf('fixture_note')).toHaveLength(200);
++  });
++
++  it('un opId déjà vu renvoie duplicate avec le rev du premier, une seule ligne applied_op', async () => {
++    const a = await setup();
++    const op = note(a);
++    const first = await syncPush(ctx, a.cookie, [op]);
++    const again = await syncPush(ctx, a.cookie, [op]);
++    expect(again.body.results).toEqual([
++      { opId: op.opId, status: 'duplicate', rev: first.body.results[0].rev },
++    ]);
++    expect(
++      ctx.deps.sqlite.prepare('SELECT count(*) AS n FROM applied_op WHERE op_id = ?').get(op.opId),
++    ).toEqual({ n: 1 });
++  });
++
++  it("l'opId d'un autre utilisateur est refusé forbidden sans écriture", async () => {
++    const a = await setup();
++    const b = await createUserAndLogin(ctx);
++    const op = note(a);
++    await syncPush(ctx, a.cookie, [op]);
++    const res = await syncPush(ctx, b.cookie, [{ ...op, userId: b.id }]);
++    expect(res.body.results).toEqual([{ opId: op.opId, status: 'rejected', code: 'forbidden' }]);
++    expect(rowsOf('sync_rejection')).toHaveLength(0);
++  });
++
++  it('applied_op porte user, entité, ligne, statut et rev attribué', async () => {
++    const a = await setup();
++    const op = note(a);
++    const res = await syncPush(ctx, a.cookie, [op]);
++    expect(appliedOp(op.opId)).toMatchObject({
++      user_id: a.id,
++      entity: 'fixture_note',
++      row_id: op.id,
++      status: 'applied',
++      assigned_rev: res.body.results[0].rev,
++    });
++  });
++});
++
++describe('POST /api/sync/push : rejets', () => {
++  it("kind 'upsert' → rejected validation et ligne sync_rejection", async () => {
++    const a = await setup();
++    const op = { ...note(a), kind: 'upsert' };
++    const res = await syncPush(ctx, a.cookie, [op]);
++    expect(res.body.results).toEqual([{ opId: op.opId, status: 'rejected', code: 'validation' }]);
++    const [rejection] = rowsOf('sync_rejection');
++    expect(rejection).toMatchObject({
++      owner_id: a.id,
++      op_id: op.opId,
++      entity: 'fixture_note',
++      row_id: op.id,
++      code: 'validation',
++      dismissed_at: null,
++    });
++    expect(rejection?.rev as number).toBeGreaterThan(0);
++    expect(appliedOp(op.opId)).toMatchObject({ status: 'rejected' });
++  });
++
++  it('table non J ou inconnue → unknown_entity ; kind hors allowedKinds → forbidden', async () => {
++    const a = await setup();
++    const ops = [
++      makeOp({
++        userId: a.id,
++        entity: 'training_profile',
++        id: a.id,
++        kind: 'patch',
++        fields: { goal: 'muscle' },
++      }),
++      makeOp({ userId: a.id, entity: 'nope', id: newId(), kind: 'create' }),
++      makeOp({ userId: a.id, entity: 'sync_rejection', id: newId(), kind: 'create', fields: {} }),
++    ];
++    const res = await syncPush(ctx, a.cookie, ops);
++    expect(res.body.results.map((r: Row) => r.code)).toEqual([
++      'unknown_entity',
++      'unknown_entity',
++      'forbidden',
++    ]);
++    expect(rowsOf('sync_rejection')).toHaveLength(3);
++  });
++
++  it('userId différent de la session → forbidden sans sync_rejection ni applied_op', async () => {
++    const a = await setup();
++    const b = await createUserAndLogin(ctx);
++    const op = note(b);
++    const res = await syncPush(ctx, a.cookie, [op]);
++    expect(res.body.results).toEqual([{ opId: op.opId, status: 'rejected', code: 'forbidden' }]);
++    expect(rowsOf('sync_rejection')).toHaveLength(0);
++    expect(rowsOf('applied_op')).toHaveLength(0);
++    expect(rowsOf('fixture_note')).toHaveLength(0);
++  });
++
++  it("create d'un id qui n'est pas un UUIDv7 minuscule → validation id_format", async () => {
++    const a = await setup();
++    const upper = newId().toUpperCase();
++    const res = await syncPush(ctx, a.cookie, [
++      note(a, { title: 'x' }, 'pas-un-uuid'),
++      note(a, { title: 'y' }, upper),
++    ]);
++    expect(res.body.results.map((r: Row) => [r.status, r.code])).toEqual([
++      ['rejected', 'validation'],
++      ['rejected', 'validation'],
++    ]);
++    const reasons = rowsOf('sync_rejection').map((r) => JSON.parse(r.detail_json as string).reason);
++    expect(reasons).toEqual(['id_format', 'id_format']);
++    expect(rowsOf('fixture_note')).toHaveLength(0);
++  });
++
++  it('une op sans entity ni id entre deux notes est rejetée sans bloquer le lot', async () => {
++    const a = await setup();
++    const bare = {
++      opId: makeOp({ userId: a.id, entity: 'x', id: 'x', kind: 'create' }).opId,
++      kind: 'create',
++    };
++    const res = await syncPush(ctx, a.cookie, [note(a), bare, note(a)]);
++    expect(res.body.results.map((r: Row) => r.status)).toEqual(['applied', 'rejected', 'applied']);
++    expect(rowsOf('sync_rejection')).toEqual([
++      expect.objectContaining({ op_id: bare.opId, entity: '', row_id: '', code: 'validation' }),
++    ]);
++  });
++
++  it("patch de la ligne d'un autre → forbidden, ligne intacte", async () => {
++    const a = await setup();
++    const b = await createUserAndLogin(ctx);
++    const theirs = note(b, { title: 'à b' });
++    await syncPush(ctx, b.cookie, [theirs]);
++    const res = await syncPush(ctx, a.cookie, [
++      makeOp({
++        userId: a.id,
++        entity: 'fixture_note',
++        id: theirs.id,
++        kind: 'patch',
++        fields: { title: 'volé' },
++      }),
++    ]);
++    expect(res.body.results[0]).toMatchObject({ status: 'rejected', code: 'forbidden' });
++    expect(rowOf('fixture_note', theirs.id)).toMatchObject({ owner_id: b.id, title: 'à b' });
++    expect(JSON.parse(rowsOf('sync_rejection')[0]?.detail_json as string).reason).toBe('owner_mismatch');
++  });
++
++  it("patch d'une ligne absente → validation ; restore_upsert → validation", async () => {
++    const a = await setup();
++    const res = await syncPush(ctx, a.cookie, [
++      makeOp({ userId: a.id, entity: 'fixture_note', id: newId(), kind: 'patch', fields: { title: 't' } }),
++      makeOp({
++        userId: a.id,
++        entity: 'fixture_note',
++        id: newId(),
++        kind: 'restore_upsert',
++        fields: { title: 't' },
++      }),
++    ]);
++    expect(res.body.results.map((r: Row) => r.code)).toEqual(['validation', 'validation']);
++    const reasons = rowsOf('sync_rejection').map((r) => JSON.parse(r.detail_json as string).reason);
++    expect(reasons).toEqual(['row_missing', 'not_supported']);
++  });
++
++  it('une contrainte SQLite rejette une op sans annuler les autres (point de sauvegarde)', async () => {
++    const a = await setup();
++    const [n1, bad, n2] = [note(a), note(a, { title: '' }), note(a)];
++    const res = await syncPush(ctx, a.cookie, [n1, bad, n2]);
++    expect(res.body.results.map((r: Row) => r.status)).toEqual(['applied', 'rejected', 'applied']);
++    expect(res.body.results[1].code).toBe('validation');
++    expect(rowOf('fixture_note', bad.id)).toBeUndefined();
++    expect(rowsOf('fixture_note')).toHaveLength(2);
++    expect(JSON.parse(rowsOf('sync_rejection')[0]?.detail_json as string).reason).toBe('sql_constraint');
++  });
++
++  it("l'enfant d'un parent rejeté → parent_rejected, deux lignes sync_rejection", async () => {
++    const a = await setup();
++    const parent = note(a, { title: '' });
++    const child = makeOp({
++      userId: a.id,
++      entity: 'fixture_note_item',
++      id: newId(),
++      kind: 'create',
++      fields: { noteId: parent.id, label: 'l' },
++    });
++    const res = await syncPush(ctx, a.cookie, [parent, child]);
++    expect(res.body.results.map((r: Row) => r.code)).toEqual(['validation', 'parent_rejected']);
++    expect(rowsOf('sync_rejection')).toHaveLength(2);
++    expect(rowsOf('fixture_note_item')).toHaveLength(0);
++  });
++
++  it("un parent absent ou d'un autre → parent_rejected", async () => {
++    const a = await setup();
++    const b = await createUserAndLogin(ctx);
++    const theirs = note(b);
++    await syncPush(ctx, b.cookie, [theirs]);
++    const item = (noteId: unknown) =>
++      makeOp({
++        userId: a.id,
++        entity: 'fixture_note_item',
++        id: newId(),
++        kind: 'create',
++        fields: { noteId, label: 'l' },
++      });
++    const res = await syncPush(ctx, a.cookie, [item(newId()), item(theirs.id), item(undefined)]);
++    expect(res.body.results.map((r: Row) => r.code)).toEqual([
++      'parent_rejected',
++      'parent_rejected',
++      'parent_rejected',
++    ]);
++  });
++
++  it("un patch qui rattache l'enfant au parent d'un autre → parent_rejected", async () => {
++    const a = await setup();
++    const b = await createUserAndLogin(ctx);
++    const theirs = note(b);
++    await syncPush(ctx, b.cookie, [theirs]);
++    const mine = note(a);
++    const item = makeOp({
++      userId: a.id,
++      entity: 'fixture_note_item',
++      id: newId(),
++      kind: 'create',
++      fields: { noteId: mine.id, label: 'l' },
++    });
++    const move = makeOp({
++      userId: a.id,
++      entity: 'fixture_note_item',
++      id: item.id,
++      kind: 'patch',
++      fields: { noteId: theirs.id },
++    });
++    const res = await syncPush(ctx, a.cookie, [mine, item, move]);
++    expect(res.body.results.map((r: Row) => r.status)).toEqual(['applied', 'applied', 'rejected']);
++    expect(res.body.results[2].code).toBe('parent_rejected');
++    expect(rowOf('fixture_note_item', item.id)).toMatchObject({ note_id: mine.id });
++  });
++
++  it('detail_json ne garde que kind, noms de champs triés et raison, jamais de valeur', async () => {
++    const lines: string[] = [];
++    const u = await setup({ deps: { logger: createLogger((l) => lines.push(l)) } });
++    const op = { ...note(u, { title: 'VALEUR-SECRETE', body: 'VALEUR-SECRETE' }), kind: 'upsert' };
++    await syncPush(ctx, u.cookie, [op]);
++    const detail = JSON.parse(rowsOf('sync_rejection')[0]?.detail_json as string);
++    expect(Object.keys(detail).sort()).toEqual(['fieldNames', 'kind', 'reason']);
++    expect(detail.fieldNames).toEqual(['body', 'title']);
++    expect(dumpDatabase(ctx.deps.sqlite)).not.toContain('VALEUR-SECRETE');
++    expect(lines.join('\n')).not.toContain('VALEUR-SECRETE');
++    expect(lines.some((l) => JSON.parse(l).event === 'sync_rejected')).toBe(true);
++    expect(lines.some((l) => JSON.parse(l).event === 'sync_push')).toBe(true);
++  });
++
++  it('protocole 99 → protocol', async () => {
++    const a = await setup();
++    const op = makeOp({
++      userId: a.id,
++      entity: 'fixture_note',
++      id: newId(),
++      kind: 'create',
++      fields: { title: 'n' },
++      protocol: 99,
++    });
++    const res = await syncPush(ctx, a.cookie, [op]);
++    expect(res.body.results[0]).toMatchObject({ status: 'rejected', code: 'protocol' });
++  });
++
++  it('patch dismissedAt sur son sync_rejection → applied', async () => {
++    const a = await setup();
++    await syncPush(ctx, a.cookie, [{ ...note(a), kind: 'upsert' }]);
++    const rejection = rowsOf('sync_rejection')[0] as Row;
++    const res = await syncPush(ctx, a.cookie, [
++      makeOp({
++        userId: a.id,
++        entity: 'sync_rejection',
++        id: rejection.id as string,
++        kind: 'patch',
++        fields: { dismissedAt: '2026-10-06T11:00:00.000Z', code: 'protocol' },
++      }),
++    ]);
++    expect(res.body.results[0]).toMatchObject({ status: 'applied' });
++    expect(rowOf('sync_rejection', rejection.id as string)).toMatchObject({
++      dismissed_at: '2026-10-06T11:00:00.000Z',
++      code: 'validation',
++    });
++  });
++});
++
++describe('POST /api/sync/push : application', () => {
++  it('ownerId, rev, updatedBy et createdAt envoyés sont ignorés', async () => {
++    const a = await setup();
++    const b = await createUserAndLogin(ctx);
++    const op = note(a, {
++      title: 't',
++      ownerId: b.id,
++      rev: 999,
++      updatedBy: b.id,
++      createdAt: '2000-01-01T00:00:00.000Z',
++    });
++    const res = await syncPush(ctx, a.cookie, [op]);
++    expect(res.body.results[0].status).toBe('applied');
++    expect(rowOf('fixture_note', op.id)).toMatchObject({
++      owner_id: a.id,
++      rev: res.body.results[0].rev,
++      updated_by: a.id,
++      created_at: NOW,
++      updated_at: NOW,
++      deleted_at: null,
++      title: 't',
++      body: null,
++    });
++  });
++
++  it('un create répété sur le même id : les deux applied, même rev, premier contenu gardé', async () => {
++    const a = await setup();
++    const id = newId();
++    const res = await syncPush(ctx, a.cookie, [
++      note(a, { title: 'premier' }, id),
++      note(a, { title: 'second' }, id),
++    ]);
++    const [r1, r2] = res.body.results;
++    expect([r1.status, r2.status]).toEqual(['applied', 'applied']);
++    expect(r2.rev).toBe(r1.rev);
++    expect(rowOf('fixture_note', id)).toMatchObject({ title: 'premier' });
++  });
++
++  it('create puis deux patchs : revs croissants et champs fusionnés', async () => {
++    const a = await setup();
++    const c = note(a, { title: 't1', body: 'b1' });
++    const patch = (fields: Row) =>
++      makeOp({ userId: a.id, entity: 'fixture_note', id: c.id, kind: 'patch', fields });
++    const res = await syncPush(ctx, a.cookie, [c, patch({ title: 't2' }), patch({ body: 'b3' })]);
++    const revs = res.body.results.map((r: Row) => r.rev as number);
++    expect(revs[0]).toBeLessThan(revs[1]);
++    expect(revs[1]).toBeLessThan(revs[2]);
++    expect(rowOf('fixture_note', c.id)).toMatchObject({ title: 't2', body: 'b3', rev: revs[2] });
++  });
++
++  it('create, delete puis patch : le patch est applied avec le rev du delete, tombstone gardé', async () => {
++    const a = await setup();
++    const c = note(a, { title: 'a' });
++    const op = (kind: 'patch' | 'delete', fields: Row = {}) =>
++      makeOp({ userId: a.id, entity: 'fixture_note', id: c.id, kind, fields });
++    const res = await syncPush(ctx, a.cookie, [c, op('delete'), op('patch', { title: 'zombie' })]);
++    const [, del, patch] = res.body.results;
++    expect(del.status).toBe('applied');
++    expect(patch).toEqual({ opId: expect.any(String), status: 'applied', rev: del.rev });
++    expect(rowOf('fixture_note', c.id)).toMatchObject({ title: 'a', deleted_at: NOW, rev: del.rev });
++    const again = await syncPush(ctx, a.cookie, [op('delete')]);
++    expect(again.body.results[0]).toMatchObject({ status: 'applied', rev: del.rev });
++  });
++
++  it("delete d'une ligne absente → applied sans rev", async () => {
++    const a = await setup();
++    const op = makeOp({ userId: a.id, entity: 'fixture_note', id: newId(), kind: 'delete' });
++    const res = await syncPush(ctx, a.cookie, [op]);
++    expect(res.body.results).toEqual([{ opId: op.opId, status: 'applied' }]);
++    expect(appliedOp(op.opId)).toMatchObject({ status: 'applied', assigned_rev: null });
++  });
++});
++
++describe('POST /api/sync/push : hooks de synchro', () => {
++  const withHooks = (hooks: Record<string, EntitySyncHooks>): SyncHooksMap => ({ ...SYNC_HOOKS, ...hooks });
++
++  it('une OpRejection levée par beforeApply rejette l’op', async () => {
++    const beforeApply = vi.fn(async (_ctx: unknown, fields: Record<string, unknown>) => {
++      if (fields.title === 'interdit') throw new OpRejection('validation', 'hook');
++    });
++    const a = await setup({ deps: { syncHooks: withHooks({ fixture_note: { beforeApply } }) } });
++    const res = await syncPush(ctx, a.cookie, [
++      note(a, { title: 'ok' }),
++      note(a, { title: 'interdit', ownerId: 'x' }),
++    ]);
++    expect(res.body.results.map((r: Row) => r.status)).toEqual(['applied', 'rejected']);
++    expect(beforeApply).toHaveBeenCalledTimes(2);
++    expect(beforeApply.mock.calls[1]?.[1]).toEqual({ title: 'interdit' });
++    expect(JSON.parse(rowsOf('sync_rejection')[0]?.detail_json as string).reason).toBe('hook');
++  });
++
++  it('afterBatch une fois par lot et par entité écrite, jamais sans écriture', async () => {
++    const afterBatch = vi.fn(async (_b: BatchCtx) => {});
++    const afterApply = vi.fn(async () => {});
++    const a = await setup({
++      deps: {
++        syncHooks: withHooks({ fixture_note: { afterBatch, afterApply }, fixture_note_item: { afterBatch } }),
++      },
++    });
++    const n1 = note(a);
++    const n2 = note(a);
++    await syncPush(ctx, a.cookie, [n1, n2, note(a, { title: '' })]);
++    expect(afterBatch).toHaveBeenCalledTimes(1);
++    expect(afterBatch.mock.calls[0]?.[0]).toMatchObject({
++      userId: a.id,
++      applied: [
++        { entity: 'fixture_note', id: n1.id },
++        { entity: 'fixture_note', id: n2.id },
++      ],
++    });
++    expect(afterApply).toHaveBeenCalledTimes(2);
++
++    afterBatch.mockClear();
++    await syncPush(ctx, a.cookie, [n1, { ...note(a), kind: 'upsert' }]);
++    expect(afterBatch).not.toHaveBeenCalled();
++  });
++
++  it('une erreur SQLite hors contrainte dans beforeApply → 500 et rien d’écrit', async () => {
++    const beforeApply = vi.fn(async () => {
++      throw Object.assign(new Error('disk I/O'), { code: 'ERR_SQLITE_ERROR', errcode: 13 });
++    });
++    const a = await setup({ deps: { syncHooks: withHooks({ fixture_note_item: { beforeApply } }) } });
++    const parent = note(a);
++    const child = makeOp({
++      userId: a.id,
++      entity: 'fixture_note_item',
++      id: newId(),
++      kind: 'create',
++      fields: { noteId: parent.id, label: 'l' },
++    });
++    const res = await syncPush(ctx, a.cookie, [parent, child]);
++    expect(res.status).toBe(500);
++    expect(rowsOf('fixture_note')).toHaveLength(0);
++    expect(rowsOf('applied_op')).toHaveLength(0);
++    expect(rowsOf('sync_rejection')).toHaveLength(0);
++  });
++});
+diff --git a/packages/contracts/src/api/auth.ts b/packages/contracts/src/api/auth.ts
+index a9a7248..c3227ee 100644
+--- a/packages/contracts/src/api/auth.ts
++++ b/packages/contracts/src/api/auth.ts
+@@ -1,19 +1,36 @@
+ import { z } from 'zod';
+ 
+ export const CivilDate = z.iso.date();
+ export type CivilDate = z.infer<typeof CivilDate>;
+ 
+ export const RoleSchema = z.enum(['admin', 'member']);
+ export const UserStatusSchema = z.enum(['active', 'disabled']);
+ export const AgeBandSchema = z.enum(['minor', 'adult']);
+ 
++/** Issue d'un événement du journal de sécurité. */
++export const SECURITY_OUTCOMES = ['success', 'failure', 'blocked'] as const;
++export const SecurityOutcomeSchema = z.enum(SECURITY_OUTCOMES);
++export type SecurityOutcome = z.infer<typeof SecurityOutcomeSchema>;
++
++/** Motif de révocation d'une session. */
++export const SESSION_REVOKED_REASONS = [
++  'logout',
++  'logout_all',
++  'password_change',
++  'password_reset',
++  'admin',
++  'account_deleted',
++] as const;
++export const SessionRevokedReasonSchema = z.enum(SESSION_REVOKED_REASONS);
++export type SessionRevokedReason = z.infer<typeof SessionRevokedReasonSchema>;
++
+ export const ONBOARDING_STEPS = [
+   'goal',
+   'sport',
+   'place_kind',
+   'place',
+   'experience',
+   'availability',
+   'health',
+   'ready',
+ ] as const;
+diff --git a/packages/contracts/src/api/consent.ts b/packages/contracts/src/api/consent.ts
+index 4dda67a..f19b3eb 100644
+--- a/packages/contracts/src/api/consent.ts
++++ b/packages/contracts/src/api/consent.ts
+@@ -43,25 +43,36 @@ export const LIMITATION_SIDE_LABELS: Record<LimitationSide, string> = {
+   not_applicable: 'Sans objet',
+ };
+ 
+ export const LIMITATION_SEVERITY_LABELS: Record<LimitationSeverity, string> = {
+   mild: 'Légère',
+   severe: "Forte : m'empêche certains mouvements",
+ };
+ 
+ export const LIMITATION_NOTE_MAX = 200;
+ 
+-export const GrantConsentRequest = z.strictObject({ type: z.literal('health'), textVersion: z.string() });
++export const CONSENT_TYPES = ['health', 'ai_coach'] as const;
++export const ConsentTypeSchema = z.enum(CONSENT_TYPES);
++export type ConsentType = z.infer<typeof ConsentTypeSchema>;
++
++export const CONSENT_ACTIONS = ['grant', 'withdraw'] as const;
++export const ConsentActionSchema = z.enum(CONSENT_ACTIONS);
++export type ConsentAction = z.infer<typeof ConsentActionSchema>;
++
++export const GrantConsentRequest = z.strictObject({
++  type: ConsentTypeSchema.extract(['health']),
++  textVersion: z.string(),
++});
+ export type GrantConsentRequest = z.infer<typeof GrantConsentRequest>;
+ 
+ export const WithdrawConsentRequest = z.strictObject({
+-  type: z.literal('health'),
++  type: ConsentTypeSchema.extract(['health']),
+   password: z.string().min(1).max(1024),
+ });
+ export type WithdrawConsentRequest = z.infer<typeof WithdrawConsentRequest>;
+ 
+ /** Renvoi d'un retrait fait avant une restauration (R-SYN-28), sans mot de passe. */
+ export const ReplayWithdrawRequest = z.strictObject({ withdrawnAt: z.iso.datetime() });
+ export type ReplayWithdrawRequest = z.infer<typeof ReplayWithdrawRequest>;
+ 
+ /** Une réponse par question de HEALTH_QUESTIONNAIRE (longueur vérifiée par test/consent.test.ts). */
+ export const HealthScreeningRequest = z.strictObject({
+diff --git a/packages/contracts/src/api/places.ts b/packages/contracts/src/api/places.ts
+index 342d006..626322d 100644
+--- a/packages/contracts/src/api/places.ts
++++ b/packages/contracts/src/api/places.ts
+@@ -2,20 +2,34 @@ import { z } from 'zod';
+ import { LoadSettingsSchema } from '../load-settings';
+ import { EQUIPMENT_CATEGORIES, EquipmentCodeSchema } from '../taxonomy';
+ 
+ const HOUSEHOLD: readonly string[] = EQUIPMENT_CATEGORIES.household;
+ 
+ /** Matériel d'une salle : tout le catalogue sauf les objets du quotidien (R-EQ-3). */
+ export const GymEquipmentCode = EquipmentCodeSchema.refine((code) => !HOUSEHOLD.includes(code), {
+   message: 'objet du quotidien non autorisé en salle',
+ });
+ 
++export const PLACE_KINDS = ['gym', 'home'] as const;
++export const PlaceKindSchema = z.enum(PLACE_KINDS);
++export type PlaceKind = z.infer<typeof PlaceKindSchema>;
++
++export const GYM_NAME_MIN = 2;
++export const GYM_NAME_MAX = 60;
++export const GYM_CITY_MIN = 2;
++export const GYM_CITY_MAX = 60;
++export const PLACE_NAME_MAX = 30;
++
++const gymName = () => z.string().trim().min(GYM_NAME_MIN).max(GYM_NAME_MAX);
++const gymCity = () => z.string().trim().min(GYM_CITY_MIN).max(GYM_CITY_MAX);
++const placeName = () => z.string().trim().min(1).max(PLACE_NAME_MAX);
++
+ export const GymHistoryAction = z.enum([
+   'create',
+   'update_info',
+   'add_equipment',
+   'remove_equipment',
+   'update_load_settings',
+ ]);
+ export type GymHistoryAction = z.infer<typeof GymHistoryAction>;
+ 
+ export const GymSummary = z.object({
+@@ -40,63 +54,63 @@ export const GymDetail = z.object({
+       at: z.string(),
+       action: GymHistoryAction,
+       authorUsername: z.string().nullable(),
+       detail: z.unknown(),
+     }),
+   ),
+ });
+ export type GymDetail = z.infer<typeof GymDetail>;
+ 
+ export const CreateGymRequest = z.strictObject({
+-  name: z.string().trim().min(2).max(60),
+-  city: z.string().trim().min(2).max(60),
++  name: gymName(),
++  city: gymCity(),
+   equipment: z.array(GymEquipmentCode),
+   isPrimary: z.boolean(),
+   visibleAtGym: z.boolean().optional(),
+ });
+ export type CreateGymRequest = z.infer<typeof CreateGymRequest>;
+ 
+ export const CreateGymResponse = z.object({ gymId: z.string(), placeId: z.string() });
+ export type CreateGymResponse = z.infer<typeof CreateGymResponse>;
+ 
+ export const UpdateGymRequest = z
+   .strictObject({
+-    name: z.string().trim().min(2).max(60).optional(),
+-    city: z.string().trim().min(2).max(60).optional(),
++    name: gymName().optional(),
++    city: gymCity().optional(),
+     loadSettings: LoadSettingsSchema.optional(),
+   })
+   .refine((v) => Object.keys(v).length > 0);
+ export type UpdateGymRequest = z.infer<typeof UpdateGymRequest>;
+ 
+ export const HOME_PLACE_DEFAULT_NAME = 'Maison';
+ 
+ export const CreatePlaceRequest = z.discriminatedUnion('kind', [
+   z.strictObject({
+-    kind: z.literal('gym'),
++    kind: PlaceKindSchema.extract(['gym']),
+     gymId: z.string(),
+     isPrimary: z.boolean(),
+     visibleAtGym: z.boolean().optional(),
+   }),
+   z.strictObject({
+-    kind: z.literal('home'),
+-    name: z.string().trim().min(1).max(30).optional(),
++    kind: PlaceKindSchema.extract(['home']),
++    name: placeName().optional(),
+     equipment: z.array(EquipmentCodeSchema),
+     isPrimary: z.boolean(),
+   }),
+ ]);
+ export type CreatePlaceRequest = z.infer<typeof CreatePlaceRequest>;
+ 
+ export const CreatePlaceResponse = z.object({ id: z.string() });
+ export type CreatePlaceResponse = z.infer<typeof CreatePlaceResponse>;
+ 
+ export const UpdatePlaceRequest = z
+   .strictObject({
+-    name: z.string().trim().min(1).max(30).optional(),
++    name: placeName().optional(),
+     isPrimary: z.literal(true).optional(),
+     visibleAtGym: z.boolean().optional(),
+     loadSettings: LoadSettingsSchema.optional(),
+   })
+   .refine((v) => Object.keys(v).length > 0);
+ export type UpdatePlaceRequest = z.infer<typeof UpdatePlaceRequest>;
+ 
+ export const DeletePlaceRequest = z.strictObject({ newPrimaryId: z.string().optional() });
+ export type DeletePlaceRequest = z.infer<typeof DeletePlaceRequest>;
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index 4d7d46a..3c24b29 100644
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -7,12 +7,13 @@ export * from './api/health';
+ export * from './api/places';
+ export * from './api/profile';
+ export * from './auth-constants';
+ export * from './case';
+ export * from './constants';
+ export * from './entity-rules';
+ export * from './load-settings';
+ export * from './ops';
+ export * from './presets';
+ export * from './sports';
++export * from './sync';
+ export * from './taxonomy';
+ export * from './texts';
+diff --git a/packages/contracts/src/sync.ts b/packages/contracts/src/sync.ts
+new file mode 100644
+index 0000000..8d9bced
+--- /dev/null
++++ b/packages/contracts/src/sync.ts
+@@ -0,0 +1,105 @@
++import { z } from 'zod';
++
++export const SYNC_PUSH_MAX = 200;
++export const SYNC_PULL_LIMIT = 500;
++export const SYNC_TIMEOUT_MS = 4000;
++export const EPOCH_RESEND_DAYS = 60;
++export const TOMBSTONE_TTL_DAYS = 90;
++export const APPLIED_OP_TTL_MONTHS = 12;
++export const SYNC_RETRY_MIN_MS = 2000;
++export const SYNC_RETRY_MAX_MS = 300_000;
++export const SYNC_INTERVAL_MS = 60_000;
++export const SYNC_DEBOUNCE_MS = 2000;
++export const COACH_FLUSH_MS = 4000;
++
++/** Même motif que `isUuidV7` (domain) : contracts n'importe pas domain. */
++export const UUID_V7_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
++export const UuidV7 = z.string().regex(UUID_V7_RE);
++export type UuidV7 = z.infer<typeof UuidV7>;
++
++export const OpKind = z.enum(['create', 'patch', 'delete', 'restore_upsert']);
++export type OpKind = z.infer<typeof OpKind>;
++
++/** `fields` en camelCase. */
++export const SyncOp = z.object({
++  opId: UuidV7,
++  userId: z.string().min(1),
++  entity: z.string().min(1),
++  id: z.string().min(1).max(200),
++  kind: OpKind,
++  fields: z.record(z.string(), z.unknown()),
++  clientTs: z.iso.datetime(),
++  protocol: z.number().int().min(1),
++  attempts: z.number().int().min(0),
++  serverRevSeen: z.number().int().nullable().optional(),
++});
++export type SyncOp = z.infer<typeof SyncOp>;
++
++export const RejectionCode = z.enum([
++  'validation',
++  'forbidden',
++  'parent_rejected',
++  'stale_revision',
++  'unknown_entity',
++  'protocol',
++]);
++export type RejectionCode = z.infer<typeof RejectionCode>;
++
++export const PushRequest = z.object({ ops: z.array(SyncOp).max(SYNC_PUSH_MAX) });
++export type PushRequest = z.infer<typeof PushRequest>;
++
++/** Corps reçu par la route : chaque op est validée ensuite, une à une. */
++export const PushEnvelope = z.object({
++  ops: z.array(z.looseObject({ opId: z.string().min(1) })).max(SYNC_PUSH_MAX),
++});
++export type PushEnvelope = z.infer<typeof PushEnvelope>;
++
++export const PushResult = z.object({
++  opId: z.string(),
++  status: z.enum(['applied', 'applied_partial', 'duplicate', 'rejected']),
++  rev: z.number().int().optional(),
++  code: RejectionCode.optional(),
++  droppedFields: z.array(z.string()).optional(),
++  dropped: z.boolean().optional(),
++});
++export type PushResult = z.infer<typeof PushResult>;
++
++export const PushResponse = z.object({ results: z.array(PushResult) });
++export type PushResponse = z.infer<typeof PushResponse>;
++
++/** `row` en camelCase, avec id et deletedAt, sans secret. */
++export const PulledRow = z.object({
++  entity: z.string(),
++  rev: z.number().int(),
++  row: z.record(z.string(), z.unknown()),
++});
++export type PulledRow = z.infer<typeof PulledRow>;
++
++export const PullResponse = z.object({
++  rows: z.array(PulledRow),
++  nextWatermark: z.string(),
++  hasMore: z.boolean(),
++  catalogVersion: z.string().nullable(),
++});
++export type PullResponse = z.infer<typeof PullResponse>;
++
++export const PullQuery = z.object({
++  since: z.string().min(1).optional(),
++  limit: z.coerce.number().int().min(1).max(SYNC_PULL_LIMIT).default(SYNC_PULL_LIMIT),
++});
++export type PullQuery = z.infer<typeof PullQuery>;
++
++/** Watermark opaque `<server_epoch>:<rev>`. */
++export function encodeWatermark(epoch: string, rev: number): string {
++  return `${epoch}:${rev}`;
++}
++
++export function decodeWatermark(w: string): { epoch: string; rev: number } | null {
++  const sep = w.lastIndexOf(':');
++  if (sep <= 0) return null;
++  const revText = w.slice(sep + 1);
++  if (!/^\d+$/.test(revText)) return null;
++  const rev = Number(revText);
++  if (!Number.isSafeInteger(rev)) return null;
++  return { epoch: w.slice(0, sep), rev };
++}
+diff --git a/packages/contracts/test/sync.test.ts b/packages/contracts/test/sync.test.ts
+new file mode 100644
+index 0000000..59a4e11
+--- /dev/null
++++ b/packages/contracts/test/sync.test.ts
+@@ -0,0 +1,104 @@
++import { describe, expect, it } from 'vitest';
++import {
++  APPLIED_OP_TTL_MONTHS,
++  COACH_FLUSH_MS,
++  decodeWatermark,
++  EPOCH_RESEND_DAYS,
++  encodeWatermark,
++  PushEnvelope,
++  PushRequest,
++  SYNC_DEBOUNCE_MS,
++  SYNC_INTERVAL_MS,
++  SYNC_PULL_LIMIT,
++  SYNC_PUSH_MAX,
++  SYNC_RETRY_MAX_MS,
++  SYNC_RETRY_MIN_MS,
++  SYNC_TIMEOUT_MS,
++  SyncOp,
++  TOMBSTONE_TTL_DAYS,
++  UuidV7,
++} from '../src/sync';
++
++const op = {
++  opId: '0199b9a0-0000-7000-8000-000000000001',
++  userId: '0199b9a0-0000-7000-8000-0000000000aa',
++  entity: 'fixture_note',
++  id: '0199b9a0-0000-7000-8000-000000000002',
++  kind: 'create',
++  fields: { title: 'n' },
++  clientTs: '2026-10-06T10:00:00.000Z',
++  protocol: 1,
++  attempts: 0,
++};
++
++describe('SyncOp', () => {
++  it('accepte une op complète, avec ou sans serverRevSeen', () => {
++    expect(SyncOp.safeParse(op).success).toBe(true);
++    expect(SyncOp.safeParse({ ...op, serverRevSeen: null }).success).toBe(true);
++    expect(SyncOp.safeParse({ ...op, serverRevSeen: 4 }).success).toBe(true);
++  });
++
++  it('refuse un kind inconnu et un opId qui n’est pas un UUIDv7', () => {
++    expect(SyncOp.safeParse({ ...op, kind: 'upsert' }).success).toBe(false);
++    expect(SyncOp.safeParse({ ...op, opId: 'not-a-uuid' }).success).toBe(false);
++  });
++
++  it('UuidV7 : minuscules et version 7 seulement', () => {
++    expect(UuidV7.safeParse('017f22e2-79b0-7cc3-98c4-dc0c0c07398f').success).toBe(true);
++    expect(UuidV7.safeParse('017F22E2-79B0-7CC3-98C4-DC0C0C07398F').success).toBe(false);
++    expect(UuidV7.safeParse('017f22e2-79b0-4cc3-98c4-dc0c0c07398f').success).toBe(false);
++  });
++});
++
++describe('PushRequest et PushEnvelope', () => {
++  const ops = (n: number) => Array.from({ length: n }, () => op);
++
++  it('200 ops acceptées, 201 refusées', () => {
++    expect(PushRequest.safeParse({ ops: ops(200) }).success).toBe(true);
++    expect(PushRequest.safeParse({ ops: ops(201) }).success).toBe(false);
++    expect(PushEnvelope.safeParse({ ops: ops(200) }).success).toBe(true);
++    expect(PushEnvelope.safeParse({ ops: ops(201) }).success).toBe(false);
++  });
++
++  it("l'enveloppe laisse passer une op invalide pourvu qu'elle ait un opId", () => {
++    expect(PushEnvelope.safeParse({ ops: [{ opId: 'x', kind: 'upsert' }] }).success).toBe(true);
++    expect(PushEnvelope.safeParse({ ops: [{ kind: 'create' }] }).success).toBe(false);
++  });
++});
++
++describe('watermark', () => {
++  it('encode et décode', () => {
++    expect(encodeWatermark('0199b9a0-0000-7000-8000-0000000000e1', 42)).toBe(
++      '0199b9a0-0000-7000-8000-0000000000e1:42',
++    );
++    expect(decodeWatermark('0199b9a0-0000-7000-8000-0000000000e1:42')).toEqual({
++      epoch: '0199b9a0-0000-7000-8000-0000000000e1',
++      rev: 42,
++    });
++    expect(decodeWatermark('e:0')).toEqual({ epoch: 'e', rev: 0 });
++  });
++
++  it('refuse les formes invalides', () => {
++    for (const bad of ['abc', ':3', 'e:-1', 'e:1.5', 'e:', '']) expect(decodeWatermark(bad)).toBeNull();
++  });
++});
++
++describe('constantes de synchro', () => {
++  it('valeurs figées', () => {
++    expect([
++      SYNC_PUSH_MAX,
++      SYNC_PULL_LIMIT,
++      SYNC_TIMEOUT_MS,
++      EPOCH_RESEND_DAYS,
++      TOMBSTONE_TTL_DAYS,
++      APPLIED_OP_TTL_MONTHS,
++    ]).toEqual([200, 500, 4000, 60, 90, 12]);
++    expect([
++      SYNC_RETRY_MIN_MS,
++      SYNC_RETRY_MAX_MS,
++      SYNC_INTERVAL_MS,
++      SYNC_DEBOUNCE_MS,
++      COACH_FLUSH_MS,
++    ]).toEqual([2000, 300000, 60000, 2000, 4000]);
++  });
++});

@@ -1,0 +1,918 @@
+# Review package: 89d4a9a..HEAD
+
+## Commits
+857e972 fix(pwa): harnais E2E sans orphelins, relais coupé propagé et données supprimées après succès
+9f196bf test(pwa): hors ligne, refus de classe E sous requêtes muettes, alerte annoncée et attentes bornées
+7731982 fix(pwa): outils E2E idb qui rejettent au lieu de pendre et déclencheur premier plan vérifié
+5bf76fe test(pwa): témoin persistGranted, statut du SW attendu et étape paysage mesurée sur place
+
+## Files changed
+ apps/web/e2e/arrival.spec.ts             |  61 +++++++---
+ apps/web/e2e/offline.spec.ts             |  30 ++++-
+ apps/web/e2e/support/fixtures.ts         |  10 +-
+ apps/web/e2e/support/pwa.ts              |  80 ++++++++----
+ apps/web/e2e/support/server.ts           | 113 ++++++++++++-----
+ apps/web/test/e2e-harness/server.test.ts | 201 +++++++++++++++++++++++++++++++
+ 6 files changed, 414 insertions(+), 81 deletions(-)
+
+## Diff
+diff --git a/apps/web/e2e/arrival.spec.ts b/apps/web/e2e/arrival.spec.ts
+index 3da7230..c5a69bb 100644
+--- a/apps/web/e2e/arrival.spec.ts
++++ b/apps/web/e2e/arrival.spec.ts
+@@ -1,37 +1,52 @@
+ import type { Locator, Page } from '@playwright/test';
+ import { expect, test } from './support/fixtures';
+ import { completeOnboardingViaUi, createAccountViaUi } from './support/flows';
+ import {
+   emulateStandalone,
++  idbPut,
+   metaValue,
+   requireServiceWorker,
+   swStatus,
+   waitForController,
+ } from './support/pwa';
+ import { bootstrapAdmin } from './support/server';
+ 
+-/** Paysage (WCAG 2.1 SC 1.3.4) : pas de défilement horizontal, action principale entière dans la largeur. */
++/** Valeur témoin de meta.persistGranted : seule une nouvelle demande de stockage persistant la remplace. */
++const PERSIST_SENTINEL = 'témoin e2e';
++
++/**
++ * Paysage (WCAG 2.1 SC 1.3.4) : ni la page ni un conteneur ne défile à l'horizontale, et l'action principale
++ * tient entière dans la largeur, mesurée sur place (sans la faire défiler jusqu'à la vue).
++ */
+ async function expectUsableInLandscape(page: Page, action: Locator): Promise<void> {
+   // Largeur de l'appareil, pas `innerWidth` : en émulation mobile, Chromium élargit la vue de mise en page
+   // au contenu qui déborde.
+   const width = page.viewportSize()?.width ?? 0;
+   const scrollWidth = await page.evaluate(
+     () => (document.scrollingElement ?? document.documentElement).scrollWidth,
+   );
+-  expect(scrollWidth).toBeLessThanOrEqual(width);
+-  await action.scrollIntoViewIfNeeded();
++  expect(scrollWidth, 'largeur du document').toBeLessThanOrEqual(width);
+   await expect(action).toBeVisible();
+   await expect(action).toBeEnabled();
+   const box = await action.boundingBox();
+-  expect(box).not.toBeNull();
+-  expect(box && box.x >= 0 && box.x + box.width <= width).toBe(true);
++  if (!box) throw new Error('action principale sans boîte en paysage');
++  expect(box.x, "bord gauche de l'action").toBeGreaterThanOrEqual(0);
++  expect(box.x + box.width, "bord droit de l'action").toBeLessThanOrEqual(width);
++  // Un conteneur déjà décalé (par la saisie, par exemple) masquerait un défilement horizontal imposé.
++  const shifted = await action.evaluate((el) => {
++    const out = window.scrollX === 0 ? [] : [`window: ${window.scrollX}`];
++    for (let node = el.parentElement; node; node = node.parentElement)
++      if (node.scrollLeft !== 0) out.push(`${node.tagName.toLowerCase()}: ${node.scrollLeft}`);
++    return out;
++  });
++  expect(shifted, "ancêtres de l'action défilés à l'horizontale").toEqual([]);
+ }
+ 
+ // 01 §9.1.6 scénario 1 (sans séance, brique 3) ; 02 §3 (R-ARR-1, R-INV-4, R-INV-5, R-CPT-2), §8 E8 ;
+ // R-SYN-31, R-SYN-33 ; Review Focus 5 (cookie et Origin sous WebKit).
+ test('arrivée : admin installé, session protégée, puis un membre invité par code', async ({
+   server,
+   context,
+   page,
+   newContext,
+   browserName,
+@@ -39,27 +54,33 @@ test('arrivée : admin installé, session protégée, puis un membre invité par
+   await test.step("admin : lien d'amorçage dans l'appli installée, compte puis onboarding", async () => {
+     await emulateStandalone(context);
+     const { link } = await bootstrapAdmin(server);
+     await page.goto(link);
+     await requireServiceWorker(page);
+     // R-INV-4 : le fragment qui porte le code quitte l'adresse dès la lecture.
+     await expect(page).toHaveURL(`${server.url}/invite`);
+     // R-ARR-1 : dans l'appli installée, le lien mène directement à la création du compte.
+     await createAccountViaUi(page, 'camille');
+     await expect(page.getByTestId('onboarding-step')).toHaveAttribute('data-step', 'goal');
++    // R-CPT-2 : stockage persistant demandé à la création du compte, résultat noté (accordé ou non).
++    await expect.poll(async () => typeof (await metaValue(page, 'persistGranted'))).toBe('boolean');
++    // Témoin : seule la demande de fin d'onboarding (R-SYN-31) peut encore le remplacer par un booléen.
++    await idbPut(page, 'meta', { key: 'persistGranted', value: PERSIST_SENTINEL });
++    expect(await metaValue(page, 'persistGranted')).toBe(PERSIST_SENTINEL);
+     await completeOnboardingViaUi(page, {
+       place: { kind: 'gym', name: 'Fitness Park Nation', city: 'Paris' },
+     });
+     await expect(page).toHaveURL(`${server.url}/`);
+     await waitForController(page);
+-    expect((await swStatus(page))?.shellCached).toBe(true);
+-    // R-CPT-2, R-SYN-31 : stockage persistant demandé, résultat noté (accordé ou non).
++    // Réponse du SW attendue sans délai fixe : un runner chargé peut dépasser la fenêtre d'1 s de swStatus.
++    await expect.poll(async () => (await swStatus(page))?.shellCached).toBe(true);
++    // R-SYN-31 : nouvelle demande à la fin de l'onboarding, dans l'appli installée.
+     await expect.poll(async () => typeof (await metaValue(page, 'persistGranted'))).toBe('boolean');
+   });
+ 
+   await test.step("session : cookie dev-session et contrôle de l'Origin", async () => {
+     const cookies = await context.cookies(server.url);
+     expect(cookies.find((c) => c.name === '__Host-session')).toBeUndefined();
+     // WebKit sous Windows (WinCairo) ne garde pas SameSite (lu « None ») : la CI Linux fait foi.
+     const sameSiteKept = !(browserName === 'webkit' && process.platform === 'win32');
+     expect(cookies.find((c) => c.name === 'dev-session')).toMatchObject({
+       httpOnly: true,
+@@ -92,28 +113,30 @@ test('arrivée : admin installé, session protégée, puis un membre invité par
+     expect(created.status()).toBe(201);
+     const { code } = (await created.json()) as { code: string };
+ 
+     const memberContext = await newContext();
+     await emulateStandalone(memberContext);
+     const member = await memberContext.newPage();
+     await member.goto(`${server.url}/invite`);
+     await requireServiceWorker(member);
+     await expect(member.getByText('hébergé chez Alex')).toBeVisible();
+ 
+-    // WCAG 2.1 SC 1.3.4 : l'écran reste utilisable une fois le téléphone tourné.
+-    const portrait = member.viewportSize();
+-    if (!portrait) throw new Error('viewport du projet absent');
+-    await member.setViewportSize({ width: portrait.height, height: portrait.width });
+-    // R-INV-5 : saisie tolérante (casse, espaces à la place des tirets).
+-    await member
+-      .getByLabel("Lien ou code d'invitation", { exact: true })
+-      .fill(code.toLowerCase().replaceAll('-', ' '));
+-    const next = member.getByRole('button', { name: 'Suivant', exact: true });
+-    await expectUsableInLandscape(member, next);
+-    await next.click();
+-    await member.setViewportSize(portrait);
++    await test.step('paysage : action principale utilisable (WCAG 1.3.4)', async () => {
++      // L'écran reste utilisable une fois le téléphone tourné.
++      const portrait = member.viewportSize();
++      if (!portrait) throw new Error('viewport du projet absent');
++      await member.setViewportSize({ width: portrait.height, height: portrait.width });
++      // R-INV-5 : saisie tolérante (casse, espaces à la place des tirets).
++      await member
++        .getByLabel("Lien ou code d'invitation", { exact: true })
++        .fill(code.toLowerCase().replaceAll('-', ' '));
++      const next = member.getByRole('button', { name: 'Suivant', exact: true });
++      await expectUsableInLandscape(member, next);
++      await next.click();
++      await member.setViewportSize(portrait);
++    });
+ 
+     await createAccountViaUi(member, 'lea');
+     await completeOnboardingViaUi(member, { place: { kind: 'home' } });
+     await expect(member).toHaveURL(`${server.url}/`);
+   });
+ });
+diff --git a/apps/web/e2e/offline.spec.ts b/apps/web/e2e/offline.spec.ts
+index 2db12fb..e920a40 100644
+--- a/apps/web/e2e/offline.spec.ts
++++ b/apps/web/e2e/offline.spec.ts
+@@ -1,70 +1,90 @@
++import { SYNC_TIMEOUT_MS } from '@appsport/contracts';
+ import { expect, test } from './support/fixtures';
+ import { loginViaUi, setupOnboardedAdmin } from './support/flows';
+ import { idbGetAll, triggerForeground } from './support/pwa';
+ 
++// Une navigation servie par le SW ou une attente d'état bornée : sans borne, une régression échouerait
++// au délai global du test (120 s) sans nommer l'étape.
++const SHELL_TIMEOUT_MS = 10_000;
++
+ // 01 §9.1.6 scénario 2 (sans séance, brique 3) : hors ligne simulé par `context.setOffline(true)` puis par
+ // des requêtes qui n'aboutissent pas (délai de 4 s, R-SYN-30), retour du réseau, vue d'un second contexte.
+ test('hors ligne : coquille du cache, état de connexion, profil et second appareil', async ({
+   server,
+   context,
+   newContext,
+ }) => {
+   const page = await setupOnboardedAdmin(server, context);
+   const connection = page.getByTestId('connection-status');
+   const username = page.getByLabel('Pseudo', { exact: true });
+   const saveUsername = page.getByRole('button', { name: 'Enregistrer le pseudo', exact: true });
++  // Refus de classe E : l'alerte annoncée (`role="alert"`) du formulaire du pseudo, pas un texte quelconque.
++  const usernameAlert = page.locator('form').filter({ has: saveUsername }).getByRole('alert');
+ 
+   // Pas de navigation sous `setOffline` : WebKit y fait échouer même une navigation servie par le SW
+   // (« WebKit encountered an internal error »). Le rechargement à froid hors ligne passe par l'étape suivante.
+   await test.step('réseau coupé (context.setOffline)', async () => {
++    // Preuve du déclencheur « premier plan » (R-SYN-29) : la dernière synchro a réussi (aucune reprise
++    // programmée), l'outbox est vide (pas de cycle à 60 s) et l'événement `offline` n'en lance pas ;
++    // seul le cycle déclenché ici peut faire passer l'état à 'offline' dans les 5 s.
++    await expect(connection).toHaveAttribute('data-state', 'online');
++    await expect(page.getByTestId('pending-counter')).toHaveAttribute('data-count', '0');
+     await context.setOffline(true);
+     await triggerForeground(page);
+     await expect(connection).toHaveAttribute('data-state', 'offline', { timeout: 5_000 });
+     await page.getByRole('link', { name: 'Profil', exact: true }).click();
+     await expect(username).toHaveValue('camille');
+     // Classe E (API en ligne) : refusée hors ligne avec « Nécessite le réseau ».
+     await username.fill('camille-sans-reseau');
+     await saveUsername.click();
+-    await expect(page.getByText('Nécessite le réseau', { exact: true })).toBeVisible();
++    await expect(usernameAlert).toHaveText('Nécessite le réseau');
+     await context.setOffline(false);
+     await expect(connection).toHaveAttribute('data-state', 'online', { timeout: 15_000 });
+   });
+ 
+   await test.step('requêtes sans réponse (VPN coupé) alors que navigator.onLine reste vrai', async () => {
++    await expect(connection).toHaveAttribute('data-state', 'online');
+     server.setFault({ kind: 'blackhole' });
+-    await page.reload({ waitUntil: 'domcontentloaded' });
+-    await connection.waitFor({ state: 'attached' });
++    await page.reload({ waitUntil: 'domcontentloaded', timeout: SHELL_TIMEOUT_MS });
++    await connection.waitFor({ state: 'attached', timeout: SHELL_TIMEOUT_MS });
+     await expect(connection).toHaveAttribute('data-state', 'offline', { timeout: 5_000 });
+     expect(await page.evaluate(() => navigator.onLine)).toBe(true);
+-    await page.goto(`${server.url}/profile`, { waitUntil: 'domcontentloaded' });
++    await page.goto(`${server.url}/profile`, { waitUntil: 'domcontentloaded', timeout: SHELL_TIMEOUT_MS });
+     await expect(username).toHaveValue('camille');
++    // Classe E sous des requêtes muettes : refus au bout de SYNC_TIMEOUT_MS (4 s), pas une attente sans fin.
++    await username.fill('camille-sans-reponse');
++    await saveUsername.click();
++    await expect(usernameAlert).toHaveText('Nécessite le réseau', { timeout: SYNC_TIMEOUT_MS + 6_000 });
+     server.setFault(null);
++    // Accélère seulement le retour : les échecs du trou noir ont déjà programmé une reprise (2 s, 4 s…)
++    // qui suffirait à repasser 'online'. La preuve du déclencheur est à l'étape précédente.
+     await triggerForeground(page);
+     await expect(connection).toHaveAttribute('data-state', 'online', { timeout: 15_000 });
+   });
+ 
+   await test.step('second appareil : le nouveau pseudo arrive par la synchro', async () => {
+     const otherContext = await newContext();
+     const other = await otherContext.newPage();
+     await other.goto(`${server.url}/login`);
+     await loginViaUi(other, 'camille');
+     await expect(other).toHaveURL(`${server.url}/`);
+ 
+     await username.fill('camille2');
+     const [renamed] = await Promise.all([
+       page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().endsWith('/api/me')),
+       saveUsername.click(),
+     ]);
+     expect(renamed.status()).toBe(200);
+ 
++    // Une seule ligne : la synchro met à jour l'utilisateur, elle n'en ajoute pas un second.
+     await expect
+       .poll(
+         async () => {
+           await triggerForeground(other);
+           return (await idbGetAll<{ username: string }>(other, 'user')).map((u) => u.username);
+         },
+         { timeout: 15_000 },
+       )
+-      .toContain('camille2');
++      .toEqual(['camille2']);
+   });
+ });
+diff --git a/apps/web/e2e/support/fixtures.ts b/apps/web/e2e/support/fixtures.ts
+index 312e222..62b7d74 100644
+--- a/apps/web/e2e/support/fixtures.ts
++++ b/apps/web/e2e/support/fixtures.ts
+@@ -1,47 +1,53 @@
++import { rmSync } from 'node:fs';
+ import { type BrowserContext, test as base, expect } from '@playwright/test';
+ import { type E2EServer, startE2EServer } from './server';
+ 
+ export { expect } from '@playwright/test';
+ export { DEFAULT_PUBLIC_DIR, REPO_ROOT } from './server';
+ 
+ const CSP_MARKER = 'Content Security Policy';
+ 
+ interface E2EFixtures {
+   /** Options de `startE2EServer` (`test.use({ serverOptions: … })`). */
+   serverOptions: Parameters<typeof startE2EServer>[0];
+-  /** Serveur neuf par test, fermé (`close()`) à la fin. */
++  /** Serveur neuf par test, fermé (`close()`) à la fin ; `dataDir` supprimé si le test a le résultat attendu. */
+   server: E2EServer;
+   /**
+    * Second appareil : contexte avec les options du projet (appareil, langue, fuseau, SW), surveillé comme
+    * `context`, fermé à la fin du test. `browser.newContext()` seul n'hérite pas de ces options.
+    */
+   newContext(): Promise<BrowserContext>;
+   /** Messages de console qui citent la CSP (P-LOG-4), tous contextes confondus ; le test échoue s'il y en a. */
+   cspViolations: string[];
+ }
+ 
+ function watchCsp(context: BrowserContext, violations: string[]): void {
+   context.on('console', (message) => {
+     if (message.text().includes(CSP_MARKER)) violations.push(message.text());
+   });
+ }
+ 
+ export const test = base.extend<E2EFixtures>({
+   serverOptions: [{}, { option: true }],
+-  server: async ({ serverOptions }, use) => {
++  server: async ({ serverOptions }, use, testInfo) => {
+     const server = await startE2EServer(serverOptions);
+     try {
+       await use(server);
+     } finally {
+       await server.close();
+     }
++    // Résultat attendu : données supprimées (≈ 1 Mo par serveur) ; sinon gardées pour l'enquête.
++    // Les reprises couvrent EBUSY sous Windows.
++    if (testInfo.status === testInfo.expectedStatus) {
++      rmSync(server.dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
++    }
+   },
+   // biome-ignore lint/correctness/noEmptyPattern: Playwright exige un premier argument déstructuré.
+   cspViolations: async ({}, use) => {
+     const violations: string[] = [];
+     await use(violations);
+     expect(violations, CSP_MARKER).toEqual([]);
+   },
+   context: async ({ context, cspViolations }, use) => {
+     watchCsp(context, cspViolations);
+     await use(context);
+diff --git a/apps/web/e2e/support/pwa.ts b/apps/web/e2e/support/pwa.ts
+index cd6a16b..547aa2c 100644
+--- a/apps/web/e2e/support/pwa.ts
++++ b/apps/web/e2e/support/pwa.ts
+@@ -33,22 +33,25 @@ export async function emulateStandalone(context: BrowserContext): Promise<void>
+  * Service worker exigé (R-TST-1) : sans lui, erreur en CI ; ailleurs le test est sauté (WebKit sous
+  * Windows n'a pas de SW, la CI Linux fait foi).
+  */
+ export async function requireServiceWorker(page: Page): Promise<void> {
+   if (await page.evaluate(() => 'serviceWorker' in navigator)) return;
+   if (process.env.CI)
+     throw new Error('Service worker indisponible dans ce navigateur : exigé en CI (R-TST-1).');
+   test.skip(true, SW_SKIP_REASON);
+ }
+ 
++/** Page contrôlée par le SW, en 30 s au plus : sans contrôleur, l'échec nomme l'attente, pas le délai du test. */
+ export async function waitForController(page: Page): Promise<void> {
+-  await page.waitForFunction(() => navigator.serviceWorker?.controller != null);
++  await page.waitForFunction(() => navigator.serviceWorker?.controller != null, undefined, {
++    timeout: 30_000,
++  });
+ }
+ 
+ /** `GET_STATUS` au SW qui contrôle la page ; `null` sans contrôleur ou sans réponse en 1 s. */
+ export async function swStatus(page: Page): Promise<SwStatus | null> {
+   return page.evaluate(
+     () =>
+       new Promise<SwStatus | null>((resolve) => {
+         const controller = navigator.serviceWorker?.controller;
+         if (!controller) {
+           resolve(null);
+@@ -78,54 +81,75 @@ export async function registrationCount(page: Page): Promise<number> {
+ export async function cacheNames(page: Page): Promise<string[]> {
+   return page.evaluate(() => caches.keys());
+ }
+ 
+ type IdbAction =
+   | { op: 'getAll'; store: string }
+   | { op: 'get'; store: string; key: string }
+   | { op: 'put'; store: string; value: unknown }
+   | { op: 'version' };
+ 
+-/** Accès direct à la base Dexie de la page (IndexedDB natif, version courante, sans montée de version). */
++/**
++ * Accès direct à la base Dexie de la page (IndexedDB natif, version courante, sans montée de version).
++ * Rejette, au lieu de pendre jusqu'au délai du test, si la base ou le magasin manque ou si une requête
++ * échoue ; la connexion est toujours refermée pour ne pas bloquer une montée de version de Dexie.
++ */
+ function idb(page: Page, action: IdbAction): Promise<unknown> {
+   return page.evaluate(
+     ({ name, action }) =>
+       new Promise<unknown>((resolve, reject) => {
+         const open = indexedDB.open(name);
++        // Base absente : l'ouvrir sans version la créerait vide en v1, ce qui fausserait Dexie ensuite.
++        open.onupgradeneeded = () => {
++          open.transaction?.abort();
++          reject(new Error(`base ${name} absente`));
++        };
++        open.onblocked = () => reject(new Error(`ouverture de la base ${name} bloquée`));
+         open.onerror = () => reject(open.error);
+         open.onsuccess = () => {
+           const db = open.result;
++          const fail = (error: unknown) => {
++            db.close();
++            reject(error);
++          };
+           if (action.op === 'version') {
+             db.close();
+             resolve(db.version);
+             return;
+           }
+-          const tx = db.transaction(action.store, action.op === 'put' ? 'readwrite' : 'readonly');
+-          const store = tx.objectStore(action.store);
+-          const request =
+-            action.op === 'getAll'
+-              ? store.getAll()
+-              : action.op === 'get'
+-                ? store.get(action.key)
+-                : store.put(action.value);
+-          let result: unknown;
+-          request.onsuccess = () => {
+-            result = request.result;
+-          };
+-          tx.oncomplete = () => {
+-            db.close();
+-            resolve(result);
+-          };
+-          tx.onerror = () => {
+-            db.close();
+-            reject(tx.error);
+-          };
++          if (!db.objectStoreNames.contains(action.store)) {
++            fail(new Error(`magasin ${action.store} absent de la base ${name}`));
++            return;
++          }
++          // transaction() et put() lèvent de façon synchrone (DataError, DataCloneError…).
++          try {
++            const tx = db.transaction(action.store, action.op === 'put' ? 'readwrite' : 'readonly');
++            const store = tx.objectStore(action.store);
++            const request =
++              action.op === 'getAll'
++                ? store.getAll()
++                : action.op === 'get'
++                  ? store.get(action.key)
++                  : store.put(action.value);
++            let result: unknown;
++            request.onsuccess = () => {
++              result = request.result;
++            };
++            request.onerror = () => fail(request.error);
++            tx.oncomplete = () => {
++              db.close();
++              resolve(result);
++            };
++            tx.onabort = () => fail(tx.error ?? new Error(`transaction sur ${action.store} annulée`));
++          } catch (error) {
++            fail(error);
++          }
+         };
+       }),
+     { name: LOCAL_DB_NAME, action },
+   );
+ }
+ 
+ export async function idbGetAll<T = Record<string, unknown>>(page: Page, store: string): Promise<T[]> {
+   return (await idb(page, { op: 'getAll', store })) as T[];
+ }
+ 
+@@ -137,23 +161,31 @@ export async function idbPut(page: Page, store: string, value: unknown): Promise
+ export async function idbVersion(page: Page): Promise<number> {
+   return (await idb(page, { op: 'version' })) as number;
+ }
+ 
+ /** Valeur de `meta` (`{ key, value }`) ; `undefined` si la clé est absente. */
+ export async function metaValue(page: Page, key: string): Promise<unknown> {
+   const row = (await idb(page, { op: 'get', store: 'meta', key })) as { value: unknown } | undefined;
+   return row?.value;
+ }
+ 
+-/** Retour au premier plan (`visibilitychange`, page visible) : déclencheur de synchro (R-SYN-29). */
++/**
++ * Retour au premier plan (`visibilitychange`, page visible) : déclencheur de synchro (R-SYN-29).
++ * Le moteur ignore l'événement si la page n'est pas visible : erreur plutôt qu'un appel sans effet.
++ */
+ export async function triggerForeground(page: Page): Promise<void> {
+-  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
++  const visibility = await page.evaluate(() => {
++    if (document.visibilityState === 'visible') document.dispatchEvent(new Event('visibilitychange'));
++    return document.visibilityState;
++  });
++  if (visibility !== 'visible')
++    throw new Error(`triggerForeground : page ${visibility}, le moteur ignorerait l'événement (R-SYN-29).`);
+ }
+ 
+ const FAKE_TS = '2026-10-06T10:00:00.000Z';
+ 
+ /** UUIDv7 fixe : horodatage de FAKE_TS, `tag` (4 bits) et `n` pour distinguer les identifiants. */
+ function fakeUuidV7(tag: number, n: number): string {
+   const ms = Date.parse(FAKE_TS).toString(16).padStart(12, '0');
+   const tail = n.toString(16).padStart(12, '0');
+   return `${ms.slice(0, 8)}-${ms.slice(8)}-7000-${(0x8000 | tag).toString(16)}-${tail}`;
+ }
+diff --git a/apps/web/e2e/support/server.ts b/apps/web/e2e/support/server.ts
+index 9ed1f6d..23e43b8 100644
+--- a/apps/web/e2e/support/server.ts
++++ b/apps/web/e2e/support/server.ts
+@@ -4,39 +4,43 @@ import { mkdirSync, writeFileSync } from 'node:fs';
+ import http, { type IncomingHttpHeaders } from 'node:http';
+ import { type AddressInfo, createServer as createNetServer, type Socket } from 'node:net';
+ import { dirname, join, resolve } from 'node:path';
+ import { fileURLToPath } from 'node:url';
+ 
+ export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
+ export const WEB_DIR = join(REPO_ROOT, 'apps', 'web');
+ const SERVER_DIR = join(REPO_ROOT, 'apps', 'server');
+ /** Build de production écrit par global-setup. */
+ export const DEFAULT_PUBLIC_DIR = join(WEB_DIR, 'dist');
+-/** Données des serveurs de test (ignoré par git) : un dossier par serveur, gardé pour l'enquête. */
++/** Données des serveurs de test (ignoré par git) : un dossier par serveur, gardé pour l'enquête si le test échoue. */
+ export const E2E_DATA_DIR = join(REPO_ROOT, '.e2e-data');
+ 
+ const HEALTH_TIMEOUT_MS = 30_000;
+ const STOP_TIMEOUT_MS = 10_000;
+ const LOG_TAIL_LINES = 40;
+ 
+ /** Panne simulée par le proxy : requêtes sans réponse (VPN coupé), ou réponse imposée pour un préfixe. */
+ export type E2EFault =
+   | null
+   | { kind: 'blackhole' }
+   | { kind: 'status'; pathPrefix: string; status: number; body: unknown };
+ 
+ export interface E2EServer {
+   /** Origine vue par le navigateur (`http://localhost:<port du proxy>`) = APP_ORIGIN. */
+   url: string;
+   dataDir: string;
+   publicDir: string;
+-  /** Arrête le serveur seul : le proxy reste et répond 502, `dataDir` est gardé. */
++  /**
++   * Arrête le serveur seul : le proxy reste et répond 502, `dataDir` est gardé. SIGTERM : arrêt propre
++   * sous Linux (CI), mais arrêt brutal sous Windows (TerminateProcess). Une spec ne doit donc pas compter
++   * sur la fin des requêtes en cours : une réponse coupée est détruite côté navigateur.
++   */
+   stop(): Promise<void>;
+   /** Relance le serveur, `env` fusionné à l'environnement courant (`''` retire la variable) ; même URL. */
+   restart(env?: Record<string, string>): Promise<void>;
+   /** Arrête le serveur et le proxy. */
+   close(): Promise<void>;
+   /** CLI du serveur (`node --import tsx src/main.ts <args>`) sur les mêmes données. */
+   cli(args: string[]): Promise<{ code: number; stdout: string; stderr: string }>;
+   setFault(f: E2EFault): void;
+ }
+ 
+@@ -56,26 +60,60 @@ async function freePort(): Promise<number> {
+   const probe = createNetServer();
+   await new Promise<void>((done, fail) => {
+     probe.once('error', fail);
+     probe.listen(0, '127.0.0.1', done);
+   });
+   const { port } = probe.address() as AddressInfo;
+   await new Promise<void>((done) => probe.close(() => done()));
+   return port;
+ }
+ 
++// Filet contre les orphelins (un serveur orphelin garde son port et ses fichiers SQLite ouverts).
++// 1. Le worker sort sans fixture de fin (process.exit) : son hook 'exit' tue les enfants encore vivants.
++// 2. Le worker meurt net (SIGKILL, TerminateProcess) : aucun hook ne tourne ; chaque enfant surveille son
++//    parent (préchargé par --import) et sort quand il disparaît. Sous Linux un orphelin est rattaché à un
++//    autre parent (ppid change) ; sous Windows ppid ne change pas, kill(parent, 0) échoue (ESRCH).
++const live = new Set<ChildProcess>();
++let exitHookInstalled = false;
++
++/** Module à précharger (`--import`) : le processus sort dès que `parent` n'est plus son parent vivant. */
++export function parentWatchImport(parent: number): string {
++  const code = `
++const parent = ${parent};
++setInterval(() => {
++  let gone = process.ppid !== parent;
++  if (!gone) try { process.kill(parent, 0); } catch (error) { gone = error.code === 'ESRCH'; }
++  if (gone) process.exit(1);
++}, 500).unref();`;
++  return `data:text/javascript,${encodeURIComponent(code)}`;
++}
++
++/** PID des processus serveur (et CLI) lancés par ce module et encore vivants. */
++export function livePids(): number[] {
++  return [...live].flatMap((child) => (child.pid === undefined ? [] : [child.pid]));
++}
++
+ function spawnServer(args: string[], env: Env): ChildProcess {
+-  return spawn(process.execPath, ['--import', 'tsx', 'src/main.ts', ...args], {
+-    cwd: SERVER_DIR,
+-    env,
+-    stdio: ['ignore', 'pipe', 'pipe'],
+-  });
++  const child = spawn(
++    process.execPath,
++    ['--import', parentWatchImport(process.pid), '--import', 'tsx', 'src/main.ts', ...args],
++    { cwd: SERVER_DIR, env, stdio: ['ignore', 'pipe', 'pipe'] },
++  );
++  live.add(child);
++  child.once('exit', () => live.delete(child));
++  if (!exitHookInstalled) {
++    exitHookInstalled = true;
++    process.once('exit', () => {
++      for (const running of live) running.kill('SIGKILL');
++    });
++  }
++  return child;
+ }
+ 
+ function runCli(args: string[], env: Env): Promise<{ code: number; stdout: string; stderr: string }> {
+   return new Promise((done, fail) => {
+     const child = spawnServer(args, env);
+     let stdout = '';
+     let stderr = '';
+     child.stdout?.setEncoding('utf8').on('data', (chunk: string) => {
+       stdout += chunk;
+     });
+@@ -146,76 +184,89 @@ const HOP_BY_HOP = new Set([
+   'te',
+   'trailer',
+   'transfer-encoding',
+   'upgrade',
+ ]);
+ 
+ function endToEnd(headers: IncomingHttpHeaders): IncomingHttpHeaders {
+   return Object.fromEntries(Object.entries(headers).filter(([name]) => !HOP_BY_HOP.has(name)));
+ }
+ 
++function reply(res: http.ServerResponse, status: number, type: string, body: string): void {
++  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
++  res.end(body);
++}
++
++/** Relaie `req` au serveur sur 127.0.0.1:`port` ; injoignable : 502. */
++export function relay(req: http.IncomingMessage, res: http.ServerResponse, port: number): void {
++  const upstream = http.request(
++    {
++      host: '127.0.0.1',
++      port,
++      method: req.method,
++      path: req.url,
++      headers: endToEnd(req.headers),
++      agent: false,
++    },
++    (up) => {
++      res.writeHead(up.statusCode ?? 502, endToEnd(up.headers));
++      // pipe() ne propage pas une coupure : serveur coupé en plein corps → réponse détruite, pas pendante.
++      up.once('close', () => {
++        if (!up.complete) res.destroy();
++      });
++      up.pipe(res);
++    },
++  );
++  // Client parti avant la fin : la requête amont est coupée aussi.
++  res.once('close', () => {
++    if (!res.writableFinished) upstream.destroy();
++  });
++  upstream.once('error', () => {
++    if (res.headersSent) res.destroy();
++    else reply(res, 502, 'text/plain; charset=utf-8', 'Bad Gateway');
++  });
++  req.pipe(upstream);
++}
++
+ /**
+  * Serveur réel (`node --import tsx src/main.ts`, cwd apps/server) sur une base neuve (`init`), derrière un
+  * proxy `node:http` qui relaie tout (Host, Origin, Cookie compris) et simule les pannes : le navigateur
+  * n'utilise que `url` (localhost), jamais 127.0.0.1.
+  */
+ export async function startE2EServer(
+   opts: { env?: Record<string, string>; publicDir?: string; port?: number } = {},
+ ): Promise<E2EServer> {
+   let fault: E2EFault = null;
+   let backend: Backend | null = null;
+   const held = new Set<Socket>();
+   const log: string[] = [];
+   const backendPort = await freePort();
+ 
+-  const reply = (res: http.ServerResponse, status: number, type: string, body: string) => {
+-    res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
+-    res.end(body);
+-  };
+-
+   const handle = (req: http.IncomingMessage, res: http.ServerResponse) => {
+     const current = fault;
+     if (current?.kind === 'blackhole') {
+       // Requête gardée ouverte sans réponse ; libérée (socket détruite) par setFault(null) ou close().
+       held.add(req.socket);
+       req.socket.once('close', () => held.delete(req.socket));
+       return;
+     }
+     if (current?.kind === 'status' && (req.url ?? '/').startsWith(current.pathPrefix)) {
+       req.resume();
+       reply(res, current.status, 'application/json', JSON.stringify(current.body));
+       return;
+     }
+     if (!backend) {
+       req.resume();
+       reply(res, 502, 'text/plain; charset=utf-8', 'Bad Gateway');
+       return;
+     }
+-    const upstream = http.request(
+-      {
+-        host: '127.0.0.1',
+-        port: backendPort,
+-        method: req.method,
+-        path: req.url,
+-        headers: endToEnd(req.headers),
+-        agent: false,
+-      },
+-      (up) => {
+-        res.writeHead(up.statusCode ?? 502, endToEnd(up.headers));
+-        up.pipe(res);
+-      },
+-    );
+-    upstream.once('error', () => {
+-      if (res.headersSent) res.destroy();
+-      else reply(res, 502, 'text/plain; charset=utf-8', 'Bad Gateway');
+-    });
+-    req.pipe(upstream);
++    relay(req, res, backendPort);
+   };
+ 
+   // localhost : IPv4 d'abord, IPv6 en plus quand la machine l'a (le navigateur peut essayer ::1).
+   const proxies: http.Server[] = [];
+   const listen = (host: string, port: number) =>
+     new Promise<number>((done, fail) => {
+       const proxy = http.createServer(handle);
+       proxy.once('error', fail);
+       proxy.listen(port, host, () => {
+         proxies.push(proxy);
+diff --git a/apps/web/test/e2e-harness/server.test.ts b/apps/web/test/e2e-harness/server.test.ts
+new file mode 100644
+index 0000000..dd28303
+--- /dev/null
++++ b/apps/web/test/e2e-harness/server.test.ts
+@@ -0,0 +1,201 @@
++// @vitest-environment node
++import { type ChildProcess, spawn } from 'node:child_process';
++import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
++import http from 'node:http';
++import type { AddressInfo } from 'node:net';
++import { tmpdir } from 'node:os';
++import { join, resolve } from 'node:path';
++import { pathToFileURL } from 'node:url';
++import { afterEach, describe, expect, it } from 'vitest';
++import { parentWatchImport, REPO_ROOT, relay } from '../../e2e/support/server';
++
++const SERVER_TS = resolve(import.meta.dirname, '../../e2e/support/server.ts');
++const SETTLE_MS = 3000;
++
++const servers: http.Server[] = [];
++const cleanups: (() => void)[] = [];
++
++afterEach(async () => {
++  for (const cleanup of cleanups.splice(0)) cleanup();
++  await Promise.all(
++    servers.splice(0).map(
++      (server) =>
++        new Promise<void>((done) => {
++          server.close(() => done());
++          server.closeAllConnections();
++        }),
++    ),
++  );
++});
++
++async function listen(handler: http.RequestListener): Promise<number> {
++  const server = http.createServer(handler);
++  servers.push(server);
++  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
++  return (server.address() as AddressInfo).port;
++}
++
++function within<T>(promise: Promise<T>, what: string): Promise<T> {
++  return new Promise((done, fail) => {
++    const timer = setTimeout(() => fail(new Error(`${what} : rien après ${SETTLE_MS} ms`)), SETTLE_MS);
++    promise.then(
++      (value) => {
++        clearTimeout(timer);
++        done(value);
++      },
++      (error: unknown) => {
++        clearTimeout(timer);
++        fail(error);
++      },
++    );
++  });
++}
++
++describe('proxy E2E : relais', () => {
++  it('un serveur coupé en plein corps termine la réponse relayée (pas de réponse pendante)', async () => {
++    const backendPort = await listen((_req, res) => {
++      res.writeHead(200, { 'Content-Type': 'text/plain' });
++      res.write('début');
++      setTimeout(() => res.socket?.destroy(), 50);
++    });
++    const proxyPort = await listen((req, res) => relay(req, res, backendPort));
++
++    const ended = new Promise<boolean>((done) => {
++      const req = http.get({ host: '127.0.0.1', port: proxyPort, path: '/', agent: false }, (res) => {
++        res.resume();
++        res.once('close', () => done(res.complete));
++        res.once('error', () => {});
++      });
++      req.once('error', () => done(false));
++    });
++
++    expect(await within(ended, 'réponse relayée')).toBe(false);
++  });
++
++  it('un client parti en pleine réponse coupe la requête vers le serveur', async () => {
++    let backendClosed!: () => void;
++    const closed = new Promise<void>((done) => {
++      backendClosed = done;
++    });
++    const backendPort = await listen((_req, res) => {
++      res.once('close', () => backendClosed());
++      res.writeHead(200, { 'Content-Type': 'text/plain' });
++      res.write('début');
++    });
++    const proxyPort = await listen((req, res) => relay(req, res, backendPort));
++
++    const req = http.get({ host: '127.0.0.1', port: proxyPort, path: '/', agent: false }, (res) => {
++      res.once('data', () => req.destroy());
++      res.once('error', () => {});
++    });
++    req.once('error', () => {});
++
++    await within(closed, 'requête amont');
++  });
++});
++
++/**
++ * « Worker » Playwright simulé : lance un serveur E2E, écrit ses PID et son dossier de données, puis
++ * `process.exit(0)` dès qu'il lit une ligne (sortie sans `close()`), ou meurt tué net.
++ */
++function startWorker(): Promise<{ worker: ChildProcess; pids: number[]; dataDir: string }> {
++  const publicDir = mkdtempSync(join(tmpdir(), 'appsport-e2e-public-'));
++  writeFileSync(join(publicDir, 'index.html'), '<!doctype html><title>appsport</title>');
++  cleanups.push(() => rmSync(publicDir, { recursive: true, force: true }));
++  const code = [
++    `import { livePids, startE2EServer } from ${JSON.stringify(pathToFileURL(SERVER_TS).href)};`,
++    `const server = await startE2EServer({ publicDir: ${JSON.stringify(publicDir)} });`,
++    'console.log(JSON.stringify({ pids: livePids(), dataDir: server.dataDir }));',
++    "process.stdin.once('data', () => process.exit(0));",
++  ].join('\n');
++  const worker = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', code], {
++    cwd: join(REPO_ROOT, 'apps', 'server'),
++    stdio: ['pipe', 'pipe', 'pipe'],
++  });
++  cleanups.push(() => worker.kill('SIGKILL'));
++  let stdout = '';
++  let stderr = '';
++  worker.stderr?.setEncoding('utf8').on('data', (chunk: string) => {
++    stderr += chunk;
++  });
++  return new Promise((done, fail) => {
++    worker.stdout?.setEncoding('utf8').on('data', (chunk: string) => {
++      stdout += chunk;
++      const line = stdout.split('\n').find((l) => l.startsWith('{'));
++      if (!line) return;
++      const { pids, dataDir } = JSON.parse(line) as { pids: number[]; dataDir: string };
++      cleanups.push(() => {
++        for (const pid of pids) {
++          try {
++            process.kill(pid, 'SIGKILL');
++          } catch {}
++        }
++        rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
++      });
++      done({ worker, pids, dataDir });
++    });
++    worker.once('exit', (exitCode) => fail(new Error(`worker sorti (${exitCode}) :\n${stderr}`)));
++  });
++}
++
++function alive(pid: number): boolean {
++  try {
++    process.kill(pid, 0);
++    return true;
++  } catch {
++    return false;
++  }
++}
++
++async function allGone(pids: number[], timeoutMs: number): Promise<number[]> {
++  const deadline = Date.now() + timeoutMs;
++  while (Date.now() < deadline) {
++    if (!pids.some(alive)) return [];
++    await new Promise((r) => setTimeout(r, 100));
++  }
++  return pids.filter(alive);
++}
++
++describe('serveur E2E : filet contre les orphelins', () => {
++  it('un worker qui sort sans close() emporte son serveur', { timeout: 60_000 }, async () => {
++    const { worker, pids } = await startWorker();
++    expect(pids).toHaveLength(1);
++    expect(pids.every(alive)).toBe(true);
++
++    worker.stdin?.write('exit\n');
++
++    expect(await allGone(pids, 5000)).toEqual([]);
++  });
++
++  it('le module de surveillance fait sortir un processus dont le parent a disparu', async () => {
++    const gone = spawn(process.execPath, ['-e', '']);
++    const deadPid = await new Promise<number>((done) => gone.once('exit', () => done(gone.pid ?? 0)));
++    const orphan = spawn(process.execPath, [
++      '--import',
++      parentWatchImport(deadPid),
++      '-e',
++      'setInterval(() => {}, 1000)',
++    ]);
++    cleanups.push(() => orphan.kill('SIGKILL'));
++    const watched = spawn(process.execPath, [
++      '--import',
++      parentWatchImport(process.pid),
++      '-e',
++      'setInterval(() => {}, 1000)',
++    ]);
++    cleanups.push(() => watched.kill('SIGKILL'));
++
++    const exited = new Promise<number | null>((done) => orphan.once('exit', (exitCode) => done(exitCode)));
++    expect(await within(exited, 'sortie de l’orphelin')).toBe(1);
++    expect(watched.exitCode).toBeNull();
++  });
++
++  it('un worker tué net (SIGKILL / TerminateProcess) emporte son serveur', { timeout: 60_000 }, async () => {
++    const { worker, pids } = await startWorker();
++    expect(pids).toHaveLength(1);
++
++    worker.kill('SIGKILL');
++
++    expect(await allGone(pids, 5000)).toEqual([]);
++  });
++});

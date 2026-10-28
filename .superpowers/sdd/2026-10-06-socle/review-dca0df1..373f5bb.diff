@@ -1,0 +1,541 @@
+# Review package: dca0df1..HEAD
+
+## Commits
+373f5bb feat(db): migrations transactionnelles, compteur de révisions et horloge de test
+
+## Files changed
+ apps/server/src/db/migrate.ts            | 72 ++++++++++++++++++++++++++++++++
+ apps/server/src/db/migrations/index.ts   | 11 +++++
+ apps/server/src/db/rev.ts                | 23 ++++++++++
+ apps/server/src/db/schema.ts             | 30 +++++++++++--
+ apps/server/src/db/server-meta.ts        | 51 ++++++++++++++++++++++
+ apps/server/src/deps.ts                  | 18 ++++++++
+ apps/server/test/db/m1.ts                | 13 ++++++
+ apps/server/test/db/migrate.test.ts      | 72 ++++++++++++++++++++++++++++++++
+ apps/server/test/db/rev.test.ts          | 68 ++++++++++++++++++++++++++++++
+ apps/server/test/support/clock.ts        | 21 ++++++++++
+ apps/server/test/support/ids.ts          | 21 ++++++++++
+ apps/server/test/support/index.ts        |  2 +
+ apps/server/test/support/support.test.ts | 36 ++++++++++++++++
+ 13 files changed, 435 insertions(+), 3 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/db/migrate.ts b/apps/server/src/db/migrate.ts
+new file mode 100644
+index 0000000..f476b8e
+--- /dev/null
++++ b/apps/server/src/db/migrate.ts
+@@ -0,0 +1,72 @@
++import { type Kysely, sql } from 'kysely';
++import type { Clock } from '../deps';
++import type { Migration } from './migrations/index';
++
++export class MigrationError extends Error {
++  readonly code: 'migration_failed' | 'unknown_breaking_migration';
++
++  constructor(code: MigrationError['code'], message: string, options?: { cause?: unknown }) {
++    super(message, options);
++    this.name = 'MigrationError';
++    this.code = code;
++  }
++}
++
++/** Applique les migrations manquantes en une seule transaction ; refuse une base plus récente (R-VER-7). */
++export async function migrate(
++  // biome-ignore lint/suspicious/noExplicitAny: les migrations écrivent du DDL hors du schéma typé
++  db: Kysely<any>,
++  migrations: readonly Migration[],
++  clock: Clock,
++): Promise<{ applied: string[]; unknownNonBreaking: string[] }> {
++  try {
++    await sql`CREATE TABLE IF NOT EXISTS schema_migrations (id TEXT PRIMARY KEY, breaking INTEGER NOT NULL CHECK (breaking IN (0,1)), applied_at TEXT NOT NULL) STRICT`.execute(
++      db,
++    );
++  } catch (cause) {
++    throw new MigrationError('migration_failed', 'Impossible de préparer la table schema_migrations.', {
++      cause,
++    });
++  }
++  const rows = (await db.selectFrom('schemaMigrations').select(['id', 'breaking']).execute()) as {
++    id: string;
++    breaking: number;
++  }[];
++  const known = new Set(migrations.map((m) => m.id));
++  const unknown = rows.filter((r) => !known.has(r.id));
++  const futureBreaking = unknown.find((r) => r.breaking === 1);
++  if (futureBreaking) {
++    throw new MigrationError(
++      'unknown_breaking_migration',
++      `La base contient la migration cassante inconnue ${futureBreaking.id} : elle vient d'une version plus récente de l'application.`,
++    );
++  }
++  const done = new Set(rows.map((r) => r.id));
++  const pending = migrations.filter((m) => !done.has(m.id));
++  const applied: string[] = [];
++  if (pending.length > 0) {
++    let current = '';
++    try {
++      await db.transaction().execute(async (trx) => {
++        for (const m of pending) {
++          current = m.id;
++          await m.up(trx);
++          await trx
++            .insertInto('schemaMigrations')
++            .values({ id: m.id, breaking: m.breaking ? 1 : 0, appliedAt: clock.now().toISOString() })
++            .execute();
++          applied.push(m.id);
++        }
++      });
++    } catch (cause) {
++      throw new MigrationError(
++        'migration_failed',
++        `La migration ${current} a échoué : toute la série est annulée.`,
++        {
++          cause,
++        },
++      );
++    }
++  }
++  return { applied, unknownNonBreaking: unknown.map((r) => r.id) };
++}
+diff --git a/apps/server/src/db/migrations/index.ts b/apps/server/src/db/migrations/index.ts
+new file mode 100644
+index 0000000..f362289
+--- /dev/null
++++ b/apps/server/src/db/migrations/index.ts
+@@ -0,0 +1,11 @@
++import type { Kysely } from 'kysely';
++
++export interface Migration {
++  id: string;
++  breaking: boolean;
++  // biome-ignore lint/suspicious/noExplicitAny: une migration écrit du DDL hors du schéma typé
++  up(db: Kysely<any>): Promise<void>;
++}
++
++/** Migrations du socle ; la Task 4b ajoute '0001_socle'. */
++export const MIGRATIONS: readonly Migration[] = [];
+diff --git a/apps/server/src/db/rev.ts b/apps/server/src/db/rev.ts
+new file mode 100644
+index 0000000..6dfe982
+--- /dev/null
++++ b/apps/server/src/db/rev.ts
+@@ -0,0 +1,23 @@
++import type { Clock } from '../deps';
++import type { DbExecutor } from './schema';
++
++/** Prochaine révision globale ; à appeler dans la transaction qui écrit. */
++export async function nextRev(trx: DbExecutor): Promise<number> {
++  const row = await trx
++    .updateTable('serverMeta')
++    .set((eb) => ({ syncCounter: eb('syncCounter', '+', 1) }))
++    .where('id', '=', 1)
++    .returning('syncCounter')
++    .executeTakeFirst();
++  if (!row) throw new Error("server_meta absent : la base n'est pas initialisée.");
++  return row.syncCounter;
++}
++
++export async function writeStamp(
++  trx: DbExecutor,
++  deps: { clock: Clock },
++  actorId: string | null,
++): Promise<{ rev: number; updatedAt: string; updatedBy: string | null }> {
++  const rev = await nextRev(trx);
++  return { rev, updatedAt: deps.clock.now().toISOString(), updatedBy: actorId };
++}
+diff --git a/apps/server/src/db/schema.ts b/apps/server/src/db/schema.ts
+index 2b523ce..f199ca4 100644
+--- a/apps/server/src/db/schema.ts
++++ b/apps/server/src/db/schema.ts
+@@ -1,7 +1,31 @@
+ import type { Kysely, Transaction } from 'kysely';
+ 
+-// Squelette : les tables du socle arrivent avec la Task 4b.
+-// biome-ignore lint/suspicious/noEmptyInterface: interface étendue table par table (Task 4b)
+-export interface Database {}
++export interface ServerMetaTable {
++  id: number;
++  serverEpoch: string;
++  epochStartedAt: string;
++  epochBaseRev: number;
++  syncCounter: number;
++  tombstonePurgeRev: number;
++  catalogVersion: string | null;
++  catalogUpdatedAt: string | null;
++}
++
++export interface SchemaMigrationsTable {
++  id: string;
++  breaking: number;
++  appliedAt: string;
++}
++
++// Les autres tables du socle arrivent avec la Task 4b.
++export interface Database {
++  serverMeta: ServerMetaTable;
++  schemaMigrations: SchemaMigrationsTable;
++}
+ 
+ export type DbExecutor = Kysely<Database> | Transaction<Database>;
++
++/** Nom de table SQL (snake_case) vers clé de `Database` (camelCase) : 'training_profile' → 'trainingProfile'. */
++export function tableKey(sqlTable: string): keyof Database {
++  return sqlTable.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase()) as keyof Database;
++}
+diff --git a/apps/server/src/db/server-meta.ts b/apps/server/src/db/server-meta.ts
+new file mode 100644
+index 0000000..d7e7205
+--- /dev/null
++++ b/apps/server/src/db/server-meta.ts
+@@ -0,0 +1,51 @@
++import type { Clock, IdGen } from '../deps';
++import type { DbExecutor } from './schema';
++
++export interface ServerMeta {
++  serverEpoch: string;
++  epochStartedAt: string;
++  epochBaseRev: number;
++  syncCounter: number;
++  tombstonePurgeRev: number;
++  catalogVersion: string | null;
++  catalogUpdatedAt: string | null;
++}
++
++export async function getServerMeta(db: DbExecutor): Promise<ServerMeta> {
++  const row = await db
++    .selectFrom('serverMeta')
++    .select([
++      'serverEpoch',
++      'epochStartedAt',
++      'epochBaseRev',
++      'syncCounter',
++      'tombstonePurgeRev',
++      'catalogVersion',
++      'catalogUpdatedAt',
++    ])
++    .where('id', '=', 1)
++    .executeTakeFirst();
++  if (!row) throw new Error("server_meta absent : la base n'est pas initialisée.");
++  return row;
++}
++
++/** Pose la ligne unique de server_meta : nouvelle époque (UUIDv7), compteurs à zéro. */
++export async function initServerMeta(
++  db: DbExecutor,
++  deps: { ids: IdGen; clock: Clock },
++): Promise<ServerMeta> {
++  await db
++    .insertInto('serverMeta')
++    .values({
++      id: 1,
++      serverEpoch: deps.ids.uuidv7(),
++      epochStartedAt: deps.clock.now().toISOString(),
++      epochBaseRev: 0,
++      syncCounter: 0,
++      tombstonePurgeRev: 0,
++      catalogVersion: null,
++      catalogUpdatedAt: null,
++    })
++    .execute();
++  return getServerMeta(db);
++}
+diff --git a/apps/server/src/deps.ts b/apps/server/src/deps.ts
+new file mode 100644
+index 0000000..17add52
+--- /dev/null
++++ b/apps/server/src/deps.ts
+@@ -0,0 +1,18 @@
++import { randomBytes } from 'node:crypto';
++import { createMonotonicUuidV7 } from '@appsport/domain';
++
++export interface Clock {
++  now(): Date;
++}
++
++export interface IdGen {
++  uuidv7(): string;
++  randomBytes(n: number): Uint8Array;
++}
++
++export const systemClock: Clock = { now: () => new Date() };
++
++export function cryptoIds(): IdGen {
++  const bytes = (n: number): Uint8Array => new Uint8Array(randomBytes(n));
++  return { uuidv7: createMonotonicUuidV7(() => Date.now(), bytes), randomBytes: bytes };
++}
+diff --git a/apps/server/test/db/m1.ts b/apps/server/test/db/m1.ts
+new file mode 100644
+index 0000000..2dd4133
+--- /dev/null
++++ b/apps/server/test/db/m1.ts
+@@ -0,0 +1,13 @@
++import { sql } from 'kysely';
++import type { Migration } from '../../src/db/migrations/index';
++
++/** Migration de test : crée server_meta selon le DDL de la Task 4b (remplacée par MIGRATIONS en Task 4b). */
++export const m1: Migration = {
++  id: '0001_t',
++  breaking: false,
++  up: async (db) => {
++    await sql`CREATE TABLE server_meta (id INTEGER PRIMARY KEY CHECK (id = 1), server_epoch TEXT NOT NULL, epoch_started_at TEXT NOT NULL, epoch_base_rev INTEGER NOT NULL DEFAULT 0, sync_counter INTEGER NOT NULL DEFAULT 0, tombstone_purge_rev INTEGER NOT NULL DEFAULT 0, catalog_version TEXT, catalog_updated_at TEXT) STRICT`.execute(
++      db,
++    );
++  },
++};
+diff --git a/apps/server/test/db/migrate.test.ts b/apps/server/test/db/migrate.test.ts
+new file mode 100644
+index 0000000..3757f4b
+--- /dev/null
++++ b/apps/server/test/db/migrate.test.ts
+@@ -0,0 +1,72 @@
++import { type Kysely, sql } from 'kysely';
++import { afterEach, beforeEach, describe, expect, it } from 'vitest';
++import { migrate } from '../../src/db/migrate';
++import type { Migration } from '../../src/db/migrations/index';
++import { openDatabase } from '../../src/db/open';
++import { FakeClock } from '../support';
++import { m1 } from './m1';
++
++describe('migrate', () => {
++  let close: () => void;
++  // biome-ignore lint/suspicious/noExplicitAny: base de test sans schéma typé
++  let db: Kysely<any>;
++  const clock = new FakeClock();
++  const tables = async () =>
++    (
++      await sql<{
++        name: string;
++      }>`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`.execute(db)
++    ).rows.map((r) => r.name);
++
++  beforeEach(() => {
++    const h = openDatabase(':memory:');
++    db = h.db;
++    close = () => h.sqlite.close();
++  });
++  afterEach(() => close());
++
++  it('applique une fois, puis ne fait plus rien', async () => {
++    expect(await migrate(db, [m1], clock)).toEqual({ applied: ['0001_t'], unknownNonBreaking: [] });
++    expect(await migrate(db, [m1], clock)).toEqual({ applied: [], unknownNonBreaking: [] });
++    expect(await db.selectFrom('schemaMigrations').selectAll().execute()).toEqual([
++      { id: '0001_t', breaking: 0, appliedAt: '2026-10-06T10:00:00.000Z' },
++    ]);
++  });
++
++  it('un échec annule toute la série', async () => {
++    const fail: Migration = {
++      id: '0002_fail',
++      breaking: false,
++      up: async (trx) => {
++        await sql`CREATE TABLE x (a INTEGER) STRICT`.execute(trx);
++        throw new Error('boum');
++      },
++    };
++    await expect(migrate(db, [m1, fail], clock)).rejects.toMatchObject({
++      name: 'MigrationError',
++      code: 'migration_failed',
++    });
++    expect(await tables()).toEqual(['schema_migrations']);
++    expect(await db.selectFrom('schemaMigrations').selectAll().execute()).toEqual([]);
++  });
++
++  it('migration inconnue cassante → unknown_breaking_migration (R-VER-7)', async () => {
++    await migrate(db, [], clock);
++    await sql`INSERT INTO schema_migrations (id, breaking, applied_at) VALUES ('0099_future', 1, 'x')`.execute(
++      db,
++    );
++    await expect(migrate(db, [m1], clock)).rejects.toMatchObject({
++      name: 'MigrationError',
++      code: 'unknown_breaking_migration',
++    });
++    expect(await tables()).toEqual(['schema_migrations']);
++  });
++
++  it('migrations inconnues non cassantes permises', async () => {
++    await migrate(db, [], clock);
++    await sql`INSERT INTO schema_migrations (id, breaking, applied_at) VALUES ('0002_future', 0, 'x')`.execute(
++      db,
++    );
++    expect(await migrate(db, [], clock)).toEqual({ applied: [], unknownNonBreaking: ['0002_future'] });
++  });
++});
+diff --git a/apps/server/test/db/rev.test.ts b/apps/server/test/db/rev.test.ts
+new file mode 100644
+index 0000000..357ab08
+--- /dev/null
++++ b/apps/server/test/db/rev.test.ts
+@@ -0,0 +1,68 @@
++import { isUuidV7 } from '@appsport/domain';
++import type { Kysely } from 'kysely';
++import { afterEach, beforeEach, describe, expect, it } from 'vitest';
++import { migrate } from '../../src/db/migrate';
++import { openDatabase } from '../../src/db/open';
++import { nextRev, writeStamp } from '../../src/db/rev';
++import { type Database, tableKey } from '../../src/db/schema';
++import { getServerMeta, initServerMeta } from '../../src/db/server-meta';
++import { FakeClock, seqIds } from '../support';
++import { m1 } from './m1';
++
++describe('server_meta et révisions', () => {
++  let close: () => void;
++  let db: Kysely<Database>;
++  beforeEach(async () => {
++    const h = openDatabase(':memory:');
++    db = h.db;
++    close = () => h.sqlite.close();
++    await migrate(db, [m1], new FakeClock());
++  });
++  afterEach(() => close());
++
++  it('initServerMeta pose époque, date de début et compteurs', async () => {
++    const meta = await initServerMeta(db, { ids: seqIds(1), clock: new FakeClock() });
++    expect(isUuidV7(meta.serverEpoch)).toBe(true);
++    expect(meta).toMatchObject({
++      epochStartedAt: '2026-10-06T10:00:00.000Z',
++      epochBaseRev: 0,
++      syncCounter: 0,
++      tombstonePurgeRev: 0,
++      catalogVersion: null,
++      catalogUpdatedAt: null,
++    });
++    expect(await getServerMeta(db)).toEqual(meta);
++  });
++
++  it('getServerMeta échoue sur une base non initialisée', async () => {
++    await expect(getServerMeta(db)).rejects.toThrow('server_meta absent');
++  });
++
++  it('nextRev incrémente et ignore les transactions annulées', async () => {
++    await initServerMeta(db, { ids: seqIds(1), clock: new FakeClock() });
++    expect([await nextRev(db), await nextRev(db), await nextRev(db)]).toEqual([1, 2, 3]);
++    await expect(
++      db.transaction().execute(async (trx) => {
++        await nextRev(trx);
++        throw new Error('annulée');
++      }),
++    ).rejects.toThrow('annulée');
++    expect(await nextRev(db)).toBe(4);
++  });
++
++  it('writeStamp renvoie révision, date serveur et auteur', async () => {
++    await initServerMeta(db, { ids: seqIds(1), clock: new FakeClock() });
++    expect(await writeStamp(db, { clock: new FakeClock() }, 'u1')).toEqual({
++      rev: 1,
++      updatedAt: '2026-10-06T10:00:00.000Z',
++      updatedBy: 'u1',
++    });
++  });
++});
++
++describe('tableKey', () => {
++  it('passe du snake_case au camelCase', () => {
++    expect(tableKey('training_profile')).toBe('trainingProfile');
++    expect(tableKey('user')).toBe('user');
++  });
++});
+diff --git a/apps/server/test/support/clock.ts b/apps/server/test/support/clock.ts
+new file mode 100644
+index 0000000..9135aa3
+--- /dev/null
++++ b/apps/server/test/support/clock.ts
+@@ -0,0 +1,21 @@
++import type { Clock } from '../../src/deps';
++
++export class FakeClock implements Clock {
++  private ms: number;
++
++  constructor(iso = '2026-10-06T10:00:00.000Z') {
++    this.ms = new Date(iso).getTime();
++  }
++
++  now(): Date {
++    return new Date(this.ms);
++  }
++
++  set(iso: string): void {
++    this.ms = new Date(iso).getTime();
++  }
++
++  advance(ms: number): void {
++    this.ms += ms;
++  }
++}
+diff --git a/apps/server/test/support/ids.ts b/apps/server/test/support/ids.ts
+new file mode 100644
+index 0000000..1b3d62c
+--- /dev/null
++++ b/apps/server/test/support/ids.ts
+@@ -0,0 +1,21 @@
++import { createMonotonicUuidV7 } from '@appsport/domain';
++import type { IdGen } from '../../src/deps';
++
++function mulberry32(seed: number): () => number {
++  let a = seed >>> 0;
++  return () => {
++    a = (a + 0x6d2b79f5) >>> 0;
++    let t = a;
++    t = Math.imul(t ^ (t >>> 15), t | 1);
++    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
++    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
++  };
++}
++
++/** UUIDv7 monotones et déterministes : horloge fixe (+1 ms par appel), aléa seedé. Un générateur par base. */
++export function seqIds(seed = 1): IdGen {
++  const rand = mulberry32(seed);
++  const bytes = (n: number): Uint8Array => Uint8Array.from({ length: n }, () => Math.floor(rand() * 256));
++  let ms = new Date('2026-10-06T10:00:00.000Z').getTime();
++  return { uuidv7: createMonotonicUuidV7(() => ms++, bytes), randomBytes: bytes };
++}
+diff --git a/apps/server/test/support/index.ts b/apps/server/test/support/index.ts
+new file mode 100644
+index 0000000..99f13f1
+--- /dev/null
++++ b/apps/server/test/support/index.ts
+@@ -0,0 +1,2 @@
++export { FakeClock } from './clock';
++export { seqIds } from './ids';
+diff --git a/apps/server/test/support/support.test.ts b/apps/server/test/support/support.test.ts
+new file mode 100644
+index 0000000..59e49e7
+--- /dev/null
++++ b/apps/server/test/support/support.test.ts
+@@ -0,0 +1,36 @@
++import { isUuidV7 } from '@appsport/domain';
++import { describe, expect, it } from 'vitest';
++import { FakeClock, seqIds } from './index';
++
++describe('FakeClock', () => {
++  it('part de la date par défaut, avance et se règle', () => {
++    const c = new FakeClock();
++    expect(c.now().toISOString()).toBe('2026-10-06T10:00:00.000Z');
++    c.advance(1500);
++    expect(c.now().toISOString()).toBe('2026-10-06T10:00:01.500Z');
++    c.set('2027-01-01T00:00:00.000Z');
++    expect(c.now().toISOString()).toBe('2027-01-01T00:00:00.000Z');
++  });
++});
++
++describe('seqIds', () => {
++  const take = (seed: number) => {
++    const ids = seqIds(seed);
++    return Array.from({ length: 50 }, () => ids.uuidv7());
++  };
++
++  it('est déterministe, UUIDv7 et trié', () => {
++    const a = take(1);
++    expect(take(1)).toEqual(a);
++    expect(a.every(isUuidV7)).toBe(true);
++    expect([...a].sort()).toEqual(a);
++  });
++
++  it('change avec la graine', () => {
++    expect(take(2)).not.toEqual(take(1));
++  });
++
++  it('fournit des octets aléatoires de la longueur demandée', () => {
++    expect(seqIds(1).randomBytes(16)).toHaveLength(16);
++  });
++});

@@ -1,0 +1,154 @@
+# Review package: 688fed4..HEAD
+
+## Commits
+12eaf41 fix(auth): homoglyphes latins refusés dans les pseudos, tirets Unicode dans les codes
+
+## Files changed
+ packages/domain/src/auth/secret-code.ts       | 6 +++++-
+ packages/domain/src/auth/username.ts          | 8 ++++++--
+ packages/domain/test/auth/password.test.ts    | 3 +++
+ packages/domain/test/auth/secret-code.test.ts | 4 ++++
+ packages/domain/test/auth/username.test.ts    | 7 +++++++
+ 5 files changed, 25 insertions(+), 3 deletions(-)
+
+## Diff
+diff --git a/packages/domain/src/auth/secret-code.ts b/packages/domain/src/auth/secret-code.ts
+index 0ea9462..e641e77 100644
+--- a/packages/domain/src/auth/secret-code.ts
++++ b/packages/domain/src/auth/secret-code.ts
+@@ -16,19 +16,23 @@ export function encodeCrockford(bytes: Uint8Array): string {
+     }
+     buffer &= (1 << bits) - 1;
+   }
+   if (bits > 0) out += CROCKFORD_ALPHABET[(buffer << (5 - bits)) & 31];
+   return out;
+ }
+ 
+ /** Lien complet ou code saisi, vers la forme canonique, ou null. */
+ export function parseSecretCode(input: string): string | null {
+   const tail = input.slice(input.lastIndexOf('#') + 1);
+-  const code = tail.toUpperCase().replace(/[\s-]/g, '').replace(/[IL]/g, '1').replace(/O/g, '0');
++  const code = tail
++    .toUpperCase()
++    .replace(/[\s\p{Pd}−]/gu, '')
++    .replace(/[IL]/g, '1')
++    .replace(/O/g, '0');
+   if (code.length !== SECRET_CODE_LENGTH) return null;
+   for (const ch of code) if (!CROCKFORD_ALPHABET.includes(ch)) return null;
+   return code;
+ }
+ 
+ export function formatSecretCode(canonical: string): string {
+   return canonical.match(/.{1,4}/g)?.join('-') ?? canonical;
+ }
+diff --git a/packages/domain/src/auth/username.ts b/packages/domain/src/auth/username.ts
+index 7ca7629..2e990c3 100644
+--- a/packages/domain/src/auth/username.ts
++++ b/packages/domain/src/auth/username.ts
+@@ -1,21 +1,25 @@
+ import { RESERVED_USERNAMES, USERNAME_MAX, USERNAME_MIN } from '@appsport/contracts';
+ 
+ /** Clé de comparaison : NFKC puis minuscules. */
+ export function usernameKey(username: string): string {
+   return username.normalize('NFKC').toLowerCase();
+ }
+ 
+ export type UsernameCheck = { ok: true } | { ok: false; reason: 'length' | 'characters' | 'reserved' };
+ 
+-const ALLOWED = /^[\p{Script=Latin}\p{Nd}._-]+$/u;
++const ALLOWED = /^[\p{Script=Latin}0-9._-]+$/u;
++const BASE_ASCII = /^[A-Za-z0-9._-]+$/;
+ 
+ /** Contrôle sur la forme NFC ; écriture latine seule (contre les homoglyphes), pas de trim. */
+ export function validateUsername(username: string): UsernameCheck {
+   const n = username.normalize('NFC');
+   const length = [...n].length;
+   if (length < USERNAME_MIN || length > USERNAME_MAX) return { ok: false, reason: 'length' };
+-  if (!ALLOWED.test(n)) return { ok: false, reason: 'characters' };
++  // Latin seul, et lettres de base ASCII une fois les accents retirés (homoglyphes latins : ɑ, ı, ᴀ, ɨ).
++  if (!ALLOWED.test(n) || !BASE_ASCII.test(n.normalize('NFD').replace(/\p{M}/gu, ''))) {
++    return { ok: false, reason: 'characters' };
++  }
+   const bare = usernameKey(n).normalize('NFD').replace(/\p{M}/gu, '');
+   if ((RESERVED_USERNAMES as readonly string[]).includes(bare)) return { ok: false, reason: 'reserved' };
+   return { ok: true };
+ }
+diff --git a/packages/domain/test/auth/password.test.ts b/packages/domain/test/auth/password.test.ts
+index 62f1349..131378e 100644
+--- a/packages/domain/test/auth/password.test.ts
++++ b/packages/domain/test/auth/password.test.ts
+@@ -35,12 +35,15 @@ describe('validatePassword', () => {
+ 
+   it('refuse un seul caractère répété', () => {
+     expect(validatePassword('aaaaaaaaaaaa', member)).toEqual({ ok: false, reason: 'single_char' });
+     expect(validatePassword('💪'.repeat(12), member)).toEqual({ ok: false, reason: 'single_char' });
+   });
+ 
+   it('compte en points de code après NFC', () => {
+     expect(passwordLength('💪'.repeat(11))).toBe(11);
+     expect(validatePassword(`${'💪'.repeat(11)}a`, member)).toEqual({ ok: true });
+     expect(validatePassword(`${'é'.repeat(6)}abcde`, member)).toEqual({ ok: false, reason: 'too_short' });
++    expect(passwordLength('é'.repeat(6))).toBe(6);
++    expect(validatePassword(`${'é'.repeat(6)}abcde`, member)).toEqual({ ok: false, reason: 'too_short' });
++    expect(validatePassword(`${'é'.repeat(6)}abcdef`, member)).toEqual({ ok: true });
+   });
+ });
+diff --git a/packages/domain/test/auth/secret-code.test.ts b/packages/domain/test/auth/secret-code.test.ts
+index 5c62cba..da48c6f 100644
+--- a/packages/domain/test/auth/secret-code.test.ts
++++ b/packages/domain/test/auth/secret-code.test.ts
+@@ -19,18 +19,22 @@ describe('parseSecretCode', () => {
+   it.each([
+     'abcd-efgh-jkmn-pqrs',
+     ' abcd efgh jkmn pqrs ',
+     'abcdefghjkmnpqrs',
+     'https://appsport.tail1234.ts.net/invite#abcd-efgh-jkmn-pqrs',
+     'https://appsport.tail1234.ts.net/reset#ABCD-EFGH-JKMN-PQRS',
+   ])('accepte %s', (s) => {
+     expect(parseSecretCode(s)).toBe('ABCDEFGHJKMNPQRS');
+   });
+ 
++  it('ignore les tirets Unicode', () => {
++    expect(parseSecretCode('abcd‑efgh–jkmn−pqrs')).toBe('ABCDEFGHJKMNPQRS');
++  });
++
+   it('corrige I, L et O', () => {
+     expect(parseSecretCode('O0OO-IiLl-0000-0000')).toBe('0000111100000000');
+   });
+ 
+   it.each(['ABCD-EFGH-JKMN-PQR', 'ABCD-EFGH-JKMN-PQRST', 'ABCD-EFGH-JKMN-PQRU', ''])('refuse "%s"', (s) => {
+     expect(parseSecretCode(s)).toBeNull();
+   });
+ });
+diff --git a/packages/domain/test/auth/username.test.ts b/packages/domain/test/auth/username.test.ts
+index b54fcd5..baeb1e8 100644
+--- a/packages/domain/test/auth/username.test.ts
++++ b/packages/domain/test/auth/username.test.ts
+@@ -13,20 +13,27 @@ describe('validateUsername', () => {
+   it('accepte les lettres latines, chiffres, point, tiret bas et tiret', () => {
+     for (const u of ['Éloïse_2', 'jean-marc.b']) expect(validateUsername(u)).toEqual({ ok: true });
+   });
+ 
+   it('refuse les autres caractères, écritures et homoglyphes', () => {
+     for (const u of ['lea b', 'lea@x', 'lea💪', 'аdmin', 'lеa', 'Αθηνά']) {
+       expect(validateUsername(u)).toEqual({ ok: false, reason: 'characters' });
+     }
+   });
+ 
++  it('refuse les homoglyphes latins et les chiffres non ASCII', () => {
++    for (const u of ['ɑdmin', 'admın', 'ᴀdmin', 'admɨn', 'lea١', 'lea۱']) {
++      expect(validateUsername(u)).toEqual({ ok: false, reason: 'characters' });
++    }
++    for (const u of ['Léa', 'zoé.b']) expect(validateUsername(u)).toEqual({ ok: true });
++  });
++
+   it('contrôle la forme NFC', () => {
+     expect(validateUsername('Léa')).toEqual({ ok: true });
+   });
+ 
+   it('refuse les noms réservés, sans accents', () => {
+     for (const u of ['Admin', 'APPSPORT', 'Système']) {
+       expect(validateUsername(u)).toEqual({ ok: false, reason: 'reserved' });
+     }
+   });
+ });

@@ -1,0 +1,751 @@
+# Review package: 9b12646..HEAD
+
+## Commits
+0e0a496 feat(privacy): privacy:collect et privacy:reapply après restauration
+
+## Files changed
+ apps/server/src/cli.ts                    |  89 +++++++++++++-
+ apps/server/src/privacy/reapply.ts        | 104 ++++++++++++++++
+ apps/server/test/cli/privacy-cli.test.ts  | 168 +++++++++++++++++++++++++
+ apps/server/test/privacy/reapply.test.ts  | 198 ++++++++++++++++++++++++++++++
+ apps/server/test/support/index.ts         |   2 +
+ apps/server/test/support/sync-fixtures.ts |  41 ++++++-
+ 6 files changed, 600 insertions(+), 2 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/cli.ts b/apps/server/src/cli.ts
+index a0f2fca..fa13d12 100644
+--- a/apps/server/src/cli.ts
++++ b/apps/server/src/cli.ts
+@@ -1,23 +1,34 @@
+-import { existsSync, renameSync, rmSync } from 'node:fs';
++import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
++import { DatabaseSync } from 'node:sqlite';
+ import { CivilDate } from '@appsport/contracts';
+ import { usernameKey } from '@appsport/domain';
++import { CamelCasePlugin, Kysely } from 'kysely';
++import { z } from 'zod';
+ import { bootstrapAdminInvitation } from './auth/bootstrap';
+ import { createPasswordReset } from './auth/password-reset';
+ import { type AppConfig, loadConfig } from './config';
+ import { migrate } from './db/migrate';
+ import { MIGRATIONS, type Migration } from './db/migrations/index';
+ import { openDatabase } from './db/open';
++import type { Database } from './db/schema';
+ import { initServerMeta } from './db/server-meta';
++import { NodeSqliteDialect } from './db/sqlite-dialect';
+ import { type AppDeps, createAppDeps, cryptoIds, systemClock } from './deps';
+ import { HttpError } from './http/errors';
+ import { createLogger } from './logger';
++import {
++  collectPrivacyEvents,
++  hasActiveAdmin,
++  PrivacyEventList,
++  reapplyPrivacyEvents,
++} from './privacy/reapply';
+ import { openMigrated } from './startup';
+ import { assertStartupPreconditions } from './startup-guard';
+ 
+ export interface CliContext {
+   env: Record<string, string | undefined>;
+   out(line: string): void;
+   err(line: string): void;
+ }
+ 
+ export interface CliCommand {
+@@ -135,30 +146,106 @@ async function runAdminReset(args: string[], ctx: CliContext): Promise<number> {
+   if (!created) {
+     ctx.err(`Pseudo inconnu : ${username}`);
+     return 1;
+   }
+   ctx.out(`Lien de réinitialisation pour ${created.username} (valable 24 h)`);
+   ctx.out(`Lien : ${created.link}`);
+   ctx.out(`Code : ${created.code}`);
+   return 0;
+ }
+ 
++/**
++ * Lecture seule, sans garde, pragma ni migration : la source peut être un instantané ou une base
++ * portant une migration inconnue ; elle n'est jamais modifiée (ni date, ni passage en WAL).
++ */
++async function runPrivacyCollect(args: string[], ctx: CliContext): Promise<number> {
++  const { flags } = parseFlags(args);
++  const since = z.iso.datetime().safeParse(flags.since);
++  if (!since.success) {
++    ctx.err('Date --since invalide (format ISO 8601 attendu)');
++    return 1;
++  }
++  const out = flags.out;
++  if (!out) {
++    ctx.err('Option --out obligatoire');
++    return 1;
++  }
++  const source = flags.source || loadConfig(ctx.env).dbPath;
++  const sqlite = new DatabaseSync(source, { readOnly: true });
++  let events: PrivacyEventList['events'];
++  try {
++    const db = new Kysely<Database>({
++      dialect: new NodeSqliteDialect({ database: sqlite }),
++      plugins: [new CamelCasePlugin()],
++    });
++    events = await collectPrivacyEvents(db, since.data);
++  } finally {
++    sqlite.close();
++  }
++  const list: PrivacyEventList = {
++    since: since.data,
++    collectedAt: systemClock.now().toISOString(),
++    source,
++    events,
++  };
++  writeFileSync(out, JSON.stringify(list, null, 2));
++  ctx.out(`${events.length} événement(s) écrit(s) dans ${out}`);
++  return 0;
++}
++
++function readPrivacyList(path: string | undefined): PrivacyEventList | null {
++  if (!path) return null;
++  try {
++    const parsed = PrivacyEventList.safeParse(JSON.parse(readFileSync(path, 'utf8')));
++    return parsed.success ? parsed.data : null;
++  } catch {
++    return null;
++  }
++}
++
++async function runPrivacyReapply(args: string[], ctx: CliContext): Promise<number> {
++  const list = readPrivacyList(parseFlags(args).positional[0]);
++  if (!list) {
++    ctx.err('Fichier de réapplication invalide');
++    return 1;
++  }
++  const { result, adminActive } = await withAppDeps(ctx, async (deps) => ({
++    result: await reapplyPrivacyEvents(deps, list),
++    adminActive: await hasActiveAdmin(deps.db),
++  }));
++  ctx.out(
++    `Réapplication terminée : ${result.accountsDeleted} compte(s) supprimé(s), ${result.consentsWithdrawn} accord(s) santé retiré(s).`,
++  );
++  if (!adminActive) ctx.out('Aucun administrateur actif : lancer admin:bootstrap');
++  return 0;
++}
++
+ export const COMMANDS: Record<string, CliCommand> = {
+   'admin:bootstrap': {
+     usage:
+       "admin:bootstrap --birth-date AAAA-MM-JJ : crée l'invitation du premier administrateur (valable 24 h)",
+     run: runAdminBootstrap,
+   },
+   'admin:reset': {
+     usage: 'admin:reset <pseudo> : crée un lien de réinitialisation du mot de passe (valable 24 h)',
+     run: runAdminReset,
+   },
++  'privacy:collect': {
++    usage:
++      "privacy:collect --since <ISO> [--source <fichier.db>] --out <fichier.json> : liste les suppressions de compte et retraits d'accord postérieurs à --since",
++    run: runPrivacyCollect,
++  },
++  'privacy:reapply': {
++    usage:
++      'privacy:reapply <fichier.json> : réapplique après une restauration la liste écrite par privacy:collect',
++    run: runPrivacyReapply,
++  },
+   init: {
+     usage: "init : crée la base d'un volume neuf (sentinelle requise) et fixe l'époque du serveur",
+     run: (_args, ctx) => runInit(loadConfig(ctx.env), ctx),
+   },
+   'db:check': {
+     usage: "db:check : vérifie l'intégrité de la base (integrity_check et foreign_key_check)",
+     run: (_args, ctx) =>
+       withAppDeps(ctx, async ({ sqlite }) => {
+         const integrity = sqlite.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
+         const foreign = sqlite.prepare('PRAGMA foreign_key_check').all();
+diff --git a/apps/server/src/privacy/reapply.ts b/apps/server/src/privacy/reapply.ts
+new file mode 100644
+index 0000000..1fe9dca
+--- /dev/null
++++ b/apps/server/src/privacy/reapply.ts
+@@ -0,0 +1,104 @@
++import { z } from 'zod';
++import type { DbExecutor } from '../db/schema';
++import type { AppDeps } from '../deps';
++import { withdrawHealthConsent } from './consent';
++import { isHealthConsentActive } from './consent-state';
++import { deleteAccount } from './delete-account';
++
++/** Liste écrite par `privacy:collect` et relue par `privacy:reapply` : identifiants, types et dates seulement. */
++export const PrivacyEventList = z.object({
++  since: z.iso.datetime(),
++  collectedAt: z.iso.datetime(),
++  source: z.string(),
++  events: z.array(
++    z.object({
++      type: z.enum(['account_deleted', 'consent_revoked']),
++      at: z.string(),
++      targetId: z.string(),
++      consentType: z.enum(['health', 'ai_coach']).optional(),
++    }),
++  ),
++});
++export type PrivacyEventList = z.infer<typeof PrivacyEventList>;
++type PrivacyEvent = PrivacyEventList['events'][number];
++
++function consentTypeOf(details: string | null): PrivacyEvent['consentType'] {
++  if (details === null) return undefined;
++  try {
++    const value = (JSON.parse(details) as { consentType?: unknown }).consentType;
++    return value === 'health' || value === 'ai_coach' ? value : undefined;
++  } catch {
++    return undefined;
++  }
++}
++
++/** Suppressions de compte et retraits d'accord réussis après `since` (03 §8 étape 1), par date puis id. */
++export async function collectPrivacyEvents(db: DbExecutor, since: string): Promise<PrivacyEvent[]> {
++  const rows = await db
++    .selectFrom('securityEvent')
++    .select(['type', 'at', 'targetId', 'details'])
++    .where('type', 'in', ['account_deleted', 'consent_revoked'])
++    .where('outcome', '=', 'success')
++    .where('at', '>', since)
++    .where('targetId', 'is not', null)
++    .orderBy('at')
++    .orderBy('id')
++    .execute();
++  return rows.map((row) => {
++    const event: PrivacyEvent = {
++      type: row.type as PrivacyEvent['type'],
++      at: row.at,
++      targetId: row.targetId as string,
++    };
++    if (row.type === 'consent_revoked') {
++      const consentType = consentTypeOf(row.details);
++      if (consentType) event.consentType = consentType;
++    }
++    return event;
++  });
++}
++
++/**
++ * Réapplique, après restauration, les suppressions et retraits survenus depuis la sauvegarde
++ * (03 §8 étapes 3-4, R-SUP-6, P-DRT-3, P-CST-3). Une transaction, dans l'ordre de la liste ;
++ * idempotent. Le dernier admin peut être supprimé : la CLI signale alors l'absence d'admin.
++ * `ai_coach` est ignoré : aucun accord coach n'existe avant la brique 4.
++ */
++export async function reapplyPrivacyEvents(
++  deps: AppDeps,
++  list: PrivacyEventList,
++): Promise<{ accountsDeleted: number; consentsWithdrawn: number }> {
++  const actor = { actorId: null, ip: null };
++  return deps.db.transaction().execute(async (trx) => {
++    let accountsDeleted = 0;
++    let consentsWithdrawn = 0;
++    for (const event of list.events) {
++      if (event.at <= list.since) continue;
++      const exists = await trx
++        .selectFrom('user')
++        .select('id')
++        .where('id', '=', event.targetId)
++        .executeTakeFirst();
++      if (!exists) continue;
++      if (event.type === 'account_deleted') {
++        await deleteAccount(trx, deps, event.targetId, actor, { enforceLastAdmin: false });
++        accountsDeleted += 1;
++      } else if (event.consentType === 'health' && (await isHealthConsentActive(trx, event.targetId))) {
++        await withdrawHealthConsent(trx, deps, event.targetId, actor);
++        consentsWithdrawn += 1;
++      }
++    }
++    return { accountsDeleted, consentsWithdrawn };
++  });
++}
++
++/** Vrai si au moins un admin actif existe (sinon : lancer admin:bootstrap). */
++export async function hasActiveAdmin(db: DbExecutor): Promise<boolean> {
++  const admin = await db
++    .selectFrom('user')
++    .select('id')
++    .where('role', '=', 'admin')
++    .where('status', '=', 'active')
++    .executeTakeFirst();
++  return admin !== undefined;
++}
+diff --git a/apps/server/test/cli/privacy-cli.test.ts b/apps/server/test/cli/privacy-cli.test.ts
+new file mode 100644
+index 0000000..2f0fa70
+--- /dev/null
++++ b/apps/server/test/cli/privacy-cli.test.ts
+@@ -0,0 +1,168 @@
++import { createHash } from 'node:crypto';
++import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { DatabaseSync } from 'node:sqlite';
++import { afterEach, beforeEach, describe, expect, it } from 'vitest';
++import { runCli } from '../../src/cli';
++import { openDatabase } from '../../src/db/open';
++import { insertFixtureRow } from '../support';
++
++const SINCE = '2026-10-06T00:00:00.000Z';
++const DONE = 'Réapplication terminée : 0 compte(s) supprimé(s), 0 accord(s) santé retiré(s).';
++const NO_ADMIN = 'Aucun administrateur actif : lancer admin:bootstrap';
++
++let dir: string;
++let dbPath: string;
++let env: Record<string, string>;
++let lines: string[];
++let errors: string[];
++const o = (line: string): void => {
++  lines.push(line);
++};
++const e = (line: string): void => {
++  errors.push(line);
++};
++const cli = (...argv: string[]) => runCli(argv, env, o, e);
++
++beforeEach(async () => {
++  dir = mkdtempSync(join(tmpdir(), 'appsport-privacy-cli-'));
++  dbPath = join(dir, 'appsport.db');
++  env = { APP_ORIGIN: 'http://localhost:3999', APPSPORT_DATA_DIR: dir, HOST: '127.0.0.1', PORT: '0' };
++  lines = [];
++  errors = [];
++  writeFileSync(join(dir, '.appsport-volume'), '');
++  expect(await cli('init')).toBe(0);
++  withDb((sqlite) => {
++    const insert = sqlite.prepare(
++      "INSERT INTO security_event (id, at, type, actor_id, target_id, tailnet_ip, outcome, details) VALUES (?, ?, ?, NULL, ?, NULL, 'success', ?)",
++    );
++    insert.run('ev-0', '2026-10-05T23:59:59.000Z', 'account_deleted', 'u-old', null);
++    insert.run('ev-1', '2026-10-06T10:00:00.000Z', 'account_deleted', 'u-x', null);
++    insert.run('ev-2', '2026-10-06T10:00:01.000Z', 'consent_revoked', 'u-y', '{"consentType":"health"}');
++    insert.run('ev-3', '2026-10-06T10:00:02.000Z', 'login_succeeded', 'u-z', null);
++  });
++  lines = [];
++});
++
++afterEach(() => {
++  rmSync(dir, { recursive: true });
++});
++
++function withDb(fn: (sqlite: DatabaseSync) => void): void {
++  const sqlite = new DatabaseSync(dbPath);
++  try {
++    fn(sqlite);
++  } finally {
++    sqlite.close();
++  }
++}
++
++const readList = (path: string) =>
++  JSON.parse(readFileSync(path, 'utf8')) as {
++    since: string;
++    collectedAt: string;
++    source: string;
++    events: { type: string; at: string; targetId: string; consentType?: string }[];
++  };
++const sha256 = (path: string) => createHash('sha256').update(readFileSync(path)).digest('hex');
++
++describe('privacy:collect', () => {
++  it('écrit les suppressions et retraits postérieurs à --since (base principale)', async () => {
++    const out = join(dir, 'l.json');
++    expect(await cli('privacy:collect', '--since', SINCE, '--out', out)).toBe(0);
++    expect(lines).toEqual([`2 événement(s) écrit(s) dans ${out}`]);
++    const list = readList(out);
++    expect(list).toMatchObject({ since: SINCE, source: dbPath });
++    expect(list.events.map((ev) => ev.targetId)).toEqual(['u-x', 'u-y']);
++    expect(list.events[1]).toEqual({
++      type: 'consent_revoked',
++      at: '2026-10-06T10:00:01.000Z',
++      targetId: 'u-y',
++      consentType: 'health',
++    });
++    expect(readFileSync(out, 'utf8')).toBe(`${JSON.stringify(list, null, 2)}`);
++  });
++
++  it('lit une base portant une migration cassante inconnue, sans migrer', async () => {
++    withDb((sqlite) => {
++      sqlite
++        .prepare("INSERT INTO schema_migrations (id, breaking, applied_at) VALUES ('9999_future', 1, ?)")
++        .run('2026-10-06T12:00:00.000Z');
++    });
++    expect(await cli('db:check')).toBe(1);
++    const out = join(dir, 'l.json');
++    expect(await cli('privacy:collect', '--since', SINCE, '--out', out)).toBe(0);
++    expect(readList(out).events.map((ev) => ev.targetId)).toEqual(['u-x', 'u-y']);
++  });
++
++  it('--source : lit la copie sans la modifier (empreinte, date, journal DELETE)', async () => {
++    const copy = join(dir, 'copie.db');
++    withDb((sqlite) => {
++      sqlite.prepare('VACUUM INTO ?').run(copy);
++    });
++    const c = new DatabaseSync(copy);
++    c.exec('PRAGMA journal_mode = DELETE');
++    c.close();
++    rmSync(dbPath);
++    const hash = sha256(copy);
++    const mtime = statSync(copy).mtimeMs;
++
++    const out = join(dir, 'l.json');
++    expect(await cli('privacy:collect', '--since', SINCE, '--source', copy, '--out', out)).toBe(0);
++    const list = readList(out);
++    expect(list.source).toBe(copy);
++    expect(list.events.map((ev) => ev.targetId)).toEqual(['u-x', 'u-y']);
++    expect(sha256(copy)).toBe(hash);
++    expect(statSync(copy).mtimeMs).toBe(mtime);
++    expect(existsSync(`${copy}-wal`)).toBe(false);
++    expect(existsSync(`${copy}-shm`)).toBe(false);
++  });
++
++  it('--since invalide ou --out manquant → 1', async () => {
++    expect(await cli('privacy:collect', '--since', 'hier', '--out', join(dir, 'l.json'))).toBe(1);
++    expect(errors).toContain('Date --since invalide (format ISO 8601 attendu)');
++    expect(await cli('privacy:collect', '--since', SINCE)).toBe(1);
++    expect(errors).toContain('Option --out obligatoire');
++    expect(existsSync(join(dir, 'l.json'))).toBe(false);
++  });
++});
++
++describe('privacy:reapply', () => {
++  it('sans admin actif : réapplique puis invite à lancer admin:bootstrap', async () => {
++    const out = join(dir, 'l.json');
++    expect(await cli('privacy:collect', '--since', SINCE, '--out', out)).toBe(0);
++    lines = [];
++    expect(await cli('privacy:reapply', out)).toBe(0);
++    expect(lines).toContain(DONE);
++    expect(lines).toContain(NO_ADMIN);
++  });
++
++  it('avec un admin actif : supprime le compte listé, sans avertissement', async () => {
++    const { sqlite, db } = openDatabase(dbPath);
++    await insertFixtureRow(db, 'user', { id: 'u-x', username: 'xavier', usernameKey: 'xavier' });
++    await insertFixtureRow(db, 'user', { username: 'chef', usernameKey: 'chef', role: 'admin' });
++    sqlite.close();
++    const out = join(dir, 'l.json');
++    expect(await cli('privacy:collect', '--since', SINCE, '--out', out)).toBe(0);
++    lines = [];
++    expect(await cli('privacy:reapply', out)).toBe(0);
++    expect(lines).toContain('Réapplication terminée : 1 compte(s) supprimé(s), 0 accord(s) santé retiré(s).');
++    expect(lines).not.toContain(NO_ADMIN);
++    withDb((s) => {
++      expect(s.prepare("SELECT id FROM user WHERE id = 'u-x'").all()).toEqual([]);
++    });
++  });
++
++  it('fichier de liste invalide → 1', async () => {
++    const bad = join(dir, 'bad.json');
++    writeFileSync(bad, '{ pas du json');
++    const wrong = join(dir, 'wrong.json');
++    writeFileSync(wrong, JSON.stringify({ since: 'hier', events: [] }));
++    for (const args of [[bad], [wrong], [join(dir, 'absent.json')], []]) {
++      errors = [];
++      expect(await cli('privacy:reapply', ...args)).toBe(1);
++      expect(errors).toEqual(['Fichier de réapplication invalide']);
++    }
++  });
++});
+diff --git a/apps/server/test/privacy/reapply.test.ts b/apps/server/test/privacy/reapply.test.ts
+new file mode 100644
+index 0000000..839abb0
+--- /dev/null
++++ b/apps/server/test/privacy/reapply.test.ts
+@@ -0,0 +1,198 @@
++import { mkdtempSync, rmSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { afterEach, beforeEach, describe, expect, it } from 'vitest';
++import { logSecurityEvent } from '../../src/auth/security-log';
++import { collectPrivacyEvents, reapplyPrivacyEvents } from '../../src/privacy/reapply';
++import {
++  createSyncTestContext,
++  createUserAndLogin,
++  dumpDatabase,
++  makeOp,
++  restoreInPlace,
++  seqIds,
++  snapshotDb,
++  syncPush,
++  type TestContext,
++} from '../support';
++
++const WITNESS = 'TEMOIN-C2-genou';
++const ADMIN_PASSWORD = 'quatorze carac';
++const rowIds = seqIds(8000);
++
++let ctx: TestContext;
++let dir: string;
++let S: string;
++
++beforeEach(() => {
++  dir = mkdtempSync(join(tmpdir(), 'appsport-reapply-'));
++  S = join(dir, 'S.db');
++});
++
++afterEach(() => {
++  ctx?.close();
++  rmSync(dir, { recursive: true });
++});
++
++type Member = Awaited<ReturnType<typeof createUserAndLogin>>;
++const call = (u: Member, path: string, method = 'GET', json?: unknown) =>
++  ctx.request(path, { method, cookie: u.cookie, ...(json !== undefined ? { json } : {}) });
++const userExists = async (id: string) =>
++  (await ctx.deps.db.selectFrom('user').select('id').where('id', '=', id).executeTakeFirst()) !== undefined;
++const now = () => ctx.clock.now().toISOString();
++
++async function equipHealth(u: Member): Promise<void> {
++  expect((await call(u, '/api/me/consents', 'POST', { type: 'health', textVersion: '1.0' })).status).toBe(
++    200,
++  );
++  const screening = { answers: [true, false, false, false], questionnaireVersion: '1.0' };
++  expect((await call(u, '/api/me/health-screening', 'PUT', screening)).status).toBe(200);
++  const limitation = { bodyArea: 'knee', side: 'left', severity: 'mild', note: WITNESS };
++  expect((await call(u, '/api/me/limitations', 'POST', limitation)).status).toBe(201);
++}
++
++describe('privacy:reapply après restauration (03 §17 n°10, P-DRT-3, P-CST-3)', () => {
++  it('réapplique suppressions et retraits survenus après la sauvegarde', async () => {
++    ctx = await createSyncTestContext();
++    const x = await createUserAndLogin(ctx, { username: 'xavier' });
++    const y = await createUserAndLogin(ctx, { username: 'yasmine' });
++    const z = await createUserAndLogin(ctx, { username: 'zoe' });
++    expect((await call(z, '/api/me/delete', 'POST', { password: z.password })).status).toBe(204);
++    await equipHealth(y);
++    ctx.clock.advance(1000);
++
++    await snapshotDb(ctx, S);
++    const since = now();
++    ctx.clock.advance(60_000);
++    expect((await call(x, '/api/me/delete', 'POST', { password: x.password })).status).toBe(204);
++    const withdraw = await call(y, '/api/me/consents/withdraw', 'POST', {
++      type: 'health',
++      password: y.password,
++    });
++    expect(withdraw.status).toBe(200);
++
++    const events = await collectPrivacyEvents(ctx.deps.db, since);
++    expect(events).toEqual([
++      { type: 'account_deleted', at: expect.any(String), targetId: x.id },
++      { type: 'consent_revoked', at: expect.any(String), targetId: y.id, consentType: 'health' },
++    ]);
++    const collectedAt = now();
++
++    const restored = await restoreInPlace(ctx, S);
++    expect(restored.epoch).toEqual(expect.any(String));
++    expect(dumpDatabase(ctx.deps.sqlite)).toContain(WITNESS);
++    expect(await userExists(x.id)).toBe(true);
++    expect(await userExists(z.id)).toBe(false);
++
++    ctx.clock.advance(1000);
++    const list = { since, collectedAt, source: 'test', events };
++    expect(await reapplyPrivacyEvents(ctx.deps, list)).toEqual({ accountsDeleted: 1, consentsWithdrawn: 1 });
++
++    expect(await userExists(x.id)).toBe(false);
++    const me = await call(x, '/api/me');
++    expect(me.status).toBe(410);
++    expect(await me.json()).toEqual({ error: 'account_deleted' });
++    const op = makeOp({
++      userId: x.id,
++      entity: 'fixture_note',
++      id: rowIds.uuidv7(),
++      kind: 'create',
++      fields: { title: 't' },
++    });
++    const push = await syncPush(ctx, x.cookie, [op]);
++    expect(push.status).toBe(410);
++    expect(push.body).toEqual({ error: 'account_deleted' });
++
++    expect(dumpDatabase(ctx.deps.sqlite)).not.toContain(WITNESS);
++    const screening = await ctx.deps.db
++      .selectFrom('healthScreening')
++      .select(['caution', 'deletedAt'])
++      .where('id', '=', y.id)
++      .executeTakeFirstOrThrow();
++    expect(screening.caution).toBeNull();
++    expect(screening.deletedAt).not.toBeNull();
++
++    expect(await reapplyPrivacyEvents(ctx.deps, list)).toEqual({ accountsDeleted: 0, consentsWithdrawn: 0 });
++  });
++
++  it('collecte : ignore les événements antérieurs à since, les échecs et les autres types', async () => {
++    ctx = await createSyncTestContext();
++    const u = await createUserAndLogin(ctx, { username: 'ugo' });
++    await logSecurityEvent(ctx.deps.db, ctx.deps, {
++      type: 'account_deleted',
++      actorId: null,
++      targetId: 'avant',
++      ip: null,
++      outcome: 'success',
++    });
++    ctx.clock.advance(1000);
++    const since = now();
++    ctx.clock.advance(1000);
++    for (const ev of [
++      { type: 'consent_granted', outcome: 'success' },
++      { type: 'account_deleted', outcome: 'failure' },
++      { type: 'login_succeeded', outcome: 'success' },
++    ] as const) {
++      await logSecurityEvent(ctx.deps.db, ctx.deps, { ...ev, actorId: u.id, targetId: u.id, ip: null });
++    }
++    await logSecurityEvent(ctx.deps.db, ctx.deps, {
++      type: 'consent_revoked',
++      actorId: u.id,
++      targetId: u.id,
++      ip: null,
++      outcome: 'success',
++      details: { consentType: 'ai_coach' },
++    });
++    expect(await collectPrivacyEvents(ctx.deps.db, since)).toEqual([
++      { type: 'consent_revoked', at: expect.any(String), targetId: u.id, consentType: 'ai_coach' },
++    ]);
++  });
++
++  it('réapplication : ignore les événements antérieurs à since et le retrait ai_coach', async () => {
++    ctx = await createSyncTestContext();
++    const y = await createUserAndLogin(ctx, { username: 'yasmine' });
++    await equipHealth(y);
++    const before = now();
++    ctx.clock.advance(60_000);
++    const since = now();
++    ctx.clock.advance(60_000);
++    const list = {
++      since,
++      collectedAt: now(),
++      source: 'test',
++      events: [
++        { type: 'consent_revoked' as const, at: before, targetId: y.id, consentType: 'health' as const },
++        { type: 'account_deleted' as const, at: before, targetId: y.id },
++        { type: 'consent_revoked' as const, at: now(), targetId: y.id, consentType: 'ai_coach' as const },
++      ],
++    };
++    expect(await reapplyPrivacyEvents(ctx.deps, list)).toEqual({ accountsDeleted: 0, consentsWithdrawn: 0 });
++    expect(await userExists(y.id)).toBe(true);
++    expect(dumpDatabase(ctx.deps.sqlite)).toContain(WITNESS);
++  });
++
++  it('supprime le dernier admin sans last_admin (enforceLastAdmin: false)', async () => {
++    ctx = await createSyncTestContext();
++    const w = await createUserAndLogin(ctx, { username: 'wanda', role: 'admin', password: ADMIN_PASSWORD });
++    const x = await createUserAndLogin(ctx, { username: 'xavier' });
++    ctx.clock.advance(1000);
++    await snapshotDb(ctx, S);
++    const since = now();
++    ctx.clock.advance(60_000);
++    const promote = await call(w, `/api/admin/members/${x.id}/role`, 'POST', {
++      role: 'admin',
++      password: ADMIN_PASSWORD,
++    });
++    expect(promote.status).toBe(204);
++    expect((await call(w, '/api/me/delete', 'POST', { password: ADMIN_PASSWORD })).status).toBe(204);
++    const events = await collectPrivacyEvents(ctx.deps.db, since);
++    expect(events).toEqual([{ type: 'account_deleted', at: expect.any(String), targetId: w.id }]);
++
++    await restoreInPlace(ctx, S);
++    const list = { since, collectedAt: now(), source: 'test', events };
++    expect(await reapplyPrivacyEvents(ctx.deps, list)).toEqual({ accountsDeleted: 1, consentsWithdrawn: 0 });
++    expect(await userExists(w.id)).toBe(false);
++    const admins = await ctx.deps.db.selectFrom('user').select('id').where('role', '=', 'admin').execute();
++    expect(admins).toEqual([]);
++  });
++});
+diff --git a/apps/server/test/support/index.ts b/apps/server/test/support/index.ts
+index 858f5ea..3cbe6c2 100644
+--- a/apps/server/test/support/index.ts
++++ b/apps/server/test/support/index.ts
+@@ -1,16 +1,18 @@
+ export { FakeClock } from './clock';
+ export { createTestContext, TEST_ARGON2, type TestContext, type TestRequestInit } from './context';
+ export { insertFixtureRow } from './factories';
+ export { seqIds } from './ids';
+ export { completeOnboarding } from './onboarding';
+ export {
+   createSyncTestContext,
+   dumpDatabase,
+   makeOp,
+   PROTOCOL_HEADERS,
++  restoreInPlace,
+   SYNC_FIXTURE_MIGRATION,
+   SYNC_FIXTURE_RULES,
++  snapshotDb,
+   syncPull,
+   syncPush,
+ } from './sync-fixtures';
+ export { type CreateUserOptions, createUser, createUserAndLogin, login, type TestUser } from './users';
+diff --git a/apps/server/test/support/sync-fixtures.ts b/apps/server/test/support/sync-fixtures.ts
+index bdd8893..2e14dfd 100644
+--- a/apps/server/test/support/sync-fixtures.ts
++++ b/apps/server/test/support/sync-fixtures.ts
+@@ -1,22 +1,23 @@
+-import type { DatabaseSync } from 'node:sqlite';
++import { backup, type DatabaseSync } from 'node:sqlite';
+ import {
+   type EntityRule,
+   type EntityRulesMap,
+   entityRules,
+   PROTOCOL_HEADER,
+   SYNC_COLUMNS,
+   SYNC_PROTOCOL,
+   type SyncOp,
+ } from '@appsport/contracts';
+ import { sql } from 'kysely';
+ import type { Migration } from '../../src/db/migrations/index';
++import { rotateServerEpoch } from '../../src/sync/epoch';
+ import { createTestContext, type TestContext } from './context';
+ import { seqIds } from './ids';
+ 
+ /** Colonnes +SYNC de la Task 4b. */
+ const SYNC_DDL =
+   'owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, ' +
+   'updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT';
+ 
+ const FIXTURE_DDL: Record<string, string> = {
+   fixture_note: `CREATE TABLE fixture_note (id TEXT PRIMARY KEY, ${SYNC_DDL}, title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 100), body TEXT) STRICT`,
+@@ -141,10 +142,48 @@ export async function syncPull(
+ 
+ /** JSON de toutes les lignes de toutes les tables, pour chercher des valeurs témoins. */
+ export function dumpDatabase(sqlite: DatabaseSync): string {
+   const tables = sqlite
+     .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+     .all() as { name: string }[];
+   const dump: Record<string, unknown[]> = {};
+   for (const { name } of tables) dump[name] = sqlite.prepare(`SELECT * FROM "${name}"`).all();
+   return JSON.stringify(dump);
+ }
++
++/** Instantané de la base du contexte par l'API `backup` de `node:sqlite`. */
++export async function snapshotDb(ctx: TestContext, path: string): Promise<void> {
++  await backup(ctx.deps.sqlite, path);
++}
++
++/**
++ * Restauration sur place (la connexion du contexte reste ouverte) : chaque table est recopiée
++ * depuis l'instantané, puis l'époque du serveur est renouvelée comme après une vraie restauration.
++ */
++export async function restoreInPlace(
++  ctx: TestContext,
++  snapshotPath: string,
++): Promise<{ epoch: string; baseRev: number }> {
++  const { sqlite } = ctx.deps;
++  sqlite.exec('PRAGMA foreign_keys = OFF');
++  sqlite.prepare('ATTACH DATABASE ? AS snap').run(snapshotPath);
++  try {
++    const tables = sqlite
++      .prepare("SELECT name FROM main.sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
++      .all() as { name: string }[];
++    sqlite.exec('BEGIN');
++    try {
++      for (const { name } of tables) {
++        sqlite.exec(`DELETE FROM main."${name}"`);
++        sqlite.exec(`INSERT INTO main."${name}" SELECT * FROM snap."${name}"`);
++      }
++      sqlite.exec('COMMIT');
++    } catch (error) {
++      sqlite.exec('ROLLBACK');
++      throw error;
++    }
++  } finally {
++    sqlite.exec('DETACH DATABASE snap');
++    sqlite.exec('PRAGMA foreign_keys = ON');
++  }
++  return rotateServerEpoch(ctx.deps.db, ctx.deps);
++}

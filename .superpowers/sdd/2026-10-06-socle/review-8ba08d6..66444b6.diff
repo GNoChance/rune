@@ -1,0 +1,402 @@
+# Review package: 8ba08d6..HEAD
+
+## Commits
+66444b6 fix(ops): init atomique par renommage, arrêt des jobs attendu et test d'ordre de démarrage
+
+## Files changed
+ apps/server/src/cli.ts                  | 35 +++++++++++++++-------
+ apps/server/src/jobs/scheduler.ts       | 20 ++++++++++---
+ apps/server/src/main.ts                 |  7 +++--
+ apps/server/test/cli/init.test.ts       | 19 +++++++++++-
+ apps/server/test/jobs/scheduler.test.ts | 33 +++++++++++++++++++++
+ apps/server/test/startup.test.ts        | 52 +++++++++++++++++++++------------
+ 6 files changed, 131 insertions(+), 35 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/cli.ts b/apps/server/src/cli.ts
+index 2c2cc3f..ab51cc7 100644
+--- a/apps/server/src/cli.ts
++++ b/apps/server/src/cli.ts
+@@ -1,14 +1,14 @@
+-import { existsSync } from 'node:fs';
++import { existsSync, renameSync, rmSync } from 'node:fs';
+ import { type AppConfig, loadConfig } from './config';
+ import { migrate } from './db/migrate';
+-import { MIGRATIONS } from './db/migrations/index';
++import { MIGRATIONS, type Migration } from './db/migrations/index';
+ import { openDatabase } from './db/open';
+ import { initServerMeta } from './db/server-meta';
+ import { type AppDeps, createAppDeps, cryptoIds, systemClock } from './deps';
+ import { createLogger } from './logger';
+ import { openMigrated } from './startup';
+ import { assertStartupPreconditions } from './startup-guard';
+ 
+ export interface CliContext {
+   env: Record<string, string | undefined>;
+   out(line: string): void;
+@@ -41,39 +41,54 @@ export async function withAppDeps<T>(ctx: CliContext, fn: (deps: AppDeps) => Pro
+   assertStartupPreconditions(config);
+   const logger = createLogger();
+   const { sqlite, db } = await openMigrated(config, logger);
+   try {
+     return await fn(createAppDeps({ sqlite, db, config, logger }));
+   } finally {
+     sqlite.close();
+   }
+ }
+ 
+-async function runInit(config: AppConfig, ctx: CliContext): Promise<number> {
++/** Construit la base sous un nom temporaire puis la renomme : jamais de base partielle. */
++export async function runInit(
++  config: AppConfig,
++  ctx: CliContext,
++  migrations: readonly Migration[] = MIGRATIONS,
++): Promise<number> {
+   if (!existsSync(config.sentinelPath)) {
+     ctx.err(`Fichier sentinelle absent : ${config.sentinelPath} ; init refusé.`);
+     return 1;
+   }
+   if (existsSync(config.dbPath)) {
+     ctx.err(`La base existe déjà : ${config.dbPath} ; init refusé.`);
+     return 1;
+   }
+-  const { sqlite, db } = openDatabase(config.dbPath);
++  const tmpPath = `${config.dbPath}.init-tmp`;
++  const removeTmp = (): void => {
++    for (const suffix of ['', '-wal', '-shm']) rmSync(`${tmpPath}${suffix}`, { force: true });
++  };
++  removeTmp();
++  const { sqlite, db } = openDatabase(tmpPath);
++  let epoch: string;
+   try {
+-    await migrate(db, MIGRATIONS, systemClock);
+-    const meta = await initServerMeta(db, { ids: cryptoIds(), clock: systemClock });
+-    ctx.out(`Base initialisée : ${config.dbPath}`);
+-    ctx.out(`Époque du serveur : ${meta.serverEpoch}`);
+-    return 0;
+-  } finally {
++    await migrate(db, migrations, systemClock);
++    epoch = (await initServerMeta(db, { ids: cryptoIds(), clock: systemClock })).serverEpoch;
++  } catch (error) {
+     sqlite.close();
++    removeTmp();
++    throw error;
+   }
++  sqlite.close();
++  renameSync(tmpPath, config.dbPath);
++  ctx.out(`Base initialisée : ${config.dbPath}`);
++  ctx.out(`Époque du serveur : ${epoch}`);
++  return 0;
+ }
+ 
+ export const COMMANDS: Record<string, CliCommand> = {
+   init: {
+     usage: "init : crée la base d'un volume neuf (sentinelle requise) et fixe l'époque du serveur",
+     run: (_args, ctx) => runInit(loadConfig(ctx.env), ctx),
+   },
+   'db:check': {
+     usage: "db:check : vérifie l'intégrité de la base (integrity_check et foreign_key_check)",
+     run: (_args, ctx) =>
+diff --git a/apps/server/src/jobs/scheduler.ts b/apps/server/src/jobs/scheduler.ts
+index e72c8a7..108826d 100644
+--- a/apps/server/src/jobs/scheduler.ts
++++ b/apps/server/src/jobs/scheduler.ts
+@@ -1,28 +1,40 @@
+ import type { AppDeps } from '../deps';
+ 
+ export interface DailyJob {
+   name: string;
+   run(deps: AppDeps): Promise<void>;
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+ 
+ /** Un passage au démarrage puis toutes les 24 h ; l'échec d'un job est journalisé sans son message. */
+-export function startDailyJobs(deps: AppDeps, jobs: DailyJob[]): { stop(): void } {
++export function startDailyJobs(deps: AppDeps, jobs: DailyJob[]): { stop(): Promise<void> } {
++  let stopped = false;
++  let inFlight: Promise<void> = Promise.resolve();
+   const runAll = async (): Promise<void> => {
+     for (const job of jobs) {
++      if (stopped) return;
+       try {
+         await job.run(deps);
+       } catch (error) {
+         deps.logger.error('job_failed', {
+           job: job.name,
+           event: error instanceof Error ? error.name : 'Error',
+         });
+       }
+     }
+   };
+-  void runAll();
+-  const timer = setInterval(() => void runAll(), DAY_MS);
++  const launch = (): void => {
++    inFlight = inFlight.then(runAll);
++  };
++  launch();
++  const timer = setInterval(launch, DAY_MS);
+   timer.unref();
+-  return { stop: () => clearInterval(timer) };
++  return {
++    stop: () => {
++      stopped = true;
++      clearInterval(timer);
++      return inFlight;
++    },
++  };
+ }
+diff --git a/apps/server/src/main.ts b/apps/server/src/main.ts
+index 83de071..787b6a8 100644
+--- a/apps/server/src/main.ts
++++ b/apps/server/src/main.ts
+@@ -36,41 +36,44 @@ export async function startServer(
+           (info: AddressInfo) => resolve({ server, port: info.port }),
+         );
+         server.once('error', reject);
+       },
+     );
+     const jobs = startDailyJobs(deps, opts.dailyJobs ?? DAILY_JOBS);
+     return {
+       port: listening.port,
+       deps,
+       close: async () => {
+-        jobs.stop();
++        await jobs.stop();
+         await new Promise<void>((resolve) => {
+           listening.server.close(() => resolve());
+           if ('closeIdleConnections' in listening.server) listening.server.closeIdleConnections();
+         });
+         sqlite.close();
+       },
+     };
+   } catch (error) {
+     sqlite.close();
+     throw error;
+   }
+ }
+ 
+ export async function main(argv: string[]): Promise<number> {
+   if (argv.length > 0) return runCli(argv, process.env);
+   const running = await startServer(process.env);
+   return new Promise<number>((resolve) => {
+     const stop = (): void => {
+       setTimeout(() => process.exit(1), 9000).unref();
+-      void running.close().then(() => resolve(0));
++      running.close().then(
++        () => resolve(0),
++        () => process.exit(1),
++      );
+     };
+     process.once('SIGTERM', stop);
+     process.once('SIGINT', stop);
+   });
+ }
+ 
+ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+   main(process.argv.slice(2)).then(
+     (code) => {
+       process.exitCode = code;
+diff --git a/apps/server/test/cli/init.test.ts b/apps/server/test/cli/init.test.ts
+index a9c22db..7c6b7b0 100644
+--- a/apps/server/test/cli/init.test.ts
++++ b/apps/server/test/cli/init.test.ts
+@@ -1,16 +1,18 @@
+ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+ import { tmpdir } from 'node:os';
+ import { join } from 'node:path';
+ import { isUuidV7 } from '@appsport/domain';
+ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+-import { parseFlags, runCli } from '../../src/cli';
++import { parseFlags, runCli, runInit } from '../../src/cli';
++import { loadConfig } from '../../src/config';
++import { MIGRATIONS } from '../../src/db/migrations/index';
+ import { openDatabase } from '../../src/db/open';
+ import { getServerMeta } from '../../src/db/server-meta';
+ 
+ let dir: string;
+ let env: Record<string, string>;
+ let out: string[];
+ let err: string[];
+ const o = (line: string): void => {
+   out.push(line);
+ };
+@@ -47,20 +49,35 @@ describe('init', () => {
+     await db.destroy();
+     sqlite.close();
+     expect(isUuidV7(meta.serverEpoch)).toBe(true);
+     expect(out).toContain(`Base initialisée : ${join(dir, 'appsport.db')}`);
+     expect(out).toContain(`Époque du serveur : ${meta.serverEpoch}`);
+     expect(await runCli(['init'], env, o, e)).toBe(1);
+     expect(err.join('\n')).toMatch(/existe déjà/);
+   });
+ });
+ 
++it('un init en échec ne laisse aucun fichier et un second init réussit', async () => {
++  sentinel();
++  const failing = {
++    id: '0002_boom',
++    breaking: false,
++    up: async () => {
++      throw new Error('boom');
++    },
++  };
++  const ctx = { env, out: o, err: e };
++  await expect(runInit(loadConfig(env), ctx, [...MIGRATIONS, failing])).rejects.toThrow();
++  expect(readdirSync(dir)).toEqual(['.appsport-volume']);
++  expect(await runCli(['init'], env, o, e)).toBe(0);
++});
++
+ describe('db:check', () => {
+   it('sur une base saine', async () => {
+     sentinel();
+     await runCli(['init'], env, o, e);
+     out = [];
+     expect(await runCli(['db:check'], env, o, e)).toBe(0);
+     expect(out.at(-1)).toBe('OK');
+   });
+ 
+   it('sur une base corrompue → 1', async () => {
+diff --git a/apps/server/test/jobs/scheduler.test.ts b/apps/server/test/jobs/scheduler.test.ts
+index 6393931..6ca5882 100644
+--- a/apps/server/test/jobs/scheduler.test.ts
++++ b/apps/server/test/jobs/scheduler.test.ts
+@@ -50,10 +50,43 @@ it("isole l'échec d'un job et le journalise sans son message", async () => {
+       },
+     },
+   ]);
+   await vi.advanceTimersByTimeAsync(0);
+   expect(next).toBe(1);
+   expect(lines.map((l) => JSON.parse(l))).toContainEqual(
+     expect.objectContaining({ level: 'error', job: 'boom' }),
+   );
+   expect(lines.join('\n')).not.toContain('TEMOIN');
+ });
++
++it('stop() attend le job en cours et saute les suivants', async () => {
++  let release: () => void = () => {};
++  const gate = new Promise<void>((resolve) => {
++    release = resolve;
++  });
++  const ran: string[] = [];
++  const handle = startDailyJobs(depsWith([]), [
++    {
++      name: 'slow',
++      run: async () => {
++        await gate;
++        ran.push('slow');
++      },
++    },
++    {
++      name: 'next',
++      run: async () => {
++        ran.push('next');
++      },
++    },
++  ]);
++  await vi.advanceTimersByTimeAsync(0);
++  let stopped = false;
++  const stopping = handle.stop().then(() => {
++    stopped = true;
++  });
++  await vi.advanceTimersByTimeAsync(0);
++  expect(stopped).toBe(false);
++  release();
++  await stopping;
++  expect(ran).toEqual(['slow']);
++});
+diff --git a/apps/server/test/startup.test.ts b/apps/server/test/startup.test.ts
+index 0d4cb45..c3aa8f4 100644
+--- a/apps/server/test/startup.test.ts
++++ b/apps/server/test/startup.test.ts
+@@ -1,14 +1,15 @@
+ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
++import { type AddressInfo, createServer } from 'node:net';
+ import { tmpdir } from 'node:os';
+ import { join } from 'node:path';
+-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+ import { runCli } from '../src/cli';
+ import { loadConfig } from '../src/config';
+ import { MigrationError } from '../src/db/migrate';
+ import { openDatabase } from '../src/db/open';
+ import { createLogger } from '../src/logger';
+ import { main, startServer } from '../src/main';
+ import { assertStartupPreconditions, StartupError } from '../src/startup-guard';
+ 
+ let dir: string;
+ let env: Record<string, string>;
+@@ -56,41 +57,56 @@ describe('garde de démarrage', () => {
+     const error = startupError(() => assertStartupPreconditions(loadConfig(env)));
+     expect((error as StartupError).code).toBe('no_database');
+     await expect(startServer(env)).rejects.toMatchObject({ code: 'no_database' });
+     expect(readdirSync(dir)).toEqual(['.appsport-volume']);
+   });
+ });
+ 
+ describe('startServer', () => {
+   it("tâches de démarrage avant l'écoute, /api/health 200, arrêt en moins de 9 s", async () => {
+     await initVolume();
++    const free = await new Promise<number>((resolve) => {
++      const probe = createServer().listen(0, '127.0.0.1', () => {
++        const { port } = probe.address() as AddressInfo;
++        probe.close(() => resolve(port));
++      });
++    });
+     const calls: string[] = [];
+-    const s = await startServer(env, {
+-      logger: createLogger(() => {}),
+-      startupTasks: [
+-        {
+-          name: 't',
+-          run: async () => {
+-            calls.push('startup');
++    const s = await startServer(
++      { ...env, PORT: String(free) },
++      {
++        logger: createLogger(() => {}),
++        startupTasks: [
++          {
++            name: 't',
++            run: async () => {
++              const listening = await fetch(`http://127.0.0.1:${free}/api/health`).then(
++                () => true,
++                () => false,
++              );
++              calls.push(listening ? 'startup:already-listening' : 'startup');
++            },
+           },
+-        },
+-      ],
+-      dailyJobs: [
+-        {
+-          name: 'j',
+-          run: async () => {
+-            calls.push('job');
++        ],
++        dailyJobs: [
++          {
++            name: 'j',
++            run: async () => {
++              calls.push('job');
++            },
+           },
+-        },
+-      ],
+-    });
++        ],
++      },
++    );
++    expect(s.port).toBe(free);
+     expect(calls[0]).toBe('startup');
++    await vi.waitFor(() => expect(calls).toEqual(['startup', 'job']));
+     const res = await fetch(`http://127.0.0.1:${s.port}/api/health`);
+     expect(res.status).toBe(200);
+     expect(((await res.json()) as { status: string }).status).toBe('ok');
+     const t0 = performance.now();
+     await s.close();
+     expect(performance.now() - t0).toBeLessThan(9000);
+   });
+ 
+   it('échec après openDatabase → base fermée (rmSync réussit) et erreur relancée', async () => {
+     await initVolume();

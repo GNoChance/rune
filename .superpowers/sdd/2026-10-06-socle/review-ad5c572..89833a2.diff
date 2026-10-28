@@ -1,0 +1,386 @@
+# Review package: ad5c572..HEAD
+
+## Commits
+89833a2 fix(profil): « Se déconnecter » pendant le changement de mot de passe imposé
+
+## Files changed
+ apps/web/src/features/profile/ProfilePage.tsx | 43 ++++++++++++--
+ apps/web/src/repos/me-repo.ts                 |  6 ++
+ apps/web/test/app/when-signed-out.test.tsx    | 14 +++++
+ apps/web/test/profile/profile-page.test.tsx   | 81 +++++++++++++++++++++++++++
+ 4 files changed, 140 insertions(+), 4 deletions(-)
+
+## Diff
+diff --git a/apps/web/src/features/profile/ProfilePage.tsx b/apps/web/src/features/profile/ProfilePage.tsx
+index 4e4a644..f9afba4 100644
+--- a/apps/web/src/features/profile/ProfilePage.tsx
++++ b/apps/web/src/features/profile/ProfilePage.tsx
+@@ -1,13 +1,22 @@
+ import { EXPERIENCE_LABELS, GOAL_LABELS, type MeResponse, type Role, SPORTS } from '@appsport/contracts';
+ import { validateUsername } from '@appsport/domain';
+-import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
++import {
++  type FormEvent,
++  type ReactNode,
++  useCallback,
++  useEffect,
++  useId,
++  useMemo,
++  useRef,
++  useState,
++} from 'react';
+ import { Link } from 'wouter';
+ import { ApiError } from '../../api/client';
+ import { useLive, useMe } from '../../app-services';
+ import { type TrainingProfileView, useRepos } from '../../repos';
+ import { Banner, Button, Field, formatDate, Page, plural, useAction } from '../../ui';
+ import { LogoutDialog } from '../auth/LogoutDialog';
+ import {
+   accessErrorMessage,
+   checkNewPassword,
+   loginErrorMessage,
+@@ -26,33 +35,35 @@ import styles from './profile.module.css';
+ 
+ export const FORCED_PASSWORD_CHANGE_TEXT =
+   'Ton mot de passe doit être changé avant de continuer (14 caractères au moins pour un administrateur).';
+ export const PASSWORD_CHANGED_TEXT = 'Mot de passe changé. Tes autres appareils ont été déconnectés.';
+ const WRONG_CURRENT_PASSWORD = 'Mot de passe actuel incorrect.';
+ const CURRENT_PASSWORD_REQUIRED = 'Saisis ton mot de passe actuel.';
+ const NOT_SET = 'Non renseigné';
+ 
+ /**
+  * Profil (02 §11) : Compte, Mot de passe, Entraînement et liens vers Lieux, Santé, Confidentialité
+- * et Réglages. Mot de passe à changer (R-MDP-1) : bandeau et section du mot de passe seulement ; le
+- * bandeau suit `useMe()` et disparaît au `refresh()` qui suit le changement. Les sections gardent
+- * leur place dans l'arbre : le formulaire du mot de passe reste monté, avec son message de réussite.
++ * et Réglages. Mot de passe à changer (R-MDP-1) : bandeau, section du mot de passe et « Se
++ * déconnecter » seulement ; le bandeau suit `useMe()` et disparaît au `refresh()` qui suit le
++ * changement. Les sections gardent leur place dans l'arbre : le formulaire du mot de passe reste
++ * monté, avec son message de réussite.
+  */
+ export function ProfilePage() {
+   const me = useMe();
+   if (!me) return null;
+   const forced = me.mustChangePassword;
+   return (
+     <Page title="Profil">
+       {forced ? <Banner tone="warning">{FORCED_PASSWORD_CHANGE_TEXT}</Banner> : null}
+       {forced ? null : <AccountSection me={me} />}
+       <PasswordSection me={me} />
++      {forced ? <ForcedLogout /> : null}
+       {forced ? null : <TrainingSection me={me} />}
+       {forced ? null : <ProfileLinks />}
+     </Page>
+   );
+ }
+ 
+ /** Section titrée (h2), nommée par son titre. */
+ function Section(p: { title: string; headingId?: string; children: ReactNode }) {
+   const fallbackId = useId();
+   const id = p.headingId ?? fallbackId;
+@@ -79,20 +90,44 @@ function AccountSection(p: { me: MeResponse }) {
+         </Button>
+         <Button variant="danger" onClick={() => setLogout('all')}>
+           Déconnecter tous mes appareils
+         </Button>
+       </div>
+       <LogoutDialog mode={logout ?? 'current'} open={logout !== null} onClose={() => setLogout(null)} />
+     </Section>
+   );
+ }
+ 
++/**
++ * Mot de passe à changer (R-MDP-1) : seule autre issue, la déconnexion de cet appareil, que le
++ * serveur accepte dans cet état (R-AUTH-9 : même avertissement, puis données locales effacées).
++ * « Déconnecter tous mes appareils » reste masqué. `close` est stable : le dialogue reprend le focus
++ * à chaque nouvelle fonction de fermeture, donc à chaque relecture du compte sinon. À la fermeture,
++ * le focus revient au bouton.
++ */
++function ForcedLogout() {
++  const [open, setOpen] = useState(false);
++  const openerId = useId();
++  const close = useCallback(() => {
++    setOpen(false);
++    document.getElementById(openerId)?.focus();
++  }, [openerId]);
++  return (
++    <div className={styles.actions}>
++      <Button id={openerId} variant="secondary" onClick={() => setOpen(true)}>
++        Se déconnecter
++      </Button>
++      <LogoutDialog mode="current" open={open} onClose={close} />
++    </div>
++  );
++}
++
+ /**
+  * Pseudo : contrôlé ici (R-CPT-2), message lié au champ, qui prend le focus ; puis PATCH /api/me.
+  * Le refus du serveur (ou le réseau) s'affiche en alerte et garde la saisie.
+  */
+ function UsernameForm(p: { me: MeResponse }) {
+   const repos = useRepos();
+   const [draft, setDraft] = useState<string | null>(null);
+   const [busy, setBusy] = useState(false);
+   const [fieldError, setFieldError] = useState<string | null>(null);
+   const [error, setError] = useState<string | null>(null);
+diff --git a/apps/web/src/repos/me-repo.ts b/apps/web/src/repos/me-repo.ts
+index 614ab1f..5c61ad4 100644
+--- a/apps/web/src/repos/me-repo.ts
++++ b/apps/web/src/repos/me-repo.ts
+@@ -35,20 +35,24 @@ export interface MeRepo {
+   checkInvitation(code: string): Promise<InvitationCheckResponse>;
+   acceptInvitation(r: AcceptInvitationRequest): Promise<MeResponse>;
+   checkReset(code: string): Promise<ResetCheckResponse>;
+   resetPassword(r: ResetPasswordRequest): Promise<MeResponse>;
+   updateUsername(u: string): Promise<MeResponse>;
+   /**
+    * 204 → meta.me sans `mustChangePassword` (même si la relecture échoue ensuite), refresh() puis
+    * synchro manuelle (débloquée après R-MDP-1).
+    */
+   changePassword(r: ChangePasswordRequest): Promise<void>;
++  /**
++   * Résolu une fois la base effacée et la garde sans utilisateur : l'écran navigue ensuite vers
++   * /login sans être renvoyé vers l'ancien compte (mot de passe à changer compris).
++   */
+   logout(mode: 'current' | 'all'): Promise<void>;
+   exportData(): Promise<ExportV1>;
+   deleteAccount(password: string): Promise<void>;
+   /** Message des 18 ans à afficher : tranche vue « minor » sur l'appareil, « adult » maintenant (R-AGE-6). */
+   adultNotice(): Promise<boolean>;
+   dismissAdultNotice(): Promise<void>;
+ }
+ 
+ export function createMeRepo(s: AppServices): MeRepo {
+   const { db, api, sync } = s;
+@@ -157,23 +161,25 @@ export function createMeRepo(s: AppServices): MeRepo {
+       withEngineStopped(async () => {
+         try {
+           await api.send('POST', mode === 'all' ? '/api/auth/logout-all' : '/api/auth/logout');
+         } catch (error) {
+           // Session déjà fermée ou compte supprimé : rien à fermer côté serveur, les données locales
+           // partent quand même (R-AUTH-9, P-DRT-4). Le 410 reste une erreur : le client API mène à
+           // « Ce compte a été supprimé ». Toute autre erreur (réseau, serveur) laisse tout en place.
+           if (!(error instanceof ApiError) || !SESSION_GONE.includes(error.code)) throw error;
+           await wipeUserData(db, { keepOutbox: false });
+           if (error.code === 'account_deleted') throw error;
++          await whenSignedOut(db);
+           return;
+         }
+         await wipeUserData(db, { keepOutbox: false });
++        await whenSignedOut(db);
+       }),
+     exportData: () => api.get('/api/me/export', ExportV1),
+     deleteAccount: (password) =>
+       withEngineStopped(async () => {
+         await api.send('POST', '/api/me/delete', { password });
+         await wipeUserData(db, { keepOutbox: false });
+         // L'écran navigue ensuite vers « Ce compte a été supprimé » : la garde doit déjà le savoir.
+         await whenSignedOut(db);
+       }),
+     async adultNotice() {
+diff --git a/apps/web/test/app/when-signed-out.test.tsx b/apps/web/test/app/when-signed-out.test.tsx
+index f48efae..48cd118 100644
+--- a/apps/web/test/app/when-signed-out.test.tsx
++++ b/apps/web/test/app/when-signed-out.test.tsx
+@@ -1,16 +1,18 @@
+ import { screen } from '@testing-library/react';
+ import { describe, expect, it } from 'vitest';
+ import { useMe, whenSignedOut } from '../../src/app-services';
+ import { setMeta } from '../../src/local-db/meta';
+ import { wipeUserData } from '../../src/local-db/wipe';
++import { createRepos } from '../../src/repos';
+ import { settle } from '../support/auth';
++import { createFakeApi } from '../support/fake-api';
+ import { createTestLocalDb } from '../support/local-db';
+ import { makeMe, renderWithServices } from '../support/render';
+ 
+ function Who() {
+   const me = useMe();
+   return <p>{me?.username ?? 'personne'}</p>;
+ }
+ 
+ describe('whenSignedOut', () => {
+   it('personne n’observe meta.me : résolu tout de suite', async () => {
+@@ -26,17 +28,29 @@ describe('whenSignedOut', () => {
+     const waiting = whenSignedOut(db, 10_000).then(() => {
+       resolved = true;
+     });
+     await settle();
+     expect(resolved).toBe(false);
+     await wipeUserData(db, { keepOutbox: false });
+     await waiting;
+     expect(screen.getByText('personne')).toBeTruthy();
+   });
+ 
++  it.each([
++    ['204', { status: 204 }],
++    ['401', { status: 401, body: { error: 'unauthenticated' } }],
++  ])("MeRepo.logout (%s) : résolu une fois que la garde ne voit plus l'utilisateur", async (_, reply) => {
++    const api = createFakeApi().on('POST', '/api/auth/logout', reply);
++    const { services } = await renderWithServices(<Who />, { api });
++    await screen.findByText('lea');
++    await createRepos(services).me.logout('current');
++    // L'écran navigue alors vers /login : la garde ne doit plus le renvoyer vers l'ancien compte.
++    expect(screen.getByText('personne')).toBeTruthy();
++  });
++
+   it('observé et jamais effacé : résolu au bout du délai', async () => {
+     const { db } = await renderWithServices(<Who />);
+     await screen.findByText('lea');
+     await expect(whenSignedOut(db, 20)).resolves.toBeUndefined();
+     expect(screen.getByText('lea')).toBeTruthy();
+   });
+ });
+diff --git a/apps/web/test/profile/profile-page.test.tsx b/apps/web/test/profile/profile-page.test.tsx
+index 7cfba62..86b3785 100644
+--- a/apps/web/test/profile/profile-page.test.tsx
++++ b/apps/web/test/profile/profile-page.test.tsx
+@@ -1,19 +1,22 @@
+ import type { MeResponse } from '@appsport/contracts';
+ import { fireEvent, screen, within } from '@testing-library/react';
+ import { describe, expect, it } from 'vitest';
++import { pendingWarning } from '../../src/features/auth/messages';
+ import { ProfilePage } from '../../src/features/profile/ProfilePage';
++import { getMeta, setMeta } from '../../src/local-db/meta';
+ import { fill, settle } from '../support/auth';
+ import { createFakeApi, type FakeApi } from '../support/fake-api';
+ import { createTestLocalDb } from '../support/local-db';
+ import { button, choose, isChecked, PROFILE_PATH, seedProfile, serveProfile } from '../support/onboarding';
+ import { makeMe, renderApp, renderWithServices } from '../support/render';
++import { seedOutbox } from '../support/seed';
+ import { until } from '../support/wait';
+ 
+ const TRAINING = { goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45 } as const;
+ const FORCED_BANNER =
+   'Ton mot de passe doit être changé avant de continuer (14 caractères au moins pour un administrateur).';
+ const CHANGED = 'Mot de passe changé. Tes autres appareils ont été déconnectés.';
+ const CAUTIOUS = 'Je préfère une progression plus prudente';
+ const OLD_PASSWORD = 'ancien mot de passe ok';
+ const NEW_PASSWORD = 'cheval agrafe batterie correcte';
+ 
+@@ -170,26 +173,30 @@ describe('ProfilePage › Mot de passe (R-MDP-6)', () => {
+     const api = createFakeApi()
+       .on('POST', '/api/auth/password', { status: 204 })
+       .on('GET', '/api/me', { status: 200, body: { ...admin, mustChangePassword: false } });
+     const { sync } = await renderProfile({ me: admin, api });
+     expect(screen.getByText(FORCED_BANNER)).toBeTruthy();
+     expect(heading('Mot de passe')).toBeTruthy();
+     expect(heading('Compte')).toBeNull();
+     expect(heading('Entraînement')).toBeNull();
+     expect(screen.queryByLabelText('Pseudo')).toBeNull();
+     expect(screen.queryByRole('link', { name: 'Lieux' })).toBeNull();
++    expect(button('Se déconnecter')).toBeTruthy();
+     expect(screen.queryByRole('button', { name: 'Déconnecter tous mes appareils' })).toBeNull();
+ 
+     changePassword();
+     await until(() => screen.queryByText(FORCED_BANNER) === null);
+     expect(await screen.findByText(CHANGED)).toBeTruthy();
+     expect(heading('Compte')).toBeTruthy();
++    // Un seul « Se déconnecter » : celui de « Compte », avec « Déconnecter tous mes appareils ».
++    expect(screen.getAllByRole('button', { name: 'Se déconnecter' })).toHaveLength(1);
++    expect(button('Déconnecter tous mes appareils')).toBeTruthy();
+     expect(await screen.findByRole('heading', { level: 2, name: 'Entraînement' })).toBeTruthy();
+     expect(screen.getByRole('link', { name: 'Lieux' })).toBeTruthy();
+     expect(sync.triggers).toContain('manual');
+   });
+ 
+   it('mustChangePassword : GET /api/me en échec après le changement réussi, le bandeau disparaît quand même', async () => {
+     const admin = makeMe({ role: 'admin', mustChangePassword: true });
+     const api = createFakeApi();
+     // Le réseau tombe juste après la réponse du serveur.
+     api.on('POST', '/api/auth/password', () => {
+@@ -205,20 +212,94 @@ describe('ProfilePage › Mot de passe (R-MDP-6)', () => {
+   });
+ 
+   it('administrateur : 13 caractères refusés localement (R-MDP-1)', async () => {
+     const { api } = await renderProfile({ me: makeMe({ role: 'admin' }) });
+     changePassword(OLD_PASSWORD, 'cheval agrafe', 'cheval agrafe');
+     await expectFieldError('Nouveau mot de passe', '14 caractères au moins.');
+     expect(calls(api, 'POST', '/api/auth/password')).toHaveLength(0);
+   });
+ });
+ 
++describe('ProfilePage › mot de passe à changer : se déconnecter (R-MDP-1, R-AUTH-9)', () => {
++  const forced = makeMe({ role: 'admin', mustChangePassword: true });
++  const logoutApi = () =>
++    createFakeApi()
++      .on('POST', '/api/auth/logout', { status: 204 })
++      .on('POST', '/api/auth/logout-all', { status: 204 });
++  const logoutCalls = (api: FakeApi) => api.calls.filter((c) => c.path.startsWith('/api/auth/logout'));
++
++  it('« Se déconnecter » sous le formulaire → POST /api/auth/logout, données locales effacées, connexion', async () => {
++    const api = logoutApi();
++    const { db, location } = await renderProfile({ me: forced, api });
++    const logout = button('Se déconnecter');
++    const following = button('Changer le mot de passe').compareDocumentPosition(logout);
++    expect(following & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
++    expect(screen.queryByRole('button', { name: 'Déconnecter tous mes appareils' })).toBeNull();
++    fireEvent.click(logout);
++    const dialog = within(await screen.findByRole('dialog', { name: 'Se déconnecter de cet appareil ?' }));
++    fireEvent.click(dialog.getByRole('button', { name: 'Se déconnecter' }));
++    await until(() => location() === '/login');
++    expect(logoutCalls(api).map((c) => [c.method, c.path, c.body])).toEqual([
++      ['POST', '/api/auth/logout', {}],
++    ]);
++    expect(await getMeta(db, 'me')).toBeUndefined();
++    expect(await getMeta(db, 'userId')).toBeUndefined();
++    expect(await db.mirror('training_profile').count()).toBe(0);
++  });
++
++  it('données non envoyées : même avertissement, « Se déconnecter quand même » → file effacée', async () => {
++    const api = logoutApi();
++    const { db, location } = await renderProfile({ me: forced, api });
++    await seedOutbox(db, 'u-1', 2);
++    fireEvent.click(button('Se déconnecter'));
++    const dialog = await screen.findByRole('dialog', { name: 'Données non envoyées' });
++    expect(dialog.textContent).toContain(pendingWarning(2, 'lea'));
++    fireEvent.click(within(dialog).getByRole('button', { name: 'Se déconnecter quand même' }));
++    await until(() => location() === '/login');
++    expect(logoutCalls(api).map((c) => c.path)).toEqual(['/api/auth/logout']);
++    expect(await db.outbox.count()).toBe(0);
++    expect(await getMeta(db, 'me')).toBeUndefined();
++  });
++
++  it('« Annuler » : rien envoyé, le focus revient à « Se déconnecter »', async () => {
++    const api = logoutApi();
++    const { location } = await renderProfile({ me: forced, api });
++    fireEvent.click(button('Se déconnecter'));
++    const dialog = await screen.findByRole('dialog');
++    fireEvent.click(within(dialog).getByRole('button', { name: 'Annuler' }));
++    await until(() => screen.queryByRole('dialog') === null);
++    expect(document.activeElement).toBe(button('Se déconnecter'));
++    expect(logoutCalls(api)).toHaveLength(0);
++    expect(location()).toBe('/profile');
++  });
++
++  it('dialogue ouvert : une relecture du compte ne reprend pas le focus', async () => {
++    const { db } = await renderProfile({ me: forced, api: logoutApi() });
++    fireEvent.click(button('Se déconnecter'));
++    const cancel = within(await screen.findByRole('dialog')).getByRole('button', { name: 'Annuler' });
++    cancel.focus();
++    await setMeta(db, 'me', { ...forced });
++    await settle();
++    expect(document.activeElement).toBe(cancel);
++  });
++
++  it("dans l'appli : la garde laisse l'écran de connexion s'afficher après la déconnexion", async () => {
++    const api = logoutApi();
++    await renderApp({ path: '/profile', me: forced, api });
++    fireEvent.click(await screen.findByRole('button', { name: 'Se déconnecter' }));
++    const dialog = within(await screen.findByRole('dialog'));
++    fireEvent.click(dialog.getByRole('button', { name: 'Se déconnecter' }));
++    expect(await screen.findByRole('heading', { level: 1, name: 'Connexion' })).toBeTruthy();
++    expect(logoutCalls(api).map((c) => c.path)).toEqual(['/api/auth/logout']);
++  });
++});
++
+ describe('ProfilePage › Entraînement (R-ONB-3)', () => {
+   it('résumé : objectif, sport, niveau, disponibilité', async () => {
+     await renderProfile();
+     await screen.findByText('Prendre du muscle');
+     expect(screen.getByText('Jamais')).toBeTruthy();
+     expect(screen.getByText('3 séances de 45 min')).toBeTruthy();
+     expect(screen.getByText('Aucun')).toBeTruthy();
+   });
+ 
+   it("« Modifier l'objectif » → GoalStep en édition → PATCH { goal } puis retour au résumé", async () => {

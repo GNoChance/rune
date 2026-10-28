@@ -1,0 +1,1847 @@
+# Review package: 7f3d547..HEAD
+
+## Commits
+ad5c572 test(privacy): témoin C2 partout, état final après suppression, révocation à 40 s, attente annoncée
+3d86018 fix(privacy): Santé, un formulaire de limitation à la fois et questionnaire d'alerte confirmé
+05b6dc8 fix(privacy): file d'envoi illisible, l'export avertit avant de partir
+911a774 fix(privacy): porte de réacceptation levée en ligne, modale pour de vrai, dialogues défilants
+62f48f0 fix(status): détail de chaque refus et phrase d'introduction seulement s'il y en a
+
+## Files changed
+ apps/web/src/features/onboarding/HealthStep.tsx    |  12 +-
+ .../src/features/privacy/ConsentWithdrawDialog.tsx |   5 +-
+ apps/web/src/features/privacy/ExportButton.tsx     |  18 ++-
+ .../src/features/privacy/HealthReconsentGate.tsx   |  28 +++-
+ apps/web/src/features/privacy/HealthSection.tsx    |  63 +++++---
+ apps/web/src/features/status/RejectionsPage.tsx    |  81 +++++++---
+ apps/web/src/ui/Dialog.tsx                         |  25 +++-
+ apps/web/src/ui/inert-outside.ts                   |  41 +++++
+ apps/web/src/ui/ui.module.css                      |  17 +++
+ apps/web/test/app/ui.test.tsx                      |  86 +++++++++++
+ apps/web/test/privacy/export-delete.test.tsx       |  63 +++++++-
+ apps/web/test/privacy/health-section.test.tsx      | 165 ++++++++++++++++-----
+ apps/web/test/privacy/withdraw.test.tsx            | 156 +++++++++++++++++--
+ apps/web/test/status/rejections-settings.test.tsx  |  63 +++++++-
+ 14 files changed, 709 insertions(+), 114 deletions(-)
+
+## Diff
+diff --git a/apps/web/src/features/onboarding/HealthStep.tsx b/apps/web/src/features/onboarding/HealthStep.tsx
+index 5db8ee0..32110a7 100644
+--- a/apps/web/src/features/onboarding/HealthStep.tsx
++++ b/apps/web/src/features/onboarding/HealthStep.tsx
+@@ -197,37 +197,46 @@ export function useLimitationDraft() {
+     },
+   };
+ }
+ 
+ export type LimitationDraft = ReturnType<typeof useLimitationDraft>;
+ 
+ /**
+  * Limitations facultatives (E7.3) : zone, côté, gêne et note de 200 caractères au plus. `draft` :
+  * saisie tenue par l'écran parent (onboarding), sinon par le composant. `editable` (Profil › Santé,
+  * P-DRT-2) : chaque limitation a aussi « Modifier », qui la remplace par son formulaire ; à la
+- * fermeture, le focus revient à « Modifier ». `headingLevel` : niveau du titre (3 par défaut).
++ * fermeture, le focus revient à « Modifier ». Un formulaire à la fois : tant qu'il est ouvert (envoi
++ * compris), les autres « Modifier » attendent ; la limitation disparue (supprimée ailleurs), ils se
++ * libèrent. `headingLevel` : niveau du titre (3 par défaut).
+  */
+ export function LimitationsEditor(
+   p: { draft?: LimitationDraft; editable?: boolean; headingLevel?: 2 | 3 } = {},
+ ) {
+   const repos = useRepos();
+   const id = useId();
+   const limitations = useLive(() => repos.consent.limitations(), [repos]);
+   const own = useLimitationDraft();
+   const draft = p.draft ?? own;
+   const add = useAction(() => draft.persist());
+   const remove = useAction((limitationId: string) => repos.consent.removeLimitation(limitationId));
+   const [editing, setEditing] = useState<string | null>(null);
+   const returnTo = useRef<string | null>(null);
+   const listRef = useRef<HTMLUListElement>(null);
+   const Heading = p.headingLevel === 2 ? 'h2' : 'h3';
+ 
++  // Limitation en cours de modification disparue de la liste : plus de formulaire ouvert.
++  useEffect(() => {
++    if (editing !== null && limitations !== undefined && !limitations.some((l) => l.id === editing)) {
++      setEditing(null);
++    }
++  }, [editing, limitations]);
++
+   useEffect(() => {
+     if (editing !== null || returnTo.current === null) return;
+     listRef.current
+       ?.querySelector<HTMLButtonElement>(`[data-edit="${CSS.escape(returnTo.current)}"]`)
+       ?.focus();
+     returnTo.current = null;
+   }, [editing]);
+ 
+   function closeEditor() {
+     returnTo.current = editing;
+@@ -254,20 +263,21 @@ export function LimitationsEditor(
+                 <span>
+                   <span id={`${id}-${l.id}`}>{limitationLabel(l)}</span>
+                   {l.note ? <span className={styles.note}> — {l.note}</span> : null}
+                 </span>
+                 <span className={styles.itemActions}>
+                   {p.editable ? (
+                     <Button
+                       variant="secondary"
+                       data-edit={l.id}
+                       aria-describedby={`${id}-${l.id}`}
++                      disabled={editing !== null}
+                       onClick={() => setEditing(l.id)}
+                     >
+                       Modifier
+                     </Button>
+                   ) : null}
+                   <Button
+                     variant="secondary"
+                     aria-describedby={`${id}-${l.id}`}
+                     disabled={remove.pending}
+                     onClick={() => void remove.run(l.id)}
+diff --git a/apps/web/src/features/privacy/ConsentWithdrawDialog.tsx b/apps/web/src/features/privacy/ConsentWithdrawDialog.tsx
+index 0724d7e..644ad46 100644
+--- a/apps/web/src/features/privacy/ConsentWithdrawDialog.tsx
++++ b/apps/web/src/features/privacy/ConsentWithdrawDialog.tsx
+@@ -5,21 +5,22 @@ import { useRestoreFocus } from '../admin/admin-ui';
+ import { ExportButton } from './ExportButton';
+ import { passwordActionError, WITHDRAW_LIST_TEXT, WITHDRAWN_TEXT } from './messages';
+ import styles from './privacy.module.css';
+ 
+ type WithdrawProps = { open: boolean; onClose(): void; onWithdrawn?(): void };
+ 
+ /**
+  * Retrait de l'accord santé (R-CST-5, P-CST-3) : export proposé, liste de ce qui sera effacé, mot
+  * de passe ressaisi (P-AUT-5). Le serveur répond le nouveau profil (meta.me), puis les données de
+  * santé locales sont purgées (`withdrawHealth`). Le dialogue reste ouvert sur le message de
+- * réussite jusqu'à « Fermer ». Fermé, rien n'est monté : chaque ouverture repart vide.
++ * réussite jusqu'à « Fermer ». Fermé, rien n'est monté : chaque ouverture repart vide. L'écran
++ * derrière est inerte, comme sous la porte de réacceptation qui l'ouvre aussi.
+  */
+ export function ConsentWithdrawDialog(p: WithdrawProps) {
+   return p.open ? <OpenWithdrawDialog {...p} /> : null;
+ }
+ 
+ function OpenWithdrawDialog(p: WithdrawProps) {
+   const repos = useRepos();
+   const formId = useId();
+   const [password, setPassword] = useState('');
+   const [pending, setPending] = useState(false);
+@@ -53,33 +54,35 @@ function OpenWithdrawDialog(p: WithdrawProps) {
+       setPending(false);
+     }
+   }
+ 
+   if (done) {
+     return (
+       // Autre clé : le dialogue est remonté et reprend le focus (le bouton qui l'avait a disparu).
+       <Dialog
+         key="done"
+         open
++        inertOutside
+         title="Retirer l'accord santé"
+         onClose={close}
+         actions={<Button onClick={close}>Fermer</Button>}
+       >
+         <Banner tone="info">{WITHDRAWN_TEXT}</Banner>
+       </Dialog>
+     );
+   }
+ 
+   return (
+     <Dialog
+       key="form"
+       open
++      inertOutside
+       title="Retirer l'accord santé"
+       onClose={close}
+       actions={
+         <>
+           <Button variant="secondary" onClick={close} disabled={pending}>
+             Annuler
+           </Button>
+           <Button type="submit" form={formId} variant="danger" disabled={pending || password === ''}>
+             Retirer mon accord
+           </Button>
+diff --git a/apps/web/src/features/privacy/ExportButton.tsx b/apps/web/src/features/privacy/ExportButton.tsx
+index 018fa57..8d0e91e 100644
+--- a/apps/web/src/features/privacy/ExportButton.tsx
++++ b/apps/web/src/features/privacy/ExportButton.tsx
+@@ -1,46 +1,52 @@
+ import { useRef, useState } from 'react';
+ import { useServices } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { Banner, Button, downloadJson, exportFileName, useAction } from '../../ui';
+ import styles from './privacy.module.css';
+ 
+-function unsentWarning(n: number): string {
++/** File d'envoi illisible (base bloquée, transaction en échec) : son contenu n'est pas connu. */
++const UNKNOWN = 'unknown' as const;
++
++function unsentWarning(n: number | typeof UNKNOWN): string {
++  if (n === UNKNOWN) {
++    return "Impossible de vérifier les éléments non envoyés : ils pourraient manquer dans l'export.";
++  }
+   return n === 1
+     ? "1 élément n'est pas encore envoyé au serveur : il ne figurera pas dans l'export."
+     : `${n} éléments ne sont pas encore envoyés au serveur : ils ne figureront pas dans l'export.`;
+ }
+ 
+ /**
+  * « Télécharger mes données » (R-EXP-1, P-DRT-1) : export du serveur, en ligne, enregistré sous
+  * `appsport-export-AAAA-MM-JJ.json`. Des éléments encore dans la file d'envoi : avertissement
+- * d'abord, et rien ne part avant « Exporter quand même ».
++ * d'abord, et rien ne part avant « Exporter quand même ». File illisible : même chose, puisque des
++ * éléments non envoyés pourraient manquer.
+  */
+ export function ExportButton(p: { label?: string }) {
+   const repos = useRepos();
+   const { now } = useServices();
+-  const [unsent, setUnsent] = useState<number | null>(null);
++  const [unsent, setUnsent] = useState<number | typeof UNKNOWN | null>(null);
+   const checking = useRef(false);
+   const exporting = useAction(async () => {
+     const data = await repos.me.exportData();
+     downloadJson(exportFileName(now()), data);
+     setUnsent(null);
+   });
+ 
+   async function start() {
+     if (checking.current) return;
+     checking.current = true;
+     exporting.reset();
+     try {
+-      // File illisible : rien à signaler, l'export du serveur part quand même.
+-      const pending = await repos.status.pendingCount().catch(() => 0);
+-      if (pending > 0) setUnsent(pending);
++      const pending = await repos.status.pendingCount().catch((): typeof UNKNOWN => UNKNOWN);
++      if (pending === UNKNOWN || pending > 0) setUnsent(pending);
+       else await exporting.run();
+     } finally {
+       checking.current = false;
+     }
+   }
+ 
+   return (
+     <div className={styles.export}>
+       <Button variant="secondary" disabled={exporting.pending} onClick={() => void start()}>
+         {p.label ?? 'Télécharger mes données'}
+diff --git a/apps/web/src/features/privacy/HealthReconsentGate.tsx b/apps/web/src/features/privacy/HealthReconsentGate.tsx
+index aa2930b..8a5f89f 100644
+--- a/apps/web/src/features/privacy/HealthReconsentGate.tsx
++++ b/apps/web/src/features/privacy/HealthReconsentGate.tsx
+@@ -1,62 +1,78 @@
+ import { HEALTH_CONSENT_TEXT } from '@appsport/contracts';
+ import { useCallback, useState } from 'react';
+-import { useLive, useMe } from '../../app-services';
++import { useLive, useMe, useSyncState } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { Banner, Button, Dialog, useAction } from '../../ui';
+ import { ConsentWithdrawDialog } from './ConsentWithdrawDialog';
+ import styles from './privacy.module.css';
+ 
+ const ignore = () => {};
+ 
+ /**
+  * Accord santé donné sur une version majeure antérieure du texte (R-CST-6, P-CST-1) : le texte en
+  * vigueur est redemandé, case décochée. Seul l'accord ou le retrait lèvent la porte : pas de
+  * fermeture, Échap sans effet ; « Je refuse » ouvre le retrait (mot de passe, P-AUT-5), et ce
+  * dialogue fermé sans retrait ramène la porte. Rien pendant le changement de mot de passe imposé.
++ * L'écran derrière est inerte (`inertOutside`) : aucune donnée de santé n'y est saisie sous
++ * l'ancien texte, même au curseur virtuel d'un lecteur d'écran.
++ *
++ * Les deux réponses demandent le réseau (classe E) : la porte ne se lève qu'en ligne, d'après le
++ * moteur de synchro ; hors ligne, l'appli reste utilisable et l'accord en cours vaut toujours. Une
++ * fois levée, elle reste ; réseau perdu, « Nécessite le réseau » et ses boutons attendent.
+  */
+ export function HealthReconsentGate() {
+   const repos = useRepos();
+   const me = useMe();
++  const { connection } = useSyncState();
+   const needed = useLive(() => repos.consent.needsHealthReconsent(), [repos]);
+   const [refusing, setRefusing] = useState(false);
++  const [raised, setRaised] = useState(false);
+   const backToGate = useCallback(() => setRefusing(false), []);
++  const online = connection === 'online';
++  const due = needed === true && me !== null && !me.mustChangePassword;
++  // État dérivé : levée au premier rendu en ligne, retombée une fois l'accord à jour.
++  if (due && online && !raised) setRaised(true);
++  if (!due && raised) setRaised(false);
+ 
+   // Le retrait ouvert reste affiché jusqu'à sa fermeture, même une fois l'accord retiré.
+   if (refusing) return <ConsentWithdrawDialog open onClose={backToGate} />;
+-  if (needed !== true || !me || me.mustChangePassword) return null;
+-  return <ReconsentDialog onRefuse={() => setRefusing(true)} />;
++  if (!due || !(raised || online)) return null;
++  return <ReconsentDialog offline={!online} onRefuse={() => setRefusing(true)} />;
+ }
+ 
+-function ReconsentDialog(p: { onRefuse(): void }) {
++function ReconsentDialog(p: { offline: boolean; onRefuse(): void }) {
+   const repos = useRepos();
+   const [agreed, setAgreed] = useState(false);
+   const grant = useAction(() => repos.consent.grantHealth());
++  const waiting = grant.pending || p.offline;
+   return (
+     <Dialog
+       open
++      inertOutside
+       title="Le texte de l'accord santé a changé"
+       onClose={ignore}
+       actions={
+         <>
+-          <Button variant="secondary" disabled={grant.pending} onClick={p.onRefuse}>
++          <Button variant="secondary" disabled={waiting} onClick={p.onRefuse}>
+             Je refuse
+           </Button>
+-          <Button disabled={!agreed || grant.pending} onClick={() => void grant.run()}>
++          <Button disabled={!agreed || waiting} onClick={() => void grant.run()}>
+             J'accepte
+           </Button>
+         </>
+       }
+     >
+       <div className={styles.dialogForm}>
+         <p>
+           Relis le nouveau texte. Refuser revient à retirer ton accord : tes données de santé seront effacées.
+         </p>
+         <label className={styles.check}>
+           <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+           <span>{HEALTH_CONSENT_TEXT.text}</span>
+         </label>
++        {p.offline ? <Banner tone="warning">Nécessite le réseau</Banner> : null}
+         {grant.error ? <Banner tone="error">{grant.error}</Banner> : null}
+       </div>
+     </Dialog>
+   );
+ }
+diff --git a/apps/web/src/features/privacy/HealthSection.tsx b/apps/web/src/features/privacy/HealthSection.tsx
+index dc16ddb..ad916a1 100644
+--- a/apps/web/src/features/privacy/HealthSection.tsx
++++ b/apps/web/src/features/privacy/HealthSection.tsx
+@@ -5,103 +5,120 @@ import { useLive, useMe } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { Banner, Button, formatDate, HealthWarning, Page, useAction } from '../../ui';
+ import {
+   CautiousModeToggle,
+   HealthConsentPanel,
+   LimitationsEditor,
+   ScreeningQuestions,
+ } from '../onboarding/HealthStep';
+ import styles from './privacy.module.css';
+ 
++/** Titre de la section du questionnaire d'alerte (glossaire, 02 §11). */
++const SCREENING_TITLE = "Questionnaire d'alerte";
++
+ /**
+- * Profil › Santé (02 §11, E7) : sans accord, l'accord est proposé et les questions s'affichent en
+- * auto-vérification (P-CST-2) ; avec accord, dernière réponse au questionnaire (« Répondre de
+- * nouveau »), limitations modifiables (P-DRT-2). Le mode prudent (C1) est réglable dans tous les cas.
+- * Le retrait de l'accord se fait dans Confidentialité (R-CST-5).
++ * Profil › Santé (02 §11, E7) : sans accord, l'accord est proposé, puis les questions s'affichent
++ * en auto-vérification dans leur propre section (P-CST-2) ; avec accord, dernière réponse au
++ * questionnaire (« Répondre de nouveau »), limitations modifiables (P-DRT-2). Le mode prudent (C1)
++ * est réglable dans tous les cas. Le retrait de l'accord se fait dans Confidentialité (R-CST-5).
+  */
+ export function HealthSection() {
+   const me = useMe();
+   if (!me) return null;
+   const consented = me.consents.health.active;
+   return (
+     <Page title="Santé" back="/profile">
+       {consented ? (
+         <>
+           <ScreeningSection />
+           <LimitationsEditor editable headingLevel={2} />
+           <p className={styles.note}>
+             Ton accord santé se retire dans <Link href="/profile/privacy">Confidentialité</Link>.
+           </p>
+         </>
+       ) : (
+-        <Section title="Accord santé">
+-          <HealthConsentPanel onGranted={() => {}} />
+-          <ScreeningQuestions record={false} />
+-        </Section>
++        <>
++          <Section title="Accord santé">
++            <HealthConsentPanel onGranted={() => {}} />
++          </Section>
++          <Section title={SCREENING_TITLE}>
++            <ScreeningQuestions record={false} />
++          </Section>
++        </>
+       )}
+       <CautiousSection me={me} />
+       <HealthWarning />
+     </Page>
+   );
+ }
+ 
+ /** Section titrée (h2), nommée par son titre. */
+ function Section(p: { title: string; children: ReactNode }) {
+   const id = useId();
+   return (
+     <section aria-labelledby={id} className={styles.section}>
+       <h2 id={id}>{p.title}</h2>
+       {p.children}
+     </section>
+   );
+ }
+ 
+ /**
+- * Questionnaire de prudence : seuls l'indicateur, la version et la date sont gardés (E7.2). Déjà
+- * répondu : date et indicateur, puis « Répondre de nouveau » ouvre les questions ; enregistrées, le
+- * résumé revient et reprend le focus.
++ * Questionnaire d'alerte : seuls l'indicateur, la version et la date sont gardés (E7.2). Déjà
++ * répondu : date et indicateur, puis « Répondre de nouveau » ouvre les questions. Enregistrées, le
++ * résumé revient avec « Réponses enregistrées. » jusqu'à la prochaine ouverture.
+  */
+ function ScreeningSection() {
+   const repos = useRepos();
+   const screening = useLive(() => repos.consent.screening(), [repos]);
+   const [answering, setAnswering] = useState(false);
++  const [saved, setSaved] = useState(false);
+   const summaryRef = useRef<HTMLDivElement>(null);
+-  const returnFocus = useRef(false);
++  const hadQuestions = useRef(false);
+   const summary = Boolean(screening) && !answering;
++  const questions = screening !== undefined && !summary;
+ 
+-  // Questions fermées (enregistrées ou « Annuler ») : le focus revient à « Répondre de nouveau ».
++  // Questions fermées (enregistrées, relues avant la fin de l'envoi, ou « Annuler ») : le focus,
++  // perdu avec elles, revient à « Répondre de nouveau ». Placé ailleurs entre-temps, il y reste.
+   useEffect(() => {
+-    if (!summary || !returnFocus.current) return;
+-    returnFocus.current = false;
+-    summaryRef.current?.querySelector('button')?.focus();
+-  }, [summary]);
++    const closed = hadQuestions.current && !questions;
++    hadQuestions.current = questions;
++    if (!closed) return;
++    const active = document.activeElement;
++    if (active === null || active === document.body) summaryRef.current?.querySelector('button')?.focus();
++  }, [questions]);
+ 
+   if (screening === undefined) return null;
+-  const close = () => {
+-    returnFocus.current = true;
++  const reopen = () => {
++    setSaved(false);
++    setAnswering(true);
++  };
++  const onSaved = () => {
++    setSaved(true);
+     setAnswering(false);
+   };
+   return (
+-    <Section title="Questionnaire de prudence">
++    <Section title={SCREENING_TITLE}>
+       {screening && summary ? (
+         <div ref={summaryRef} className={styles.summary}>
++          {saved ? <Banner tone="info">Réponses enregistrées.</Banner> : null}
+           <p>{`Dernière réponse le ${formatDate(screening.answeredAt)}`}</p>
+           <p>{`Indicateur de prudence : ${screening.caution ? 'actif' : 'inactif'}`}</p>
+-          <Button variant="secondary" onClick={() => setAnswering(true)}>
++          <Button variant="secondary" onClick={reopen}>
+             Répondre de nouveau
+           </Button>
+         </div>
+       ) : (
+         <>
+-          <ScreeningQuestions record onSaved={close} />
++          <ScreeningQuestions record onSaved={onSaved} />
+           {screening ? (
+-            <Button variant="secondary" className={styles.start} onClick={close}>
++            <Button variant="secondary" className={styles.start} onClick={() => setAnswering(false)}>
+               Annuler
+             </Button>
+           ) : null}
+         </>
+       )}
+     </Section>
+   );
+ }
+ 
+ /**
+diff --git a/apps/web/src/features/status/RejectionsPage.tsx b/apps/web/src/features/status/RejectionsPage.tsx
+index 4c2641d..4a095f4 100644
+--- a/apps/web/src/features/status/RejectionsPage.tsx
++++ b/apps/web/src/features/status/RejectionsPage.tsx
+@@ -7,61 +7,108 @@ import styles from './status.module.css';
+ /** Libellé d'un code de rejet de synchro (R-SYN-18) ; un code inconnu s'affiche tel quel. */
+ export const REJECTION_CODE_LABELS: Record<string, string> = {
+   validation: 'Données invalides',
+   forbidden: 'Action non autorisée',
+   parent_rejected: 'Élément parent refusé',
+   stale_revision: 'Version périmée',
+   unknown_entity: 'Type de donnée inconnu',
+   protocol: "Version de l'appli trop ancienne",
+ };
+ 
+-const codeLabel = (code: string): string =>
+-  Object.hasOwn(REJECTION_CODE_LABELS, code) ? (REJECTION_CODE_LABELS[code] ?? code) : code;
++/** Type de donnée d'un rejet ; un type inconnu s'affiche sous son nom. */
++export const ENTITY_LABELS: Record<string, string> = {
++  sync_rejection: 'Refus',
++  training_profile: "Profil d'entraînement",
++  health_screening: "Questionnaire d'alerte",
++  limitation: 'Limitation',
++  gym: 'Salle',
++  gym_equipment: 'Matériel de salle',
++  place: 'Lieu',
++  home_equipment: 'Matériel à la maison',
++};
++
++/** Opération refusée (`kind` du détail). */
++const KIND_LABELS: Record<string, string> = {
++  create: 'création',
++  patch: 'modification',
++  delete: 'suppression',
++  restore_upsert: 'restauration',
++};
++
++const labelOf = (labels: Record<string, string>, key: string): string =>
++  Object.hasOwn(labels, key) ? (labels[key] ?? key) : key;
++
++const isRecord = (v: unknown): v is Record<string, unknown> =>
++  typeof v === 'object' && v !== null && !Array.isArray(v);
++
++/**
++ * Détail d'un rejet (R-SYN-18), sans aucune valeur : type de donnée, opération et noms des champs
++ * (`{ kind, fieldNames }` du serveur ou de la deadletter), « Lieu · modification · champs : name ».
++ * Détail absent ou d'une autre forme : ce qui est lisible seulement.
++ */
++export function rejectionDetail(r: Pick<RejectionView, 'entity' | 'detail'>): string {
++  const parts: string[] = [];
++  if (r.entity !== '') parts.push(labelOf(ENTITY_LABELS, r.entity));
++  const detail = isRecord(r.detail) ? r.detail : {};
++  if (typeof detail.kind === 'string' && detail.kind !== '') parts.push(labelOf(KIND_LABELS, detail.kind));
++  const fields = Array.isArray(detail.fieldNames)
++    ? detail.fieldNames.filter((f): f is string => typeof f === 'string' && f !== '')
++    : [];
++  if (fields.length > 0) parts.push(`${fields.length === 1 ? 'champ' : 'champs'} : ${fields.join(', ')}`);
++  return parts.join(' · ');
++}
+ 
+ const TITLE = 'Éléments refusés';
+ 
+ /**
+  * Rejets de synchro (R-SYN-18) : rejets du serveur non écartés et rejets reçus au push sur cet
+- * appareil. « Ignorer » écarte un rejet (écriture atomique du dépôt), jamais en silence.
++ * appareil, chacun avec son détail. « Ignorer » écarte un rejet (écriture atomique du dépôt),
++ * jamais en silence.
+  */
+ export function RejectionsPage() {
+   const repos = useRepos();
+   const rejections = useLive(() => repos.rejections.list(), [repos]);
+   const dismiss = useAction((id: string) => repos.rejections.dismiss(id));
+   const listId = useId();
+   return (
+     <Page title={TITLE} back="/">
+-      <p>Le serveur a refusé ces modifications : elles n'ont pas été enregistrées.</p>
+       {dismiss.error ? <Banner tone="error">{dismiss.error}</Banner> : null}
+       {rejections === undefined ? null : rejections.length === 0 ? (
+         <p>Aucun refus.</p>
+       ) : (
+-        <ul aria-label={TITLE} className={styles.rejections}>
+-          {rejections.map((r) => (
+-            <RejectionItem
+-              key={r.id}
+-              rejection={r}
+-              labelId={`${listId}-${r.id}`}
+-              busy={dismiss.pending}
+-              onDismiss={() => void dismiss.run(r.id)}
+-            />
+-          ))}
+-        </ul>
++        <>
++          <p>Le serveur a refusé ces modifications : elles n'ont pas été enregistrées.</p>
++          <ul aria-label={TITLE} className={styles.rejections}>
++            {rejections.map((r) => (
++              <RejectionItem
++                key={r.id}
++                rejection={r}
++                labelId={`${listId}-${r.id}`}
++                busy={dismiss.pending}
++                onDismiss={() => void dismiss.run(r.id)}
++              />
++            ))}
++          </ul>
++        </>
+       )}
+     </Page>
+   );
+ }
+ 
++/** Un rejet : code, détail et date, qui décrivent aussi son « Ignorer » (deux refus de même code restent distincts). */
+ function RejectionItem(p: { rejection: RejectionView; labelId: string; busy: boolean; onDismiss(): void }) {
+   const { rejection: r } = p;
++  const detail = rejectionDetail(r);
+   return (
+     <li className={styles.rejection}>
+-      <div>
+-        <strong id={p.labelId}>{codeLabel(r.code)}</strong>
++      {/* Espaces entre les parties : la description de « Ignorer » ne les colle pas (invisibles en flex). */}
++      <div id={p.labelId}>
++        <strong>{labelOf(REJECTION_CODE_LABELS, r.code)}</strong>{' '}
++        {detail !== '' ? <span>{detail}</span> : null}{' '}
+         {r.at ? <span className={styles.meta}>{`Refusé le ${formatDateTime(r.at)}`}</span> : null}
+       </div>
+       <Button variant="secondary" aria-describedby={p.labelId} disabled={p.busy} onClick={p.onDismiss}>
+         Ignorer
+       </Button>
+     </li>
+   );
+ }
+diff --git a/apps/web/src/ui/Dialog.tsx b/apps/web/src/ui/Dialog.tsx
+index b289eec..c917474 100644
+--- a/apps/web/src/ui/Dialog.tsx
++++ b/apps/web/src/ui/Dialog.tsx
+@@ -1,11 +1,12 @@
+-import { type ReactNode, useEffect, useId, useRef } from 'react';
++import { type ReactNode, useEffect, useId, useLayoutEffect, useRef } from 'react';
++import { inertOutside } from './inert-outside';
+ import styles from './ui.module.css';
+ 
+ const FOCUSABLE =
+   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+ 
+ /**
+  * Tab et Maj+Tab restent dans le dialogue : du dernier élément au premier et inversement, et un
+  * focus sorti du dialogue y revient. Au milieu, le navigateur avance seul.
+  */
+ function keepFocusInside(root: HTMLElement, e: KeyboardEvent): void {
+@@ -18,52 +19,64 @@ function keepFocusInside(root: HTMLElement, e: KeyboardEvent): void {
+   else if (!root.contains(active)) target = e.shiftKey ? last : first;
+   else if (e.shiftKey && (active === first || active === root)) target = last;
+   else if (!e.shiftKey && active === last) target = first;
+   if (!target) return;
+   e.preventDefault();
+   target.focus();
+ }
+ 
+ /**
+  * Fenêtre modale nommée par son titre ; Échap la ferme ; le focus y entre à l'ouverture et n'en
+- * sort pas au clavier.
++ * sort pas au clavier. `inertOutside` : le reste de la page est aussi inerte et caché aux lecteurs
++ * d'écran tant qu'elle est ouverte (porte de réacceptation, retrait de l'accord santé). Sous un
++ * dialogue inerte de la sorte, elle lui laisse le clavier. Plus haute que l'écran (téléphone en
++ * paysage, texte agrandi), son contenu défile entre le titre et les actions, qui restent visibles.
+  */
+ export function Dialog(p: {
+   open: boolean;
+   title: string;
+   onClose(): void;
+   actions: ReactNode;
+   children: ReactNode;
++  inertOutside?: boolean;
+ }) {
+   const titleId = useId();
++  const backdrop = useRef<HTMLDivElement>(null);
+   const ref = useRef<HTMLDivElement>(null);
+-  const { open, onClose } = p;
++  const { open, onClose, inertOutside: strict = false } = p;
++
++  // Avant les effets : à la fermeture, l'écran redevient atteignable avant que le focus y revienne.
++  useLayoutEffect(() => {
++    if (!open || !strict || !backdrop.current) return;
++    return inertOutside(backdrop.current);
++  }, [open, strict]);
+ 
+   useEffect(() => {
+     if (!open) return;
+     ref.current?.focus();
+     const onKey = (e: KeyboardEvent) => {
++      if (!ref.current || ref.current.closest('[inert]')) return;
+       if (e.key === 'Escape') onClose();
+-      else if (e.key === 'Tab' && ref.current) keepFocusInside(ref.current, e);
++      else if (e.key === 'Tab') keepFocusInside(ref.current, e);
+     };
+     document.addEventListener('keydown', onKey);
+     return () => document.removeEventListener('keydown', onKey);
+   }, [open, onClose]);
+ 
+   if (!open) return null;
+   return (
+-    <div className={styles.backdrop}>
++    <div ref={backdrop} className={styles.backdrop}>
+       <div
+         ref={ref}
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby={titleId}
+         tabIndex={-1}
+         className={styles.dialog}
+       >
+         <h2 id={titleId}>{p.title}</h2>
+-        <div>{p.children}</div>
++        <div className={styles.dialogBody}>{p.children}</div>
+         <div className={styles.actions}>{p.actions}</div>
+       </div>
+     </div>
+   );
+ }
+diff --git a/apps/web/src/ui/inert-outside.ts b/apps/web/src/ui/inert-outside.ts
+new file mode 100644
+index 0000000..54f05c3
+--- /dev/null
++++ b/apps/web/src/ui/inert-outside.ts
+@@ -0,0 +1,41 @@
++/** Éléments rendus inertes par un dialogue ouvert, avec le nombre de dialogues qui les tiennent. */
++const heldBy = new Map<Element, number>();
++
++/** Jamais touchés : rien à lire ni à atteindre. */
++const SKIPPED = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'LINK', 'META', 'NOSCRIPT']);
++
++/**
++ * Rend inerte et caché aux lecteurs d'écran (`inert`, `aria-hidden`) tout ce qui est hors de
++ * `root` : les frères de `root` et de chacun de ses ancêtres jusqu'à `body`. Ni le curseur
++ * virtuel d'un lecteur d'écran ni la recherche dans la page n'atteignent l'écran derrière un
++ * dialogue modal. Renvoie de quoi tout rendre. Dialogues empilés : un élément reste inerte tant
++ * qu'un dialogue le tient ; un élément déjà caché par la page n'est pas touché.
++ */
++export function inertOutside(root: Element): () => void {
++  const held: Element[] = [];
++  for (let node: Element = root; node.parentElement && node !== document.body; node = node.parentElement) {
++    for (const sibling of node.parentElement.children) {
++      if (sibling === node || SKIPPED.has(sibling.tagName)) continue;
++      const count = heldBy.get(sibling);
++      if (count === undefined) {
++        if (sibling.hasAttribute('inert') || sibling.getAttribute('aria-hidden') === 'true') continue;
++        sibling.setAttribute('inert', '');
++        sibling.setAttribute('aria-hidden', 'true');
++      }
++      heldBy.set(sibling, (count ?? 0) + 1);
++      held.push(sibling);
++    }
++  }
++  return () => {
++    for (const el of held) {
++      const count = (heldBy.get(el) ?? 1) - 1;
++      if (count > 0) {
++        heldBy.set(el, count);
++        continue;
++      }
++      heldBy.delete(el);
++      el.removeAttribute('inert');
++      el.removeAttribute('aria-hidden');
++    }
++  };
++}
+diff --git a/apps/web/src/ui/ui.module.css b/apps/web/src/ui/ui.module.css
+index 1b5eddd..5438ee7 100644
+--- a/apps/web/src/ui/ui.module.css
++++ b/apps/web/src/ui/ui.module.css
+@@ -218,37 +218,54 @@
+ .backdrop {
+   position: fixed;
+   inset: 0;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   padding: var(--space-4);
+   background: rgb(0 0 0 / 0.45);
+ }
+ 
++/*
++ * Jamais plus haut que l'écran (téléphone en paysage, texte agrandi, clavier ouvert) : le titre et
++ * les actions restent visibles, le contenu défile entre les deux.
++ */
+ .dialog {
+   width: 100%;
+   max-width: 28rem;
++  max-height: 100%;
+   padding: var(--space-6);
+   border-radius: var(--radius);
+   background: var(--color-surface);
+   display: flex;
+   flex-direction: column;
+   gap: var(--space-4);
+ }
+ 
+ .dialog h2 {
++  flex: none;
+   margin: 0;
+   font-size: 1.25rem;
+ }
+ 
++/* Marge rendue au contour du focus des champs, que le défilement rognerait sinon. */
++.dialogBody {
++  min-height: 0;
++  overflow-y: auto;
++  overscroll-behavior: contain;
++  margin: calc(-1 * var(--space-1));
++  padding: var(--space-1);
++}
++
++/* Actions d'un dialogue : jamais réduites, toujours visibles sous le contenu qui défile. */
+ .actions {
++  flex: none;
+   display: flex;
+   flex-wrap: wrap;
+   justify-content: flex-end;
+   gap: var(--space-2);
+ }
+ 
+ .choices {
+   border: 0;
+   margin: 0;
+   padding: 0;
+diff --git a/apps/web/test/app/ui.test.tsx b/apps/web/test/app/ui.test.tsx
+index bb88446..e917a59 100644
+--- a/apps/web/test/app/ui.test.tsx
++++ b/apps/web/test/app/ui.test.tsx
+@@ -71,20 +71,106 @@ describe('ui', () => {
+     expect(document.activeElement).toBe(save);
+     // Focus sorti du dialogue : Tab y revient.
+     const outside = screen.getByRole('button', { name: 'Dehors' });
+     outside.focus();
+     fireEvent.keyDown(outside, { key: 'Tab' });
+     expect(document.activeElement).toBe(field);
+     // Au milieu : le navigateur avance seul.
+     expect(fireEvent.keyDown(field, { key: 'Tab' })).toBe(true);
+   });
+ 
++  it('Dialog inertOutside : reste de la page inerte et caché, rendu à la fermeture', () => {
++    const page = (open: boolean) => (
++      <>
++        <header>
++          <a href="/">Accueil</a>
++        </header>
++        <main>
++          <p aria-hidden="true">Décor</p>
++          <button type="button">Dehors</button>
++          <Dialog open={open} inertOutside title="Porte" onClose={() => {}} actions={null}>
++            <p>Contenu</p>
++          </Dialog>
++        </main>
++      </>
++    );
++    const { rerender } = render(page(true));
++    expect(screen.getByText('Accueil').closest('header')?.getAttribute('aria-hidden')).toBe('true');
++    expect(screen.getByText('Accueil').closest('header')?.hasAttribute('inert')).toBe(true);
++    expect(screen.getByText('Dehors').hasAttribute('inert')).toBe(true);
++    expect(screen.queryByRole('button', { name: 'Dehors' })).toBeNull();
++    expect(screen.queryByRole('link', { name: 'Accueil' })).toBeNull();
++    expect(screen.getByRole('dialog', { name: 'Porte' })).toBeTruthy();
++    // Déjà caché par la page : pas touché.
++    expect(screen.getByText('Décor').hasAttribute('inert')).toBe(false);
++    rerender(page(false));
++    expect(document.querySelector('[inert]')).toBeNull();
++    expect(screen.getByRole('button', { name: 'Dehors' })).toBeTruthy();
++    expect(screen.getByRole('link', { name: 'Accueil' })).toBeTruthy();
++    expect(screen.getByText('Décor').getAttribute('aria-hidden')).toBe('true');
++  });
++
++  it("Dialog inertOutside par-dessus un autre dialogue : il garde le clavier, l'autre le reprend après", () => {
++    const closed: string[] = [];
++    const page = (top: boolean) => (
++      <main>
++        <section>
++          <Dialog open title="Dessous" onClose={() => closed.push('dessous')} actions={null}>
++            <input aria-label="Nom" />
++          </Dialog>
++        </section>
++        <Dialog open={top} inertOutside title="Dessus" onClose={() => closed.push('dessus')} actions={null}>
++          <button type="button">Choix</button>
++        </Dialog>
++      </main>
++    );
++    const { rerender } = render(page(true));
++    expect(screen.getByLabelText('Nom').closest('[inert]')).not.toBeNull();
++    expect(screen.queryByRole('dialog', { name: 'Dessous' })).toBeNull();
++    const choice = screen.getByRole('button', { name: 'Choix' });
++    choice.focus();
++    fireEvent.keyDown(choice, { key: 'Escape' });
++    expect(closed).toEqual(['dessus']);
++    // Tab : seul le dialogue du dessus garde le focus.
++    expect(fireEvent.keyDown(choice, { key: 'Tab' })).toBe(false);
++    expect(document.activeElement).toBe(choice);
++    rerender(page(false));
++    expect(document.querySelector('[inert]')).toBeNull();
++    fireEvent.keyDown(document, { key: 'Escape' });
++    expect(closed).toEqual(['dessus', 'dessous']);
++  });
++
++  it('Dialog inertOutside empilés : un élément reste inerte tant qu’un dialogue le tient', () => {
++    const page = (second: boolean) => (
++      <>
++        <header>Haut</header>
++        <main>
++          <Dialog open inertOutside title="Premier" onClose={() => {}} actions={null}>
++            <p>Un</p>
++          </Dialog>
++          <Dialog open={second} inertOutside title="Second" onClose={() => {}} actions={null}>
++            <p>Deux</p>
++          </Dialog>
++        </main>
++      </>
++    );
++    const { rerender, unmount } = render(page(true));
++    const header = screen.getByText('Haut');
++    expect(header.hasAttribute('inert')).toBe(true);
++    rerender(page(false));
++    expect(header.hasAttribute('inert')).toBe(true);
++    expect(header.getAttribute('aria-hidden')).toBe('true');
++    unmount();
++    expect(header.hasAttribute('inert')).toBe(false);
++    expect(header.hasAttribute('aria-hidden')).toBe(false);
++  });
++
+   it('Banner : role alert pour une erreur, status sinon', () => {
+     render(
+       <>
+         <Banner tone="error">Erreur</Banner>
+         <Banner tone="warning">Attention</Banner>
+         <Banner tone="info">Info</Banner>
+       </>,
+     );
+     expect(screen.getByRole('alert').textContent).toBe('Erreur');
+     expect(screen.getAllByRole('status').map((b) => b.textContent)).toEqual(['Attention', 'Info']);
+diff --git a/apps/web/test/privacy/export-delete.test.tsx b/apps/web/test/privacy/export-delete.test.tsx
+index 59293c1..a36561d 100644
+--- a/apps/web/test/privacy/export-delete.test.tsx
++++ b/apps/web/test/privacy/export-delete.test.tsx
+@@ -55,35 +55,52 @@ beforeEach(() => {
+ });
+ 
+ afterEach(() => {
+   vi.useRealTimers();
+   vi.restoreAllMocks();
+ });
+ 
+ const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
+ const calls = (api: FakeApi, path: string) => api.calls.filter((c) => c.path === path);
+ 
++/**
++ * État final, pas seulement le passage : une fois tout retombé, l'écran est toujours « Ce compte a
++ * été supprimé », sans détour par l'accueil ni départ après l'adresse visée (P-DRT-4).
++ */
++async function expectAccountDeletedScreen(location: () => string, visits: () => string[]) {
++  await settle();
++  expect(location()).toBe('/login?reason=account_deleted');
++  expect(visits()).not.toContain('/');
++  expect(visits().at(-1)).toBe('/login?reason=account_deleted');
++  expect(screen.getByText('Ce compte a été supprimé')).toBeTruthy();
++}
++
+ describe('download.ts', () => {
+   it('exportFileName : date civile de Paris (AAAA-MM-JJ)', () => {
+     expect(exportFileName(Date.parse('2026-10-06T12:00:00.000Z'))).toBe('appsport-export-2026-10-06.json');
+     // 22 h 30 UTC = 00 h 30 à Paris le lendemain.
+     expect(exportFileName(Date.parse('2026-10-06T22:30:00.000Z'))).toBe('appsport-export-2026-10-07.json');
+   });
+ 
+   it('downloadJson : Blob JSON indenté, <a download> cliqué une fois puis retiré, URL révoquée ensuite', async () => {
+     vi.useFakeTimers({ toFake: ['setTimeout'] });
+     downloadJson('fichier.json', { a: 1, b: [true] });
+     expect(clicks).toEqual([{ download: 'fichier.json', href: 'blob:test/1', connected: true }]);
+     expect(document.querySelector('a[download]')).toBeNull();
+     expect(blobs[0]?.type).toBe('application/json');
+     expect(await blobs[0]?.text()).toBe(JSON.stringify({ a: 1, b: [true] }, null, 2));
+-    vi.runAllTimers();
++    // Révoquée trop tôt, Safari annule le téléchargement : 40 s après le clic, pas avant.
++    expect(revokeUrl).not.toHaveBeenCalled();
++    vi.advanceTimersByTime(39_999);
++    expect(revokeUrl).not.toHaveBeenCalled();
++    vi.advanceTimersByTime(1);
++    expect(revokeUrl).toHaveBeenCalledTimes(1);
+     expect(revokeUrl).toHaveBeenCalledWith('blob:test/1');
+   });
+ });
+ 
+ async function renderPrivacy(o: { me?: MeResponse; api?: FakeApi; pending?: number } = {}) {
+   const db = createTestLocalDb();
+   if (o.pending) await seedOutbox(db, 'u-1', o.pending);
+   const view = await renderApp({ path: '/profile/privacy', me: o.me, db, api: o.api });
+   await screen.findByRole('heading', { level: 1, name: 'Confidentialité' });
+   return view;
+@@ -113,20 +130,40 @@ describe('ExportButton (R-EXP-1, P-DRT-1)', () => {
+   it('1 op en attente : message au singulier', async () => {
+     await renderPrivacy({ pending: 1 });
+     fireEvent.click(button('Télécharger mes données'));
+     expect(
+       await screen.findByText(
+         "1 élément n'est pas encore envoyé au serveur : il ne figurera pas dans l'export.",
+       ),
+     ).toBeTruthy();
+   });
+ 
++  it('file illisible : avertissement, rien ne part avant « Exporter quand même »', async () => {
++    const api = createFakeApi().on('GET', EXPORT, { status: 200, body: EXPORTED });
++    const { db } = await renderPrivacy({ api, pending: 1 });
++    vi.spyOn(db.outbox, 'where').mockImplementation(() => {
++      throw new Error('IndexedDB indisponible');
++    });
++    fireEvent.click(button('Télécharger mes données'));
++    const warning = await screen.findByText(
++      "Impossible de vérifier les éléments non envoyés : ils pourraient manquer dans l'export.",
++    );
++    expect(warning.closest('[role="status"]')).toBeTruthy();
++    await settle();
++    expect(calls(api, EXPORT)).toHaveLength(0);
++    expect(clicks).toHaveLength(0);
++    fireEvent.click(button('Exporter quand même'));
++    await until(() => clicks.length === 1);
++    expect(clicks[0]?.download).toBe('appsport-export-2026-10-06.json');
++    expect(calls(api, EXPORT)).toHaveLength(1);
++  });
++
+   it('file vide : téléchargement au premier clic', async () => {
+     const api = createFakeApi().on('GET', EXPORT, { status: 200, body: EXPORTED });
+     await renderPrivacy({ api });
+     fireEvent.click(button('Télécharger mes données'));
+     await until(() => clicks.length === 1);
+     expect(clicks[0]?.download).toBe('appsport-export-2026-10-06.json');
+     expect(createUrl).toHaveBeenCalledTimes(1);
+   });
+ 
+   it('hors ligne : « Nécessite le réseau », aucun téléchargement', async () => {
+@@ -162,45 +199,61 @@ describe('DeleteAccountDialog (R-SUP-1, R-SUP-4, R-SUP-5, P-DRT-3, P-DRT-6)', ()
+     await renderPrivacy({ api });
+     const dialog = await openDelete();
+     fireEvent.click(dialog.getByRole('button', { name: "Télécharger mes données d'abord" }));
+     await until(() => clicks.length === 1);
+     expect(clicks[0]?.download).toBe('appsport-export-2026-10-06.json');
+     expect(screen.getByRole('dialog')).toBeTruthy();
+   });
+ 
+   it('POST /api/me/delete { password } → base vidée, /login?reason=account_deleted, « Ce compte a été supprimé »', async () => {
+     const api = createFakeApi().on('POST', DELETE, { status: 204 });
+-    const { db, location } = await renderPrivacy({ api, pending: 2 });
++    const { db, location, visits } = await renderPrivacy({ api, pending: 2 });
+     const dialog = await openDelete();
+     fill('Mot de passe', PASSWORD);
+     fireEvent.click(dialog.getByRole('button', { name: 'Supprimer définitivement' }));
+     await waitFor(() => expect(location()).toBe('/login?reason=account_deleted'));
+     expect(calls(api, DELETE).map((c) => [c.method, c.body])).toEqual([['POST', { password: PASSWORD }]]);
+     expect(await db.outbox.count()).toBe(0);
+     expect(await getMeta(db, 'me')).toBeUndefined();
+-    expect(await screen.findByText('Ce compte a été supprimé')).toBeTruthy();
++    await expectAccountDeletedScreen(location, visits);
+   });
+ 
+   it("409 last_admin → « Tu es le dernier administrateur : nomme d'abord un autre administrateur. », rien effacé", async () => {
+     const api = createFakeApi().on('POST', DELETE, { status: 409, body: { error: 'last_admin' } });
+     const { db, location } = await renderPrivacy({ api, me: makeMe({ role: 'admin' }), pending: 1 });
+     const dialog = await openDelete();
+     fill('Mot de passe', PASSWORD);
+     fireEvent.click(dialog.getByRole('button', { name: 'Supprimer définitivement' }));
+     expect((await dialog.findByRole('alert')).textContent).toBe(
+       "Tu es le dernier administrateur : nomme d'abord un autre administrateur.",
+     );
+     expect(await db.outbox.count()).toBe(1);
+     expect(await getMeta(db, 'me')).toBeDefined();
+     expect(location()).toBe('/profile/privacy');
+   });
+ 
++  it('hors ligne → « Nécessite le réseau » : rien effacé, file gardée, pas de navigation, moteur relancé', async () => {
++    const api = createFakeApi().on('POST', DELETE, { status: 204 });
++    const { db, location, sync } = await renderPrivacy({ api, pending: 2 });
++    const dialog = await openDelete();
++    api.setOffline('reject');
++    fill('Mot de passe', PASSWORD);
++    fireEvent.click(dialog.getByRole('button', { name: 'Supprimer définitivement' }));
++    expect((await dialog.findByRole('alert')).textContent).toBe('Nécessite le réseau');
++    await settle();
++    expect(await db.outbox.count()).toBe(2);
++    expect(await getMeta(db, 'me')).toBeDefined();
++    expect(location()).toBe('/profile/privacy');
++    expect(screen.getByRole('dialog', { name: 'Supprimer ton compte ?' })).toBeTruthy();
++    expect(sync.started).toBe(true);
++  });
++
+   it('401 → « Mot de passe incorrect. », rien effacé', async () => {
+     const api = createFakeApi().on('POST', DELETE, { status: 401, body: { error: 'invalid_credentials' } });
+     const { db } = await renderPrivacy({ api });
+     const dialog = await openDelete();
+     fill('Mot de passe', 'mauvais mot de passe');
+     fireEvent.click(dialog.getByRole('button', { name: 'Supprimer définitivement' }));
+     expect((await dialog.findByRole('alert')).textContent).toBe('Mot de passe incorrect.');
+     expect(await getMeta(db, 'me')).toBeDefined();
+   });
+ 
+@@ -214,25 +267,25 @@ describe('DeleteAccountDialog (R-SUP-1, R-SUP-4, R-SUP-5, P-DRT-3, P-DRT-6)', ()
+     await settle();
+     expect(document.activeElement).toBe(field);
+   });
+ });
+ 
+ describe('compte supprimé depuis un autre appareil (P-DRT-4, 03 §17 n°9)', () => {
+   it('GET /api/me → 410 account_deleted : base vidée, file comprise, puis connexion', async () => {
+     const api = createFakeApi().on('GET', '/api/me', { status: 410, body: { error: 'account_deleted' } });
+     const db = createTestLocalDb();
+     await seedOutbox(db, 'u-1', 2);
+-    const { location } = await renderApp({ path: '/profile/privacy', db, api });
++    const { location, visits } = await renderApp({ path: '/profile/privacy', db, api });
+     await waitFor(() => expect(location()).toBe('/login?reason=account_deleted'));
+     expect(await db.outbox.count()).toBe(0);
+     expect(await getMeta(db, 'me')).toBeUndefined();
+-    expect(await screen.findByText('Ce compte a été supprimé')).toBeTruthy();
++    await expectAccountDeletedScreen(location, visits);
+   });
+ 
+   it('GET /api/me → 410 watermark_expired : rien effacé', async () => {
+     const api = createFakeApi().on('GET', '/api/me', { status: 410, body: { error: 'watermark_expired' } });
+     const db = createTestLocalDb();
+     await seedOutbox(db, 'u-1', 2);
+     const { location } = await renderApp({ path: '/profile/privacy', db, api });
+     await screen.findByRole('heading', { level: 1, name: 'Confidentialité' });
+     await until(() => calls(api, '/api/me').length === 1);
+     await settle();
+diff --git a/apps/web/test/privacy/health-section.test.tsx b/apps/web/test/privacy/health-section.test.tsx
+index 658030a..3aab414 100644
+--- a/apps/web/test/privacy/health-section.test.tsx
++++ b/apps/web/test/privacy/health-section.test.tsx
+@@ -1,120 +1,188 @@
+ import { HEALTH_CONSENT_TEXT, HEALTH_QUESTIONNAIRE, type MeResponse } from '@appsport/contracts';
+ import { fireEvent, screen, within } from '@testing-library/react';
+ import { describe, expect, it } from 'vitest';
++import type { AppDb } from '../../src/local-db/db';
+ import { settle } from '../support/auth';
+ import { createFakeApi, type FakeApi } from '../support/fake-api';
+ import { createTestLocalDb } from '../support/local-db';
+ import { button, seedProfile, serveProfile } from '../support/onboarding';
+ import { makeMe, renderApp } from '../support/render';
+ import { seedMirror } from '../support/seed';
+ import { until } from '../support/wait';
+ 
+ const CAUTIOUS = 'Je préfère une progression plus prudente';
+ const SELF_CHECK = "Si l'une de ces situations te concerne, demande l'avis d'un médecin avant de commencer.";
+ const LIMITATION = 'Genou · Gauche · Légère';
+ const SEVERE = "Forte : m'empêche certains mouvements";
+ const SCREENING_PATH = '/api/me/health-screening';
++const SAVED = 'Réponses enregistrées.';
++const SCREENING_TITLE = "Questionnaire d'alerte";
+ const LIMITATION_PATH = '/api/me/limitations/l-1';
+ 
+ const consented = (o: Partial<MeResponse> = {}): MeResponse =>
+   makeMe({
+     consents: {
+       health: { active: true, textVersion: '1.0', at: '2026-10-01T10:00:00.000Z' },
+       aiCoach: { active: false, textVersion: null, at: null },
+     },
+     ...o,
+   });
+ 
+-async function renderHealth(o: { me?: MeResponse; api?: FakeApi; cautiousMode?: boolean } = {}) {
++/** Limitation l-2 « Épaule · Droite · Légère ». */
++const SHOULDER = 'Épaule · Droite · Légère';
++const shoulder = (o: Record<string, unknown> = {}) => ({
++  id: 'l-2',
++  ownerId: 'u-1',
++  bodyArea: 'shoulder',
++  side: 'right',
++  severity: 'mild',
++  note: null,
++  active: true,
++  ...o,
++});
++const knee = (o: Record<string, unknown> = {}) => ({
++  id: 'l-1',
++  ownerId: 'u-1',
++  bodyArea: 'knee',
++  side: 'left',
++  severity: 'mild',
++  note: null,
++  active: true,
++  ...o,
++});
++
++async function seedScreening(db: AppDb, answeredAt: string): Promise<void> {
++  await seedMirror(db, 'health_screening', [
++    { id: 'u-1', ownerId: 'u-1', caution: false, questionnaireVersion: '1.0', answeredAt },
++  ]);
++}
++
++async function renderHealth(
++  o: { me?: MeResponse; api?: FakeApi; cautiousMode?: boolean; screening?: boolean } = {},
++) {
+   const me = o.me ?? consented();
+   const db = createTestLocalDb();
+   const api = o.api ?? createFakeApi();
+   await seedProfile(db, {
+     goal: 'muscle',
+     experience: 'none',
+     daysPerWeek: 3,
+     sessionMinutes: 45,
+     cautiousMode: o.cautiousMode ?? true,
+   });
+   if (me.consents.health.active) {
+-    await seedMirror(db, 'health_screening', [
+-      {
+-        id: 'u-1',
+-        ownerId: 'u-1',
+-        caution: false,
+-        questionnaireVersion: '1.0',
+-        answeredAt: '2026-10-01T10:00:00.000Z',
+-      },
+-    ]);
+-    await seedMirror(db, 'limitation', [
+-      {
+-        id: 'l-1',
+-        ownerId: 'u-1',
+-        bodyArea: 'knee',
+-        side: 'left',
+-        severity: 'mild',
+-        note: null,
+-        active: true,
+-      },
+-    ]);
++    // Réponse du 03/10, accord du 01/10 : la date affichée est bien celle du questionnaire.
++    if (o.screening !== false) await seedScreening(db, '2026-10-03T10:00:00.000Z');
++    await seedMirror(db, 'limitation', [knee()]);
+   }
+   const server = serveProfile(api, db, me);
+   const view = await renderApp({ path: '/profile/health', me, db, api });
+   await screen.findByRole('heading', { level: 1, name: 'Santé' });
+   return { ...view, ...server };
+ }
+ 
++/** Élément de la liste des limitations portant `label`. */
++const limitationItem = (label: string) => {
++  const li = screen.getByText(label).closest('li');
++  if (!li) throw new Error(`aucune limitation ${label}`);
++  return within(li);
++};
++const editButton = (label: string) =>
++  limitationItem(label).getByRole('button', { name: 'Modifier' }) as HTMLButtonElement;
++/** Section nommée par son titre (h2). */
++const section = (title: string) => {
++  const el = screen.getByRole('heading', { level: 2, name: title }).closest('section');
++  if (!el) throw new Error(`aucune section ${title}`);
++  return el;
++};
++
+ const sent = (api: FakeApi, method: string, path: string) =>
+   api.calls.filter((c) => c.method === method && c.path === path).map((c) => c.body);
+ const question = (i: number) =>
+   within(screen.getByRole('group', { name: HEALTH_QUESTIONNAIRE.questions[i] }));
+ const editForm = () => within(screen.getByRole('form', { name: `Modifier : ${LIMITATION}` }));
+ 
+ describe('HealthSection sans accord (E7, P-CST-1, P-CST-2)', () => {
+   it("accord proposé (case décochée) et auto-vérification ; l'accord donné ouvre le questionnaire enregistré", async () => {
+     const api = createFakeApi().on('POST', '/api/me/consents', { status: 200, body: consented() });
+     await renderHealth({ me: makeMe(), api });
+     const box = screen.getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text }) as HTMLInputElement;
+     expect(box.checked).toBe(false);
+     expect(screen.getByText(SELF_CHECK)).toBeTruthy();
+     expect(screen.queryByRole('radio', { name: 'Oui' })).toBeNull();
++    // L'auto-vérification a sa propre section, distincte de l'accord (P-CST-2, glossaire).
++    expect(section('Accord santé').contains(box)).toBe(true);
++    expect(section('Accord santé').contains(screen.getByText(SELF_CHECK))).toBe(false);
++    expect(section(SCREENING_TITLE).contains(screen.getByText(SELF_CHECK))).toBe(true);
+     fireEvent.click(box);
+     fireEvent.click(button("J'accepte et je renseigne"));
+     await screen.findByRole('group', { name: HEALTH_QUESTIONNAIRE.questions[0] });
+     expect(sent(api, 'POST', '/api/me/consents')).toEqual([{ type: 'health', textVersion: '1.0' }]);
+     expect(button('Enregistrer mes réponses')).toBeTruthy();
+     expect(screen.getByRole('heading', { level: 2, name: 'Limitations' })).toBeTruthy();
+     expect(screen.queryByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text })).toBeNull();
+   });
+ });
+ 
+ describe('HealthSection avec accord (E7, P-DRT-2)', () => {
+-  it('dernière réponse et limitations « Genou · Gauche · Légère »', async () => {
++  it("dernière réponse (date du questionnaire, pas de l'accord), indicateur et limitations « Genou · Gauche · Légère »", async () => {
+     await renderHealth();
+-    expect(await screen.findByText('Dernière réponse le 01/10/2026')).toBeTruthy();
++    expect(await screen.findByText('Dernière réponse le 03/10/2026')).toBeTruthy();
++    expect(screen.getByText('Indicateur de prudence : inactif')).toBeTruthy();
++    expect(section(SCREENING_TITLE).textContent).toContain('Dernière réponse le 03/10/2026');
+     expect(await screen.findByText(LIMITATION)).toBeTruthy();
+     // Questionnaire déjà répondu : les questions attendent « Répondre de nouveau ».
+     expect(screen.queryByRole('group', { name: HEALTH_QUESTIONNAIRE.questions[0] })).toBeNull();
+   });
+ 
+   it('« Répondre de nouveau » → PUT /api/me/health-screening { answers, questionnaireVersion }', async () => {
+     const api = createFakeApi().on('PUT', SCREENING_PATH, { status: 200, body: { caution: false } });
+     await renderHealth({ api });
+     fireEvent.click(await screen.findByRole('button', { name: 'Répondre de nouveau' }));
+     for (let i = 0; i < 4; i++) fireEvent.click(question(i).getByRole('radio', { name: 'Non' }));
+     fireEvent.click(button('Enregistrer mes réponses'));
+     await until(() => sent(api, 'PUT', SCREENING_PATH).length === 1);
+     expect(sent(api, 'PUT', SCREENING_PATH)).toEqual([
+       { answers: [false, false, false, false], questionnaireVersion: '1.0' },
+     ]);
+-    expect(await screen.findByRole('button', { name: 'Répondre de nouveau' })).toBeTruthy();
++    const again = await screen.findByRole('button', { name: 'Répondre de nouveau' });
++    // Enregistré : confirmation annoncée dans le résumé, focus sur « Répondre de nouveau ».
++    expect(within(section(SCREENING_TITLE)).getByRole('status').textContent).toBe(SAVED);
++    await until(() => document.activeElement === again);
++    fireEvent.click(again);
++    expect(screen.queryByText(SAVED)).toBeNull();
++    fireEvent.click(button('Annuler'));
++    await until(() => document.activeElement === button('Répondre de nouveau'));
++    expect(screen.queryByText(SAVED)).toBeNull();
++  });
++
++  it("premier questionnaire relu avant la fin de l'envoi : le focus va quand même à « Répondre de nouveau »", async () => {
++    const api = createFakeApi();
++    const { db } = await renderHealth({ api, screening: false });
++    // Comme un pull pendant l'envoi : la ligne arrive dans le miroir et l'écran la relit (rendu et
++    // effets passés) avant la réponse.
++    api.on('PUT', SCREENING_PATH, async () => {
++      await seedScreening(db, '2026-10-06T12:00:00.000Z');
++      await until(() => screen.queryByRole('button', { name: 'Enregistrer mes réponses' }) === null);
++      await settle();
++      return { status: 200, body: { caution: false } };
++    });
++    await screen.findByRole('group', { name: HEALTH_QUESTIONNAIRE.questions[0] });
++    for (let i = 0; i < 4; i++) fireEvent.click(question(i).getByRole('radio', { name: 'Non' }));
++    const save = button('Enregistrer mes réponses');
++    save.focus();
++    fireEvent.click(save);
++    const again = await screen.findByRole('button', { name: 'Répondre de nouveau' });
++    await until(() => document.activeElement === again);
++    expect((await within(section(SCREENING_TITLE)).findByRole('status')).textContent).toBe(SAVED);
++    expect(screen.getByText('Dernière réponse le 06/10/2026')).toBeTruthy();
+   });
+ 
+   it('« Supprimer » → DELETE /api/me/limitations/l-1 {}', async () => {
+     const api = createFakeApi().on('DELETE', LIMITATION_PATH, { status: 204 });
+     await renderHealth({ api });
+     await screen.findByText(LIMITATION);
+     fireEvent.click(button('Supprimer'));
+     await until(() => sent(api, 'DELETE', LIMITATION_PATH).length === 1);
+     expect(sent(api, 'DELETE', LIMITATION_PATH)).toEqual([{}]);
+   });
+@@ -134,47 +202,74 @@ describe('HealthSection avec accord (E7, P-DRT-2)', () => {
+     expect(sent(api, 'PATCH', LIMITATION_PATH)).toEqual([{ severity: 'severe' }]);
+     await until(() => document.activeElement === button('Modifier'));
+   });
+ 
+   it("« Modifier » : seuls les champs changés depuis l'ouverture partent, même après une relecture", async () => {
+     const api = createFakeApi().on('PATCH', LIMITATION_PATH, { status: 204 });
+     const { db } = await renderHealth({ api });
+     await screen.findByText(LIMITATION);
+     fireEvent.click(button('Modifier'));
+     // Un autre appareil passe la gêne à « Forte » pendant la saisie.
+-    await seedMirror(db, 'limitation', [
+-      {
+-        id: 'l-1',
+-        ownerId: 'u-1',
+-        bodyArea: 'knee',
+-        side: 'left',
+-        severity: 'severe',
+-        note: null,
+-        active: true,
+-      },
+-    ]);
++    await seedMirror(db, 'limitation', [knee({ severity: 'severe' })]);
+     await settle();
+     fireEvent.change(editForm().getByLabelText('Côté'), { target: { value: 'right' } });
+     fireEvent.click(editForm().getByRole('button', { name: 'Enregistrer' }));
+     await until(() => sent(api, 'PATCH', LIMITATION_PATH).length === 1);
+     expect(sent(api, 'PATCH', LIMITATION_PATH)).toEqual([{ side: 'right' }]);
+   });
+ 
+   it('« Modifier » puis « Enregistrer » sans changement : aucune requête', async () => {
+     const { api } = await renderHealth();
+     await screen.findByText(LIMITATION);
+     fireEvent.click(button('Modifier'));
+     fireEvent.click(editForm().getByRole('button', { name: 'Enregistrer' }));
+     await until(() => screen.queryByRole('form', { name: `Modifier : ${LIMITATION}` }) === null);
+     expect(sent(api, 'PATCH', LIMITATION_PATH)).toEqual([]);
+   });
+ 
++  it("« Modifier » ouvert ou en cours d'envoi : les autres « Modifier » attendent, aucun autre formulaire n'est fermé", async () => {
++    const pending: (() => void)[] = [];
++    const api = createFakeApi().on(
++      'PATCH',
++      LIMITATION_PATH,
++      () =>
++        new Promise((resolve) => {
++          pending.push(() => resolve({ status: 204 }));
++        }),
++    );
++    const { db } = await renderHealth({ api });
++    await seedMirror(db, 'limitation', [shoulder()]);
++    await screen.findByText(SHOULDER);
++    fireEvent.click(editButton(LIMITATION));
++    expect(editButton(SHOULDER).disabled).toBe(true);
++    fireEvent.click(editForm().getByRole('radio', { name: SEVERE }));
++    fireEvent.click(editForm().getByRole('button', { name: 'Enregistrer' }));
++    await until(() => pending.length === 1);
++    expect(editButton(SHOULDER).disabled).toBe(true);
++    pending[0]?.();
++    await until(() => screen.queryByRole('form', { name: `Modifier : ${LIMITATION}` }) === null);
++    await until(() => document.activeElement === editButton(LIMITATION));
++    expect(editButton(SHOULDER).disabled).toBe(false);
++  });
++
++  it('limitation en cours de modification supprimée ailleurs : les autres « Modifier » se libèrent', async () => {
++    const { db } = await renderHealth();
++    await seedMirror(db, 'limitation', [shoulder()]);
++    await screen.findByText(SHOULDER);
++    fireEvent.click(editButton(LIMITATION));
++    expect(editButton(SHOULDER).disabled).toBe(true);
++    await seedMirror(db, 'limitation', [knee({ deletedAt: '2026-10-06T11:00:00.000Z' })]);
++    await until(() => screen.queryByRole('form', { name: `Modifier : ${LIMITATION}` }) === null);
++    await until(() => !editButton(SHOULDER).disabled);
++    expect(screen.queryByText(LIMITATION)).toBeNull();
++  });
++
+   it('403 health_consent_required → « Cette action demande ton accord santé. »', async () => {
+     const api = createFakeApi().on('PATCH', LIMITATION_PATH, {
+       status: 403,
+       body: { error: 'health_consent_required' },
+     });
+     await renderHealth({ api });
+     await screen.findByText(LIMITATION);
+     fireEvent.click(button('Modifier'));
+     fireEvent.click(editForm().getByRole('radio', { name: SEVERE }));
+     fireEvent.click(editForm().getByRole('button', { name: 'Enregistrer' }));
+diff --git a/apps/web/test/privacy/withdraw.test.tsx b/apps/web/test/privacy/withdraw.test.tsx
+index 3841955..e047319 100644
+--- a/apps/web/test/privacy/withdraw.test.tsx
++++ b/apps/web/test/privacy/withdraw.test.tsx
+@@ -1,37 +1,41 @@
+-import { HEALTH_CONSENT_TEXT, type MeResponse } from '@appsport/contracts';
+-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
++import { HEALTH_CONSENT_TEXT, type MeResponse, SYNC_PROTOCOL } from '@appsport/contracts';
++import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+ import { describe, expect, it } from 'vitest';
+ import type { AppDb } from '../../src/local-db/db';
+ import { getMeta } from '../../src/local-db/meta';
+ import { fill, settle } from '../support/auth';
+-import { createFakeApi, type FakeApi } from '../support/fake-api';
++import { createFakeApi, createFakeSyncEngine, type FakeApi, type FakeSyncEngine } from '../support/fake-api';
+ import { createTestLocalDb, dumpLocalDb } from '../support/local-db';
+ import { newcomer } from '../support/onboarding';
+ import { makeMe, renderApp } from '../support/render';
+ import { seedMirror } from '../support/seed';
+ import { until } from '../support/wait';
+ 
+ const WITHDRAWN = 'Accord retiré. Tes données de santé ont été effacées.';
+ const WITNESS = 'TEMOIN-C2';
+ const WITHDRAW = '/api/me/consents/withdraw';
+ const GATE = "Le texte de l'accord santé a changé";
+ 
+ const consented = (textVersion: string | null = '1.0', active = true): MeResponse =>
+   makeMe({
+     consents: {
+       health: { active, textVersion, at: active ? '2026-10-01T10:00:00.000Z' : null },
+       aiCoach: { active: false, textVersion: null, at: null },
+     },
+   });
+ 
+-/** Questionnaire et limitation portant la valeur témoin. */
++/**
++ * Données de santé portant la valeur témoin partout où elles peuvent être sur l'appareil :
++ * questionnaire et limitation (miroirs), ajout de limitation en attente (outbox) et rejet local
++ * dont le détail la cite (deadletter), écrits directement dans Dexie.
++ */
+ async function seedHealth(db: AppDb): Promise<void> {
+   await seedMirror(db, 'health_screening', [
+     {
+       id: 'u-1',
+       ownerId: 'u-1',
+       caution: true,
+       questionnaireVersion: '1.0',
+       answeredAt: '2026-10-01T10:00:00.000Z',
+     },
+   ]);
+@@ -39,22 +43,52 @@ async function seedHealth(db: AppDb): Promise<void> {
+     {
+       id: 'l-1',
+       ownerId: 'u-1',
+       bodyArea: 'knee',
+       side: 'left',
+       severity: 'mild',
+       note: WITNESS,
+       active: true,
+     },
+   ]);
++  await db.outbox.add({
++    opId: '0192f5a0-0000-7000-8000-000000000001',
++    userId: 'u-1',
++    entity: 'limitation',
++    id: 'l-9',
++    kind: 'create',
++    fields: { bodyArea: 'hip', side: 'right', severity: 'severe', note: WITNESS, active: true },
++    clientTs: '2026-10-06T11:00:00.000Z',
++    protocol: SYNC_PROTOCOL,
++    attempts: 0,
++  });
++  await db.deadletter.put({
++    opId: '0192f5a0-0000-7000-8000-000000000002',
++    userId: 'u-1',
++    entity: 'limitation',
++    id: 'l-8',
++    code: 'validation',
++    detail: { kind: 'patch', note: WITNESS },
++    receivedAt: '2026-10-06T11:00:00.000Z',
++  });
+ }
+ 
++/** Magasins locaux où la valeur témoin apparaît. */
++async function witnessStores(db: AppDb): Promise<string[]> {
++  const found: string[] = [];
++  for (const table of db.tables) {
++    if (JSON.stringify(await table.toArray()).includes(WITNESS)) found.push(table.name);
++  }
++  return found.sort();
++}
++const SEEDED_STORES = ['deadletter', 'limitation', 'outbox'];
++
+ async function renderPrivacy(o: { me?: MeResponse; api?: FakeApi } = {}) {
+   const db = createTestLocalDb();
+   await seedHealth(db);
+   const view = await renderApp({ path: '/profile/privacy', me: o.me ?? consented(), db, api: o.api });
+   await screen.findByRole('heading', { level: 1, name: 'Confidentialité' });
+   return view;
+ }
+ 
+ const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
+ /** Valeur d'une ligne de la liste des accords (`dt` → `dd`). */
+@@ -116,76 +150,161 @@ describe('ConsentWithdrawDialog (R-CST-5, P-CST-3, P-AUT-5)', () => {
+     field.focus();
+     fill('Mot de passe', 'c');
+     fill('Mot de passe', 'ch');
+     await settle();
+     expect(document.activeElement).toBe(field);
+   });
+ 
+   it('POST withdraw { type, password } → 200 MeResponse : message, meta.me à jour, aucune valeur C2 en local', async () => {
+     const api = createFakeApi().on('POST', WITHDRAW, { status: 200, body: consented(null, false) });
+     const { db, sync } = await renderPrivacy({ api });
+-    expect(await dumpLocalDb(db)).toContain(WITNESS);
++    expect(await witnessStores(db)).toEqual(SEEDED_STORES);
+     const dialog = await openWithdraw();
+     fill('Mot de passe', 'cheval agrafe batterie correcte');
+     fireEvent.click(dialog.getByRole('button', { name: 'Retirer mon accord' }));
+     expect(await screen.findByText(WITHDRAWN)).toBeTruthy();
+     expect(api.calls.filter((c) => c.path === WITHDRAW).map((c) => [c.method, c.body])).toEqual([
+       ['POST', { type: 'health', password: 'cheval agrafe batterie correcte' }],
+     ]);
+     expect((await getMeta(db, 'me'))?.consents.health.active).toBe(false);
++    expect(await witnessStores(db)).toEqual([]);
+     expect(await dumpLocalDb(db)).not.toContain(WITNESS);
++    expect(await db.mirror('health_screening').count()).toBe(0);
++    expect(await db.mirror('limitation').count()).toBe(0);
+     expect(sync.pullCount).toBe(1);
+     fireEvent.click(button('Fermer'));
+     await until(() => screen.queryByRole('dialog') === null);
+     expect(consentValue('Accord santé')).toBe('Non donné');
+     // Le bouton « Retirer mon accord santé » a disparu : le focus va au titre des accords.
+     await until(() => document.activeElement === screen.getByRole('heading', { level: 2, name: 'Accords' }));
+   });
+ 
+   it('401 → « Mot de passe incorrect. », miroir intact', async () => {
+     const api = createFakeApi().on('POST', WITHDRAW, { status: 401, body: { error: 'invalid_credentials' } });
+     const { db } = await renderPrivacy({ api });
+     const dialog = await openWithdraw();
+     fill('Mot de passe', 'mauvais mot de passe');
+     fireEvent.click(dialog.getByRole('button', { name: 'Retirer mon accord' }));
+     expect((await dialog.findByRole('alert')).textContent).toBe('Mot de passe incorrect.');
+-    expect(await dumpLocalDb(db)).toContain(WITNESS);
++    expect(await witnessStores(db)).toEqual(SEEDED_STORES);
+     expect((await getMeta(db, 'me'))?.consents.health.active).toBe(true);
+   });
+ 
++  it('429 rate_limited → attente annoncée en minutes, rien purgé', async () => {
++    const api = createFakeApi().on('POST', WITHDRAW, {
++      status: 429,
++      body: { error: 'rate_limited', retryAfterS: 90 },
++    });
++    const { db } = await renderPrivacy({ api });
++    const dialog = await openWithdraw();
++    fill('Mot de passe', 'cheval agrafe batterie correcte');
++    fireEvent.click(dialog.getByRole('button', { name: 'Retirer mon accord' }));
++    expect((await dialog.findByRole('alert')).textContent).toBe('Trop de tentatives. Réessaie dans 2 min.');
++    expect(await witnessStores(db)).toEqual(SEEDED_STORES);
++  });
++
+   it('hors ligne → « Nécessite le réseau », rien purgé', async () => {
+     const api = createFakeApi();
+     const { db } = await renderPrivacy({ api });
+     const dialog = await openWithdraw();
+     api.setOffline('reject');
+     fill('Mot de passe', 'cheval agrafe batterie correcte');
+     fireEvent.click(dialog.getByRole('button', { name: 'Retirer mon accord' }));
+     expect((await dialog.findByRole('alert')).textContent).toBe('Nécessite le réseau');
+-    expect(await dumpLocalDb(db)).toContain(WITNESS);
++    expect(await witnessStores(db)).toEqual(SEEDED_STORES);
+   });
+ 
+   it('« Annuler » ferme sans requête', async () => {
+     const { api } = await renderPrivacy();
+     const dialog = await openWithdraw();
+     fireEvent.click(dialog.getByRole('button', { name: 'Annuler' }));
+     await until(() => screen.queryByRole('dialog') === null);
+     expect(api.calls.filter((c) => c.path === WITHDRAW)).toHaveLength(0);
+   });
+ });
+ 
+ describe('HealthReconsentGate (R-CST-6, P-CST-1)', () => {
+-  async function renderGate(me: MeResponse, api = createFakeApi(), path = '/') {
++  async function renderGate(me: MeResponse, api = createFakeApi(), path = '/', sync?: FakeSyncEngine) {
+     const db = createTestLocalDb();
+     await seedHealth(db);
+-    return renderApp({ path, me, db, api });
++    return renderApp({ path, me, db, api, sync });
+   }
+ 
++  it("hors ligne à l'ouverture : pas de porte, l'appli reste utilisable ; elle se lève une fois en ligne", async () => {
++    const sync = createFakeSyncEngine({ connection: 'offline' });
++    await renderGate(consented('0.9'), createFakeApi(), '/profile/health', sync);
++    await screen.findByRole('heading', { level: 1, name: 'Santé' });
++    await settle();
++    expect(screen.queryByRole('dialog')).toBeNull();
++    expect(screen.getByRole('button', { name: 'Ajouter une limitation' })).toBeTruthy();
++    act(() => sync.set({ connection: 'unknown' }));
++    await settle();
++    expect(screen.queryByRole('dialog')).toBeNull();
++    act(() => sync.set({ connection: 'online' }));
++    expect(await screen.findByRole('dialog', { name: GATE })).toBeTruthy();
++  });
++
++  it('porte levée puis réseau perdu : elle reste, « Nécessite le réseau » affiché et ses deux boutons désactivés', async () => {
++    const sync = createFakeSyncEngine();
++    await renderGate(consented('0.9'), createFakeApi(), '/', sync);
++    const gate = within(await screen.findByRole('dialog', { name: GATE }));
++    fireEvent.click(gate.getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text }));
++    act(() => sync.set({ connection: 'offline' }));
++    await settle();
++    expect(screen.getByRole('dialog', { name: GATE })).toBeTruthy();
++    expect(gate.getByRole('status').textContent).toBe('Nécessite le réseau');
++    const disabled = () =>
++      gate.getAllByRole('button').map((b) => [b.textContent, (b as HTMLButtonElement).disabled]);
++    expect(disabled()).toEqual([
++      ['Je refuse', true],
++      ["J'accepte", true],
++    ]);
++    act(() => sync.set({ connection: 'online' }));
++    await settle();
++    expect(gate.queryByRole('status')).toBeNull();
++    expect(disabled()).toEqual([
++      ['Je refuse', false],
++      ["J'accepte", false],
++    ]);
++  });
++
++  it("« J'accepte » sans réseau (requête échouée) : « Nécessite le réseau » dans la porte, qui reste, accord inchangé", async () => {
++    const api = createFakeApi().on('POST', '/api/me/consents', { status: 200, body: consented('1.0') });
++    const { db } = await renderGate(consented('0.9'), api);
++    const gate = within(await screen.findByRole('dialog', { name: GATE }));
++    api.setOffline('reject');
++    fireEvent.click(gate.getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text }));
++    fireEvent.click(gate.getByRole('button', { name: "J'accepte" }));
++    expect((await gate.findByRole('alert')).textContent).toBe('Nécessite le réseau');
++    await settle();
++    expect(screen.getByRole('dialog', { name: GATE })).toBeTruthy();
++    expect((await getMeta(db, 'me'))?.consents.health.textVersion).toBe('0.9');
++  });
++
++  it('modale pour de vrai : le reste de la page est inerte et caché tant que la porte est là', async () => {
++    const api = createFakeApi().on('POST', '/api/me/consents', { status: 200, body: consented('1.0') });
++    await renderGate(consented('0.9'), api, '/profile/health');
++    const gate = within(await screen.findByRole('dialog', { name: GATE }));
++    expect(screen.getByText('Ajouter une limitation').closest('[inert]')).not.toBeNull();
++    expect(screen.getByText('Accueil').closest('[inert][aria-hidden="true"]')).not.toBeNull();
++    expect(screen.queryByRole('button', { name: 'Ajouter une limitation' })).toBeNull();
++    expect(screen.queryByRole('button', { name: 'Répondre de nouveau' })).toBeNull();
++    expect(screen.queryByRole('navigation', { name: 'Navigation principale' })).toBeNull();
++    fireEvent.click(gate.getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text }));
++    fireEvent.click(gate.getByRole('button', { name: "J'accepte" }));
++    await until(() => screen.queryByRole('dialog') === null);
++    expect(screen.getByText('Ajouter une limitation').closest('[inert]')).toBeNull();
++    expect(document.querySelector('[inert]')).toBeNull();
++    expect(screen.getByRole('button', { name: 'Ajouter une limitation' })).toBeTruthy();
++    expect(screen.getByRole('navigation', { name: 'Navigation principale' })).toBeTruthy();
++  });
++
+   it("textVersion '0.9' → « Le texte de l'accord santé a changé », texte en vigueur, case décochée, sans fermeture", async () => {
+     await renderGate(consented('0.9'));
+     const gate = await screen.findByRole('dialog', { name: GATE });
+     const box = within(gate).getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text }) as HTMLInputElement;
+     expect(box.checked).toBe(false);
+     expect((within(gate).getByRole('button', { name: "J'accepte" }) as HTMLButtonElement).disabled).toBe(
+       true,
+     );
+     expect(
+       within(gate)
+@@ -231,20 +350,39 @@ describe('HealthReconsentGate (R-CST-6, P-CST-1)', () => {
+     fill('Mot de passe', 'cheval agrafe batterie correcte');
+     fireEvent.click(withdraw.getByRole('button', { name: 'Retirer mon accord' }));
+     expect(await screen.findByText(WITHDRAWN)).toBeTruthy();
+     expect(await dumpLocalDb(db)).not.toContain(WITNESS);
+     fireEvent.click(button('Fermer'));
+     await until(() => screen.queryByRole('dialog') === null);
+     await settle();
+     expect(screen.queryByRole('dialog')).toBeNull();
+   });
+ 
++  it('« Je refuse » sur Santé : la note témoin, visible derrière la porte, disparaît de l’écran et de l’appareil', async () => {
++    const api = createFakeApi().on('POST', WITHDRAW, { status: 200, body: consented(null, false) });
++    const { db } = await renderGate(consented('0.9'), api, '/profile/health');
++    const gate = within(await screen.findByRole('dialog', { name: GATE }));
++    expect(screen.getByText(new RegExp(WITNESS))).toBeTruthy();
++    fireEvent.click(gate.getByRole('button', { name: 'Je refuse' }));
++    const withdraw = within(await screen.findByRole('dialog', { name: "Retirer l'accord santé" }));
++    // Derrière le retrait aussi, la page est inerte.
++    expect(screen.getByText(new RegExp(WITNESS)).closest('[inert]')).not.toBeNull();
++    fill('Mot de passe', 'cheval agrafe batterie correcte');
++    fireEvent.click(withdraw.getByRole('button', { name: 'Retirer mon accord' }));
++    expect(await screen.findByText(WITHDRAWN)).toBeTruthy();
++    expect(screen.queryByText(new RegExp(WITNESS))).toBeNull();
++    expect(await witnessStores(db)).toEqual([]);
++    fireEvent.click(button('Fermer'));
++    await until(() => screen.queryByRole('dialog') === null);
++    expect(screen.queryByText(new RegExp(WITNESS))).toBeNull();
++  });
++
+   it.each([
+     ['1.0', true],
+     ['0.9', false],
+   ] as const)("textVersion '%s', actif %s → aucune porte", async (version, active) => {
+     await renderGate(consented(version, active));
+     await screen.findByRole('heading', { level: 1 });
+     await settle();
+     expect(screen.queryByRole('dialog')).toBeNull();
+   });
+ 
+diff --git a/apps/web/test/status/rejections-settings.test.tsx b/apps/web/test/status/rejections-settings.test.tsx
+index e5eadfe..8b68383 100644
+--- a/apps/web/test/status/rejections-settings.test.tsx
++++ b/apps/web/test/status/rejections-settings.test.tsx
+@@ -4,38 +4,50 @@ import { REJECTION_CODE_LABELS } from '../../src/features/status/RejectionsPage'
+ import type { AppDb, DeadletterEntry } from '../../src/local-db/db';
+ import { setMeta } from '../../src/local-db/meta';
+ import type { SyncEngine } from '../../src/sync/engine';
+ import { createFakeApi } from '../support/fake-api';
+ import { createTestLocalDb } from '../support/local-db';
+ import { renderApp } from '../support/render';
+ import { seedMirror } from '../support/seed';
+ import { until } from '../support/wait';
+ 
+ const AT = '2026-10-06T10:00:00.000Z';
+-const rejection = (id: string, opId: string, code = 'validation') => ({
++const INTRO = "Le serveur a refusé ces modifications : elles n'ont pas été enregistrées.";
++/** Rejet serveur au format de push.ts : `{ kind, fieldNames, reason }`, noms de champs seulement. */
++const rejection = (
++  id: string,
++  opId: string,
++  code = 'validation',
++  o: { entity?: string; kind?: string; fieldNames?: string[] } = {},
++) => ({
+   id,
+   ownerId: 'u-1',
+   opId,
+-  entity: 'place',
++  entity: o.entity ?? 'place',
+   rowId: 'p-1',
+   code,
+-  detailJson: { field: 'name' },
++  detailJson: {
++    kind: o.kind ?? 'patch',
++    fieldNames: o.fieldNames ?? ['name', 'note'],
++    reason: 'sql_constraint',
++  },
+   dismissedAt: null,
+   createdAt: AT,
+ });
+-const dead = (opId: string, code: string): DeadletterEntry => ({
++/** Rejet local au format de push-results.ts : `{ kind, fieldNames }`. */
++const dead = (opId: string, code: string, detail: unknown = null): DeadletterEntry => ({
+   opId,
+   userId: 'u-1',
+   entity: 'place',
+   id: `row-${opId}`,
+   code,
+-  detail: null,
++  detail,
+   receivedAt: '2026-10-06T11:00:00.000Z',
+ });
+ 
+ let engine: SyncEngine | null = null;
+ afterEach(() => {
+   engine?.stop();
+   engine = null;
+ });
+ 
+ /** Écran des refus avec le moteur réel, hors ligne : ses compteurs viennent de la base locale. */
+@@ -73,20 +85,59 @@ describe('RejectionsPage (R-SYN-18)', () => {
+   it('rejet serveur r-1 (validation) et rejet local op-7 (parent_rejected), libellés traduits', async () => {
+     await renderRejections(async (db) => {
+       await seedMirror(db, 'sync_rejection', [rejection('r-1', 'op-1')]);
+       await db.deadletter.put(dead('op-7', 'parent_rejected'));
+     });
+     await screen.findByText('Données invalides');
+     expect(screen.getByText('Élément parent refusé')).toBeTruthy();
+     const list = screen.getByRole('list', { name: 'Éléments refusés' });
+     expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+     expect(within(item('Données invalides')).getByRole('button', { name: 'Ignorer' })).toBeTruthy();
++    expect(screen.getByText(INTRO)).toBeTruthy();
++  });
++
++  it('chaque refus montre son détail : type de donnée, opération et champs (R-SYN-18)', async () => {
++    await renderRejections(async (db) => {
++      await seedMirror(db, 'sync_rejection', [rejection('r-1', 'op-1')]);
++      await db.deadletter.put(dead('op-7', 'parent_rejected', { kind: 'create', fieldNames: ['name'] }));
++      await db.deadletter.put(dead('op-8', 'forbidden'));
++    });
++    await screen.findByText('Données invalides');
++    expect(
++      within(item('Données invalides')).getByText('Lieu · modification · champs : name, note'),
++    ).toBeTruthy();
++    expect(within(item('Élément parent refusé')).getByText('Lieu · création · champ : name')).toBeTruthy();
++    // Détail absent (rejet local ancien) : le type de donnée seul.
++    expect(within(item('Action non autorisée')).getByText('Lieu')).toBeTruthy();
++  });
++
++  it('deux refus de même code : chaque « Ignorer » est décrit par son propre détail', async () => {
++    await renderRejections(async (db) => {
++      await seedMirror(db, 'sync_rejection', [
++        rejection('r-1', 'op-1', 'validation', { entity: 'place', kind: 'create', fieldNames: ['name'] }),
++        rejection('r-2', 'op-2', 'validation', { entity: 'gym', kind: 'patch', fieldNames: ['city'] }),
++        rejection('r-3', 'op-3', 'validation', { entity: 'quota', kind: 'delete', fieldNames: [] }),
++      ]);
++    });
++    await screen.findAllByText('Données invalides');
++    const descriptions = screen.getAllByRole('button', { name: 'Ignorer' }).map((b) =>
++      (b.getAttribute('aria-describedby') ?? '')
++        .split(' ')
++        .map((id) => document.getElementById(id)?.textContent ?? '')
++        .join(' '),
++    );
++    expect(descriptions).toHaveLength(3);
++    expect(descriptions[0]).toMatch(/^Données invalides Lieu · création · champ : name Refusé le /);
++    expect(descriptions[1]).toContain('Salle · modification · champ : city');
++    // Type de donnée inconnu : son nom tel quel.
++    expect(descriptions[2]).toContain('quota · suppression');
++    for (const d of descriptions) expect(d).toContain('Données invalides');
+   });
+ 
+   it("code inconnu : le code lui-même s'affiche", async () => {
+     await renderRejections(async (db) => {
+       await db.deadletter.put(dead('op-9', 'quota_exceeded'));
+     });
+     expect(await screen.findByText('quota_exceeded')).toBeTruthy();
+   });
+ 
+   it("« Ignorer » r-1 → op patch { dismissedAt }, élément retiré, rejected-counter '1'", async () => {
+@@ -118,20 +169,22 @@ describe('RejectionsPage (R-SYN-18)', () => {
+     fireEvent.click(within(item('Élément parent refusé')).getByRole('button', { name: 'Ignorer' }));
+     expect(await screen.findByText('Aucun refus.')).toBeTruthy();
+     expect(await db.outbox.count()).toBe(0);
+     await until(() => counter() === '0');
+   });
+ 
+   it('aucun refus → « Aucun refus. »', async () => {
+     await renderRejections(async () => {});
+     expect(await screen.findByText('Aucun refus.')).toBeTruthy();
+     expect(screen.queryByRole('list', { name: 'Éléments refusés' })).toBeNull();
++    // Rien de refusé : pas de phrase « Le serveur a refusé… » qui contredirait « Aucun refus. ».
++    expect(screen.queryByText(INTRO)).toBeNull();
+   });
+ });
+ 
+ describe('SettingsPage (R-SYN-31)', () => {
+   const ADVICE =
+     "Ton navigateur peut effacer les données de l'appli si l'espace manque. Pense à télécharger tes données régulièrement.";
+ 
+   async function renderSettings(persistGranted?: boolean) {
+     const db = createTestLocalDb();
+     if (persistGranted !== undefined) await setMeta(db, 'persistGranted', persistGranted);

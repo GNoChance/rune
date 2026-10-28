@@ -1,0 +1,1090 @@
+# Review package: dc19662..HEAD
+
+## Commits
+40fdc96 feat(privacy): export appsport-export/1, suppression de compte, isolation admin et purge
+
+## Files changed
+ apps/server/src/admin/routes.ts                  |  27 ++-
+ apps/server/src/auth/me-routes.ts                |  43 +++-
+ apps/server/src/auth/purge.ts                    |  94 +++++++++
+ apps/server/src/jobs/registry.ts                 |   3 +-
+ apps/server/src/privacy/delete-account.ts        |  45 +++++
+ apps/server/src/privacy/export.ts                |  66 +++++++
+ apps/server/test/auth/purge.test.ts              | 107 ++++++++++
+ apps/server/test/privacy/admin-isolation.test.ts | 103 ++++++++++
+ apps/server/test/privacy/delete.test.ts          | 242 +++++++++++++++++++++++
+ apps/server/test/privacy/export.test.ts          | 137 +++++++++++++
+ packages/contracts/src/api/admin.ts              |   7 +
+ packages/contracts/src/api/auth.ts               |   3 +
+ packages/contracts/src/api/export.ts             |  16 ++
+ packages/contracts/src/index.ts                  |   1 +
+ 14 files changed, 888 insertions(+), 6 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/admin/routes.ts b/apps/server/src/admin/routes.ts
+index 6a558f8..681eeba 100644
+--- a/apps/server/src/admin/routes.ts
++++ b/apps/server/src/admin/routes.ts
+@@ -1,20 +1,27 @@
+-import { SetBirthDateRequest, SetRoleRequest, SetStatusRequest } from '@appsport/contracts';
++import {
++  AdminDeleteMemberRequest,
++  SetBirthDateRequest,
++  SetRoleRequest,
++  SetStatusRequest,
++} from '@appsport/contracts';
++import { usernameKey } from '@appsport/domain';
+ import { Hono } from 'hono';
+ import type { AppEnv } from '../app-env';
+ import { verifyUserPassword } from '../auth/me';
+ import { createPasswordReset } from '../auth/password-reset';
+ import { requireAdmin } from '../auth/session';
+ import type { AppDeps } from '../deps';
+ import { validClientIp } from '../http/client-ip';
+ import { httpError } from '../http/errors';
+ import { parseJson } from '../http/validate';
++import { deleteAccount } from '../privacy/delete-account';
+ import { listMembers, revokeMemberSessions, setBirthDate, setRole, setStatus } from './members';
+ import { readOpsStatus } from './ops-status';
+ 
+ export function adminRoutes(deps: AppDeps): Hono<AppEnv> {
+   const routes = new Hono<AppEnv>();
+   routes.use('*', requireAdmin);
+ 
+   routes.get('/members', async (c) => c.json(await listMembers(deps.db, deps)));
+ 
+   routes.get('/ops-status', async (c) =>
+@@ -59,12 +66,30 @@ export function adminRoutes(deps: AppDeps): Hono<AppEnv> {
+   });
+ 
+   routes.post('/members/:id/birth-date', async (c) => {
+     const { actor } = actorOf(c);
+     const body = await parseJson(c, SetBirthDateRequest);
+     const id = c.req.param('id');
+     await deps.db.transaction().execute((trx) => setBirthDate(trx, deps, actor, id, body.birthDate));
+     return c.body(null, 204);
+   });
+ 
++  routes.post('/members/:id/delete', async (c) => {
++    const { admin, actor } = actorOf(c);
++    const body = await parseJson(c, AdminDeleteMemberRequest);
++    const id = c.req.param('id');
++    await verifyUserPassword(deps.db, deps, admin, body.password, actor.ip);
++    await deps.db.transaction().execute(async (trx) => {
++      const target = await trx
++        .selectFrom('user')
++        .select('usernameKey')
++        .where('id', '=', id)
++        .executeTakeFirst();
++      if (!target) throw httpError('not_found');
++      if (usernameKey(body.confirmUsername) !== target.usernameKey) throw httpError('validation');
++      await deleteAccount(trx, deps, id, actor);
++    });
++    return c.body(null, 204);
++  });
++
+   return routes;
+ }
+diff --git a/apps/server/src/auth/me-routes.ts b/apps/server/src/auth/me-routes.ts
+index 35ba336..89a407a 100644
+--- a/apps/server/src/auth/me-routes.ts
++++ b/apps/server/src/auth/me-routes.ts
+@@ -1,22 +1,24 @@
+-import { UpdateMeRequest } from '@appsport/contracts';
+-import { usernameKey, validateUsername } from '@appsport/domain';
++import { DeleteAccountRequest, UpdateMeRequest } from '@appsport/contracts';
++import { parisDate, usernameKey, validateUsername } from '@appsport/domain';
+ import { Hono } from 'hono';
+ import type { AppEnv } from '../app-env';
+ import { writeStamp } from '../db/rev';
+ import type { AppDeps } from '../deps';
+ import { validClientIp } from '../http/client-ip';
+ import { httpError } from '../http/errors';
+ import { parseJson } from '../http/validate';
+-import { buildMe } from './me';
++import { deleteAccount } from '../privacy/delete-account';
++import { buildExport } from '../privacy/export';
++import { buildMe, verifyUserPassword } from './me';
+ import { logSecurityEvent } from './security-log';
+-import { requireUser } from './session';
++import { clearSessionCookie, requireUser } from './session';
+ 
+ const isUsernameConflict = (error: unknown): boolean =>
+   error instanceof Error && /UNIQUE constraint failed: user\.username_key/.test(error.message);
+ 
+ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
+   const routes = new Hono<AppEnv>();
+   routes.use('*', requireUser);
+ 
+   routes.get('/', async (c) => {
+     const user = c.get('user');
+@@ -54,12 +56,45 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
+           ip: validClientIp(c),
+           outcome: 'success',
+         });
+       });
+     } catch (error) {
+       throw isUsernameConflict(error) ? httpError('username_taken') : error;
+     }
+     return c.json(await buildMe(deps.db, deps, user.id, { mustChangePassword: user.mustChangePassword }));
+   });
+ 
++  routes.get('/export', async (c) => {
++    const user = c.get('user');
++    if (!user) throw httpError('unauthenticated');
++    const exported = await deps.db.transaction().execute(async (trx) => {
++      const data = await buildExport(trx, deps, user.id);
++      await logSecurityEvent(trx, deps, {
++        type: 'data_exported',
++        actorId: user.id,
++        targetId: user.id,
++        ip: validClientIp(c),
++        outcome: 'success',
++      });
++      return data;
++    });
++    c.header(
++      'Content-Disposition',
++      `attachment; filename="appsport-export-${parisDate(deps.clock.now())}.json"`,
++    );
++    c.header('Cache-Control', 'no-store');
++    return c.json(exported);
++  });
++
++  routes.post('/delete', async (c) => {
++    const user = c.get('user');
++    if (!user) throw httpError('unauthenticated');
++    const body = await parseJson(c, DeleteAccountRequest);
++    const ip = validClientIp(c);
++    await verifyUserPassword(deps.db, deps, user, body.password, ip);
++    await deps.db.transaction().execute((trx) => deleteAccount(trx, deps, user.id, { actorId: user.id, ip }));
++    clearSessionCookie(c, deps);
++    return c.body(null, 204);
++  });
++
+   return routes;
+ }
+diff --git a/apps/server/src/auth/purge.ts b/apps/server/src/auth/purge.ts
+new file mode 100644
+index 0000000..db18853
+--- /dev/null
++++ b/apps/server/src/auth/purge.ts
+@@ -0,0 +1,94 @@
++import {
++  CLOSED_AUTH_RECORD_RETENTION_DAYS,
++  SECURITY_EVENT_RETENTION_MONTHS,
++  SESSION_IDLE_DAYS,
++} from '@appsport/contracts';
++import type { DailyJob } from '../jobs/scheduler';
++
++const DAY_MS = 86_400_000;
++
++/** Retire des mois calendaires en UTC ; le jour est ramené à la fin du mois cible si besoin. */
++function subtractMonths(date: Date, months: number): Date {
++  const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - months, 1));
++  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
++  target.setUTCDate(Math.min(date.getUTCDate(), lastDay));
++  target.setUTCHours(
++    date.getUTCHours(),
++    date.getUTCMinutes(),
++    date.getUTCSeconds(),
++    date.getUTCMilliseconds(),
++  );
++  return target;
++}
++
++const affected = (r: { numDeletedRows?: bigint; numUpdatedRows?: bigint }): number =>
++  Number(r.numDeletedRows ?? r.numUpdatedRows ?? 0n);
++
++/**
++ * Purge quotidienne des enregistrements d'authentification clos (03 §7). Avec R = 30 jours :
++ * sessions `account_deleted` à l'expiration ; autres sessions à min(révocation, dernière vue + 90 j,
++ * expiration) + R ; invitations : date de naissance effacée à l'expiration, ligne à
++ * COALESCE(usage, révocation, expiration) + R ; réinitialisations idem ; journal à 12 mois.
++ * Les dates sont des ISO UTC à la milliseconde : la comparaison de chaînes est chronologique.
++ */
++export const authPurgeJob: DailyJob = {
++  name: 'auth-purge',
++  async run(deps) {
++    const now = deps.clock.now();
++    const nowIso = now.toISOString();
++    const closedBefore = new Date(now.getTime() - CLOSED_AUTH_RECORD_RETENTION_DAYS * DAY_MS).toISOString();
++    const idleBefore = new Date(
++      now.getTime() - (SESSION_IDLE_DAYS + CLOSED_AUTH_RECORD_RETENTION_DAYS) * DAY_MS,
++    ).toISOString();
++    const eventsBefore = subtractMonths(now, SECURITY_EVENT_RETENTION_MONTHS).toISOString();
++
++    const count = await deps.db.transaction().execute(async (trx) => {
++      let total = 0;
++      total += affected(
++        await trx
++          .deleteFrom('session')
++          .where((eb) =>
++            eb.or([
++              eb.and([eb('revokedReason', '=', 'account_deleted'), eb('expiresAt', '<=', nowIso)]),
++              eb.and([
++                eb.or([eb('revokedReason', 'is', null), eb('revokedReason', '!=', 'account_deleted')]),
++                eb.or([
++                  eb('revokedAt', '<=', closedBefore),
++                  eb('lastSeenAt', '<=', idleBefore),
++                  eb('expiresAt', '<=', closedBefore),
++                ]),
++              ]),
++            ]),
++          )
++          .executeTakeFirst(),
++      );
++      total += affected(
++        await trx
++          .updateTable('invitation')
++          .set({ birthDate: null })
++          .where('birthDate', 'is not', null)
++          .where('usedAt', 'is', null)
++          .where('revokedAt', 'is', null)
++          .where('expiresAt', '<=', nowIso)
++          .executeTakeFirst(),
++      );
++      total += affected(
++        await trx
++          .deleteFrom('invitation')
++          .where((eb) => eb(eb.fn.coalesce('usedAt', 'revokedAt', 'expiresAt'), '<=', closedBefore))
++          .executeTakeFirst(),
++      );
++      total += affected(
++        await trx
++          .deleteFrom('passwordReset')
++          .where((eb) => eb(eb.fn.coalesce('usedAt', 'cancelledAt', 'expiresAt'), '<=', closedBefore))
++          .executeTakeFirst(),
++      );
++      total += affected(
++        await trx.deleteFrom('securityEvent').where('at', '<', eventsBefore).executeTakeFirst(),
++      );
++      return total;
++    });
++    deps.logger.info('auth purge', { job: 'auth-purge', count });
++  },
++};
+diff --git a/apps/server/src/jobs/registry.ts b/apps/server/src/jobs/registry.ts
+index c713d29..183bd47 100644
+--- a/apps/server/src/jobs/registry.ts
++++ b/apps/server/src/jobs/registry.ts
+@@ -1,4 +1,5 @@
++import { authPurgeJob } from '../auth/purge';
+ import type { DailyJob } from './scheduler';
+ 
+ /** Jobs quotidiens ; les jobs des tâches suivantes s'ajoutent ici. */
+-export const DAILY_JOBS: DailyJob[] = [];
++export const DAILY_JOBS: DailyJob[] = [authPurgeJob];
+diff --git a/apps/server/src/privacy/delete-account.ts b/apps/server/src/privacy/delete-account.ts
+new file mode 100644
+index 0000000..fe4264f
+--- /dev/null
++++ b/apps/server/src/privacy/delete-account.ts
+@@ -0,0 +1,45 @@
++import type { Transaction } from 'kysely';
++import { assertNotLastAdmin } from '../admin/members';
++import { logSecurityEvent } from '../auth/security-log';
++import type { Database } from '../db/schema';
++import type { AppDeps } from '../deps';
++import { httpError } from '../http/errors';
++
++/**
++ * Supprime le compte dans la transaction reçue (R-SUP-1 à R-SUP-6). Les sessions sont anonymisées
++ * (410 pour leurs porteurs, puis purge) ; `gym_history` perd son auteur ; les clés étrangères
++ * suppriment ou détachent le reste. `security_event` n'est jamais modifié.
++ * `enforceLastAdmin: false` : réapplication des suppressions (privacy:reapply), où le dernier admin
++ * peut avoir été supprimé après la sauvegarde.
++ */
++export async function deleteAccount(
++  trx: Transaction<Database>,
++  deps: AppDeps,
++  userId: string,
++  actor: { actorId: string | null; ip: string | null },
++  opts: { enforceLastAdmin?: boolean } = {},
++): Promise<void> {
++  const user = await trx.selectFrom('user').select('id').where('id', '=', userId).executeTakeFirst();
++  if (!user) throw httpError('not_found');
++  if (opts.enforceLastAdmin !== false) await assertNotLastAdmin(trx, userId);
++
++  const now = deps.clock.now().toISOString();
++  await trx
++    .updateTable('session')
++    .set((eb) => ({
++      userId: null,
++      revokedReason: 'account_deleted',
++      revokedAt: eb.fn.coalesce('revokedAt', eb.val(now)),
++    }))
++    .where('userId', '=', userId)
++    .execute();
++  await trx.updateTable('gymHistory').set({ authorId: null }).where('authorId', '=', userId).execute();
++  await trx.deleteFrom('user').where('id', '=', userId).execute();
++  await logSecurityEvent(trx, deps, {
++    type: 'account_deleted',
++    actorId: actor.actorId,
++    targetId: userId,
++    ip: actor.ip,
++    outcome: 'success',
++  });
++}
+diff --git a/apps/server/src/privacy/export.ts b/apps/server/src/privacy/export.ts
+new file mode 100644
+index 0000000..2e00177
+--- /dev/null
++++ b/apps/server/src/privacy/export.ts
+@@ -0,0 +1,66 @@
++import { type EntityRule, EXPORT_FORMAT, type ExportV1, rowToCamel } from '@appsport/contracts';
++import { type RawBuilder, sql } from 'kysely';
++import type { DbExecutor } from '../db/schema';
++import type { AppDeps } from '../deps';
++import { httpError } from '../http/errors';
++
++type Row = Record<string, unknown>;
++
++/** Colonnes exportables : celles du registre, hors colonnes secrètes. */
++const publicColumns = (rule: EntityRule): string[] =>
++  rule.columns.filter((c) => !rule.secretColumns.includes(c));
++
++async function select(
++  db: DbExecutor,
++  table: string,
++  rule: EntityRule,
++  where: RawBuilder<unknown>,
++): Promise<Row[]> {
++  const columns = sql.join(publicColumns(rule).map((c) => sql.ref(c)));
++  const result =
++    await sql<Row>`select ${columns} from ${sql.table(table)} where ${where} order by rowid`.execute(db);
++  return result.rows.map((r) => rowToCamel(r));
++}
++
++/**
++ * Export `appsport-export/1` (R-EXP-1) : le compte, puis chaque table `exported` du registre dont la
++ * colonne propriétaire est `owner_id` ou `user_id`, sans colonne secrète ; les sessions n'en font
++ * pas partie (R-EXP-2). Les salles sont celles d'un lieu de l'utilisateur (supprimé compris), créées
++ * par lui ou dont il a écrit l'historique.
++ */
++export async function buildExport(db: DbExecutor, deps: AppDeps, userId: string): Promise<ExportV1> {
++  const rules = deps.entityRules;
++  const userRule = rules.user;
++  const gymRule = rules.gym;
++  const historyRule = rules.gym_history;
++  if (!userRule || !gymRule || !historyRule) throw new Error('Registre entityRules incomplet.');
++
++  const [account] = await select(db, 'user', userRule, sql`id = ${userId}`);
++  if (!account) throw httpError('not_found');
++
++  const tables: Record<string, Row[]> = {};
++  for (const [table, rule] of Object.entries(rules)) {
++    if (!rule.exported || table === 'user') continue;
++    if (rule.ownerColumn !== 'owner_id' && rule.ownerColumn !== 'user_id') continue;
++    tables[table] = await select(db, table, rule, sql`${sql.ref(rule.ownerColumn)} = ${userId}`);
++  }
++
++  const gyms = await select(
++    db,
++    'gym',
++    gymRule,
++    sql`id in (select gym_id from place where owner_id = ${userId} and gym_id is not null)
++      or created_by = ${userId}
++      or id in (select gym_id from gym_history where author_id = ${userId})`,
++  );
++  const gymHistory = await select(db, 'gym_history', historyRule, sql`author_id = ${userId}`);
++
++  return {
++    format: EXPORT_FORMAT,
++    exportedAt: deps.clock.now().toISOString(),
++    account,
++    tables,
++    gyms,
++    gymHistory,
++  };
++}
+diff --git a/apps/server/test/auth/purge.test.ts b/apps/server/test/auth/purge.test.ts
+new file mode 100644
+index 0000000..c5c0501
+--- /dev/null
++++ b/apps/server/test/auth/purge.test.ts
+@@ -0,0 +1,107 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { authPurgeJob } from '../../src/auth/purge';
++import { DAILY_JOBS } from '../../src/jobs/registry';
++import { createLogger } from '../../src/logger';
++import { createTestContext, insertFixtureRow, type TestContext } from '../support';
++
++const NOW = '2026-10-06T10:00:00.000Z';
++const LIM = '2026-09-06T10:00:00.000Z';
++const LIM1 = '2026-09-06T10:00:00.001Z';
++const FAR = '2027-10-06T10:00:00.000Z';
++
++let ctx: TestContext;
++afterEach(() => ctx?.close());
++
++const ids = async (table: 'session' | 'invitation' | 'passwordReset'): Promise<string[]> =>
++  (await ctx.deps.db.selectFrom(table).select('id').execute()).map((r) => r.id).sort();
++
++describe('authPurgeJob (03 §7)', () => {
++  it('est enregistré dans DAILY_JOBS sous le nom auth-purge', () => {
++    expect(DAILY_JOBS).toContain(authPurgeJob);
++    expect(authPurgeJob.name).toBe('auth-purge');
++  });
++
++  it('sessions : bornes exactes', async () => {
++    ctx = await createTestContext();
++    const { db } = ctx.deps;
++    const u = await insertFixtureRow(db, 'user');
++    const mk = async (v: Record<string, unknown>) =>
++      (await insertFixtureRow(db, 'session', { userId: u.id, expiresAt: FAR, ...v })).id as string;
++    await mk({ revokedAt: LIM, revokedReason: 'logout' }); // purgée
++    const revokedLim1 = await mk({ revokedAt: LIM1, revokedReason: 'logout' });
++    await mk({ lastSeenAt: '2026-06-07T10:00:00.000Z' }); // inactive depuis plus de 120 jours : purgée
++    const idleKept = await mk({ lastSeenAt: '2026-06-08T10:00:00.001Z' });
++    const active = await mk({});
++    await mk({ expiresAt: LIM }); // purgée
++    const expiredKept = await mk({ expiresAt: LIM1 });
++    const delKept = await mk({
++      userId: null,
++      revokedAt: '2026-01-01T00:00:00.000Z',
++      revokedReason: 'account_deleted',
++      expiresAt: '2026-10-06T10:00:00.001Z',
++    });
++    await mk({
++      userId: null,
++      revokedAt: '2026-10-01T00:00:00.000Z',
++      revokedReason: 'account_deleted',
++      expiresAt: NOW,
++    });
++    await authPurgeJob.run(ctx.deps);
++    expect(await ids('session')).toEqual([revokedLim1, idleKept, active, expiredKept, delKept].sort());
++  });
++
++  it("invitations : date de naissance effacée à l'expiration, suppression 30 jours après", async () => {
++    ctx = await createTestContext();
++    const { db } = ctx.deps;
++    const mk = async (v: Record<string, unknown>) =>
++      (await insertFixtureRow(db, 'invitation', { birthDate: '2010-01-01', expiresAt: FAR, ...v }))
++        .id as string;
++    const expired = await mk({ expiresAt: '2026-10-06T09:00:00.000Z' });
++    const pending = await mk({});
++    await mk({ usedAt: LIM }); // purgée
++    const usedLim1 = await mk({ usedAt: LIM1 });
++    await mk({ revokedAt: '2026-09-01T10:00:00.000Z' }); // purgée
++    await authPurgeJob.run(ctx.deps);
++    expect(await ids('invitation')).toEqual([expired, pending, usedLim1].sort());
++    const rows = await db.selectFrom('invitation').select(['id', 'birthDate']).execute();
++    const birth = Object.fromEntries(rows.map((r) => [r.id, r.birthDate]));
++    expect(birth[expired]).toBeNull();
++    expect(birth[pending]).toBe('2010-01-01');
++    expect(birth[usedLim1]).toBe('2010-01-01');
++  });
++
++  it('réinitialisations : bornes exactes', async () => {
++    ctx = await createTestContext();
++    const { db } = ctx.deps;
++    const u = await insertFixtureRow(db, 'user');
++    const mk = async (v: Record<string, unknown>) =>
++      (await insertFixtureRow(db, 'password_reset', { userId: u.id, expiresAt: FAR, ...v })).id as string;
++    await mk({ usedAt: LIM }); // purgé
++    const cancelled = await mk({ cancelledAt: LIM1 });
++    await mk({ expiresAt: '2026-09-05T10:00:00.000Z' }); // purgé
++    const pending = await mk({});
++    await authPurgeJob.run(ctx.deps);
++    expect(await ids('passwordReset')).toEqual([cancelled, pending].sort());
++  });
++
++  it('journal de sécurité : 12 mois calendaires', async () => {
++    ctx = await createTestContext();
++    const { db } = ctx.deps;
++    await insertFixtureRow(db, 'security_event', { at: '2025-10-06T09:59:59.999Z' });
++    const edge = await insertFixtureRow(db, 'security_event', { at: '2025-10-06T10:00:00.000Z' });
++    await authPurgeJob.run(ctx.deps);
++    const left = (await db.selectFrom('securityEvent').select('id').execute()).map((r) => r.id);
++    expect(left).toEqual([edge.id]);
++  });
++
++  it('journalise le nombre de lignes traitées', async () => {
++    const lines: string[] = [];
++    ctx = await createTestContext({ deps: { logger: createLogger((l) => lines.push(l)) } });
++    const u = await insertFixtureRow(ctx.deps.db, 'user');
++    await insertFixtureRow(ctx.deps.db, 'password_reset', { userId: u.id, usedAt: LIM });
++    await authPurgeJob.run(ctx.deps);
++    const line = lines.find((l) => l.includes('auth purge'));
++    expect(line).toBeDefined();
++    expect(JSON.parse(line as string)).toMatchObject({ job: 'auth-purge', count: 1 });
++  });
++});
+diff --git a/apps/server/test/privacy/admin-isolation.test.ts b/apps/server/test/privacy/admin-isolation.test.ts
+new file mode 100644
+index 0000000..bd01cf5
+--- /dev/null
++++ b/apps/server/test/privacy/admin-isolation.test.ts
+@@ -0,0 +1,103 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { createTestContext, createUser, insertFixtureRow, login, type TestContext } from '../support';
++
++// Planchers du nombre de routes énumérées : T18 monte MIN_ID_ROUTES à 4, T19 à 6.
++const MIN_ADMIN_ROUTES = 10;
++const MIN_ID_ROUTES = 0;
++
++let ctx: TestContext;
++afterEach(() => ctx?.close());
++
++const WITNESSES = ['TEMOIN_TP', 'TEMOIN_HS', 'TEMOIN_LIM'];
++
++interface Route {
++  method: string;
++  path: string;
++}
++
++function listRoutes(): Route[] {
++  const seen = new Set<string>();
++  const out: Route[] = [];
++  for (const r of ctx.app.routes) {
++    if (r.method === 'ALL') continue;
++    const key = `${r.method} ${r.path}`;
++    if (seen.has(key)) continue;
++    seen.add(key);
++    out.push({ method: r.method, path: r.path });
++  }
++  return out;
++}
++
++/** `:id` reçoit l'identifiant donné, tout autre paramètre reçoit « x ». */
++const fill = (path: string, id: string): string =>
++  path.replace(/:([A-Za-z]+)(\{[^}]*\})?/g, (_m, name: string) => (name === 'id' ? id : 'x'));
++
++async function setup() {
++  ctx = await createTestContext();
++  const { db } = ctx.deps;
++  const admin = await createUser(ctx, { username: 'porteur', role: 'admin', password: 'quatorze carac' });
++  const b = await createUser(ctx, { username: 'brigitte' });
++  const cookie = await login(ctx, 'porteur', admin.password);
++  // consentement santé actif de l'admin : la garde C2 ne doit pas masquer le contrôle du propriétaire
++  await insertFixtureRow(db, 'consent_event', { ownerId: admin.id, type: 'health', action: 'grant' });
++  await insertFixtureRow(db, 'consent_event', { ownerId: b.id, type: 'health', action: 'grant' });
++
++  const rowIds: string[] = [];
++  const keep = (row: Record<string, unknown>) => {
++    rowIds.push(row.id as string);
++    return row;
++  };
++  keep(await insertFixtureRow(db, 'training_profile', { ownerId: b.id, sportOtherLabel: WITNESSES[0] }));
++  keep(await insertFixtureRow(db, 'health_screening', { ownerId: b.id, questionnaireVersion: WITNESSES[1] }));
++  keep(await insertFixtureRow(db, 'limitation', { ownerId: b.id, note: WITNESSES[2] }));
++  keep(await insertFixtureRow(db, 'sync_rejection', { ownerId: b.id }));
++  const place = keep(await insertFixtureRow(db, 'place', { ownerId: b.id }));
++  keep(await insertFixtureRow(db, 'home_equipment', { ownerId: b.id, placeId: place.id }));
++  return { admin, b, cookie, rowIds };
++}
++
++describe("isolation de l'administrateur (P-ADM-1, P-ADM-2, 02 §15 n°14)", () => {
++  it("les routes /api/admin/* ne renvoient aucune donnée C1 à C3 d'un membre", async () => {
++    const { b, cookie } = await setup();
++    const admin = listRoutes().filter(
++      (r) => r.path.startsWith('/api/admin/') && !r.path.endsWith('/members/:id/delete'),
++    );
++    expect(admin.length).toBeGreaterThanOrEqual(MIN_ADMIN_ROUTES);
++    for (const r of admin) {
++      const res = await ctx.request(fill(r.path, b.id), {
++        method: r.method,
++        cookie,
++        ...(r.method === 'GET' ? {} : { json: {} }),
++      });
++      const body = await res.text();
++      for (const w of WITNESSES) expect(body, `${r.method} ${r.path}`).not.toContain(w);
++    }
++  });
++
++  it("chaque route à :id sous /api/me et /api/places répond 404 pour les lignes d'un autre membre", async () => {
++    const { rowIds, cookie } = await setup();
++    const owned = listRoutes().filter((r) => /^\/api\/(me|places)\//.test(r.path) && r.path.includes(':id'));
++    expect(owned.length).toBeGreaterThanOrEqual(MIN_ID_ROUTES);
++    for (const r of owned) {
++      for (const id of rowIds) {
++        const res = await ctx.request(fill(r.path, id), {
++          method: r.method,
++          cookie,
++          ...(r.method === 'GET' ? {} : { json: {} }),
++        });
++        expect(res.status, `${r.method} ${r.path} ${id}`).toBe(404);
++        expect(await res.json()).toEqual({ error: 'not_found' });
++      }
++    }
++  });
++
++  it.runIf(MIN_ID_ROUTES === 0)(
++    "cas vide explicite : aucune route /api/(me|places) à :id n'existe encore (le plancher monte avec T18 et T19)",
++    async () => {
++      await setup();
++      expect(
++        listRoutes().filter((r) => /^\/api\/(me|places)\//.test(r.path) && r.path.includes(':id')),
++      ).toEqual([]);
++    },
++  );
++});
+diff --git a/apps/server/test/privacy/delete.test.ts b/apps/server/test/privacy/delete.test.ts
+new file mode 100644
+index 0000000..2478fd4
+--- /dev/null
++++ b/apps/server/test/privacy/delete.test.ts
+@@ -0,0 +1,242 @@
++import { entityRules } from '@appsport/contracts';
++import { afterEach, describe, expect, it } from 'vitest';
++import { deleteAccount } from '../../src/privacy/delete-account';
++import { createTestContext, createUser, insertFixtureRow, login, type TestContext } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx?.close());
++
++const WRONG = 'faux faux faux faux';
++const IP = '100.64.0.1';
++const del = (cookie: string, json: unknown) =>
++  ctx.request('/api/me/delete', { method: 'POST', cookie, json, ip: IP });
++const adminDel = (cookie: string, id: string, json: unknown) =>
++  ctx.request(`/api/admin/members/${id}/delete`, { method: 'POST', cookie, json, ip: IP });
++const userExists = async (id: string) =>
++  (await ctx.deps.db.selectFrom('user').select('id').where('id', '=', id).executeTakeFirst()) !== undefined;
++const events = (type: string) =>
++  ctx.deps.db.selectFrom('securityEvent').selectAll().where('type', '=', type).execute();
++
++/** Une ligne dans chaque table liée du registre, plus gym, gym_equipment, gym_history et invitation.used_by. */
++async function plant(userId: string): Promise<void> {
++  const { db } = ctx.deps;
++  for (const [table, rule] of Object.entries(entityRules)) {
++    if (table === 'user' || table === 'session' || rule.onUserDelete !== 'cascade') continue;
++    if (rule.ownerColumn !== 'owner_id' && rule.ownerColumn !== 'user_id') continue;
++    await insertFixtureRow(db, table, {
++      [rule.ownerColumn === 'owner_id' ? 'ownerId' : 'userId']: userId,
++      ...(rule.columns.includes('updated_by') ? { updatedBy: userId } : {}),
++    });
++  }
++  const gym = await insertFixtureRow(db, 'gym', { createdBy: userId, updatedBy: userId });
++  await insertFixtureRow(db, 'gym_equipment', { gymId: gym.id, addedBy: userId });
++  await insertFixtureRow(db, 'gym_history', { gymId: gym.id, authorId: userId });
++  await insertFixtureRow(db, 'invitation', { usedBy: userId, createdBy: userId });
++}
++
++/** Nombre de cellules (hors security_event) qui contiennent l'identifiant. */
++async function occurrences(id: string): Promise<string[]> {
++  const { sqlite } = ctx.deps;
++  const tables = sqlite
++    .prepare("select name from sqlite_schema where type = 'table' and name not like 'sqlite_%'")
++    .all() as { name: string }[];
++  const found: string[] = [];
++  for (const { name } of tables) {
++    if (name === 'security_event') continue;
++    const cols = sqlite.prepare(`select name from pragma_table_info('${name}')`).all() as { name: string }[];
++    for (const { name: col } of cols) {
++      const row = sqlite
++        .prepare(`select count(*) as n from "${name}" where cast("${col}" as text) like ?`)
++        .get(`%${id}%`) as { n: number };
++      if (row.n > 0) found.push(`${name}.${col}`);
++    }
++  }
++  return found;
++}
++
++async function setup() {
++  ctx = await createTestContext();
++  const admin = await createUser(ctx, { username: 'porteur', role: 'admin', password: 'quatorze carac' });
++  const lea = await createUser(ctx, { username: 'Léa' });
++  return { admin, lea };
++}
++
++describe('POST /api/me/delete (R-SUP-1 à R-SUP-6, P-DRT-3)', () => {
++  it('mot de passe faux : invalid_credentials et compte intact', async () => {
++    const { lea } = await setup();
++    const cookie = await login(ctx, 'Léa', lea.password);
++    const res = await del(cookie, { password: WRONG });
++    expect(res.status).toBe(401);
++    expect(await res.json()).toEqual({ error: 'invalid_credentials' });
++    expect(await userExists(lea.id)).toBe(true);
++  });
++
++  it('5 faux puis le bon : 429 rate_limited, compte intact (P-AUT-5)', async () => {
++    const { lea } = await setup();
++    const cookie = await login(ctx, 'Léa', lea.password);
++    for (let i = 0; i < 5; i += 1) expect((await del(cookie, { password: WRONG })).status).toBe(401);
++    const res = await del(cookie, { password: lea.password });
++    expect(res.status).toBe(429);
++    expect(await res.json()).toMatchObject({ error: 'rate_limited' });
++    expect(await userExists(lea.id)).toBe(true);
++  });
++
++  it('supprime le compte, toutes ses données et ne laisse aucune trace de son identifiant', async () => {
++    const { lea } = await setup();
++    const cookie = await login(ctx, 'Léa', lea.password);
++    const other = await login(ctx, 'Léa', lea.password);
++    await plant(lea.id);
++    const gymsBefore = await ctx.deps.db.selectFrom('gym').select('id').execute();
++    await ctx.deps.db
++      .insertInto('securityEvent')
++      .values({
++        id: 'ev-before',
++        at: '2026-10-05T10:00:00.000Z',
++        type: 'login_succeeded',
++        actorId: lea.id,
++        targetId: lea.id,
++        outcome: 'success',
++      })
++      .execute();
++
++    const res = await del(cookie, { password: lea.password });
++    expect(res.status).toBe(204);
++    expect(res.headers.get('set-cookie')).toMatch(/Max-Age=0/i);
++
++    expect(await userExists(lea.id)).toBe(false);
++    expect(await occurrences(lea.id)).toEqual([]);
++    const fks = ctx.deps.sqlite
++      .prepare(
++        `select m.name as tbl, f."on_delete" as onDelete from sqlite_schema m, pragma_foreign_key_list(m.name) f
++         where m.type = 'table' and f."table" = 'user'`,
++      )
++      .all() as { tbl: string; onDelete: string }[];
++    expect(fks.length).toBeGreaterThan(0);
++    for (const fk of fks) expect(['CASCADE', 'SET NULL']).toContain(fk.onDelete);
++
++    const sessions = await ctx.deps.db.selectFrom('session').selectAll().execute();
++    expect(sessions).toHaveLength(2);
++    for (const s of sessions) {
++      expect(s).toMatchObject({ revokedReason: 'account_deleted', userId: null });
++      expect(s.revokedAt).not.toBeNull();
++    }
++    expect((await ctx.deps.db.selectFrom('gym').select('id').execute()).length).toBe(gymsBefore.length);
++    const history = await ctx.deps.db.selectFrom('gymHistory').selectAll().execute();
++    expect(history).toHaveLength(1);
++    expect(history[0]?.authorId).toBeNull();
++
++    const [event, ...rest] = await events('account_deleted');
++    expect(rest).toEqual([]);
++    expect(event).toMatchObject({ actorId: lea.id, targetId: lea.id, details: null, outcome: 'success' });
++    // le journal garde ses lignes antérieures
++    expect((await events('login_succeeded')).filter((e) => e.id === 'ev-before')).toHaveLength(1);
++
++    const gone = await ctx.request('/api/me', { cookie: other });
++    expect(gone.status).toBe(410);
++    expect(await gone.json()).toEqual({ error: 'account_deleted' });
++  });
++
++  it('la seule table anonymisée du registre est `session`', () => {
++    expect(
++      Object.entries(entityRules)
++        .filter(([, r]) => r.onUserDelete === 'anonymize')
++        .map(([t]) => t),
++    ).toEqual(['session']);
++  });
++});
++
++describe('POST /api/admin/members/:id/delete (R-SUP-2)', () => {
++  it("mot de passe de l'admin faux : 401 invalid_credentials, compte intact", async () => {
++    const { admin, lea } = await setup();
++    const cookie = await login(ctx, 'porteur', admin.password);
++    const res = await adminDel(cookie, lea.id, { confirmUsername: 'Léa', password: WRONG });
++    expect(res.status).toBe(401);
++    expect(await res.json()).toEqual({ error: 'invalid_credentials' });
++    expect(await userExists(lea.id)).toBe(true);
++  });
++
++  it('pseudo de confirmation différent : validation, compte intact', async () => {
++    const { admin, lea } = await setup();
++    const cookie = await login(ctx, 'porteur', admin.password);
++    const res = await adminDel(cookie, lea.id, { confirmUsername: 'leo', password: admin.password });
++    expect(res.status).toBe(400);
++    expect(await res.json()).toMatchObject({ error: 'validation' });
++    expect(await userExists(lea.id)).toBe(true);
++  });
++
++  it('confirmation insensible à la casse et aux accents composés : « LÉA » pour « Léa »', async () => {
++    const { admin, lea } = await setup();
++    const cookie = await login(ctx, 'porteur', admin.password);
++    await plant(lea.id);
++    const res = await adminDel(cookie, lea.id, { confirmUsername: 'LÉA', password: admin.password });
++    expect(res.status).toBe(204);
++    expect(await userExists(lea.id)).toBe(false);
++    expect(await occurrences(lea.id)).toEqual([]);
++    expect(await events('account_deleted')).toMatchObject([
++      { actorId: admin.id, targetId: lea.id, details: null },
++    ]);
++  });
++
++  it('membre inconnu : 404 not_found', async () => {
++    const { admin } = await setup();
++    const cookie = await login(ctx, 'porteur', admin.password);
++    const res = await adminDel(cookie, '0190a000-0000-7000-8000-000000000000', {
++      confirmUsername: 'x',
++      password: admin.password,
++    });
++    expect(res.status).toBe(404);
++  });
++
++  it('refusée à un membre', async () => {
++    const { lea } = await setup();
++    const cookie = await login(ctx, 'Léa', lea.password);
++    const res = await adminDel(cookie, lea.id, { confirmUsername: 'Léa', password: lea.password });
++    expect(res.status).toBe(403);
++  });
++});
++
++describe('dernier administrateur (R-SUP-4)', () => {
++  it('refusé : 409 last_admin par les deux routes, compte intact', async () => {
++    ctx = await createTestContext();
++    const admin = await createUser(ctx, { username: 'porteur', role: 'admin', password: 'quatorze carac' });
++    const cookie = await login(ctx, 'porteur', admin.password);
++    const self = await del(cookie, { password: admin.password });
++    expect(self.status).toBe(409);
++    expect(await self.json()).toMatchObject({ error: 'last_admin' });
++    const viaAdmin = await adminDel(cookie, admin.id, {
++      confirmUsername: 'porteur',
++      password: admin.password,
++    });
++    expect(viaAdmin.status).toBe(409);
++    expect(await viaAdmin.json()).toMatchObject({ error: 'last_admin' });
++    expect(await userExists(admin.id)).toBe(true);
++    expect(await events('account_deleted')).toEqual([]);
++  });
++
++  it('deleteAccount avec enforceLastAdmin: false supprime le dernier admin (réapplication)', async () => {
++    ctx = await createTestContext();
++    const admin = await createUser(ctx, { username: 'porteur', role: 'admin' });
++    await expect(
++      ctx.deps.db
++        .transaction()
++        .execute((trx) => deleteAccount(trx, ctx.deps, admin.id, { actorId: null, ip: null })),
++    ).rejects.toMatchObject({ code: 'last_admin' });
++    await ctx.deps.db
++      .transaction()
++      .execute((trx) =>
++        deleteAccount(trx, ctx.deps, admin.id, { actorId: null, ip: null }, { enforceLastAdmin: false }),
++      );
++    expect(await userExists(admin.id)).toBe(false);
++    const remaining = await ctx.deps.db.selectFrom('user').select('id').where('role', '=', 'admin').execute();
++    expect(remaining).toEqual([]);
++  });
++
++  it('compte inconnu : not_found', async () => {
++    ctx = await createTestContext();
++    await expect(
++      ctx.deps.db
++        .transaction()
++        .execute((trx) => deleteAccount(trx, ctx.deps, 'inconnu', { actorId: null, ip: null })),
++    ).rejects.toMatchObject({ code: 'not_found' });
++  });
++});
+diff --git a/apps/server/test/privacy/export.test.ts b/apps/server/test/privacy/export.test.ts
+new file mode 100644
+index 0000000..baabba0
+--- /dev/null
++++ b/apps/server/test/privacy/export.test.ts
+@@ -0,0 +1,137 @@
++import { type EntityRulesMap, entityRules } from '@appsport/contracts';
++import { sql } from 'kysely';
++import { afterEach, describe, expect, it } from 'vitest';
++import type { Migration } from '../../src/db/migrations/index';
++import { createTestContext, createUser, insertFixtureRow, login, type TestContext } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx?.close());
++
++const fixtureMigration: Migration = {
++  id: '0002_fixture_export',
++  breaking: false,
++  up: async (db) => {
++    await sql
++      .raw(
++        'CREATE TABLE fixture_export (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, label TEXT NOT NULL, secret_hash TEXT NOT NULL) STRICT',
++      )
++      .execute(db);
++  },
++};
++
++const rulesWithFixture: EntityRulesMap = {
++  ...entityRules,
++  fixture_export: {
++    category: 'C1',
++    syncClass: 'H',
++    ownerColumn: 'owner_id',
++    columns: ['id', 'owner_id', 'label', 'secret_hash'],
++    clientWritable: [],
++    c2Columns: [],
++    secretColumns: ['secret_hash'],
++    exported: true,
++    onUserDelete: 'cascade',
++  },
++};
++
++describe('GET /api/me/export (R-EXP-1, R-EXP-2, P-DRT-1)', () => {
++  it('exporte uniquement les données du compte, sans secret ni session', async () => {
++    ctx = await createTestContext({ entityRules: rulesWithFixture, extraMigrations: [fixtureMigration] });
++    const u = await createUser(ctx, { username: 'lea' });
++    const other = await createUser(ctx, { username: 'tom' });
++    const cookie = await login(ctx, 'lea', u.password);
++    await login(ctx, 'tom', other.password);
++    const { db } = ctx.deps;
++
++    const mine = await insertFixtureRow(db, 'gym', { createdBy: u.id });
++    const frequented = await insertFixtureRow(db, 'gym');
++    const foreign = await insertFixtureRow(db, 'gym', { createdBy: other.id });
++    const historyOnly = await insertFixtureRow(db, 'gym');
++    const place = await insertFixtureRow(db, 'place', {
++      ownerId: u.id,
++      kind: 'gym',
++      gymId: frequented.id,
++      name: null,
++      loadSettings: null,
++    });
++    await insertFixtureRow(db, 'place', { ownerId: other.id });
++    const written = await insertFixtureRow(db, 'gym_history', { gymId: historyOnly.id, authorId: u.id });
++    await insertFixtureRow(db, 'gym_history', { gymId: foreign.id, authorId: other.id });
++    await insertFixtureRow(db, 'limitation', { ownerId: u.id });
++    await insertFixtureRow(db, 'limitation', { ownerId: other.id });
++    await sql`insert into fixture_export (id, owner_id, label, secret_hash) values ('f1', ${u.id}, 'témoin', 'x'), ('f2', ${other.id}, 'autre', 'y')`.execute(
++      db,
++    );
++
++    const res = await ctx.request('/api/me/export', { cookie });
++    expect(res.status).toBe(200);
++    expect(res.headers.get('content-disposition')).toBe(
++      'attachment; filename="appsport-export-2026-10-06.json"',
++    );
++    const text = await res.text();
++    expect(text).not.toContain('$argon2id');
++    const exp = JSON.parse(text);
++
++    expect(exp.format).toBe('appsport-export/1');
++    expect(exp.exportedAt).toBe('2026-10-06T10:00:00.000Z');
++    expect(exp.account).toMatchObject({ id: u.id, username: 'lea' });
++    expect(exp.account).not.toHaveProperty('passwordHash');
++    expect(Object.keys(exp.tables).sort()).toEqual(
++      Object.entries(rulesWithFixture)
++        .filter(([t, r]) => r.exported && t !== 'user')
++        .map(([t]) => t)
++        .sort(),
++    );
++    expect(exp.tables).not.toHaveProperty('session');
++    expect(exp.tables.place.map((r: { id: string }) => r.id)).toEqual([place.id]);
++    expect(exp.tables.limitation).toHaveLength(1);
++    expect(exp.tables.limitation[0].ownerId).toBe(u.id);
++    expect(exp.tables.fixture_export).toEqual([{ id: 'f1', ownerId: u.id, label: 'témoin' }]);
++    expect(exp.gyms.map((g: { id: string }) => g.id).sort()).toEqual(
++      [mine.id, frequented.id, historyOnly.id].sort(),
++    );
++    expect(exp.gymHistory.map((h: { id: string }) => h.id)).toEqual([written.id]);
++  });
++
++  it('inclut les lieux supprimés et leurs salles, valeurs telles que stockées', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'lea' });
++    const cookie = await login(ctx, 'lea', u.password);
++    const gym = await insertFixtureRow(ctx.deps.db, 'gym');
++    await insertFixtureRow(ctx.deps.db, 'place', {
++      ownerId: u.id,
++      kind: 'gym',
++      gymId: gym.id,
++      name: null,
++      loadSettings: null,
++      deletedAt: '2026-10-05T10:00:00.000Z',
++    });
++    const exp = (await (await ctx.request('/api/me/export', { cookie })).json()) as {
++      gyms: { id: string; loadSettings: string }[];
++      tables: Record<string, Record<string, unknown>[]>;
++    };
++    expect(exp.gyms.map((g: { id: string }) => g.id)).toEqual([gym.id]);
++    expect(exp.tables.place?.[0]).toMatchObject({ isPrimary: 0, deletedAt: '2026-10-05T10:00:00.000Z' });
++    expect(exp.gyms[0]?.loadSettings).toBe('{}');
++  });
++
++  it('journalise data_exported sans détail', async () => {
++    ctx = await createTestContext();
++    const u = await createUser(ctx, { username: 'lea' });
++    const cookie = await login(ctx, 'lea', u.password);
++    await ctx.request('/api/me/export', { cookie });
++    const events = await ctx.deps.db
++      .selectFrom('securityEvent')
++      .selectAll()
++      .where('type', '=', 'data_exported')
++      .execute();
++    expect(events).toHaveLength(1);
++    expect(events[0]).toMatchObject({ actorId: u.id, targetId: u.id, details: null, outcome: 'success' });
++  });
++
++  it('exige une session', async () => {
++    ctx = await createTestContext();
++    const res = await ctx.request('/api/me/export');
++    expect(res.status).toBe(401);
++  });
++});
+diff --git a/packages/contracts/src/api/admin.ts b/packages/contracts/src/api/admin.ts
+index bc72b1e..642d137 100644
+--- a/packages/contracts/src/api/admin.ts
++++ b/packages/contracts/src/api/admin.ts
+@@ -51,10 +51,17 @@ export const SetStatusRequest = z.object({ status: UserStatusSchema });
+ export type SetStatusRequest = z.infer<typeof SetStatusRequest>;
+ 
+ export const SetRoleRequest = z.object({ role: RoleSchema, password: z.string().min(1).max(1024) });
+ export type SetRoleRequest = z.infer<typeof SetRoleRequest>;
+ 
+ export const SetBirthDateRequest = z.object({ birthDate: CivilDate });
+ export type SetBirthDateRequest = z.infer<typeof SetBirthDateRequest>;
+ 
+ export const OpsStatusResponse = z.object({ version: z.string(), opsStatus: OpsStatus.nullable() });
+ export type OpsStatusResponse = z.infer<typeof OpsStatusResponse>;
++
++/** `password` : mot de passe de l'admin (P-AUT-5) ; faux → 401 `invalid_credentials`. */
++export const AdminDeleteMemberRequest = z.object({
++  confirmUsername: z.string().min(1).max(100),
++  password: z.string().min(1).max(1024),
++});
++export type AdminDeleteMemberRequest = z.infer<typeof AdminDeleteMemberRequest>;
+diff --git a/packages/contracts/src/api/auth.ts b/packages/contracts/src/api/auth.ts
+index ca9d24d..a9a7248 100644
+--- a/packages/contracts/src/api/auth.ts
++++ b/packages/contracts/src/api/auth.ts
+@@ -81,10 +81,13 @@ export type AcceptInvitationRequest = z.infer<typeof AcceptInvitationRequest>;
+ 
+ /** `role` : rôle de la cible, qui fixe le minimum de mot de passe côté client (14 caractères pour un admin). */
+ export const ResetCheckResponse = z.object({ username: z.string(), role: RoleSchema });
+ export type ResetCheckResponse = z.infer<typeof ResetCheckResponse>;
+ 
+ export const ResetPasswordRequest = z.object({
+   code: z.string().min(1).max(300),
+   newPassword: z.string().min(1).max(1024),
+ });
+ export type ResetPasswordRequest = z.infer<typeof ResetPasswordRequest>;
++
++export const DeleteAccountRequest = z.object({ password: z.string().min(1).max(1024) });
++export type DeleteAccountRequest = z.infer<typeof DeleteAccountRequest>;
+diff --git a/packages/contracts/src/api/export.ts b/packages/contracts/src/api/export.ts
+new file mode 100644
+index 0000000..421c27c
+--- /dev/null
++++ b/packages/contracts/src/api/export.ts
+@@ -0,0 +1,16 @@
++import { z } from 'zod';
++
++export const EXPORT_FORMAT = 'appsport-export/1';
++
++const Row = z.record(z.string(), z.unknown());
++
++/** `tables` est indexé par le nom SQL ; lignes en camelCase, valeurs telles que stockées (0/1, JSON en texte). */
++export const ExportV1 = z.object({
++  format: z.literal(EXPORT_FORMAT),
++  exportedAt: z.string(),
++  account: Row,
++  tables: z.record(z.string(), z.array(Row)),
++  gyms: z.array(Row),
++  gymHistory: z.array(Row),
++});
++export type ExportV1 = z.infer<typeof ExportV1>;
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index 1d6a744..081098f 100644
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -1,9 +1,10 @@
+ export * from './api/admin';
+ export * from './api/auth';
+ export * from './api/errors';
++export * from './api/export';
+ export * from './api/health';
+ export * from './auth-constants';
+ export * from './case';
+ export * from './constants';
+ export * from './entity-rules';
+ export * from './ops';

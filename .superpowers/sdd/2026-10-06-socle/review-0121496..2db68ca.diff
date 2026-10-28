@@ -1,0 +1,576 @@
+# Review package: 0121496..HEAD
+
+## Commits
+2db68ca fix(web): porteur nommé responsable, garde tolérante à la barre finale
+
+## Files changed
+ apps/web/src/App.tsx                            |  18 +-
+ apps/web/src/app-services.tsx                   |  14 +-
+ apps/web/src/features/public/HelpPage.tsx       |   2 +-
+ apps/web/src/features/public/privacy-content.ts | 210 +++++++++++++-----------
+ apps/web/test/app/app-services.test.ts          |  26 +++
+ apps/web/test/app/guard.test.tsx                |   4 +
+ apps/web/test/app/public-pages.test.tsx         |  46 ++++++
+ packages/contracts/test/help-resources.test.ts  |   8 +-
+ 8 files changed, 220 insertions(+), 108 deletions(-)
+
+## Diff
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+index c0755dc..45e3c97 100644
+--- a/apps/web/src/App.tsx
++++ b/apps/web/src/App.tsx
+@@ -22,43 +22,47 @@ export const PUBLIC_PATHS: readonly string[] = [
+ export type GuardResult =
+   | { kind: 'render' }
+   | { kind: 'wait' }
+   | { kind: 'redirect'; to: string }
+   | { kind: 'not_found' };
+ 
+ const LOST_SESSION: readonly ConnectionState[] = ['unauthenticated', 'account_deleted'];
+ 
+ const isAdminPath = (path: string) => path === '/admin' || path.startsWith('/admin/');
+ 
++/** Chemin sans barre finale (`/privacy/` → `/privacy`), `/` gardé. */
++export const normalizePath = (path: string): string => path.replace(/\/+$/, '') || '/';
++
+ /**
+  * Garde des routes, dans l'ordre : chemin public ; base locale pas encore lue ; session absente ou
+  * refusée par le serveur ; mot de passe à changer (R-MDP-1) ; onboarding ; rôle admin (R-ROLE-1).
+  */
+ export function resolveGuard(i: {
+   path: string;
+   loaded: boolean;
+   me: MeResponse | null;
+   connection: ConnectionState;
+ }): GuardResult {
++  const path = normalizePath(i.path);
+   const sessionValid = i.me !== null && !LOST_SESSION.includes(i.connection);
+-  if (PUBLIC_PATHS.includes(i.path)) {
+-    return i.path === '/login' && sessionValid ? { kind: 'redirect', to: '/' } : { kind: 'render' };
++  if (PUBLIC_PATHS.includes(path)) {
++    return path === '/login' && sessionValid ? { kind: 'redirect', to: '/' } : { kind: 'render' };
+   }
+   if (!i.loaded) return { kind: 'wait' };
+   if (!i.me || !sessionValid) return { kind: 'redirect', to: '/login' };
+   if (i.me.mustChangePassword) {
+-    return i.path === '/profile' ? { kind: 'render' } : { kind: 'redirect', to: '/profile' };
++    return path === '/profile' ? { kind: 'render' } : { kind: 'redirect', to: '/profile' };
+   }
+   const onboarded = i.me.onboardingCompletedAt !== null;
+-  if (!onboarded && i.path !== '/onboarding') return { kind: 'redirect', to: '/onboarding' };
+-  if (onboarded && i.path === '/onboarding') return { kind: 'redirect', to: '/' };
+-  if (isAdminPath(i.path) && i.me.role !== 'admin') return { kind: 'not_found' };
++  if (!onboarded && path !== '/onboarding') return { kind: 'redirect', to: '/onboarding' };
++  if (onboarded && path === '/onboarding') return { kind: 'redirect', to: '/' };
++  if (isAdminPath(path) && i.me.role !== 'admin') return { kind: 'not_found' };
+   return { kind: 'render' };
+ }
+ 
+ function PublicRoutes() {
+   return (
+     <Switch>
+       <Route path="/privacy" component={PrivacyPage} />
+       <Route path="/credits" component={CreditsPage} />
+       <Route path="/help" component={HelpPage} />
+       <Route component={NotFound} />
+@@ -86,21 +90,21 @@ export function App() {
+       return null;
+     case 'redirect':
+       return <Redirect to={guard.to} replace />;
+     case 'not_found':
+       return (
+         <AppShell>
+           <NotFound />
+         </AppShell>
+       );
+     case 'render':
+-      return PUBLIC_PATHS.includes(path) ? (
++      return PUBLIC_PATHS.includes(normalizePath(path)) ? (
+         <PublicShell>
+           <PublicRoutes />
+         </PublicShell>
+       ) : (
+         <AppShell>
+           <ConnectedRoutes />
+         </AppShell>
+       );
+   }
+ }
+diff --git a/apps/web/src/app-services.tsx b/apps/web/src/app-services.tsx
+index 54222f9..052535d 100644
+--- a/apps/web/src/app-services.tsx
++++ b/apps/web/src/app-services.tsx
+@@ -53,15 +53,23 @@ export function useLive<T>(query: () => Promise<T>, deps: readonly unknown[]): T
+ export function useMeState(): { loaded: boolean; me: MeResponse | null } {
+   const { db } = useServices();
+   const state = useLive(async () => ({ me: (await getMeta(db, 'me')) ?? null }), [db]);
+   return state ? { loaded: true, me: state.me } : { loaded: false, me: null };
+ }
+ 
+ export function useMe(): MeResponse | null {
+   return useMeState().me;
+ }
+ 
+-/** `410 account_deleted` (P-DRT-4) : base locale effacée, file comprise, puis écran de connexion. */
++/**
++ * `410 account_deleted` (P-DRT-4) : base locale effacée, file comprise, puis écran de connexion.
++ * Un effacement en échec n'empêche pas la navigation et ne rejette pas (appelé en `void`).
++ */
+ export async function handleAccountDeleted(db: AppDb, navigate: (to: string) => void): Promise<void> {
+-  await wipeUserData(db, { keepOutbox: false });
+-  navigate('/login?reason=account_deleted');
++  try {
++    await wipeUserData(db, { keepOutbox: false });
++  } catch {
++    // Base locale inaccessible : le moteur de synchro l'effacera au prochain 410.
++  } finally {
++    navigate('/login?reason=account_deleted');
++  }
+ }
+diff --git a/apps/web/src/features/public/HelpPage.tsx b/apps/web/src/features/public/HelpPage.tsx
+index 08a6c65..2780e4d 100644
+--- a/apps/web/src/features/public/HelpPage.tsx
++++ b/apps/web/src/features/public/HelpPage.tsx
+@@ -2,21 +2,21 @@ import { HELP_RESOURCES } from '@appsport/contracts';
+ import { formatDate, Page } from '../../ui';
+ import styles from './public.module.css';
+ 
+ /** '15 / 112' → ['15', '112'] : chaque numéro tel qu'affiché. */
+ const numbers = (phone: string): string[] => phone.split('/').map((p) => p.trim());
+ 
+ export function HelpPage() {
+   const verifiedOn = HELP_RESOURCES.map((r) => r.verifiedOn).sort()[0];
+   return (
+     <Page title="Aide">
+-      <p>En cas d'urgence, appelle le 15 ou le 112. Ces services sont gratuits et confidentiels.</p>
++      <p>En cas d'urgence, appelle le 15 ou le 112.</p>
+       <ul className={styles.resources}>
+         {HELP_RESOURCES.map((r) => (
+           <li key={r.id} className={styles.resource}>
+             <span>{r.label}</span>
+             {r.phone ? (
+               <span className={styles.phones}>
+                 {numbers(r.phone).map((n) => (
+                   <a key={n} href={`tel:${n.replace(/\s/g, '')}`}>
+                     {n}
+                   </a>
+diff --git a/apps/web/src/features/public/privacy-content.ts b/apps/web/src/features/public/privacy-content.ts
+index 85ceb83..65ddc3e 100644
+--- a/apps/web/src/features/public/privacy-content.ts
++++ b/apps/web/src/features/public/privacy-content.ts
+@@ -1,106 +1,126 @@
+ import { HEALTH_WARNING_TEXT } from '../../ui/HealthWarning';
+ 
+-/** Prénom du porteur (variable de build), sinon « l'administrateur ». */
+-export const OWNER_FIRST_NAME: string = import.meta.env.VITE_OWNER_FIRST_NAME?.trim() || "l'administrateur";
++/** Prénom du porteur lu au build (`VITE_OWNER_FIRST_NAME`) ; vide ou absent : null. */
++export function ownerFirstName(raw: string | undefined): string | null {
++  return raw?.trim() || null;
++}
++
++/** Prénom du porteur, sinon « l'administrateur » (« hébergé chez l'administrateur »). */
++export const OWNER_FIRST_NAME: string =
++  ownerFirstName(import.meta.env.VITE_OWNER_FIRST_NAME) ?? "l'administrateur";
+ 
+ export interface PrivacySection {
+   title: string;
+   items: readonly string[];
+ }
+ 
+ /**
+  * Page « Confidentialité et règles » (03 §13.5), tirée de la fiche de traitement. Toute
+- * modification de fond change `PRIVACY_POLICY_VERSION`.
++ * modification de fond change `PRIVACY_POLICY_VERSION`. Le responsable des données, contact et
++ * seul détenteur des clés de sauvegarde, est le porteur (03 §1, §10.8), nommé par son prénom.
+  */
+-export const PRIVACY_SECTIONS: readonly PrivacySection[] = [
+-  {
+-    title: 'Qui est responsable',
+-    items: [
+-      `appsport est un outil de suivi entre proches, hébergé chez ${OWNER_FIRST_NAME}. Ce n'est pas un service médical.`,
+-      "Le responsable des données est l'administrateur du cercle, qui héberge le serveur chez lui, à titre personnel et sans but lucratif. Toute question ou demande lui est adressée directement.",
+-    ],
+-  },
+-  {
+-    title: 'Données collectées et pourquoi',
+-    items: [
+-      "Compte : pseudo, rôle, date de naissance saisie par l'administrateur (c'est la vérification de l'âge), état de tes accords. Ils servent à te connecter et à appliquer les règles d'âge.",
+-      "Données personnelles : profil d'entraînement, lieux et matériel, mode prudent, séances et réglages, historique de tes accords. Elles servent à construire et suivre ton entraînement, et toi seul y accèdes.",
+-      'Données de santé, seulement avec ton accord santé : indicateur de prudence issu du questionnaire, limitations et zones sensibles, douleurs signalées, mesures et nutrition. Elles servent uniquement à adapter tes séances et tes repères.',
+-      'Échanges avec le coach, seulement avec ton accord coach (brique 4) : conversations et signalements.',
+-      "Commun au cercle : salles partagées et leur historique, pseudos rendus visibles, fiches d'exercices.",
+-      "Aucune statistique, aucun traceur ni service tiers dans l'appli : pas de bandeau cookies.",
+-    ],
+-  },
+-  {
+-    title: 'Où sont les données',
+-    items: [
+-      'Sur un serveur à domicile en France, chiffré au repos, joignable seulement par le réseau privé Tailscale du cercle, jamais depuis Internet.',
+-      "Aux États-Unis pour le coach (brique 4) : avec ton accord coach seulement, tes messages et les informations utiles sont envoyés à Anthropic, qui fournit l'IA Claude.",
+-      "Dans des sauvegardes chiffrées hors du domicile (Backblaze), chiffrées avant de quitter le serveur ; seul l'administrateur en détient les clés.",
+-      "Sur ton téléphone : une copie de tes données, pour utiliser l'appli sans réseau.",
+-    ],
+-  },
+-  {
+-    title: 'Durées de conservation',
+-    items: [
+-      'Compte et données personnelles : tant que le compte existe.',
+-      "Données de santé : tant que le compte existe et que l'accord santé est actif ; elles sont supprimées dès le retrait de l'accord.",
+-      'Conversations du coach : 90 jours après le dernier message, et suppression possible à tout moment ; signalements : 90 jours au plus.',
+-      "Journal d'usage du coach, sans contenu : 12 mois. Côté Anthropic : 30 jours au plus, 2 ans au plus si un échange est signalé par ses filtres.",
+-      'Sessions de connexion : 90 jours sans usage, 365 jours au maximum ; les sessions fermées sont purgées 30 jours après.',
+-      'Invitations et liens de réinitialisation : 7 jours et 24 h, usage unique ; purgés 30 jours après.',
+-      'Journal de sécurité : 12 mois. Journaux techniques : 90 jours au plus.',
+-      'Marques de suppression de la synchronisation : 90 jours.',
+-      'Sauvegardes : 30 jours au plus.',
+-      "Données du téléphone : jusqu'à la déconnexion, au retrait d'un accord pour les données concernées, ou à la suppression du compte.",
+-    ],
+-  },
+-  {
+-    title: "Ce que l'administrateur voit et ne voit pas",
+-    items: [
+-      'Il voit les informations de compte : pseudo, rôle, statut, date de naissance, mineur ou non, création et dernière connexion, état des accords, nombre de sessions actives. Il gère les invitations, les salles et le journal de sécurité.',
+-      "Il ne voit pas dans l'appli ton profil, tes séances, tes lieux, tes données de santé ni tes conversations avec le coach. Il ne peut ni se connecter à ta place, ni exporter tes données, ni connaître ton mot de passe.",
+-      'Il lit un échange avec le coach seulement si tu le signales toi-même.',
+-      "L'administrateur a la main sur le serveur et peut techniquement lire la base. Il s'engage à ne faire aucune requête manuelle sur les données d'une personne sans son accord.",
+-      "L'administrateur voit l'adresse de ton compte Tailscale, une information gérée par Tailscale.",
+-    ],
+-  },
+-  {
+-    title: 'Tes droits et comment les exercer',
+-    items: [
+-      'Export : Profil, puis Confidentialité, puis « Télécharger mes données » (fichier JSON).',
+-      "Rectification : tout ce que tu saisis est modifiable, sauf ta date de naissance, que l'administrateur corrige à ta demande.",
+-      "Retrait d'un accord : à tout moment, depuis ton profil ; les données concernées sont effacées immédiatement.",
+-      "Suppression du compte : depuis ton profil, ou par l'administrateur à ta demande ; tout est effacé en une fois.",
+-      "Pour toute autre demande, adresse-toi à l'administrateur.",
+-    ],
+-  },
+-  {
+-    title: 'Règles pour les 16-17 ans',
+-    items: [
+-      "appsport est réservé aux 16 ans et plus. Ta date de naissance est saisie par l'administrateur et tu ne peux pas la modifier.",
+-      "Dès 15 ans, tu donnes seul tes accords : aucun accord parental n'est demandé.",
+-      "La progression prudente s'applique jusqu'à 18 ans.",
+-      'Ta présence dans « qui va à cette salle » est désactivée par défaut, lieu par lieu.',
+-      'Nutrition : ni cible chiffrée, ni déficit, ni pesée.',
+-      "À 18 ans, rien ne s'active tout seul : un message t'indique ce que tu peux activer.",
+-    ],
+-  },
+-  {
+-    title: 'Pas un avis médical',
+-    items: [
+-      HEALTH_WARNING_TEXT,
+-      "En cas d'urgence, appelle le 15 ou le 112. Les numéros utiles sont sur la page Aide.",
+-    ],
+-  },
+-  {
+-    title: 'Coach et mineurs',
+-    items: [
+-      "Le coach (brique 4) est une IA, annoncée au début de chaque conversation. Il est ouvert aux 16-17 ans avec des garde-fous : le mode mineur est décidé par le serveur d'après ta tranche d'âge.",
+-      "Envoyés : ta tranche d'âge (jamais ton âge exact), ton niveau, ton objectif, ton matériel, ton programme et ton historique récent ; tes données de santé seulement si les accords santé et coach sont actifs.",
+-      'Jamais envoyés : ton pseudo, ta date de naissance, ton identifiant, le nom de ta salle, les autres membres.',
+-      "Pour un mineur : consignes dédiées, aucun chiffre nutritionnel, réponses contrôlées par l'appli.",
+-      "Un bouton « Signaler » accompagne chaque réponse : l'échange signalé devient lisible par l'administrateur, puis il est supprimé à son classement ou au plus tard après 90 jours.",
+-    ],
+-  },
+-];
++export function buildPrivacySections(rawOwner: string | undefined): readonly PrivacySection[] {
++  const first = ownerFirstName(rawOwner);
++  const host = first ?? "l'administrateur";
++  const owner = first ?? 'le porteur du projet';
++  const contact = first
++    ? `adresse-toi directement à ${first}`
++    : 'adresse-toi directement au porteur du projet';
++  return [
++    {
++      title: 'Qui est responsable',
++      items: [
++        `appsport est un outil de suivi entre proches, hébergé chez ${host}. Ce n'est pas un service médical.`,
++        `Le responsable des données est ${owner}, qui héberge le serveur chez lui, à titre personnel et sans but lucratif.`,
++        `Pour toute question ou demande, ${contact}.`,
++      ],
++    },
++    {
++      title: 'Données collectées et pourquoi',
++      items: [
++        "Compte : pseudo, rôle, date de naissance saisie par l'administrateur (c'est la vérification de l'âge), état de tes accords. Ils servent à te connecter et à appliquer les règles d'âge.",
++        "Données personnelles : profil d'entraînement, lieux et matériel, mode prudent, séances et réglages, historique de tes accords. Elles servent à construire et suivre ton entraînement, et toi seul y accèdes.",
++        'Données de santé, seulement avec ton accord santé : indicateur de prudence issu du questionnaire, limitations et zones sensibles, douleurs signalées, mesures et nutrition. Elles servent uniquement à adapter tes séances et tes repères.',
++        'Échanges avec le coach, seulement avec ton accord coach (brique 4) : conversations et signalements.',
++        "Commun au cercle : salles partagées et leur historique, pseudos rendus visibles, fiches d'exercices.",
++        "Aucune statistique, aucun traceur ni service tiers dans l'appli : pas de bandeau cookies.",
++      ],
++    },
++    {
++      title: 'Où sont les données',
++      items: [
++        'Sur un serveur à domicile en France, chiffré au repos, joignable seulement par le réseau privé Tailscale du cercle, jamais depuis Internet.',
++        "Aux États-Unis pour le coach (brique 4) : avec ton accord coach seulement, tes messages et les informations utiles sont envoyés à Anthropic, qui fournit l'IA Claude.",
++        `Dans des sauvegardes chiffrées hors du domicile (Backblaze), chiffrées avant de quitter le serveur ; seul ${owner} en détient les clés.`,
++        "Sur ton téléphone : une copie de tes données, pour utiliser l'appli sans réseau.",
++      ],
++    },
++    {
++      title: 'Durées de conservation',
++      items: [
++        'Compte et données personnelles : tant que le compte existe.',
++        "Données de santé : tant que le compte existe et que l'accord santé est actif ; elles sont supprimées dès le retrait de l'accord.",
++        'Conversations du coach : 90 jours après le dernier message, et suppression possible à tout moment ; signalements : 90 jours au plus.',
++        "Journal d'usage du coach, sans contenu : 12 mois. Côté Anthropic : 30 jours au plus, 2 ans au plus si un échange est signalé par ses filtres.",
++        'Sessions de connexion : 90 jours sans usage, 365 jours au maximum ; les sessions fermées sont purgées 30 jours après.',
++        'Invitations et liens de réinitialisation : 7 jours et 24 h, usage unique ; purgés 30 jours après.',
++        'Journal de sécurité : 12 mois. Journaux techniques : 90 jours au plus.',
++        'Marques de suppression de la synchronisation : 90 jours.',
++        'Sauvegardes : 30 jours au plus.',
++        "Données du téléphone : jusqu'à la déconnexion (si la file d'envoi est vide), au retrait d'un accord pour les données concernées, ou à la suppression du compte.",
++      ],
++    },
++    {
++      title: "Ce que l'administrateur voit et ne voit pas",
++      items: [
++        'Il voit les informations de compte : pseudo, rôle, statut, date de naissance, mineur ou non, création et dernière connexion, état des accords, nombre de sessions actives. Il gère les invitations et les salles, et consulte le journal de sécurité.',
++        "Il ne voit pas dans l'appli ton profil, tes séances, tes lieux, tes données de santé ni tes conversations avec le coach. Il ne peut ni se connecter à ta place, ni exporter tes données, ni connaître ton mot de passe.",
++        'Il lit un échange avec le coach seulement si tu le signales toi-même.',
++        "L'administrateur a la main sur le serveur et peut techniquement lire la base. Il s'engage à ne faire aucune requête manuelle sur les données d'une personne sans son accord.",
++        "L'administrateur voit l'adresse de ton compte Tailscale, une information gérée par Tailscale.",
++      ],
++    },
++    {
++      title: 'Tes droits et comment les exercer',
++      items: [
++        'Export : Profil, puis Confidentialité, puis « Télécharger mes données » (fichier JSON).',
++        "Rectification : tout ce que tu saisis est modifiable, sauf ta date de naissance, que l'administrateur corrige à ta demande.",
++        "Retrait d'un accord : à tout moment, depuis ton profil ; les données concernées sont effacées immédiatement.",
++        "Suppression du compte : depuis ton profil, ou par l'administrateur à ta demande ; tout est effacé en une fois.",
++        `Pour toute autre demande, ${contact}.`,
++      ],
++    },
++    {
++      title: 'Règles pour les 16-17 ans',
++      items: [
++        "appsport est réservé aux 16 ans et plus. Ta date de naissance est saisie par l'administrateur et tu ne peux pas la modifier.",
++        "Dès 15 ans, tu donnes seul tes accords : aucun accord parental n'est demandé.",
++        "La progression prudente s'applique jusqu'à 18 ans.",
++        'Ta présence dans « qui va à cette salle » est désactivée par défaut, lieu par lieu.',
++        'Nutrition : ni cible chiffrée, ni déficit, ni pesée.',
++        "À 18 ans, rien ne s'active tout seul : un message t'indique ce que tu peux activer.",
++      ],
++    },
++    {
++      title: 'Pas un avis médical',
++      items: [
++        HEALTH_WARNING_TEXT,
++        "En cas d'urgence, appelle le 15 ou le 112. Les numéros utiles sont sur la page Aide.",
++      ],
++    },
++    {
++      title: 'Coach et mineurs',
++      items: [
++        "Le coach (brique 4) est une IA, annoncée au début de chaque conversation. Il est ouvert aux 16-17 ans avec des garde-fous : le mode mineur est décidé par le serveur d'après ta tranche d'âge.",
++        "Envoyés : ta tranche d'âge (jamais ton âge exact), ton niveau, ton objectif, ton matériel, ton programme et ton historique récent ; tes données de santé seulement si les accords santé et coach sont actifs.",
++        'Jamais envoyés : ton pseudo, ta date de naissance, ton identifiant, le nom de ta salle, les autres membres, ton adresse IP.',
++        "Pour un mineur : consignes dédiées, aucun chiffre nutritionnel, réponses contrôlées par l'appli.",
++        "Un bouton « Signaler » accompagne chaque réponse : l'échange signalé devient lisible par l'administrateur, puis il est supprimé à son classement ou au plus tard après 90 jours.",
++      ],
++    },
++  ];
++}
++
++export const PRIVACY_SECTIONS: readonly PrivacySection[] = buildPrivacySections(
++  import.meta.env.VITE_OWNER_FIRST_NAME,
++);
+diff --git a/apps/web/test/app/app-services.test.ts b/apps/web/test/app/app-services.test.ts
+new file mode 100644
+index 0000000..fdcaf56
+--- /dev/null
++++ b/apps/web/test/app/app-services.test.ts
+@@ -0,0 +1,26 @@
++import { describe, expect, it, vi } from 'vitest';
++import { handleAccountDeleted } from '../../src/app-services';
++import type { AppDb } from '../../src/local-db/db';
++import { getMeta, setMeta } from '../../src/local-db/meta';
++import { createTestLocalDb } from '../support/local-db';
++
++describe('handleAccountDeleted', () => {
++  it('efface la base locale puis mène à la connexion', async () => {
++    const db = createTestLocalDb();
++    await setMeta(db, 'userId', 'u-1');
++    const navigate = vi.fn();
++    await handleAccountDeleted(db, navigate);
++    expect(await getMeta(db, 'userId')).toBeUndefined();
++    expect(navigate).toHaveBeenCalledWith('/login?reason=account_deleted');
++  });
++
++  it("mène à la connexion même si l'effacement échoue, sans rejet", async () => {
++    const broken = {
++      tables: [],
++      transaction: () => Promise.reject(new Error('base inaccessible')),
++    } as unknown as AppDb;
++    const navigate = vi.fn();
++    await expect(handleAccountDeleted(broken, navigate)).resolves.toBeUndefined();
++    expect(navigate).toHaveBeenCalledWith('/login?reason=account_deleted');
++  });
++});
+diff --git a/apps/web/test/app/guard.test.tsx b/apps/web/test/app/guard.test.tsx
+index d1c578b..dd95455 100644
+--- a/apps/web/test/app/guard.test.tsx
++++ b/apps/web/test/app/guard.test.tsx
+@@ -32,20 +32,24 @@ const ROWS: Row[] = [
+   ['/profile', true, makeMe(), 'account_deleted', to('/login')],
+   ['/', true, notOnboarded(), 'online', to('/onboarding')],
+   ['/admin/members', true, admin({ onboardingCompletedAt: null }), 'online', to('/onboarding')],
+   ['/onboarding', true, makeMe(), 'online', to('/')],
+   ['/onboarding', true, notOnboarded(), 'online', RENDER],
+   ['/profile', true, makeMe({ mustChangePassword: true }), 'online', RENDER],
+   ['/', true, makeMe({ mustChangePassword: true }), 'online', to('/profile')],
+   ['/login', true, makeMe(), 'online', to('/')],
+   ['/admin/members', true, makeMe(), 'online', { kind: 'not_found' }],
+   ['/admin/members', true, admin(), 'online', RENDER],
++  ['/privacy/', false, null, 'online', RENDER],
++  ['/help/', true, null, 'offline', RENDER],
++  ['/login/', true, makeMe(), 'online', to('/')],
++  ['/onboarding/', true, makeMe(), 'online', to('/')],
+ ];
+ 
+ describe('resolveGuard', () => {
+   it.each(ROWS)('%s, chargé %s, connexion %s', (path, loaded, me, connection, expected) => {
+     expect(resolveGuard({ path, loaded, me, connection })).toEqual(expected);
+   });
+ });
+ 
+ describe('App', () => {
+   it('/privacy sans session', async () => {
+diff --git a/apps/web/test/app/public-pages.test.tsx b/apps/web/test/app/public-pages.test.tsx
+index 91435b3..9e40bc5 100644
+--- a/apps/web/test/app/public-pages.test.tsx
++++ b/apps/web/test/app/public-pages.test.tsx
+@@ -1,14 +1,47 @@
+ import { screen } from '@testing-library/react';
+ import { describe, expect, it } from 'vitest';
++import { buildPrivacySections } from '../../src/features/public/privacy-content';
+ import { renderApp } from '../support/render';
+ 
++const privacyText = (owner: string | undefined) =>
++  buildPrivacySections(owner)
++    .flatMap((s) => s.items)
++    .join('\n');
++
++describe('responsable des données (03 §1, §10.8)', () => {
++  it.each([undefined, '', '   '])(
++    'sans prénom (%j) : administrateur hébergeur, porteur du projet',
++    (owner) => {
++      const text = privacyText(owner);
++      expect(text).toContain("hébergé chez l'administrateur");
++      expect(text).toContain('Le responsable des données est le porteur du projet');
++      expect(text).toContain('seul le porteur du projet en détient les clés');
++      expect(text).toContain('adresse-toi directement au porteur du projet');
++    },
++  );
++
++  it('avec prénom : le porteur est nommé partout', () => {
++    const text = privacyText(' Bastien ');
++    expect(text).toContain('hébergé chez Bastien.');
++    expect(text).toContain('Le responsable des données est Bastien,');
++    expect(text).toContain('seul Bastien en détient les clés');
++    expect(text).toContain('adresse-toi directement à Bastien');
++    expect(text).toContain(
++      "L'administrateur a la main sur le serveur et peut techniquement lire la base. Il s'engage à ne faire aucune requête manuelle sur les données d'une personne sans son accord.",
++    );
++    expect(text).toContain(
++      "L'administrateur voit l'adresse de ton compte Tailscale, une information gérée par Tailscale.",
++    );
++  });
++});
++
+ describe('pages publiques', () => {
+   it('/privacy reprend la fiche de traitement', async () => {
+     await renderApp({ path: '/privacy', me: null });
+     await screen.findByRole('heading', { level: 1, name: 'Confidentialité et règles' });
+     const text = document.body.textContent ?? '';
+     for (const expected of [
+       'Version 1.0',
+       'peut techniquement lire la base',
+       "aucune requête manuelle sur les données d'une personne sans son accord",
+       "l'adresse de ton compte Tailscale",
+@@ -19,36 +52,49 @@ describe('pages publiques', () => {
+       '7 jours',
+       '24 h',
+       '90 jours',
+       'ne remplace pas un avis médical',
+       'serveur à domicile en France',
+       'États-Unis',
+       'sauvegardes chiffrées hors du domicile',
+     ]) {
+       expect(text, expected).toContain(expected);
+     }
++    for (const expected of [
++      "jusqu'à la déconnexion (si la file d'envoi est vide)",
++      'consulte le journal de sécurité',
++      'ton adresse IP',
++    ]) {
++      expect(text, expected).toContain(expected);
++    }
+     expect(screen.getByRole('heading', { name: 'Règles pour les 16-17 ans' })).toBeTruthy();
+     expect(screen.getByRole('heading', { name: 'Coach et mineurs' })).toBeTruthy();
+     expect(text).not.toMatch(/’/);
+   });
+ 
+   it('/help : numéros cliquables et date de vérification', async () => {
+     await renderApp({ path: '/help', me: null });
+     await screen.findByRole('heading', { level: 1 });
+     const tel = screen
+       .getAllByRole('link')
+       .map((a) => a.getAttribute('href') ?? '')
+       .filter((h) => h.startsWith('tel:'));
+     expect(tel).toEqual(['tel:15', 'tel:112', 'tel:0969325900', 'tel:0800152000', 'tel:3114']);
+     const text = document.body.textContent ?? '';
+     expect(text).toContain('Numéros vérifiés le 06/10/2026');
+     expect(text.split('Horaires :').length - 1).toBe(1);
++    expect(text).not.toContain('gratuits et confidentiels');
++  });
++
++  it('/privacy/ avec barre finale reste publique', async () => {
++    await renderApp({ path: '/privacy/', me: null });
++    await screen.findByRole('heading', { level: 1, name: 'Confidentialité et règles' });
+   });
+ 
+   it('/credits statique, sans requête', async () => {
+     const { api } = await renderApp({ path: '/credits', me: null });
+     await screen.findByRole('heading', { level: 1, name: 'Crédits' });
+     expect(screen.getByText('Aucune illustration pour le moment.')).toBeTruthy();
+     expect(api.calls).toEqual([]);
+   });
+ 
+   it('route inconnue → Page introuvable', async () => {
+diff --git a/packages/contracts/test/help-resources.test.ts b/packages/contracts/test/help-resources.test.ts
+index fd72a1b..d04a2f5 100644
+--- a/packages/contracts/test/help-resources.test.ts
++++ b/packages/contracts/test/help-resources.test.ts
+@@ -35,20 +35,24 @@ describe('HELP_RESOURCES', () => {
+       eating_disorder: '09 69 325 900',
+       doping: '0 800 15 2000',
+       pregnancy: null,
+       distress: '3114',
+     });
+     for (const r of HELP_RESOURCES) expect(r.verifiedOn).toBe('2026-10-06');
+     expect(HELP_RESOURCES.filter((r) => r.hours !== null).map((r) => r.id)).toEqual(['distress']);
+   });
+ 
+   it("l'ancien numéro TCA n'apparaît dans aucun fichier de apps/, packages/, data/", () => {
+-    const old = ['0810', '037', '037'].join(' ');
++    // Chiffres seuls, sans espaces, points ni tirets : attrape aussi les formes collées et `tel:`.
++    const old = ['0810', '037', '037'].join('');
+     const hits: string[] = [];
+     for (const top of ['apps', 'packages', 'data']) {
+       for (const file of walk(join(REPO, top))) {
+-        if (readFileSync(file).toString('utf8').includes(old)) hits.push(file);
++        const compact = readFileSync(file)
++          .toString('utf8')
++          .replace(/[\s.\- ]/g, '');
++        if (compact.includes(old)) hits.push(file);
+       }
+     }
+     expect(hits).toEqual([]);
+   });
+ });

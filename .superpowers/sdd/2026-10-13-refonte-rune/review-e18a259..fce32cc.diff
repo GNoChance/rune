@@ -1,0 +1,4192 @@
+# Review package: e18a259..HEAD
+
+## Commits
+fce32cc feat(web): onboarding Rune en 9 étapes et célébration « Éveil terminé »
+d90608c docs(readme): statut au 15 octobre, écrans de la refonte en cours, brique 2 prête
+
+## Files changed
+ README.md                                          |  19 +-
+ apps/web/e2e/coach-onboarding.spec.ts              |  95 +++
+ apps/web/e2e/support/flows.ts                      |  10 +-
+ .../src/features/onboarding/AvailabilityStep.tsx   |  39 +-
+ .../src/features/onboarding/AwakeningQuests.tsx    | 101 +++
+ .../web/src/features/onboarding/ExperienceStep.tsx |  29 +-
+ apps/web/src/features/onboarding/GoalStep.tsx      |  38 +-
+ apps/web/src/features/onboarding/HealthStep.tsx    |  98 ++-
+ .../src/features/onboarding/LimitationFields.tsx   |   2 +-
+ .../web/src/features/onboarding/OnboardingFlow.tsx |  94 ++-
+ apps/web/src/features/onboarding/PlaceKindStep.tsx |  48 +-
+ apps/web/src/features/onboarding/PlaceStep.tsx     |  18 +-
+ apps/web/src/features/onboarding/ReadyStep.tsx     | 181 +++--
+ apps/web/src/features/onboarding/SportStep.tsx     |  44 +-
+ apps/web/src/features/onboarding/StepActions.tsx   |  31 +-
+ apps/web/src/features/onboarding/StepIcons.tsx     | 121 ++++
+ .../src/features/onboarding/onboarding.module.css  | 785 ++++++++++++++++++++-
+ apps/web/src/ui/Chips.tsx                          |   6 +-
+ apps/web/src/ui/HealthWarning.tsx                  |  22 +-
+ apps/web/src/ui/ui.module.css                      |  13 +-
+ apps/web/test/onboarding/celebration.test.tsx      | 238 +++++++
+ apps/web/test/onboarding/flow.test.tsx             |  86 ++-
+ apps/web/test/onboarding/health-step.test.tsx      |  59 +-
+ apps/web/test/onboarding/ready-step.test.tsx       |  14 +-
+ apps/web/test/onboarding/steps.test.tsx            |  92 ++-
+ apps/web/test/profile/profile-page.test.tsx        |   4 +-
+ 26 files changed, 1990 insertions(+), 297 deletions(-)
+
+## Diff
+diff --git a/README.md b/README.md
+index 992174d..7c15a89 100644
+--- a/README.md
++++ b/README.md
+@@ -3,24 +3,33 @@
+ </p>
+ 
+ <h1 align="center">Rune</h1>
+ 
+ <p align="center"><em>Grave ta progression.</em></p>
+ 
+ Rune est une application web installable (PWA) de suivi de musculation, auto-hébergée, pour un cercle privé. Elle proposera des programmes d'entraînement, un suivi des séances qui marche hors ligne, des fiches d'exercices pour débutants, un coach IA au choix et des repères nutrition.
+ 
+ > Rune portait un autre nom de code pendant le cadrage. Tout s'appelle désormais Rune : le dépôt, les paquets (`@rune/…`), le serveur et les scripts. Seuls `docs/superpowers/` et `docs/research/` gardent l'ancien nom, par historique : y lire « rune » partout où un identifiant porte l'ancien nom.
+ 
+-> **Statut au 14 octobre 2026 : brique 1 (socle) codée, refonte visuelle à mi-parcours, brique 2 spécifiée.** Le socle est fait et relu : comptes sur invitation, onboarding, PWA hors ligne, synchronisation, administration, déploiement, sauvegardes et procédures.
++> **Statut au 15 octobre 2026 : brique 1 (socle) codée, refonte visuelle en cours sur les écrans, brique 2 prête à démarrer.** Le socle est fait et relu : comptes sur invitation, onboarding, PWA hors ligne, synchronisation, administration, déploiement, sauvegardes et procédures.
+ >
+-> - **Refonte aux couleurs de Rune** : renommage complet, thèmes et polices, logo et icônes, boîte à outils, feuilles du bas, avatars des coachs, rangs en pierre, coquille avec la barre d'onglets, coach côté serveur, décisions de confidentialité et commande `pnpm dev` sont codés, relus et fusionnés. Restent les écrans (choix du coach, onboarding, accueil et Progression, espace Profil, salles, administration, pages d'accès) et la relecture finale.
+-> - **Brique 2 (exercices)** : [spec](docs/superpowers/specs/2026-10-14-brique-2-exercices-design.md) et [plan d'implémentation](docs/superpowers/plans/2026-10-14-brique-2-exercices.md) validés ; le code commence après la refonte.
++> - **Refonte aux couleurs de Rune** : renommage complet, thèmes et polices, logo et icônes, boîte à outils, feuilles du bas, avatars des coachs, rangs en pierre, coquille avec la barre d'onglets, coach côté serveur, décisions de confidentialité et commande `pnpm dev` sont codés, relus et fusionnés.
++>   - Écrans codés et relus : le choix du coach avec sa présentation, puis Salles et lieux.
++>   - En cours : l'onboarding rhabillé, l'espace Profil et l'administration.
++>   - Restent : l'accueil et Progression, les pages d'accès, la seconde fusion, les points reportés, la vérification avec captures et la relecture finale.
++> - **Brique 2 (exercices)** : la [spec](docs/superpowers/specs/2026-10-14-brique-2-exercices-design.md) et le [plan d'implémentation](docs/superpowers/plans/2026-10-14-brique-2-exercices.md) sont validés, puis vérifiés par quatre relecteurs. 27 règles complètent le plan, par exemple :
++>   - une fiche sensible n'est jamais publiée sans feu vert santé à jour ;
++>   - le catalogue exporté ne contient aucun identifiant de compte ;
++>   - les relecteurs sont majeurs ;
++>   - le pilote est d'abord relu par le propriétaire seul.
++>
++>   Les tâches sont suivies dans le jalon GitHub « Brique 2 · Exercices » (tickets #69 à #86). Le code démarre dès que la refonte est fusionnée.
+ >
+ > **Pas de mise en production avant la fin des cinq briques.** Les spécifications sont dans [`docs/superpowers/specs/`](docs/superpowers/specs/) : la [spec principale](docs/superpowers/specs/2026-10-06-appsport-design.md), la [spec de la refonte](docs/superpowers/specs/2026-10-13-refonte-rune-design.md) et la [spec de la brique 2](docs/superpowers/specs/2026-10-14-brique-2-exercices-design.md).
+ 
+ ## Ce que fera l'app
+ 
+ - **Profil selon le contexte** : à l'inscription, chacun indique où il s'entraîne : au poids du corps à la maison, en salle (et laquelle), ou en sport loisir.
+ - **Un coach au choix**, dès la première étape de l'onboarding :
+   - **L'Ombre**, froid et exigeant ;
+   - **le Skald**, mentor qui raconte ta saga ;
+   - **le Scribe**, calme et précis.
+@@ -56,22 +65,22 @@ Public visé : un cercle privé (inscription sur invitation).
+ - **Les thèmes.** Par défaut, l'appli passe en clair ou en sombre comme le téléphone. On peut aussi forcer Clair ou Sombre, ou choisir l'un des deux thèmes bonus : Carnet (papier crème et encre) ou Salle de nuit (néon et cadres HUD).
+ - **La typographie.** Chakra Petch pour les titres, les chiffres et les rangs, Barlow pour le texte.
+ 
+ Les fichiers du logo sont dans [`docs/brand/`](docs/brand/).
+ 
+ ## Feuille de route
+ 
+ | # | Brique | Contenu | État |
+ |---|--------|---------|------|
+ | 0 | Vision et architecture | Choix techniques, hébergement, modèle de données | Fait |
+-| 1 | Socle | Comptes sur invitation, onboarding, PWA, déploiement, puis la refonte Rune : thèmes, navigation, choix du coach, Progression en avant-goût | Socle fait ; refonte à mi-parcours |
+-| 2 | Exercices | Un cœur d'environ 120 fiches débutant puis des lots jusqu'à 300, rédigées en français (brouillon IA, relecture à plusieurs avec feu vert santé sur les exercices sensibles), illustrations, onglet Exercices par groupe musculaire | Spec et plan validés |
++| 1 | Socle | Comptes sur invitation, onboarding, PWA, déploiement, puis la refonte Rune : thèmes, navigation, choix du coach, Progression en avant-goût | Socle fait ; refonte : écrans en cours |
++| 2 | Exercices | Un cœur d'environ 120 fiches débutant puis des lots jusqu'à 300, rédigées en français (brouillon IA, relecture à plusieurs avec feu vert santé sur les exercices sensibles), illustrations, onglet Exercices par groupe musculaire | Spec et plan validés et vérifiés, démarre après la refonte |
+ | 3 | Programmes et séances | Modèles de programmes, séance en cours, historique, records, progression RPG | À venir |
+ | 4 | Coach IA | Conversation avec le coach choisi, conseils personnalisés, ajustement des programmes | À venir |
+ | 5 | Nutrition | Repères du jour, idées de repas, sans gluten et végétarien, pas du jour | À venir |
+ 
+ Chaque brique suit le même cycle : spécification, plan d'implémentation, puis code relu. La mise en production vient après la brique 5.
+ 
+ ## Lancer Rune en local (sans Docker)
+ 
+ Il faut Node 24 et pnpm 10. Depuis la racine du dépôt, dans PowerShell ou Git Bash :
+ 
+diff --git a/apps/web/e2e/coach-onboarding.spec.ts b/apps/web/e2e/coach-onboarding.spec.ts
+new file mode 100644
+index 0000000..bea65fd
+--- /dev/null
++++ b/apps/web/e2e/coach-onboarding.spec.ts
+@@ -0,0 +1,95 @@
++import { EXPERIENCE_LABELS, GOAL_LABELS } from '@rune/contracts';
++import { expect, test } from './support/fixtures';
++import { createAccountViaUi } from './support/flows';
++import { emulateStandalone, requireServiceWorker } from './support/pwa';
++import { bootstrapAdmin } from './support/server';
++
++// Spec refonte §12 (ruling P9) : le parcours ajouté, du choix du coach jusqu'à « Éveil terminé », puis l'accueil.
++// Textes du Scribe mot pour mot (spec refonte §8), écrits ici : le code des coachs importe la boîte à outils et
++// ses feuilles de style, que l'exécuteur des E2E ne charge pas.
++const SCRIBE = {
++  name: 'Le Scribe',
++  intro:
++    "Je suis le Scribe. Je prépare un plan clair et je note chaque série pour faire le point avec toi. Nos échanges viendront plus tard : pour l'instant, je consigne.",
++  ready: 'Profil complet, lieu noté. Le plan arrivera ici.',
++};
++const QUESTS = ['Profil complété', 'Lieu principal choisi', 'Prêt hors ligne'];
++/** Le voyant « Prêt hors ligne » attend le service worker et le premier pull. */
++const READY_TIMEOUT_MS = 30_000;
++
++test('onboarding : choix du coach, présentation, les 8 autres écrans, « Éveil terminé » puis l’accueil', async ({
++  server,
++  context,
++  page,
++}) => {
++  await emulateStandalone(context);
++  const { link } = await bootstrapAdmin(server);
++  await page.goto(link);
++  await requireServiceWorker(page);
++  await createAccountViaUi(page, 'noa');
++
++  const current = page.getByTestId('onboarding-step');
++  const button = (name: string) => page.getByRole('button', { name, exact: true });
++  const choose = (name: string) => current.getByRole('radio', { name, exact: true }).check();
++  /** Écran `step`, titre nommé avec son rang « Étape n sur 9 ». */
++  const at = async (step: string, n: number, title: string) => {
++    await expect(current).toHaveAttribute('data-step', step);
++    await expect(page.getByRole('heading', { level: 2, name: `Étape ${n} sur 9 ${title}` })).toBeVisible();
++  };
++
++  await test.step('coach : Le Scribe, puis sa présentation', async () => {
++    await at('coach', 1, 'Choisis ton coach');
++    await choose(SCRIBE.name);
++    await button('Continuer').click();
++    await at('coach', 1, SCRIBE.name);
++    await expect(current.getByText("Message d'accueil", { exact: true })).toBeVisible();
++    await expect(current.getByText(SCRIBE.intro, { exact: true })).toBeAttached();
++    await button("C'est parti").click();
++  });
++
++  await test.step('les 8 autres écrans, avancés par « Continuer »', async () => {
++    await at('goal', 2, 'Objectif');
++    await choose(GOAL_LABELS.strength);
++    await button('Continuer').click();
++    await at('sport', 3, 'Autre sport');
++    await choose('Non');
++    await button('Continuer').click();
++    await at('place_kind', 4, 'Lieu principal');
++    await choose('À la maison');
++    await button('Continuer').click();
++    await at('place', 5, 'Ma maison');
++    // « Nom du lieu » prérempli.
++    await button('Continuer').click();
++    await at('experience', 6, 'Niveau');
++    await choose(EXPERIENCE_LABELS.lt_6_months);
++    await button('Continuer').click();
++    await at('availability', 7, 'Disponibilité');
++    await choose('2');
++    await choose('60 min');
++    await expect(current.getByText('2 séances de 60 min par semaine', { exact: true })).toBeVisible();
++    await button('Continuer').click();
++    await at('health', 8, 'Santé et prudence');
++    await button('Continuer').click();
++    await at('ready', 9, "C'est prêt");
++  });
++
++  await test.step('« Éveil terminé » : rang E, quêtes cochées, mot du Scribe, puis « Commencer »', async () => {
++    await expect(page.getByRole('heading', { name: 'Éveil terminé.', exact: true })).toBeVisible();
++    await expect(page.getByRole('img', { name: 'Rang E', exact: true })).toBeVisible();
++    for (const quest of QUESTS) {
++      await expect(page.getByRole('checkbox', { name: quest, exact: true })).toBeChecked({
++        timeout: READY_TIMEOUT_MS,
++      });
++    }
++    await expect(current.getByText('3/3', { exact: true })).toBeVisible();
++    await expect(current.getByText(SCRIBE.ready, { exact: true })).toBeVisible();
++    await expect(button('Commencer')).toBeEnabled();
++    await button('Commencer').click();
++    await page.waitForURL((url) => url.pathname === '/');
++    // L'accueil : son onglet actif, et le titre qui salue le pseudo (sa formule change avec l'accueil Rune).
++    await expect(
++      page.getByTestId('tab-bar').getByRole('link', { name: 'Accueil', exact: true }),
++    ).toHaveAttribute('aria-current', 'page');
++    await expect(page.getByRole('heading', { level: 1, name: /\bnoa$/ })).toBeVisible();
++  });
++});
+diff --git a/apps/web/e2e/support/flows.ts b/apps/web/e2e/support/flows.ts
+index 37a2af9..8873b12 100644
+--- a/apps/web/e2e/support/flows.ts
++++ b/apps/web/e2e/support/flows.ts
+@@ -18,31 +18,31 @@ export async function createAccountViaUi(page: Page, username: string): Promise<
+   await page.getByLabel('Pseudo', { exact: true }).fill(username);
+   await page.getByLabel('Mot de passe', { exact: true }).fill(E2E_PASSWORD);
+   await page.getByLabel('Confirmation', { exact: true }).fill(E2E_PASSWORD);
+   await page.getByLabel("J'ai lu la page Confidentialité et règles", { exact: true }).check();
+   await button(page, 'Créer mon compte').click();
+   await page.waitForURL((url) => url.pathname === '/onboarding');
+ }
+ 
+ /**
+  * Les 9 écrans de l'onboarding (spec refonte §10.1) depuis le coach : Le Skald, sa présentation, puis
+- * chaque écran attendu par son `data-step`, et E8 « Commencer » une fois le voyant « Prêt hors ligne » au
+- * vert (R-SYN-33) ; attend l'accueil.
++ * chaque écran attendu par son `data-step`, et « Commencer » sur « Éveil terminé » une fois la quête
++ * « Prêt hors ligne » cochée (R-SYN-33) ; attend l'accueil.
+  */
+ export async function completeOnboardingViaUi(
+   page: Page,
+   o: { place: { kind: 'gym'; name: string; city: string } | { kind: 'home' } },
+ ): Promise<void> {
+   const current = page.getByTestId('onboarding-step');
+   const at = (step: string) => expect(current).toHaveAttribute('data-step', step);
+   const choose = (name: string) => current.getByRole('radio', { name, exact: true }).check();
+-  const next = () => button(page, 'Suivant').click();
++  const next = () => button(page, 'Continuer').click();
+ 
+   await at('coach');
+   await choose('Le Skald');
+   await button(page, 'Continuer').click();
+   // Coach enregistré : sa présentation s'ouvre, toujours à l'étape coach.
+   await button(page, "C'est parti").click();
+   await at('goal');
+   await choose(GOAL_LABELS.muscle);
+   await next();
+   await at('sport');
+@@ -51,37 +51,37 @@ export async function completeOnboardingViaUi(
+   await at('place_kind');
+   await choose(o.place.kind === 'gym' ? 'À la salle' : 'À la maison');
+   await next();
+   await at('place');
+   if (o.place.kind === 'gym') {
+     await button(page, "Ma salle n'est pas dans la liste").click();
+     await page.getByLabel('Nom de la salle', { exact: true }).fill(o.place.name);
+     await page.getByLabel('Ville', { exact: true }).fill(o.place.city);
+     await button(page, 'Continuer').click();
+     await choose(PRESETS.gym_small.label);
+-    // La salle créée valide l'écran : pas de « Suivant ».
++    // La salle créée valide l'écran : pas de « Continuer » de l'écran.
+     await button(page, 'Créer la salle').click();
+   } else {
+     // « Nom du lieu » prérempli.
+     await next();
+   }
+   await at('experience');
+   await choose(EXPERIENCE_LABELS.none);
+   await next();
+   await at('availability');
+   await choose('3');
+   await choose('45 min');
+   await next();
+   await at('health');
+   await next();
+   await at('ready');
+-  await expect(page.getByTestId('offline-ready')).toHaveAttribute('data-state', 'ready', {
++  await expect(page.getByRole('checkbox', { name: 'Prêt hors ligne', exact: true })).toBeChecked({
+     timeout: READY_TIMEOUT_MS,
+   });
+   // La garde mène à l'accueil dès la réponse du serveur, mais « Commencer » y mène encore après le pull qui
+   // suit : un geste fait entre les deux serait annulé. L'événement de fin, émis juste avant, marque la fin.
+   await page.evaluate((name) => {
+     const done = () => Object.assign(window, { e2eOnboardingCompleted: true });
+     window.addEventListener(name, done, { once: true });
+   }, ONBOARDING_COMPLETED_EVENT);
+   await button(page, 'Commencer').click();
+   await page.waitForFunction(() => 'e2eOnboardingCompleted' in window, null, { timeout: READY_TIMEOUT_MS });
+diff --git a/apps/web/src/features/onboarding/AvailabilityStep.tsx b/apps/web/src/features/onboarding/AvailabilityStep.tsx
+index ec8f7ba..6a22b29 100644
+--- a/apps/web/src/features/onboarding/AvailabilityStep.tsx
++++ b/apps/web/src/features/onboarding/AvailabilityStep.tsx
+@@ -1,48 +1,67 @@
+ import { DAYS_PER_WEEK, SESSION_MINUTES } from '@rune/contracts';
+ import { useState } from 'react';
+ import { useLive } from '../../app-services';
+ import { useRepos } from '../../repos';
+-import { ChoiceList } from '../../ui';
++import { Chips, plural } from '../../ui';
++import styles from './onboarding.module.css';
+ import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++import { CalendarGlyph } from './StepIcons';
+ import { StepTitle } from './StepTitle';
+ 
+ type Days = (typeof DAYS_PER_WEEK)[number];
+ type Minutes = (typeof SESSION_MINUTES)[number];
+ 
+-/** E6 Disponibilité : séances par semaine (« 2 », « 3 », « 4 ») et durée (« 30 min » à « 90 min »). */
++/**
++ * E6 Disponibilité (maquette B06) : séances par semaine (« 2 », « 3 », « 4 ») et durée (« 30 min » à « 90 min »)
++ * en pastilles ; la carte « Ton rythme » redit les deux réponses, et n'apparaît qu'une fois les deux données.
++ */
+ export function AvailabilityStep(p: StepProps) {
+   const repos = useRepos();
+   const profile = useLive(() => repos.profile.get(), [repos]);
+   const [days, setDays] = useState<Days | null>(null);
+   const [minutes, setMinutes] = useState<Minutes | null>(null);
+   const save = useSaveStep(p, 'availability');
+   if (profile === undefined) return null;
+   const daysValue = days ?? profile?.daysPerWeek ?? null;
+   const minutesValue = minutes ?? profile?.sessionMinutes ?? null;
+   return (
+     <>
+       <StepTitle>Disponibilité</StepTitle>
+-      <ChoiceList<Days>
++      <p className={styles.lead}>Choisis un rythme que tu peux tenir.</p>
++      <Chips
+         name="days-per-week"
+         legend="Séances par semaine"
+-        value={daysValue}
+-        onChange={setDays}
+-        options={DAYS_PER_WEEK.map((n) => ({ value: n, label: String(n) }))}
++        value={daysValue === null ? null : String(daysValue)}
++        onChange={(v) => setDays(DAYS_PER_WEEK.find((n) => String(n) === v) ?? null)}
++        options={DAYS_PER_WEEK.map((n) => ({ value: String(n), label: String(n) }))}
+       />
+-      <ChoiceList<Minutes>
++      <Chips
+         name="session-minutes"
+         legend="Durée d'une séance"
+-        value={minutesValue}
+-        onChange={setMinutes}
+-        options={SESSION_MINUTES.map((n) => ({ value: n, label: `${n} min` }))}
++        value={minutesValue === null ? null : String(minutesValue)}
++        onChange={(v) => setMinutes(SESSION_MINUTES.find((n) => String(n) === v) ?? null)}
++        options={SESSION_MINUTES.map((n) => ({ value: String(n), label: `${n} min` }))}
+       />
++      {daysValue !== null && minutesValue !== null ? (
++        <div className={styles.rhythm}>
++          <span className={styles.rhythmIcon} aria-hidden="true">
++            <CalendarGlyph />
++          </span>
++          <p className={styles.rhythmText}>
++            <span className={styles.rhythmLabel}>Ton rythme</span>
++            <span className={styles.rhythmValue}>
++              {`${daysValue} ${plural(daysValue, 'séance', 'séances')} de ${minutesValue} min par semaine`}
++            </span>
++          </p>
++        </div>
++      ) : null}
+       <StepActions
+         onBack={p.onBack}
+         pending={save.pending}
+         error={save.error}
+         primary={{
+           label: saveLabel(p.mode),
+           disabled: daysValue === null || minutesValue === null,
+           onClick: () => {
+             if (daysValue !== null && minutesValue !== null) {
+               void save.run({ daysPerWeek: daysValue, sessionMinutes: minutesValue });
+diff --git a/apps/web/src/features/onboarding/AwakeningQuests.tsx b/apps/web/src/features/onboarding/AwakeningQuests.tsx
+new file mode 100644
+index 0000000..5da8752
+--- /dev/null
++++ b/apps/web/src/features/onboarding/AwakeningQuests.tsx
+@@ -0,0 +1,101 @@
++import type { TrainingProfileView } from '../../repos';
++import styles from './onboarding.module.css';
++
++/** Une quête d'éveil et son état réel. */
++export interface AwakeningQuest {
++  label: string;
++  done: boolean;
++}
++
++/**
++ * Les 3 quêtes d'éveil (spec refonte §10.2), d'après les vrais états seulement : profil complété (coach,
++ * objectif, niveau et disponibilité donnés), lieu principal choisi, prêt hors ligne (le voyant de R-SYN-33).
++ * Un état encore inconnu (profil pas encore lu) compte comme non atteint : jamais de coche inventée.
++ */
++export function awakeningQuests(s: {
++  profile: TrainingProfileView | null | undefined;
++  hasPrimaryPlace: boolean;
++  offlineReady: boolean;
++}): AwakeningQuest[] {
++  const p = s.profile;
++  const profileComplete =
++    !!p &&
++    p.coach !== null &&
++    p.goal !== null &&
++    p.experience !== null &&
++    p.daysPerWeek !== null &&
++    p.sessionMinutes !== null;
++  return [
++    { label: 'Profil complété', done: profileComplete },
++    { label: 'Lieu principal choisi', done: s.hasPrimaryPlace },
++    { label: 'Prêt hors ligne', done: s.offlineReady },
++  ];
++}
++
++function QuestCheck() {
++  return (
++    <svg
++      aria-hidden="true"
++      width="16"
++      height="16"
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth="2.6"
++      strokeLinecap="round"
++      strokeLinejoin="round"
++    >
++      <path d="m5 12 4.5 4.5L19 7" />
++    </svg>
++  );
++}
++
++/**
++ * Carte « Quêtes d'éveil » (maquette B08, prototype « Éveil terminé ») : le compte « n/3 », la barre qui se
++ * remplit, puis chaque quête en case à cocher en lecture seule (cochée seulement quand l'état réel l'est) :
++ * atteignable au clavier comme toute case en lecture seule, elle ne se coche pas à la main. Les coches se gravent
++ * une à une (onboarding.module.css) ; l'état, lui, est là dès le premier rendu.
++ */
++export function AwakeningQuests(p: { quests: readonly AwakeningQuest[] }) {
++  const done = p.quests.filter((q) => q.done).length;
++  const total = p.quests.length;
++  return (
++    <div className={styles.quests}>
++      <p className={styles.questsHead}>
++        <span>Quêtes d'éveil</span>
++        <span className={styles.questsCount}>
++          <span aria-hidden="true">{`${done}/${total}`}</span>
++          <span className={styles.srOnly}>{`${done} sur ${total}`}</span>
++        </span>
++      </p>
++      <div className={styles.questsBar} aria-hidden="true">
++        {done > 0 ? (
++          <span className={styles.questsFill} style={{ width: `${(done / total) * 100}%` }} />
++        ) : null}
++      </div>
++      <ul className={styles.questList}>
++        {p.quests.map((q) => (
++          <li key={q.label}>
++            {/* biome-ignore lint/a11y/useSemanticElements: case en lecture seule, l'état d'une quête et non un champ à remplir */}
++            <span
++              role="checkbox"
++              aria-checked={q.done}
++              aria-readonly="true"
++              tabIndex={0}
++              className={styles.quest}
++            >
++              <span className={styles.questBox} aria-hidden="true">
++                {q.done ? (
++                  <span className={styles.questCheck}>
++                    <QuestCheck />
++                  </span>
++                ) : null}
++              </span>
++              {q.label}
++            </span>
++          </li>
++        ))}
++      </ul>
++    </div>
++  );
++}
+diff --git a/apps/web/src/features/onboarding/ExperienceStep.tsx b/apps/web/src/features/onboarding/ExperienceStep.tsx
+index 3c13cac..15a6fb4 100644
+--- a/apps/web/src/features/onboarding/ExperienceStep.tsx
++++ b/apps/web/src/features/onboarding/ExperienceStep.tsx
+@@ -1,36 +1,47 @@
+ import { EXPERIENCE_LABELS, EXPERIENCES, type Experience } from '@rune/contracts';
+ import { useState } from 'react';
+ import { useLive } from '../../app-services';
+ import { useRepos } from '../../repos';
+-import { ChoiceList } from '../../ui';
++import { ChoiceCard, ChoiceGroup } from '../../ui';
++import styles from './onboarding.module.css';
+ import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++import { EXPERIENCE_ICONS } from './StepIcons';
+ import { StepTitle } from './StepTitle';
+ 
+-/** E5 Niveau. */
++/** E5 Niveau (maquette B05 : une carte par durée, des barres qui montent avec le niveau). */
+ export function ExperienceStep(p: StepProps) {
+   const repos = useRepos();
+   const profile = useLive(() => repos.profile.get(), [repos]);
+   const [choice, setChoice] = useState<Experience | null>(null);
+   const save = useSaveStep(p, 'experience');
+   if (profile === undefined) return null;
+   const value = choice ?? profile?.experience ?? null;
+   return (
+     <>
+       <StepTitle>Niveau</StepTitle>
+-      <ChoiceList<Experience>
+-        name="experience"
+-        legend="Depuis combien de temps fais-tu de la musculation régulièrement (au moins une fois par semaine) ?"
+-        value={value}
+-        onChange={setChoice}
+-        options={EXPERIENCES.map((e) => ({ value: e, label: EXPERIENCE_LABELS[e] }))}
+-      />
++      <div className={styles.question}>
++        <ChoiceGroup legend="Depuis combien de temps fais-tu de la musculation régulièrement (au moins une fois par semaine) ?">
++          {EXPERIENCES.map((e) => (
++            <ChoiceCard
++              key={e}
++              type="radio"
++              name="experience"
++              value={e}
++              checked={value === e}
++              onChange={() => setChoice(e)}
++              title={EXPERIENCE_LABELS[e]}
++              icon={EXPERIENCE_ICONS[e]}
++            />
++          ))}
++        </ChoiceGroup>
++      </div>
+       <StepActions
+         onBack={p.onBack}
+         pending={save.pending}
+         error={save.error}
+         primary={{
+           label: saveLabel(p.mode),
+           disabled: value === null,
+           onClick: () => {
+             if (value !== null) void save.run({ experience: value });
+           },
+diff --git a/apps/web/src/features/onboarding/GoalStep.tsx b/apps/web/src/features/onboarding/GoalStep.tsx
+index 95f68b6..2f41f7a 100644
+--- a/apps/web/src/features/onboarding/GoalStep.tsx
++++ b/apps/web/src/features/onboarding/GoalStep.tsx
+@@ -1,24 +1,27 @@
+ import { GOAL_LABELS, type Goal } from '@rune/contracts';
+ import { availableGoals } from '@rune/domain';
+ import { useContext, useState } from 'react';
+ import { useLive, useMe } from '../../app-services';
+ import { useRepos } from '../../repos';
+-import { ChoiceList } from '../../ui';
++import { ChoiceCard, ChoiceGroup } from '../../ui';
++import styles from './onboarding.module.css';
+ import { SportStep } from './SportStep';
+-import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++import { CONTINUE_LABEL, StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++import { GOAL_ICONS } from './StepIcons';
+ import { StepTitle, StepTitleContext } from './StepTitle';
+ 
+ /**
+- * E1 Objectif : « Perdre du gras » n'est pas proposé à un mineur. En édition, choisir l'objectif
+- * sportif sans sport enregistré mène d'abord au sport, puis un seul PATCH (R-ONB-3) ; le titre de
+- * l'écran affiché (sport, ou objectif au retour) prend alors le focus.
++ * E1 Objectif (maquette B01 : une carte par objectif, avec son icône) : « Perdre du gras » n'est pas proposé
++ * à un mineur. En édition, choisir l'objectif sportif sans sport enregistré mène d'abord au sport
++ * (« Continuer »), puis un seul PATCH (R-ONB-3) ; le titre de l'écran affiché (sport, ou objectif au retour)
++ * prend alors le focus.
+  */
+ export function GoalStep(p: StepProps) {
+   const repos = useRepos();
+   const me = useMe();
+   const profile = useLive(() => repos.profile.get(), [repos]);
+   const [choice, setChoice] = useState<Goal | null>(null);
+   const [askSport, setAskSport] = useState(false);
+   const titles = useContext(StepTitleContext);
+   const save = useSaveStep(p, 'goal');
+   if (!me || profile === undefined) return null;
+@@ -35,33 +38,42 @@ export function GoalStep(p: StepProps) {
+ 
+   if (askSport) {
+     return (
+       <SportStep mode="edit" pendingGoal="sport_support" onNext={p.onNext} onBack={() => showSport(false)} />
+     );
+   }
+ 
+   return (
+     <>
+       <StepTitle>Objectif</StepTitle>
+-      <ChoiceList<Goal>
+-        name="goal"
+-        legend="Quel est ton objectif principal ?"
+-        value={value}
+-        onChange={setChoice}
+-        options={goals.map((g) => ({ value: g, label: GOAL_LABELS[g] }))}
+-      />
++      <div className={styles.question}>
++        <ChoiceGroup legend="Quel est ton objectif principal ?">
++          {goals.map((g) => (
++            <ChoiceCard
++              key={g}
++              type="radio"
++              name="goal"
++              value={g}
++              checked={value === g}
++              onChange={() => setChoice(g)}
++              title={GOAL_LABELS[g]}
++              icon={GOAL_ICONS[g]}
++            />
++          ))}
++        </ChoiceGroup>
++      </div>
+       <StepActions
+         onBack={p.onBack}
+         pending={save.pending}
+         error={save.error}
+         primary={{
+-          label: needsSport ? 'Suivant' : saveLabel(p.mode),
++          label: needsSport ? CONTINUE_LABEL : saveLabel(p.mode),
+           disabled: value === null,
+           onClick: () => {
+             if (value === null) return;
+             if (needsSport) showSport(true);
+             else void save.run({ goal: value });
+           },
+         }}
+       />
+     </>
+   );
+diff --git a/apps/web/src/features/onboarding/HealthStep.tsx b/apps/web/src/features/onboarding/HealthStep.tsx
+index 20c2a00..549c3b2 100644
+--- a/apps/web/src/features/onboarding/HealthStep.tsx
++++ b/apps/web/src/features/onboarding/HealthStep.tsx
+@@ -6,29 +6,32 @@ import {
+   type LimitationSide,
+   type TrainingProfilePatch,
+ } from '@rune/contracts';
+ import { useEffect, useId, useRef, useState } from 'react';
+ import { useLive, useMe } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { Banner, Button, ChoiceList, HealthWarning, useAction } from '../../ui';
+ import { LimitationEditForm, LimitationFields, limitationLabel } from './LimitationFields';
+ import styles from './onboarding.module.css';
+ import { StepActions, type StepProps, saveLabel, saveStep } from './StepActions';
++import { LockGlyph, ShieldGlyph } from './StepIcons';
+ import { StepTitle } from './StepTitle';
+ 
+ const SELF_CHECK_TEXT =
+   "Si l'une de ces situations te concerne, demande l'avis d'un médecin avant de commencer.";
+ const SEE_DOCTOR_TEXT = 'Nous te recommandons de consulter un médecin avant de commencer.';
+ const SCREENING_INCOMPLETE = 'Réponds aux 4 questions ou efface tes réponses avant de continuer.';
+ const DRAFT_INCOMPLETE = 'Termine ou efface la limitation en cours avant de continuer.';
+ const CAUTIOUS_NOT_HEALTH_DATA =
+   "Réglage d'entraînement, pas une donnée de santé : enregistré même sans accord.";
++const LIMITATIONS_NOTE =
++  "Facultatif : une zone sensible ou une gêne à ménager ; aucun diagnostic n'est nécessaire.";
+ 
+ /** Explication et accord santé (E7.1, P-CST-1) : case jamais pré-cochée, distincte de Confidentialité. */
+ export function HealthConsentPanel(p: { onGranted(): void; onSkip?: () => void }) {
+   const repos = useRepos();
+   const [agreed, setAgreed] = useState(false);
+   const grant = useAction(async () => {
+     await repos.consent.grantHealth();
+     p.onGranted();
+   });
+   return (
+@@ -36,41 +39,41 @@ export function HealthConsentPanel(p: { onGranted(): void; onSkip?: () => void }
+       <p>
+         Tes réponses au questionnaire et tes limitations sont des données de santé. Elles servent seulement à
+         adapter tes séances et restent sur le serveur du cercle. Elles ne vont au coach qu'avec son propre
+         accord, en plus de celui-ci. Tu peux les supprimer à tout moment.
+       </p>
+       <label className={styles.check}>
+         <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+         <span>{HEALTH_CONSENT_TEXT.text}</span>
+       </label>
+       {grant.error ? <Banner tone="error">{grant.error}</Banner> : null}
+-      <div className={styles.actions}>
++      <div className={styles.panelActions}>
+         {p.onSkip ? (
+           <Button variant="secondary" onClick={p.onSkip}>
+             Passer
+           </Button>
+         ) : null}
+         <Button disabled={!agreed || grant.pending} onClick={() => void grant.run()}>
+           J'accepte et je renseigne
+         </Button>
+       </div>
+     </section>
+   );
+ }
+ 
+ type Answer = 'yes' | 'no';
+ 
+ const noAnswers = (): (Answer | null)[] => HEALTH_QUESTIONNAIRE.questions.map(() => null);
+ 
+ /**
+  * Questionnaire d'alerte en cours (E7.2) : réponses, réponses déjà envoyées et `persist` (PUT des
+- * 4 réponses, qui lève en cas d'échec). Tenu par `HealthStep` pour l'envoyer au clic sur « Suivant ».
++ * 4 réponses, qui lève en cas d'échec). Tenu par `HealthStep` pour l'envoyer au clic sur « Continuer ».
+  */
+ export function useScreening(onSaved?: (caution: boolean) => void) {
+   const repos = useRepos();
+   const [answers, setAnswers] = useState(noAnswers);
+   const [sent, setSent] = useState<(Answer | null)[] | null>(null);
+   const [a, b, c, d] = answers.map((x) => (x === null ? null : x === 'yes'));
+   const values: [boolean, boolean, boolean, boolean] | null =
+     a != null && b != null && c != null && d != null ? [a, b, c, d] : null;
+   const answered = answers.some((x) => x !== null);
+   const dirty = answered && (sent === null || sent.some((x, i) => x !== answers[i]));
+@@ -136,37 +139,37 @@ export function ScreeningQuestions(p: {
+           onChange={(v) => s.setAnswer(i, v)}
+           options={[
+             { value: 'yes', label: 'Oui' },
+             { value: 'no', label: 'Non' },
+           ]}
+         />
+       ))}
+       {save.error ? <Banner tone="error">{save.error}</Banner> : null}
+       {s.advice ? <Banner tone="warning">{SEE_DOCTOR_TEXT}</Banner> : null}
+       {s.saved ? <Banner tone="info">Réponses enregistrées.</Banner> : null}
+-      <div className={styles.actions}>
++      <div className={styles.panelActions}>
+         {s.dirty ? (
+           <Button variant="secondary" onClick={s.clear}>
+             Effacer mes réponses
+           </Button>
+         ) : null}
+         <Button variant="secondary" disabled={!s.complete || save.pending} onClick={() => void save.run()}>
+           Enregistrer mes réponses
+         </Button>
+       </div>
+     </section>
+   );
+ }
+ 
+ /**
+  * Limitation en cours de saisie (E7.3) : `persist` l'ajoute (POST, lève en cas d'échec) puis vide
+- * la saisie. Tenue par `HealthStep` pour l'envoyer au clic sur « Suivant ».
++ * la saisie. Tenue par `HealthStep` pour l'envoyer au clic sur « Continuer ».
+  */
+ export function useLimitationDraft() {
+   const repos = useRepos();
+   const [bodyArea, setBodyArea] = useState<BodyArea | ''>('');
+   const [side, setSide] = useState<LimitationSide | ''>('');
+   const [severity, setSeverity] = useState<LimitationSeverity | null>(null);
+   const [note, setNote] = useState('');
+   const complete = bodyArea !== '' && side !== '' && severity !== null;
+   const empty = bodyArea === '' && side === '' && severity === null && note.trim() === '';
+   const clear = () => {
+@@ -239,23 +242,21 @@ export function LimitationsEditor(
+   }, [editing]);
+ 
+   function closeEditor() {
+     returnTo.current = editing;
+     setEditing(null);
+   }
+ 
+   return (
+     <section className={styles.panel}>
+       <Heading>Limitations</Heading>
+-      <p className={styles.note}>
+-        Facultatif : une zone sensible ou une gêne à ménager ; aucun diagnostic n'est nécessaire.
+-      </p>
++      <p className={styles.note}>{LIMITATIONS_NOTE}</p>
+       {limitations === undefined ? null : limitations.length === 0 ? (
+         <p>Aucune</p>
+       ) : (
+         <ul ref={listRef} className={styles.limitations}>
+           {limitations.map((l) =>
+             editing === l.id ? (
+               <li key={l.id}>
+                 <LimitationEditForm limitation={l} onDone={closeEditor} />
+               </li>
+             ) : (
+@@ -286,75 +287,81 @@ export function LimitationsEditor(
+                   </Button>
+                 </span>
+               </li>
+             ),
+           )}
+         </ul>
+       )}
+       <LimitationFields state={draft} />
+       {add.error ? <Banner tone="error">{add.error}</Banner> : null}
+       {remove.error ? <Banner tone="error">{remove.error}</Banner> : null}
+-      <div className={styles.actions}>
++      <div className={styles.panelActions}>
+         {draft.empty ? null : (
+           <Button variant="secondary" onClick={draft.clear}>
+             Effacer la saisie
+           </Button>
+         )}
+         <Button variant="secondary" disabled={!draft.complete || add.pending} onClick={() => void add.run()}>
+           Ajouter une limitation
+         </Button>
+       </div>
+     </section>
+   );
+ }
+ 
+-/** Mode prudent (E7.5, C1) : proposé à tous ; affiché imposé pour un mineur (R-CST-7). */
++/**
++ * Mode prudent (E7.5, C1) : proposé à tous ; affiché imposé pour un mineur (R-CST-7). Un interrupteur à droite de
++ * son libellé (maquette B07), qui reste une case à cocher de rôle `switch` : la ligne entière le bascule.
++ */
+ export function CautiousModeToggle(p: {
+   value: boolean;
+   minor: boolean;
+   /** Envoi en cours (Profil) : pas de nouveau choix avant la réponse. */
+   disabled?: boolean;
+   onChange(v: boolean): void;
+ }) {
+   const hintId = useId();
+   const noteId = useId();
+   return (
+     <div className={styles.toggle}>
+-      <label className={styles.check}>
++      <label className={styles.switchRow}>
++        <span>Je préfère une progression plus prudente</span>
+         <input
+           type="checkbox"
+           role="switch"
++          className={styles.switchInput}
+           aria-checked={p.minor || p.value}
+           checked={p.minor || p.value}
+           disabled={p.minor || p.disabled}
+           aria-describedby={p.minor ? `${hintId} ${noteId}` : noteId}
+           onChange={(e) => p.onChange(e.target.checked)}
+         />
+-        <span>Je préfère une progression plus prudente</span>
+       </label>
+       {p.minor ? (
+         <span id={hintId} className={styles.note}>
+           Imposé jusqu'à 18 ans
+         </span>
+       ) : null}
+       <span id={noteId} className={styles.note}>
+         {CAUTIOUS_NOT_HEALTH_DATA}
+       </span>
+     </div>
+   );
+ }
+ 
+ /**
+- * E7 Santé et prudence, facultatif. Avec accord : questionnaire enregistré et limitations ; sans :
+- * accord proposé, ou auto-vérification après « Passer ». Au clic sur « Suivant » (R-ONB-2), l'écran
+- * envoie ce qui n'est pas encore enregistré : réponses complètes (PUT), limitation complète (POST),
+- * puis le mode prudent avec l'étape (PATCH). Une saisie à moitié faite arrête « Suivant ».
++ * E7 Santé et prudence, facultatif (maquette B07 : des cartes). Avec accord : questionnaire enregistré et
++ * limitations ; sans : la carte « Accord santé », les limitations annoncées « Après ton accord », ou
++ * l'auto-vérification après « Passer ». Textes légaux mot pour mot, sans voix du Système (spec refonte §10.1).
++ * Au clic sur « Continuer » (R-ONB-2), l'écran envoie ce qui n'est pas encore enregistré : réponses complètes
++ * (PUT), limitation complète (POST), puis le mode prudent avec l'étape (PATCH). Une saisie à moitié faite arrête
++ * « Continuer ».
+  */
+ export function HealthStep(p: StepProps) {
+   const repos = useRepos();
+   const me = useMe();
+   const profile = useLive(() => repos.profile.get(), [repos]);
+   const [skipped, setSkipped] = useState(false);
+   const [cautious, setCautious] = useState<boolean | null>(null);
+   const [blocked, setBlocked] = useState<string | null>(null);
+   const screening = useScreening();
+   const draft = useLimitationDraft();
+@@ -378,31 +385,82 @@ export function HealthStep(p: StepProps) {
+         : null;
+ 
+   function submit() {
+     setBlocked(issue);
+     if (issue === null) void next.run(changed ? { cautiousMode: cautious === true } : {});
+   }
+ 
+   return (
+     <>
+       <StepTitle>Santé et prudence</StepTitle>
++      <p className={styles.lead}>Facultatif : tu peux passer cette étape.</p>
+       {recording ? (
+         <>
+-          <ScreeningQuestions record screening={screening} />
+-          <LimitationsEditor draft={draft} />
++          <div className={styles.card}>
++            <ScreeningQuestions record screening={screening} />
++          </div>
++          <div className={styles.card}>
++            <LimitationsEditor draft={draft} />
++          </div>
+         </>
+       ) : skipped ? (
+-        <ScreeningQuestions record={false} />
++        <div className={styles.card}>
++          <ScreeningQuestions record={false} />
++        </div>
+       ) : (
+-        <HealthConsentPanel onGranted={() => {}} onSkip={() => setSkipped(true)} />
++        <>
++          <ConsentCard onSkip={() => setSkipped(true)} />
++          <LockedLimitations />
++        </>
+       )}
+-      <CautiousModeToggle value={cautious ?? stored} minor={minor} onChange={setCautious} />
++      <div className={styles.card}>
++        <CautiousModeToggle value={cautious ?? stored} minor={minor} onChange={setCautious} />
++      </div>
+       <HealthWarning />
+       <StepActions
+         onBack={p.onBack}
+         pending={next.pending}
+         error={blocked !== null && blocked === issue ? blocked : next.error}
+         primary={{ label: saveLabel(p.mode), onClick: submit }}
+       />
+     </>
+   );
+ }
++
++/** Carte « Accord santé » de l'onboarding (maquette B07) : bouclier, titre, puis l'accord tel quel. */
++function ConsentCard(p: { onSkip(): void }) {
++  const titleId = useId();
++  return (
++    <section aria-labelledby={titleId} className={styles.card}>
++      <div className={styles.cardHead}>
++        <ShieldGlyph />
++        <h3 id={titleId}>Accord santé</h3>
++      </div>
++      <HealthConsentPanel onGranted={() => {}} onSkip={p.onSkip} />
++    </section>
++  );
++}
++
++/**
++ * Limitations annoncées avant l'accord (maquette B07) : la carte dit ce qu'elles sont et qu'elles s'ouvrent
++ * « Après ton accord », sans aucun champ.
++ */
++function LockedLimitations() {
++  const titleId = useId();
++  const lockId = useId();
++  return (
++    <section aria-labelledby={titleId} aria-describedby={lockId} className={styles.locked}>
++      <span className={styles.lockedIcon} aria-hidden="true">
++        <LockGlyph />
++      </span>
++      <div className={styles.lockedText}>
++        <div className={styles.lockedHead}>
++          <h3 id={titleId}>Limitations</h3>
++          <span id={lockId} className={styles.lockedState}>
++            Après ton accord
++          </span>
++        </div>
++        <p className={styles.note}>{LIMITATIONS_NOTE}</p>
++      </div>
++    </section>
++  );
++}
+diff --git a/apps/web/src/features/onboarding/LimitationFields.tsx b/apps/web/src/features/onboarding/LimitationFields.tsx
+index 3115657..9a00f51 100644
+--- a/apps/web/src/features/onboarding/LimitationFields.tsx
++++ b/apps/web/src/features/onboarding/LimitationFields.tsx
+@@ -128,21 +128,21 @@ export function LimitationEditForm(p: { limitation: LimitationView; onDone(): vo
+       ref={formRef}
+       aria-label={`Modifier : ${limitationLabel(l)}`}
+       className={styles.panel}
+       noValidate
+       onSubmit={(e) => void submit(e)}
+     >
+       <LimitationFields
+         state={{ bodyArea, setBodyArea, side, setSide, severity, setSeverity, note, setNote }}
+       />
+       {save.error ? <Banner tone="error">{save.error}</Banner> : null}
+-      <div className={styles.actions}>
++      <div className={styles.panelActions}>
+         <Button variant="secondary" disabled={save.pending} onClick={p.onDone}>
+           Annuler
+         </Button>
+         <Button type="submit" variant="secondary" disabled={!complete || save.pending}>
+           Enregistrer
+         </Button>
+       </div>
+     </form>
+   );
+ }
+diff --git a/apps/web/src/features/onboarding/OnboardingFlow.tsx b/apps/web/src/features/onboarding/OnboardingFlow.tsx
+index 5dc5eef..26a13ef 100644
+--- a/apps/web/src/features/onboarding/OnboardingFlow.tsx
++++ b/apps/web/src/features/onboarding/OnboardingFlow.tsx
+@@ -1,16 +1,19 @@
+ import { ONBOARDING_STEPS, type OnboardingStep, type PlaceKind } from '@rune/contracts';
+ import { firstIncompleteStep } from '@rune/domain';
+ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+ import { useSyncState } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { Banner, ERROR_MESSAGES, Page, SegmentedProgress } from '../../ui';
++import { RuneMark } from '../../ui/Logo';
++import { type ScreenTransition, useScreenEntrance } from '../../ui/screen-transition';
++import { useColorScheme } from '../../ui/use-color-scheme';
+ import { CoachStep } from '../coach/CoachStep';
+ import { AvailabilityStep } from './AvailabilityStep';
+ import { ExperienceStep } from './ExperienceStep';
+ import { GoalStep } from './GoalStep';
+ import { HealthStep } from './HealthStep';
+ import styles from './onboarding.module.css';
+ import { PlaceKindStep } from './PlaceKindStep';
+ import { PlaceStep } from './PlaceStep';
+ import { ReadyStep } from './ReadyStep';
+ import { SportStep } from './SportStep';
+@@ -25,91 +28,100 @@ const FLOW_STEPS: readonly FlowStep[] = ['coach', ...ONBOARDING_STEPS];
+ 
+ interface FlowState {
+   step: FlowStep;
+   /** Type du lieu principal : choisi à l'écran « Lieu principal », ou celui du lieu déjà créé. */
+   kind: PlaceKind | null;
+   /**
+    * Écran qui suit le coach : celui de la reprise quand elle passe d'abord par le coach (profil sans coach),
+    * sinon l'objectif.
+    */
+   afterCoach: OnboardingStep;
++  /** Entrée de l'écran affiché : depuis la droite vers l'avant, depuis la gauche au retour, rien à la reprise. */
++  transition: ScreenTransition;
+ }
+ 
+ /**
+  * Écran affiché : l'écran du lieu sans type connu revient à la question du type (seul un 409 du
+  * serveur peut mener à 'place' : la reprise locale passe par 'place_kind').
+  */
+ export const shownStep = (s: Pick<FlowState, 'step' | 'kind'>): FlowStep =>
+   s.step === 'place' && s.kind === null ? 'place_kind' : s.step;
+ 
+ /**
+  * Onboarding en 9 écrans (spec refonte §10.1), hors de la coquille de l'appli. Départ au premier écran
+  * incomplet (R-ONB-2), précédé de l'étape coach tant que le profil n'a pas de coach ; recalculé à chaque
+  * pull réussi tant que l'utilisateur n'a rien changé (un nouvel appareil reçoit ses réponses, coach compris,
+  * après l'ouverture). Chaque écran s'enregistre au clic, « Retour » revient à l'écran précédent avec ses
+- * réponses. À chaque changement d'écran, le titre du nouvel écran (« Étape n sur 9 <titre> ») prend le focus.
++ * réponses. À chaque changement d'écran, le nouvel écran entre par la droite (par la gauche au retour, en fondu
++ * sous mouvement réduit, spec refonte §7) et son titre (« Étape n sur 9 <titre> ») prend le focus.
+  */
+ export function OnboardingFlow() {
+   const repos = useRepos();
+   const { lastPullOkAt } = useSyncState();
+   const [state, setState] = useState<FlowState | null>(null);
+   // Raison d'un retour imposé par le serveur (409), affichée jusqu'au changement d'écran suivant.
+   const [notice, setNotice] = useState<string | null>(null);
+   // Écran, coach ou type de lieu changé par l'utilisateur : la reprise calculée ne s'applique plus.
+   const moved = useRef(false);
+   const focusNext = useRef(false);
+   const progressId = useId();
+   const titles = useMemo(() => ({ progressId, focusNext }), [progressId]);
++  const screen = useRef<HTMLDivElement>(null);
++  const dark = useColorScheme() === 'dark';
+ 
+   const resume = useCallback(async (): Promise<FlowState> => {
+     const [input, places, profile] = await Promise.all([
+       repos.profile.onboardingInput(),
+       repos.places.list(),
+       repos.profile.get(),
+     ]);
+     const step = firstIncompleteStep(input);
+     return {
+       step: profile?.coach ? step : 'coach',
+       kind: places.find((p) => p.isPrimary)?.kind ?? null,
+       afterCoach: step,
++      transition: 'none',
+     };
+   }, [repos]);
+ 
+   // biome-ignore lint/correctness/useExhaustiveDependencies: reprise recalculée après chaque pull réussi
+   useEffect(() => {
+     let active = true;
+     resume().then(
+       (s) => {
+         if (active && !moved.current) setState(s);
+       },
+       () => {
+         // Base locale illisible : départ au premier écran.
+         if (active && !moved.current)
+-          setState((prev) => prev ?? { step: 'coach', kind: null, afterCoach: 'goal' });
++          setState((prev) => prev ?? { step: 'coach', kind: null, afterCoach: 'goal', transition: 'none' });
+       },
+     );
+     return () => {
+       active = false;
+     };
+   }, [resume, lastPullOkAt]);
+ 
++  useScreenEntrance(screen, state ? shownStep(state) : '', state?.transition ?? 'none');
++
+   if (!state) return null;
+ 
+   const step = shownStep(state);
+   const index = FLOW_STEPS.indexOf(step);
+   const goTo = (s: FlowStep, reason: string | null = null) => {
+     moved.current = true;
+     focusNext.current = true;
+     setNotice(reason);
++    const transition = FLOW_STEPS.indexOf(s) < index ? 'back' : 'forward';
+     // Revenir au coach depuis l'objectif : la suite du coach redevient l'objectif.
+     setState((prev) =>
+-      prev ? { ...prev, step: s, afterCoach: s === 'coach' ? 'goal' : prev.afterCoach } : prev,
++      prev ? { ...prev, step: s, afterCoach: s === 'coach' ? 'goal' : prev.afterCoach, transition } : prev,
+     );
+   };
+   const next = FLOW_STEPS[index + 1];
+   const previous = FLOW_STEPS[index - 1];
+   const onNext = () => {
+     if (next) goTo(next);
+   };
+   const onBack = previous ? () => goTo(previous) : undefined;
+   const props = { mode: 'onboarding', onNext, onBack } as const;
+ 
+@@ -118,54 +130,60 @@ export function OnboardingFlow() {
+     const reason = ERROR_MESSAGES.onboarding_incomplete;
+     if (serverStep) {
+       goTo(serverStep, reason);
+       return;
+     }
+     moved.current = true;
+     resume().then(
+       (s) => {
+         focusNext.current = true;
+         setNotice(reason);
+-        setState(s);
++        setState({ ...s, transition: 'back' });
+       },
+       () => {},
+     );
+   };
+ 
+   return (
+-    <Page title="Prise en main">
+-      <div id={progressId}>
+-        <SegmentedProgress step={index + 1} total={FLOW_STEPS.length} />
+-      </div>
+-      {notice ? <Banner tone="warning">{notice}</Banner> : null}
+-      <StepTitleContext.Provider value={titles}>
+-        <div key={step} data-testid="onboarding-step" data-step={step} className={styles.step}>
+-          {step === 'coach' ? (
+-            <CoachStep
+-              onNext={() => goTo(state.afterCoach)}
+-              onChange={() => {
+-                moved.current = true;
+-              }}
+-            />
+-          ) : null}
+-          {step === 'goal' ? <GoalStep {...props} /> : null}
+-          {step === 'sport' ? <SportStep {...props} /> : null}
+-          {step === 'place_kind' ? (
+-            <PlaceKindStep
+-              {...props}
+-              value={state.kind}
+-              onChange={(kind) => {
+-                moved.current = true;
+-                setState((prev) => (prev ? { ...prev, kind } : prev));
+-              }}
+-            />
+-          ) : null}
+-          {step === 'place' && state.kind ? <PlaceStep {...props} kind={state.kind} /> : null}
+-          {step === 'experience' ? <ExperienceStep {...props} /> : null}
+-          {step === 'availability' ? <AvailabilityStep {...props} /> : null}
+-          {step === 'health' ? <HealthStep {...props} /> : null}
+-          {step === 'ready' ? <ReadyStep onBack={() => goTo('health')} onIncomplete={onIncomplete} /> : null}
++    <div className={styles.flow}>
++      <Page title="Prise en main">
++        {/* Ligne des maquettes B01–B08 : la marque (décorative), puis la barre et « Étape n sur 9 ». */}
++        <div id={progressId} className={styles.progressRow}>
++          <RuneMark size={22} glow={dark} />
++          <SegmentedProgress step={index + 1} total={FLOW_STEPS.length} />
+         </div>
+-      </StepTitleContext.Provider>
+-    </Page>
++        {notice ? <Banner tone="warning">{notice}</Banner> : null}
++        <StepTitleContext.Provider value={titles}>
++          <div ref={screen} key={step} data-testid="onboarding-step" data-step={step} className={styles.step}>
++            {step === 'coach' ? (
++              <CoachStep
++                onNext={() => goTo(state.afterCoach)}
++                onChange={() => {
++                  moved.current = true;
++                }}
++              />
++            ) : null}
++            {step === 'goal' ? <GoalStep {...props} /> : null}
++            {step === 'sport' ? <SportStep {...props} /> : null}
++            {step === 'place_kind' ? (
++              <PlaceKindStep
++                {...props}
++                value={state.kind}
++                onChange={(kind) => {
++                  moved.current = true;
++                  setState((prev) => (prev ? { ...prev, kind } : prev));
++                }}
++              />
++            ) : null}
++            {step === 'place' && state.kind ? <PlaceStep {...props} kind={state.kind} /> : null}
++            {step === 'experience' ? <ExperienceStep {...props} /> : null}
++            {step === 'availability' ? <AvailabilityStep {...props} /> : null}
++            {step === 'health' ? <HealthStep {...props} /> : null}
++            {step === 'ready' ? (
++              <ReadyStep onBack={() => goTo('health')} onIncomplete={onIncomplete} />
++            ) : null}
++          </div>
++        </StepTitleContext.Provider>
++      </Page>
++    </div>
+   );
+ }
+diff --git a/apps/web/src/features/onboarding/PlaceKindStep.tsx b/apps/web/src/features/onboarding/PlaceKindStep.tsx
+index 1c899d6..7addd41 100644
+--- a/apps/web/src/features/onboarding/PlaceKindStep.tsx
++++ b/apps/web/src/features/onboarding/PlaceKindStep.tsx
+@@ -1,33 +1,55 @@
+ import type { PlaceKind } from '@rune/contracts';
+-import { ChoiceList } from '../../ui';
++import { ChoiceCard, ChoiceGroup } from '../../ui';
++import styles from './onboarding.module.css';
+ import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++import { InfoGlyph, PLACE_KIND_ICONS } from './StepIcons';
+ import { StepTitle } from './StepTitle';
+ 
++/** Les deux types de lieu (maquette B03) : titre, et ce que l'écran suivant demandera. */
++const KINDS: readonly { kind: PlaceKind; title: string; description: string }[] = [
++  { kind: 'gym', title: 'À la salle', description: "Tu choisiras ta salle à l'étape suivante." },
++  { kind: 'home', title: 'À la maison', description: "Tu indiqueras ton matériel à l'étape suivante." },
++];
++
++/** Où se gèrent les lieux après l'onboarding (Profil › Mes lieux, spec refonte §5). */
++export const PLACES_LATER_NOTE = 'Tu pourras ajouter ou changer de lieu dans Profil › Mes lieux.';
++
+ /**
+- * E3 Lieu principal. Le type n'est pas stocké (c'est celui du lieu principal, créé à l'écran
+- * suivant) : seule l'étape est enregistrée.
++ * E3 Lieu principal (maquette B03 : deux cartes avec icône et description). Le type n'est pas stocké (c'est
++ * celui du lieu principal, créé à l'écran suivant) : seule l'étape est enregistrée.
+  */
+ export function PlaceKindStep(p: StepProps & { value: PlaceKind | null; onChange(k: PlaceKind): void }) {
+   const save = useSaveStep(p, 'place_kind');
+   return (
+     <>
+       <StepTitle>Lieu principal</StepTitle>
+-      <ChoiceList<PlaceKind>
+-        name="place-kind"
+-        legend="Où t'entraîneras-tu le plus souvent ?"
+-        value={p.value}
+-        onChange={p.onChange}
+-        options={[
+-          { value: 'gym', label: 'À la salle' },
+-          { value: 'home', label: 'À la maison' },
+-        ]}
+-      />
++      <div className={styles.question}>
++        <ChoiceGroup legend="Où t'entraîneras-tu le plus souvent ?">
++          {KINDS.map((k) => (
++            <ChoiceCard
++              key={k.kind}
++              type="radio"
++              name="place-kind"
++              value={k.kind}
++              checked={p.value === k.kind}
++              onChange={() => p.onChange(k.kind)}
++              title={k.title}
++              description={k.description}
++              icon={PLACE_KIND_ICONS[k.kind]}
++            />
++          ))}
++        </ChoiceGroup>
++      </div>
++      <p className={styles.infoNote}>
++        <InfoGlyph />
++        <span>{PLACES_LATER_NOTE}</span>
++      </p>
+       <StepActions
+         onBack={p.onBack}
+         pending={save.pending}
+         error={save.error}
+         primary={{ label: saveLabel(p.mode), disabled: p.value === null, onClick: () => void save.run() }}
+       />
+     </>
+   );
+ }
+diff --git a/apps/web/src/features/onboarding/PlaceStep.tsx b/apps/web/src/features/onboarding/PlaceStep.tsx
+index 18b9e32..d83d81f 100644
+--- a/apps/web/src/features/onboarding/PlaceStep.tsx
++++ b/apps/web/src/features/onboarding/PlaceStep.tsx
+@@ -8,29 +8,31 @@ import {
+   PRESETS,
+   type PresetId,
+ } from '@rune/contracts';
+ import { useState } from 'react';
+ import { useLive, useMe } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { ChoiceList, Field, useAction } from '../../ui';
+ import { EquipmentChecklist, sortEquipment } from '../places/EquipmentChecklist';
+ import { GymPicker } from '../places/GymPicker';
+ import styles from './onboarding.module.css';
++import { PLACES_LATER_NOTE } from './PlaceKindStep';
+ import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++import { InfoGlyph } from './StepIcons';
+ import { StepTitle } from './StepTitle';
+ 
+ const HOME_PRESETS = PRESET_IDS.filter((id) => PRESETS[id].kind === 'home');
+ 
+ /**
+- * E4 Ma salle ou Ma maison : l'onboarding crée un seul lieu, principal (02 §8, E3/E4). Un lieu
+- * principal déjà là (retour arrière) est affiché sans rien recréer ; les autres lieux se gèrent
+- * dans Profil › Lieux.
++ * E4 Ma salle ou Ma maison : l'onboarding crée un seul lieu, principal (02 §8, E3/E4). La salle se cherche ou se
++ * crée dans le sélecteur des salles (maquette B04) ; la maison, son nom et son matériel. Un lieu principal déjà
++ * là (retour arrière) est affiché sans rien recréer ; les autres lieux se gèrent dans Profil › Mes lieux.
+  */
+ export function PlaceStep(p: StepProps & { kind: PlaceKind }) {
+   const repos = useRepos();
+   const me = useMe();
+   const places = useLive(() => repos.places.list(), [repos]);
+   // Lieu créé par cet écran : un nouvel essai n'envoie plus que l'étape.
+   const [created, setCreated] = useState(false);
+   const [name, setName] = useState(HOME_PLACE_DEFAULT_NAME);
+   const [nameError, setNameError] = useState<string | null>(null);
+   const [preset, setPreset] = useState<PresetId>(HOME_DEFAULT_PRESET);
+@@ -45,36 +47,42 @@ export function PlaceStep(p: StepProps & { kind: PlaceKind }) {
+   });
+   if (!me || places === undefined) return null;
+ 
+   const primary = places.find((pl) => pl.isPrimary);
+   const title = <StepTitle>{(primary?.kind ?? p.kind) === 'gym' ? 'Ma salle' : 'Ma maison'}</StepTitle>;
+ 
+   if (primary || created) {
+     return (
+       <>
+         {title}
+-        <p>{primary ? `Ton lieu principal : ${primary.name}` : 'Ton lieu principal est enregistré.'}</p>
+-        <p className={styles.note}>Tu pourras ajouter ou changer de lieu dans Profil › Lieux.</p>
++        <p className={styles.placeDone}>
++          {primary ? `Ton lieu principal : ${primary.name}` : 'Ton lieu principal est enregistré.'}
++        </p>
++        <p className={styles.infoNote}>
++          <InfoGlyph />
++          <span>{PLACES_LATER_NOTE}</span>
++        </p>
+         <StepActions
+           onBack={p.onBack}
+           pending={save.pending}
+           error={save.error}
+           primary={{ label: saveLabel(p.mode), onClick: () => void save.run() }}
+         />
+       </>
+     );
+   }
+ 
+   if (p.kind === 'gym') {
+     return (
+       <>
+         {title}
++        <p className={styles.lead}>Cherche ta salle ou crée-la.</p>
+         <GymPicker
+           isPrimary
+           defaultVisible={me.ageBand !== 'minor'}
+           onDone={() => {
+             setCreated(true);
+             void save.run();
+           }}
+         />
+         <StepActions onBack={p.onBack} pending={save.pending} error={save.error} />
+       </>
+diff --git a/apps/web/src/features/onboarding/ReadyStep.tsx b/apps/web/src/features/onboarding/ReadyStep.tsx
+index 1234a43..b38eb22 100644
+--- a/apps/web/src/features/onboarding/ReadyStep.tsx
++++ b/apps/web/src/features/onboarding/ReadyStep.tsx
+@@ -1,106 +1,183 @@
+ import { EXPERIENCE_LABELS, GOAL_LABELS, OnboardingStep, SPORTS } from '@rune/contracts';
+-import { useState } from 'react';
++import { type CSSProperties, useId, useState } from 'react';
+ import { useLocation } from 'wouter';
+ import { ApiError } from '../../api/client';
+ import { ONBOARDING_COMPLETED_EVENT } from '../../app-events';
+-import { useLive } from '../../app-services';
++import { useLive, useMe } from '../../app-services';
+ import { useRepos } from '../../repos';
+-import { Banner, Button, plural, useAction } from '../../ui';
++import { Button, CoachBubble, plural, RankBadge, SystemPanel, useAction } from '../../ui';
++import { coachText } from '../coach/coach-lines';
+ import { OfflineReadyIndicator } from '../status/OfflineReadyIndicator';
+ import { useReadiness } from '../status/use-readiness';
++import { AwakeningQuests, awakeningQuests } from './AwakeningQuests';
+ import styles from './onboarding.module.css';
++import { StepActions } from './StepActions';
+ import { StepTitle } from './StepTitle';
+ 
++/** Étincelles autour du rang qui se grave : direction (degrés) et distance (px), décor seulement. */
++const SPARKS = [
++  { angle: -80, distance: 54 },
++  { angle: -35, distance: 62 },
++  { angle: 10, distance: 56 },
++  { angle: 55, distance: 60 },
++  { angle: 100, distance: 52 },
++  { angle: 145, distance: 60 },
++  { angle: 190, distance: 56 },
++  { angle: 235, distance: 62 },
++];
++
+ /**
+- * E8 C'est prêt : récapitulatif et voyant « Prêt hors ligne ». « Commencer » termine l'onboarding
+- * une fois le voyant au vert (R-SYN-33), émet ONBOARDING_COMPLETED_EVENT puis mène à l'accueil ;
+- * sinon « Réessayer ». Un écran encore incomplet pour le serveur (409) est rendu à `onIncomplete`,
+- * avec l'étape qu'il indique (null si illisible).
++ * E8 C'est prêt, en célébration « Éveil terminé » (spec refonte §7, maquette B08, prototype) : la fenêtre du
++ * Système s'ouvre, le rang E se grave avec quelques étincelles, les 3 quêtes d'éveil se cochent une à une
++ * (vrais états), le coach choisi dit son mot de la fin, puis « Commencer » apparaît ; le récapitulatif suit.
++ * Tout est dans la page dès le premier rendu : l'animation (CSS, 600 à 1 200 ms) ne fait que rejouer
++ * l'arrivée, et sous mouvement réduit tout arrive en fondu court, sans retard ni étincelles.
++ *
++ * « Commencer » termine l'onboarding une fois le voyant « Prêt hors ligne » au vert (R-SYN-33), émet
++ * ONBOARDING_COMPLETED_EVENT puis mène à l'accueil ; sinon le voyant dit ce qui manque, avec « Réessayer ».
++ * Un écran encore incomplet pour le serveur (409) est rendu à `onIncomplete`, avec l'étape qu'il indique (null
++ * si illisible).
+  */
+ export function ReadyStep(p: { onBack(): void; onIncomplete(step: OnboardingStep | null): void }) {
+   const repos = useRepos();
++  const me = useMe();
+   const [, navigate] = useLocation();
+   const { readiness, loaded, retry } = useReadiness();
+   const profile = useLive(() => repos.profile.get(), [repos]);
+   const places = useLive(() => repos.places.list(), [repos]);
+   const [retrying, setRetrying] = useState(false);
++  const recapId = useId();
+   const start = useAction(async () => {
+     try {
+       await repos.profile.completeOnboarding();
+     } catch (error) {
+       if (!(error instanceof ApiError) || error.code !== 'onboarding_incomplete') throw error;
+       const step = OnboardingStep.safeParse(error.body.step);
+       p.onIncomplete(step.success ? step.data : null);
+       return;
+     }
+     window.dispatchEvent(new CustomEvent(ONBOARDING_COMPLETED_EVENT));
+     navigate('/');
+   });
+ 
+   const onRetry = () => {
+     setRetrying(true);
+     void retry().finally(() => setRetrying(false));
+   };
+ 
+   const primary = places?.find((pl) => pl.isPrimary);
++  const quests = awakeningQuests({
++    profile,
++    hasPrimaryPlace: primary !== undefined,
++    offlineReady: loaded && readiness.ready,
++  });
++  const allDone = quests.every((q) => q.done);
++  const coach = profile?.coach ?? null;
+   const sport = profile?.sportCode
+     ? profile.sportCode === 'other'
+       ? profile.sportOtherLabel
+       : SPORTS.find((s) => s.code === profile.sportCode)?.label
+     : null;
+ 
+   return (
+     <>
+       <StepTitle>C'est prêt</StepTitle>
+-      {profile ? (
+-        <dl className={styles.summary}>
+-          {profile.goal ? (
+-            <div>
+-              <dt>Objectif</dt>
+-              <dd>{GOAL_LABELS[profile.goal]}</dd>
+-            </div>
+-          ) : null}
+-          {sport ? (
+-            <div>
+-              <dt>Sport</dt>
+-              <dd>{sport}</dd>
+-            </div>
+-          ) : null}
+-          {primary ? (
+-            <div>
+-              <dt>Lieu principal</dt>
+-              <dd>{primary.name}</dd>
+-            </div>
+-          ) : null}
+-          {profile.experience ? (
+-            <div>
+-              <dt>Niveau</dt>
+-              <dd>{EXPERIENCE_LABELS[profile.experience]}</dd>
+-            </div>
+-          ) : null}
+-          {profile.daysPerWeek && profile.sessionMinutes ? (
+-            <div>
+-              <dt>Disponibilité</dt>
+-              <dd>{`${profile.daysPerWeek} ${plural(profile.daysPerWeek, 'séance', 'séances')} de ${profile.sessionMinutes} min`}</dd>
+-            </div>
+-          ) : null}
+-        </dl>
++      <p className={styles.lead}>Vérifie tes choix avant de commencer.</p>
++      <div className={styles.celebration}>
++        <SystemPanel title="Éveil terminé." headingLevel={3}>
++          <div className={styles.awakening}>
++            <span className={styles.rankStage}>
++              <span className={styles.rank}>
++                <RankBadge rank="E" size={72} />
++              </span>
++              <span className={styles.sparks} aria-hidden="true">
++                {SPARKS.map((s) => (
++                  <span
++                    key={s.angle}
++                    className={styles.spark}
++                    style={
++                      {
++                        '--spark-angle': `${s.angle}deg`,
++                        '--spark-distance': `${s.distance}px`,
++                      } as CSSProperties
++                    }
++                  />
++                ))}
++              </span>
++            </span>
++            <p className={styles.awakeningText}>
++              {allDone
++                ? "Quêtes d'éveil remplies. Ta progression commence au rang E."
++                : "Quêtes d'éveil en cours. Ta progression commencera au rang E."}
++            </p>
++          </div>
++          <AwakeningQuests quests={quests} />
++        </SystemPanel>
++      </div>
++      {coach && me ? (
++        <div className={styles.coachLine}>
++          <CoachBubble coach={coach} label="Message d'accueil">
++            <p>{coachText(coach, 'ready', me.username)}</p>
++          </CoachBubble>
++        </div>
+       ) : null}
+-      {loaded ? <OfflineReadyIndicator readiness={readiness} /> : null}
+-      {start.error ? <Banner tone="error">{start.error}</Banner> : null}
+-      <div className={styles.actions}>
+-        <Button variant="secondary" onClick={p.onBack} disabled={start.pending}>
+-          Retour
+-        </Button>
+-        {loaded && !readiness.ready ? (
++      {loaded && !readiness.ready ? (
++        <div className={styles.notReady}>
++          <OfflineReadyIndicator readiness={readiness} />
+           <Button variant="secondary" onClick={onRetry} disabled={retrying}>
+             Réessayer
+           </Button>
+-        ) : null}
+-        <Button onClick={() => void start.run()} disabled={!loaded || !readiness.ready || start.pending}>
+-          Commencer
+-        </Button>
+-      </div>
++        </div>
++      ) : null}
++      {profile ? (
++        <section aria-labelledby={recapId} className={styles.recap}>
++          <h3 id={recapId}>Récapitulatif</h3>
++          <dl className={styles.summary}>
++            {profile.goal ? (
++              <div>
++                <dt>Objectif</dt>
++                <dd>{GOAL_LABELS[profile.goal]}</dd>
++              </div>
++            ) : null}
++            {sport ? (
++              <div>
++                <dt>Sport</dt>
++                <dd>{sport}</dd>
++              </div>
++            ) : null}
++            {primary ? (
++              <div>
++                <dt>Lieu principal</dt>
++                <dd>{primary.name}</dd>
++              </div>
++            ) : null}
++            {profile.experience ? (
++              <div>
++                <dt>Niveau</dt>
++                <dd>{EXPERIENCE_LABELS[profile.experience]}</dd>
++              </div>
++            ) : null}
++            {profile.daysPerWeek && profile.sessionMinutes ? (
++              <div>
++                <dt>Disponibilité</dt>
++                <dd>{`${profile.daysPerWeek} ${plural(profile.daysPerWeek, 'séance', 'séances')} de ${profile.sessionMinutes} min`}</dd>
++              </div>
++            ) : null}
++          </dl>
++        </section>
++      ) : null}
++      <StepActions
++        className={styles.revealActions}
++        onBack={p.onBack}
++        pending={start.pending}
++        error={start.error}
++        primary={{
++          label: 'Commencer',
++          className: styles.glow,
++          disabled: !loaded || !readiness.ready,
++          onClick: () => void start.run(),
++        }}
++      />
+     </>
+   );
+ }
+diff --git a/apps/web/src/features/onboarding/SportStep.tsx b/apps/web/src/features/onboarding/SportStep.tsx
+index 9174c42..d3676f8 100644
+--- a/apps/web/src/features/onboarding/SportStep.tsx
++++ b/apps/web/src/features/onboarding/SportStep.tsx
+@@ -2,32 +2,32 @@ import {
+   GOAL_LABELS,
+   type Goal,
+   ONBOARDING_STEPS,
+   SPORT_OTHER_LABEL_MAX,
+   SPORTS,
+   type SportCode,
+ } from '@rune/contracts';
+ import { useId, useState } from 'react';
+ import { useLive, useMe } from '../../app-services';
+ import { useRepos } from '../../repos';
+-import { ChoiceList, Field } from '../../ui';
++import { Chips, Field } from '../../ui';
+ import styles from './onboarding.module.css';
+ import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
+ import { StepTitle } from './StepTitle';
+ 
+ type Practice = 'yes' | 'no';
+ 
+ export const SPORT_REQUIRED_TEXT = `Obligatoire avec l'objectif « ${GOAL_LABELS.sport_support} ».`;
+ 
+ /**
+- * E2 Autre sport : « Oui » imposé avec l'objectif sportif ; « Autre » exige un libellé (40
+- * caractères au plus). `pendingGoal` (édition depuis l'objectif) : PATCH { goal, sportCode,
++ * E2 Autre sport (maquette B02 : pastilles) : « Oui » imposé avec l'objectif sportif ; « Autre » exige un
++ * libellé (40 caractères au plus). `pendingGoal` (édition depuis l'objectif) : PATCH { goal, sportCode,
+  * sportOtherLabel } en un seul envoi.
+  */
+ export function SportStep(p: StepProps & { pendingGoal?: Goal }) {
+   const repos = useRepos();
+   const me = useMe();
+   const profile = useLive(() => repos.profile.get(), [repos]);
+   const [practice, setPractice] = useState<Practice | null>(null);
+   const [sport, setSport] = useState<SportCode | null>(null);
+   const [otherLabel, setOtherLabel] = useState<string | null>(null);
+   const requiredId = useId();
+@@ -55,43 +55,47 @@ export function SportStep(p: StepProps & { pendingGoal?: Goal }) {
+     const answer =
+       practiceValue === 'yes' && sportValue !== null
+         ? { sportCode: sportValue, sportOtherLabel: sportValue === 'other' ? label : null }
+         : { sportCode: null, sportOtherLabel: null };
+     void save.run(p.pendingGoal ? { goal: p.pendingGoal, ...answer } : answer);
+   }
+ 
+   return (
+     <>
+       <StepTitle>Autre sport</StepTitle>
+-      <ChoiceList<Practice>
+-        name="sport-practice"
+-        legend="Pratiques-tu un autre sport régulièrement ?"
+-        value={practiceValue}
+-        onChange={setPractice}
+-        options={[
+-          { value: 'no', label: 'Non', disabled: required, describedBy: required ? requiredId : undefined },
+-          { value: 'yes', label: 'Oui' },
+-        ]}
+-      />
++      <div className={styles.question}>
++        <Chips
++          name="sport-practice"
++          legend="Pratiques-tu un autre sport régulièrement ?"
++          value={practiceValue}
++          onChange={(v) => setPractice(v === 'yes' ? 'yes' : 'no')}
++          options={[
++            { value: 'no', label: 'Non', disabled: required, describedBy: required ? requiredId : undefined },
++            { value: 'yes', label: 'Oui' },
++          ]}
++        />
++      </div>
+       {required ? (
+         <p id={requiredId} className={styles.note}>
+           {SPORT_REQUIRED_TEXT}
+         </p>
+       ) : null}
+       {practiceValue === 'yes' ? (
+-        <ChoiceList<SportCode>
+-          name="sport"
+-          legend="Quel sport ?"
+-          value={sportValue}
+-          onChange={setSport}
+-          options={SPORTS.map((s) => ({ value: s.code, label: s.label }))}
+-        />
++        <div className={styles.sportList}>
++          <Chips
++            name="sport"
++            legend="Quel sport ?"
++            value={sportValue}
++            onChange={(v) => setSport(SPORTS.find((s) => s.code === v)?.code ?? null)}
++            options={SPORTS.map((s) => ({ value: s.code, label: s.label }))}
++          />
++        </div>
+       ) : null}
+       {practiceValue === 'yes' && sportValue === 'other' ? (
+         <Field label="Ton sport">
+           <input
+             type="text"
+             maxLength={SPORT_OTHER_LABEL_MAX}
+             value={otherLabel ?? profile?.sportOtherLabel ?? ''}
+             onChange={(e) => setOtherLabel(e.target.value)}
+           />
+         </Field>
+diff --git a/apps/web/src/features/onboarding/StepActions.tsx b/apps/web/src/features/onboarding/StepActions.tsx
+index 3f25b53..683bf0b 100644
+--- a/apps/web/src/features/onboarding/StepActions.tsx
++++ b/apps/web/src/features/onboarding/StepActions.tsx
+@@ -3,22 +3,26 @@ import { type Repos, useRepos } from '../../repos';
+ import { Banner, Button, useAction } from '../../ui';
+ import styles from './onboarding.module.css';
+ 
+ /** Écran partagé par l'onboarding et le Profil (R-ONB-3). */
+ export interface StepProps {
+   mode: 'onboarding' | 'edit';
+   onNext(): void;
+   onBack?: () => void;
+ }
+ 
+-/** Bouton qui enregistre l'écran : « Suivant » pendant l'onboarding, « Enregistrer » dans le Profil. */
+-export const saveLabel = (mode: StepProps['mode']) => (mode === 'onboarding' ? 'Suivant' : 'Enregistrer');
++/** Bouton d'avancée de l'onboarding (spec refonte §10.1), aussi celui d'un écran qui en ouvre un autre. */
++export const CONTINUE_LABEL = 'Continuer';
++
++/** Bouton qui enregistre l'écran : « Continuer » pendant l'onboarding, « Enregistrer » dans le Profil. */
++export const saveLabel = (mode: StepProps['mode']) =>
++  mode === 'onboarding' ? CONTINUE_LABEL : 'Enregistrer';
+ 
+ /**
+  * Enregistrement d'un écran au clic (R-ONB-2) : PATCH du profil, avec `onboardingStep` pendant
+  * l'onboarding (rien n'est envoyé en édition si rien n'a changé), puis `onNext`.
+  */
+ export async function saveStep(
+   repos: Repos,
+   p: StepProps,
+   step: OnboardingStep,
+   patch: TrainingProfilePatch = {},
+@@ -27,35 +31,46 @@ export async function saveStep(
+   if (Object.keys(body).length > 0) await repos.profile.update(body);
+   p.onNext();
+ }
+ 
+ /** `saveStep` en action d'écran (en cours, erreur traduite). */
+ export function useSaveStep(p: StepProps, step: OnboardingStep) {
+   const repos = useRepos();
+   return useAction((patch: TrainingProfilePatch = {}) => saveStep(repos, p, step, patch));
+ }
+ 
+-/** Erreur de l'écran, « Retour » et bouton principal. */
++/**
++ * Barre d'actions des maquettes B01–B08 : l'erreur de l'écran, puis « Retour » (118 px, contour) à gauche du
++ * bouton principal, qui prend le reste de la largeur ; seul, le principal prend toute la largeur. Dans
++ * l'onboarding, la barre reste collée en bas de l'écran, erreur comprise (onboarding.module.css).
++ * `className` : décor de la barre (apparition de « Commencer » sur « Éveil terminé »), `primary.className` :
++ * celui du bouton principal.
++ */
+ export function StepActions(p: {
+   onBack?: () => void;
+-  primary?: { label: string; disabled?: boolean; onClick(): void };
++  primary?: { label: string; disabled?: boolean; onClick(): void; className?: string };
+   pending?: boolean;
+   error?: string | null;
++  className?: string;
+ }) {
+   return (
+-    <>
++    <div className={[styles.bar, p.className].filter(Boolean).join(' ')}>
+       {p.error ? <Banner tone="error">{p.error}</Banner> : null}
+       <div className={styles.actions}>
+         {p.onBack ? (
+-          <Button variant="secondary" onClick={p.onBack} disabled={p.pending}>
++          <Button variant="secondary" className={styles.back} onClick={p.onBack} disabled={p.pending}>
+             Retour
+           </Button>
+         ) : null}
+         {p.primary ? (
+-          <Button onClick={p.primary.onClick} disabled={p.primary.disabled || p.pending}>
++          <Button
++            className={[styles.primary, p.primary.className].filter(Boolean).join(' ')}
++            onClick={p.primary.onClick}
++            disabled={p.primary.disabled || p.pending}
++          >
+             {p.primary.label}
+           </Button>
+         ) : null}
+       </div>
+-    </>
++    </div>
+   );
+ }
+diff --git a/apps/web/src/features/onboarding/StepIcons.tsx b/apps/web/src/features/onboarding/StepIcons.tsx
+new file mode 100644
+index 0000000..94e5d8e
+--- /dev/null
++++ b/apps/web/src/features/onboarding/StepIcons.tsx
+@@ -0,0 +1,121 @@
++import { EXPERIENCES, type Experience, type Goal, type PlaceKind } from '@rune/contracts';
++import type { ReactNode } from 'react';
++
++/*
++ * Icônes des cartes de choix de l'onboarding, tracées d'après les maquettes B01 (objectif), B03 (type de lieu) et
++ * B05 (niveau). Décoratives : la carte qui les porte les cache aux lecteurs d'écran ; elles prennent la couleur
++ * de la tuile (texte secondaire, accent une fois la carte choisie).
++ */
++
++function Icon(p: { children: ReactNode; strokeWidth?: number }) {
++  return (
++    <svg
++      aria-hidden="true"
++      width="22"
++      height="22"
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth={p.strokeWidth ?? 1.9}
++      strokeLinecap="round"
++      strokeLinejoin="round"
++    >
++      {p.children}
++    </svg>
++  );
++}
++
++const DUMBBELL = <path d="M6 7v10M3 9v6M18 7v10M21 9v6M6 12h12" />;
++
++export const GOAL_ICONS: Readonly<Record<Goal, ReactNode>> = {
++  muscle: <Icon>{DUMBBELL}</Icon>,
++  strength: (
++    <Icon>
++      <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
++    </Icon>
++  ),
++  fat_loss: (
++    <Icon>
++      <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
++    </Icon>
++  ),
++  fitness: (
++    <Icon>
++      <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7z" />
++      <path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27" />
++    </Icon>
++  ),
++  sport_support: (
++    <Icon>
++      <path d="M10 2h4" />
++      <path d="m12 14 3-3" />
++      <circle cx="12" cy="14" r="8" />
++    </Icon>
++  ),
++};
++
++export const PLACE_KIND_ICONS: Readonly<Record<PlaceKind, ReactNode>> = {
++  gym: <Icon>{DUMBBELL}</Icon>,
++  home: (
++    <Icon>
++      <path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" />
++    </Icon>
++  ),
++};
++
++/** Quatre barres de hauteur croissante : autant de pleines que le niveau (une pour « Jamais »). */
++const BARS = ['M5 20v-3', 'M10 20v-7', 'M15 20v-11', 'M20 20v-15'];
++
++function LevelIcon(p: { level: number }) {
++  return (
++    <Icon strokeWidth={2.6}>
++      {BARS.map((d, i) => (
++        <path key={d} d={d} opacity={i < p.level ? 1 : 0.3} />
++      ))}
++    </Icon>
++  );
++}
++
++export const EXPERIENCE_ICONS: Readonly<Record<Experience, ReactNode>> = Object.fromEntries(
++  EXPERIENCES.map((e, i) => [e, <LevelIcon key={e} level={i + 1} />]),
++) as Record<Experience, ReactNode>;
++
++/** Petit i cerclé des notes (maquettes B03 et B07). */
++export function InfoGlyph() {
++  return (
++    <Icon strokeWidth={2}>
++      <circle cx="12" cy="12" r="9" />
++      <path d="M12 16v-4" />
++      <path d="M12 8h.01" />
++    </Icon>
++  );
++}
++
++/** Bouclier de la carte « Accord santé » (maquette B07). */
++export function ShieldGlyph() {
++  return (
++    <Icon>
++      <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
++    </Icon>
++  );
++}
++
++/** Cadenas des limitations, en attente de l'accord (maquette B07). */
++export function LockGlyph() {
++  return (
++    <Icon>
++      <rect x="5" y="11" width="14" height="10" rx="2" />
++      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
++    </Icon>
++  );
++}
++
++/** Calendrier de la carte « Ton rythme » (maquette B06). */
++export function CalendarGlyph() {
++  return (
++    <Icon>
++      <rect x="3" y="5" width="18" height="16" rx="2" />
++      <path d="M3 10h18M8 3v4M16 3v4" />
++    </Icon>
++  );
++}
+diff --git a/apps/web/src/features/onboarding/onboarding.module.css b/apps/web/src/features/onboarding/onboarding.module.css
+index 9517bdb..a1e4d1c 100644
+--- a/apps/web/src/features/onboarding/onboarding.module.css
++++ b/apps/web/src/features/onboarding/onboarding.module.css
+@@ -1,64 +1,421 @@
++/*
++ * Onboarding Rune (spec refonte §10.1) : mise en page des maquettes B01–B08 (titre de 28 px, phrase secondaire,
++ * cartes de choix, pastilles, cartes, barre « Retour » / « Continuer ») et célébration « Éveil terminé » du
++ * prototype. Couleurs prises dans les jetons (5 thèmes) ; mouvement sur la courbe unique et les durées communes
++ * (motion.css), remplacé par des fondus courts sans retard sous mouvement réduit. Une animation ne fait que
++ * rejouer l'arrivée (fill-mode backwards) : sans elle, tout est là, entier et visible.
++ */
++
++/* ---------- Colonne et écran ---------- */
++
++.flow {
++  width: 100%;
++  max-width: 36rem;
++  margin-inline: auto;
++}
++
++/* « Prise en main » reste le titre de la page pour les lecteurs d'écran ; à l'écran, l'étape seule (maquettes). */
++.flow h1 {
++  position: absolute;
++  width: 1px;
++  height: 1px;
++  margin: -1px;
++  padding: 0;
++  overflow: hidden;
++  clip-path: inset(50%);
++  white-space: nowrap;
++  border: 0;
++}
++
++/* Marque de 22 px, puis la barre segmentée et « Étape n sur 9 » (maquettes) ; en clair, cadre à l'accent. */
++.progressRow {
++  display: flex;
++  align-items: center;
++  gap: var(--space-3);
++  --rune-mark-frame: var(--accent);
++}
++
++.progressRow > svg {
++  flex: none;
++}
++
++.progressRow > :last-child {
++  flex: 1;
++  min-width: 0;
++}
++
+ .step,
+ .panel {
+   display: flex;
+   flex-direction: column;
+   gap: var(--space-4);
+ }
+ 
++/* Titre de l'écran (maquettes : 28 px, police des titres). */
+ .step h2 {
+   margin: 0;
+-  font-size: 1.25rem;
++  font-size: 1.75rem;
++  font-weight: 700;
++  line-height: 1.15;
+ }
+ 
+-.panel h3 {
+-  margin: 0;
+-  font-size: 1.125rem;
++/* La phrase sous le titre (15,5 px, secondaire), à 6 px du titre comme dans les maquettes. */
++.lead {
++  margin: calc(6px - var(--space-4)) 0 2px;
++  font-size: 0.96875rem;
++  line-height: 1.45;
++  color: var(--text-muted);
+ }
+ 
+-.panel p {
+-  margin: 0;
++/* Écran d'une seule question : sa légende sert de phrase sous le titre (maquettes B01, B02, B03, B05). */
++.question {
++  margin-top: calc(6px - var(--space-4));
+ }
+ 
+-.actions {
++.question legend {
++  margin-bottom: 18px;
++  font-size: 0.96875rem;
++  font-weight: 400;
++  line-height: 1.45;
++  color: var(--text-muted);
++}
++
++/* Liste longue (« Quel sport ? », maquette B02) : chaque pastille à la largeur de son libellé. */
++.sportList {
++  margin-top: var(--space-2);
++}
++
++.sportList fieldset > div > label {
++  flex: 0 1 auto;
++  padding-inline: 16px;
++}
++
++/* Les autres questions de l'écran (« Quel sport ? », « Séances par semaine ») : 24 px au-dessus. */
++.step > fieldset {
++  margin-top: var(--space-2);
++}
++
++/* Boutons d'une carte (accord, questionnaire, limitations) : ils se partagent la ligne, puis passent dessous. */
++.panelActions {
+   display: flex;
+   flex-wrap: wrap;
+-  justify-content: flex-end;
+   gap: var(--space-2);
+ }
+ 
++.panelActions > * {
++  flex: 1 1 auto;
++}
++
++/* Rembourrage resserré : « Passer » et « J'accepte et je renseigne » tiennent sur une ligne à 390 px (maquette B07). */
++.panelActions > button {
++  padding-inline: 12px;
++}
++
++/* Les cartes et pastilles d'une question entrent en cascade (spec refonte §7). */
++.question fieldset > div > * {
++  animation: rise var(--dur-screen) var(--ease) backwards;
++}
++
++.question fieldset > div > :nth-child(2) {
++  animation-delay: 60ms;
++}
++
++.question fieldset > div > :nth-child(3) {
++  animation-delay: 120ms;
++}
++
++.question fieldset > div > :nth-child(4) {
++  animation-delay: 180ms;
++}
++
++.question fieldset > div > :nth-child(n + 5) {
++  animation-delay: 240ms;
++}
++
++/* Barre d'actions : l'erreur de l'écran, puis les boutons. */
++.bar {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-3);
++  margin-top: var(--space-2);
++}
++
++/*
++ * Dans l'onboarding, la barre reste en bas de l'écran (maquettes B01–B08, prototype), erreur comprise : le fond
++ * s'y fond depuis le haut de la barre, et le bas laisse la place de la zone de geste de l'iPhone.
++ */
++.flow .bar {
++  position: sticky;
++  bottom: 0;
++  z-index: 1;
++  margin-top: calc(-1 * var(--space-2));
++  padding-block: var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
++  background: linear-gradient(180deg, transparent 0, var(--bg) var(--space-4));
++}
++
++/* Un champ qui prend le focus défile au-dessus de la barre (sa hauteur et la zone de geste), jamais dessous. */
++:global(html):has(.flow) {
++  scroll-padding-bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px));
++}
++
++/* Boutons (maquettes) : « Retour » de 118 px à gauche, le bouton principal prend le reste ; seul, tout. */
++.actions {
++  display: flex;
++  gap: var(--space-3);
++}
++
++.back {
++  flex: 0 0 118px;
++}
++
++.primary {
++  flex: 1 1 auto;
++}
++
++.panel > button {
++  align-self: flex-start;
++}
++
++.panel p {
++  margin: 0;
++}
++
++.panel h3 {
++  margin: 0;
++  font-size: 1.0625rem;
++  font-weight: 700;
++  line-height: 1.25;
++}
++
+ .note {
+   margin: 0;
+   font-size: 0.875rem;
+-  color: var(--color-muted);
++  color: var(--text-muted);
+ }
+ 
+-.check {
++/* Note précédée d'un petit i (maquette B03). */
++.infoNote {
++  margin: 0;
+   display: flex;
+   align-items: flex-start;
++  gap: var(--space-2);
++  font-size: 0.875rem;
++  line-height: 1.4;
++  color: var(--text-muted);
++}
++
++.infoNote svg {
++  flex: none;
++  width: 18px;
++  height: 18px;
++  margin-top: 1px;
++}
++
++/* ---------- Cartes ---------- */
++
++.card {
++  display: flex;
++  flex-direction: column;
+   gap: var(--space-3);
++  padding: 14px 16px 16px;
++  border-radius: var(--radius-card);
++  border: 1px solid var(--border);
++  background: var(--surface);
++}
++
++.card .panel > p {
++  font-size: 0.875rem;
++  line-height: 1.45;
++  color: var(--text-muted);
++}
++
++.cardHead {
++  display: flex;
++  align-items: center;
++  gap: var(--space-2);
++  color: var(--accent);
++}
++
++.cardHead h3 {
++  margin: 0;
++  font-size: 1.0625rem;
++  font-weight: 700;
++  line-height: 1.25;
++  color: var(--text);
++}
++
++/* Case de l'accord santé (maquette B07) : une carte, au bord accent et teintée une fois cochée. */
++.check {
++  display: flex;
++  align-items: flex-start;
++  gap: 10px;
+   min-height: 44px;
++  padding: 10px 12px 10px 10px;
++  border-radius: var(--radius-control);
++  border: 1.5px solid var(--border);
++  font-size: 0.875rem;
++  line-height: 1.45;
++  cursor: pointer;
++  transition:
++    border-color var(--dur-fast) var(--ease),
++    background-color var(--dur-fast) var(--ease);
++}
++
++.check:has(input:checked) {
++  border-color: var(--accent);
++  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+ }
+ 
+ .check input {
+   flex-shrink: 0;
+   width: 1.5rem;
+   height: 1.5rem;
+   margin: 0;
+ }
+ 
++/* Limitations avant l'accord (maquette B07) : carte en pointillés, cadenas, sans champ. */
++.locked {
++  display: flex;
++  align-items: flex-start;
++  gap: var(--space-3);
++  padding: 12px 14px 12px 12px;
++  border-radius: var(--radius-card);
++  border: 1px dashed color-mix(in srgb, var(--accent) 40%, var(--border));
++  background: color-mix(in srgb, var(--accent) 3%, var(--surface));
++}
++
++.lockedIcon {
++  flex: none;
++  display: grid;
++  place-items: center;
++  width: 40px;
++  height: 40px;
++  border-radius: 12px;
++  background: color-mix(in srgb, var(--text-muted) 12%, var(--surface));
++  color: var(--text-muted);
++}
++
++.lockedText {
++  flex: 1;
++  min-width: 0;
++  display: flex;
++  flex-direction: column;
++  gap: 3px;
++}
++
++.lockedHead {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: baseline;
++  justify-content: space-between;
++  gap: 2px 10px;
++}
++
++.lockedHead h3 {
++  margin: 0;
++  font-size: 1.0625rem;
++  font-weight: 700;
++  line-height: 1.25;
++}
++
++.lockedState {
++  font-size: 0.8125rem;
++  color: var(--text-muted);
++  white-space: nowrap;
++}
++
++/* Mode prudent : libellé à gauche, interrupteur à droite (maquette B07), comme l'interrupteur de la boîte à outils. */
+ .toggle {
+   display: flex;
+   flex-direction: column;
+   gap: var(--space-1);
+ }
+ 
++.switchRow {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 14px;
++  min-height: 44px;
++  font-weight: 600;
++  line-height: 1.3;
++  cursor: pointer;
++}
++
++/* La case garde son rôle `switch` ; seule son apparence change : piste 50 × 30, bouton de 24 px. */
++.switchInput {
++  appearance: none;
++  flex: none;
++  position: relative;
++  width: 50px;
++  height: 30px;
++  margin: 0;
++  border-radius: 999px;
++  background: var(--field-border);
++  cursor: pointer;
++  transition: background-color var(--dur-fast) var(--ease);
++}
++
++.switchInput::before {
++  content: "";
++  position: absolute;
++  top: 3px;
++  left: 3px;
++  width: 24px;
++  height: 24px;
++  border-radius: 50%;
++  background: var(--text-muted);
++  transition:
++    transform var(--dur-fast) var(--ease),
++    background-color var(--dur-fast) var(--ease);
++}
++
++.switchInput:checked {
++  background: var(--accent);
++}
++
++.switchInput:checked::before {
++  transform: translateX(20px);
++  background: var(--accent-text);
++}
++
++.switchInput:disabled {
++  opacity: 0.45;
++  cursor: not-allowed;
++}
++
++.switchInput:focus-visible {
++  outline: 2px solid var(--focus);
++  outline-offset: 2px;
++}
++
++@media (forced-colors: active) {
++  .switchInput {
++    border: 1px solid ButtonText;
++  }
++
++  .switchInput::before {
++    forced-color-adjust: none;
++    background: ButtonText;
++  }
++
++  .switchInput:checked {
++    forced-color-adjust: none;
++    background: Highlight;
++  }
++
++  .switchInput:checked::before {
++    background: HighlightText;
++  }
++}
++
+ .questions {
+   margin: 0;
+   padding-left: var(--space-6);
+   display: flex;
+   flex-direction: column;
+   gap: var(--space-2);
+ }
+ 
+ .limitations {
+   margin: 0;
+@@ -69,50 +426,432 @@
+   gap: var(--space-2);
+ }
+ 
+ .limitation {
+   display: flex;
+   flex-wrap: wrap;
+   align-items: center;
+   justify-content: space-between;
+   gap: var(--space-2);
+   padding: var(--space-2) var(--space-3);
+-  border: 1px solid var(--color-border);
+-  border-radius: var(--radius);
+-  background: var(--color-surface);
++  border: 1px solid var(--border);
++  border-radius: var(--radius-control);
++  background: color-mix(in srgb, var(--text-muted) 6%, var(--surface));
+ }
+ 
+ .itemActions {
+   display: flex;
+   flex-wrap: wrap;
+   gap: var(--space-2);
+ }
+ 
+-.panel > button {
+-  align-self: flex-start;
++/* Lieu principal déjà là (retour arrière). */
++.placeDone {
++  margin: 0;
++  padding: 14px 16px;
++  border-radius: var(--radius-card);
++  border: 1px solid var(--border);
++  background: var(--surface);
++  font-weight: 600;
+ }
+ 
+-.summary {
++/* « Ton rythme » (maquette B06). */
++.rhythm {
++  display: flex;
++  align-items: center;
++  gap: 14px;
++  padding: 14px 16px;
++  border-radius: var(--radius-card);
++  border: 1px solid var(--border);
++  background: var(--surface);
++}
++
++.rhythmIcon {
++  flex: none;
++  display: grid;
++  place-items: center;
++  width: 40px;
++  height: 40px;
++  border-radius: 12px;
++  background: color-mix(in srgb, var(--accent-2) 12%, var(--surface));
++  color: var(--accent-2);
++}
++
++.rhythmText {
+   margin: 0;
++  display: flex;
++  flex-direction: column;
++  gap: 2px;
++}
++
++.rhythmLabel {
++  font-size: 0.8125rem;
++  color: var(--text-muted);
++}
++
++.rhythmValue {
++  font-weight: 600;
++}
++
++/* ---------- « Éveil terminé » (prototype : fenêtre, rang, quêtes, coach, « Commencer ») ---------- */
++
++/* La fenêtre du Système s'ouvre depuis une ligne au milieu. */
++.celebration {
++  animation: window-open 600ms var(--ease) backwards;
++}
++
++.awakening {
++  display: flex;
++  align-items: center;
++  gap: 14px;
++}
++
++.awakeningText {
++  margin: 0;
++}
++
++.rankStage {
++  position: relative;
++  flex: none;
+   display: grid;
++  place-items: center;
++  width: 72px;
++  height: 72px;
++}
++
++/* Le rang E se grave : il monte en éclat, puis se pose. */
++.rank {
++  display: block;
++  animation: rank-engrave 800ms var(--ease) 200ms backwards;
++}
++
++.rank svg {
++  display: block;
++}
++
++/* Quelques étincelles partent du rang, puis s'éteignent (décor seulement). */
++.sparks {
++  position: absolute;
++  left: 50%;
++  top: 50%;
++  width: 0;
++  height: 0;
++  pointer-events: none;
++}
++
++.spark {
++  position: absolute;
++  left: -1.5px;
++  top: -5px;
++  width: 3px;
++  height: 10px;
++  border-radius: 2px;
++  background: var(--accent);
++  animation: spark 700ms var(--ease) 500ms both;
++}
++
++.spark:nth-child(even) {
++  background: var(--accent-2);
++}
++
++.quests {
++  display: flex;
++  flex-direction: column;
+   gap: var(--space-2);
+ }
+ 
++.questsHead {
++  margin: 0;
++  display: flex;
++  align-items: baseline;
++  justify-content: space-between;
++  font-size: 0.8125rem;
++  font-weight: 600;
++  color: var(--text-muted);
++}
++
++.questsCount {
++  font-family: var(--font-display);
++  font-size: 0.875rem;
++  font-weight: 700;
++  color: var(--accent);
++}
++
++.srOnly {
++  position: absolute;
++  width: 1px;
++  height: 1px;
++  margin: -1px;
++  padding: 0;
++  overflow: hidden;
++  clip-path: inset(50%);
++  white-space: nowrap;
++  border: 0;
++}
++
++.questsBar {
++  height: 6px;
++  border-radius: 3px;
++  overflow: hidden;
++  background: color-mix(in srgb, var(--text-muted) 18%, var(--surface));
++}
++
++/* La barre se remplit jusqu'au nombre de quêtes atteintes. */
++.questsFill {
++  display: block;
++  height: 100%;
++  border-radius: 3px;
++  background: linear-gradient(90deg, var(--accent), var(--accent-2));
++  transform-origin: left center;
++  animation: quests-fill 900ms var(--ease) 300ms backwards;
++}
++
++.questList {
++  margin: 0;
++  padding: 0;
++  list-style: none;
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++}
++
++.quest {
++  display: flex;
++  align-items: center;
++  gap: 9px;
++  border-radius: 6px;
++  font-size: 0.90625rem;
++  color: var(--text-muted);
++}
++
++.quest[aria-checked="true"] {
++  color: var(--text);
++}
++
++/* Case vide au trait de 3:1 ; cochée, elle laisse place à la coche d'accent. */
++.questBox {
++  flex: none;
++  display: grid;
++  place-items: center;
++  width: 16px;
++  height: 16px;
++  border-radius: 5px;
++  border: 1.5px solid color-mix(in srgb, var(--text-muted) 70%, var(--surface));
++  color: var(--accent);
++}
++
++.quest[aria-checked="true"] .questBox {
++  border-color: transparent;
++}
++
++/* Les quêtes se cochent une à une. */
++.questCheck {
++  display: grid;
++  animation: quest-check 600ms var(--ease) 300ms backwards;
++}
++
++.questList > :nth-child(2) .questCheck {
++  animation-delay: 450ms;
++}
++
++.questList > :nth-child(3) .questCheck {
++  animation-delay: 600ms;
++}
++
++/* Le coach dit son mot, puis « Commencer » apparaît. */
++.coachLine {
++  animation: rise 600ms var(--ease) 500ms backwards;
++}
++
++.revealActions {
++  animation: rise 600ms var(--ease) 600ms backwards;
++}
++
++.glow:not(:disabled) {
++  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 28%, transparent);
++}
++
++/* Pas encore prêt hors ligne : ce qui manque, et « Réessayer ». */
++.notReady {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-3);
++  padding: 14px 16px;
++  border-radius: var(--radius-card);
++  border: 1px solid var(--border);
++  background: var(--surface);
++}
++
++.notReady > button {
++  align-self: flex-start;
++}
++
++/* Récapitulatif (maquette B08) : une carte, une ligne par réponse. */
++.recap {
++  display: flex;
++  flex-direction: column;
++  gap: 10px;
++}
++
++.recap h3 {
++  margin: 0;
++  font-size: 1.0625rem;
++  font-weight: 700;
++  line-height: 1.25;
++}
++
++.summary {
++  margin: 0;
++  padding: 0 16px;
++  border-radius: var(--radius-card);
++  border: 1px solid var(--border);
++  background: var(--surface);
++}
++
+ .summary div {
+   display: flex;
+-  flex-wrap: wrap;
++  align-items: center;
+   justify-content: space-between;
+-  gap: var(--space-2);
+-  padding: var(--space-2) var(--space-3);
+-  border: 1px solid var(--color-border);
+-  border-radius: var(--radius);
+-  background: var(--color-surface);
++  gap: 16px;
++  min-height: 46px;
++  padding: 8px 0;
++}
++
++.summary div + div {
++  border-top: 1px solid var(--border);
+ }
+ 
+ .summary dt {
+-  color: var(--color-muted);
++  flex: none;
++  font-size: 0.875rem;
++  color: var(--text-muted);
+ }
+ 
+ .summary dd {
+   margin: 0;
+   font-weight: 600;
++  text-align: right;
++  overflow-wrap: anywhere;
++}
++
++/* Newsreader n'est embarqué qu'en 600 : pas de gras synthétisé en Carnet. */
++:global(:root[data-theme="carnet"]) .step h2,
++:global(:root[data-theme="carnet"]) .panel h3,
++:global(:root[data-theme="carnet"]) .cardHead h3,
++:global(:root[data-theme="carnet"]) .lockedHead h3,
++:global(:root[data-theme="carnet"]) .recap h3 {
++  font-weight: 600;
++}
++
++@keyframes rise {
++  from {
++    opacity: 0;
++    transform: translateY(12px);
++  }
++}
++
++@keyframes fade {
++  from {
++    opacity: 0;
++  }
++}
++
++@keyframes window-open {
++  0% {
++    opacity: 0;
++    clip-path: inset(46% 8% round var(--radius-card));
++  }
++
++  35% {
++    opacity: 1;
++    clip-path: inset(46% 0 round var(--radius-card));
++  }
++
++  100% {
++    opacity: 1;
++    clip-path: inset(0 round var(--radius-card));
++  }
++}
++
++@keyframes rank-engrave {
++  0% {
++    opacity: 0;
++    transform: scale(0.6);
++    filter: brightness(1.8);
++  }
++
++  55% {
++    opacity: 1;
++    transform: scale(1.08);
++    filter: brightness(1.5) drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 60%, transparent));
++  }
++
++  100% {
++    transform: none;
++    filter: none;
++  }
++}
++
++@keyframes spark {
++  0% {
++    opacity: 0;
++    transform: rotate(var(--spark-angle)) translateY(-8px) scaleY(0.4);
++  }
++
++  15% {
++    opacity: 1;
++  }
++
++  100% {
++    opacity: 0;
++    transform: rotate(var(--spark-angle)) translateY(calc(-1 * var(--spark-distance))) scaleY(1);
++  }
++}
++
++@keyframes quests-fill {
++  from {
++    transform: scaleX(0);
++  }
++}
++
++@keyframes quest-check {
++  0% {
++    opacity: 0;
++    transform: scale(0.3);
++  }
++
++  50% {
++    opacity: 1;
++    transform: scale(1.25);
++  }
++
++  100% {
++    transform: none;
++  }
++}
++
++/* Mouvement réduit (spec refonte §7) : des fondus courts, sans retard ni cascade, sans étincelles. */
++@media (prefers-reduced-motion: reduce) {
++  .question fieldset > div > *,
++  .question fieldset > div > :nth-child(n),
++  .celebration,
++  .rank,
++  .questsFill,
++  .questCheck,
++  .questList > :nth-child(n) .questCheck,
++  .coachLine,
++  .revealActions {
++    animation-name: fade;
++    animation-duration: var(--dur-fast);
++    animation-delay: 0ms;
++  }
++
++  .spark {
++    display: none;
++  }
++
++  .check,
++  .switchInput,
++  .switchInput::before {
++    transition-property: background-color, border-color;
++  }
+ }
+diff --git a/apps/web/src/ui/Chips.tsx b/apps/web/src/ui/Chips.tsx
+index 79f1c1a..c15318a 100644
+--- a/apps/web/src/ui/Chips.tsx
++++ b/apps/web/src/ui/Chips.tsx
+@@ -1,37 +1,41 @@
+ import { CheckGlyph } from './ChoiceCard';
+ import styles from './ui.module.css';
+ 
+ /**
+  * Pastilles pour les choix courts (2 / 3 / 4 séances, 45 min…) : des boutons radio sous une légende,
+  * chacun dans son `<label>`, cibles de 44 px. La pastille choisie prend l'accent et porte une coche.
++ * Comme pour `ChoiceList`, une option peut être désactivée et décrite (`describedBy` : id du texte qui
++ * l'explique, par exemple la raison d'une option désactivée).
+  */
+ export function Chips(p: {
+   name: string;
+-  options: readonly { value: string; label: string }[];
++  options: readonly { value: string; label: string; disabled?: boolean; describedBy?: string }[];
+   value: string | null;
+   onChange(v: string): void;
+   legend: string;
+ }) {
+   return (
+     <fieldset className={styles.choiceGroup}>
+       <legend className={styles.legend}>{p.legend}</legend>
+       <div className={styles.chipList}>
+         {p.options.map((o) => {
+           const checked = p.value === o.value;
+           return (
+             <label key={o.value} className={styles.chip}>
+               <input
+                 type="radio"
+                 name={p.name}
+                 value={o.value}
+                 checked={checked}
++                disabled={o.disabled}
++                aria-describedby={o.describedBy}
+                 onChange={() => p.onChange(o.value)}
+                 className={styles.overlayInput}
+               />
+               {o.label}
+               {checked ? (
+                 <span className={styles.chipCheck} aria-hidden="true">
+                   <CheckGlyph />
+                 </span>
+               ) : null}
+             </label>
+diff --git a/apps/web/src/ui/HealthWarning.tsx b/apps/web/src/ui/HealthWarning.tsx
+index ba8a622..8f2acc0 100644
+--- a/apps/web/src/ui/HealthWarning.tsx
++++ b/apps/web/src/ui/HealthWarning.tsx
+@@ -1,8 +1,28 @@
+ import styles from './ui.module.css';
+ 
+ export const HEALTH_WARNING_TEXT =
+   'Rune ne remplace pas un avis médical. Consultez un médecin avant de reprendre une activité si vous avez un problème de santé, et arrêtez en cas de douleur.';
+ 
++/** Avertissement santé, mot pour mot et en « vous » (spec refonte §11.6) ; un petit i le précède (maquette B07). */
+ export function HealthWarning() {
+-  return <p className={styles.healthWarning}>{HEALTH_WARNING_TEXT}</p>;
++  return (
++    <p className={styles.healthWarning}>
++      <svg
++        aria-hidden="true"
++        width="16"
++        height="16"
++        viewBox="0 0 24 24"
++        fill="none"
++        stroke="currentColor"
++        strokeWidth="2"
++        strokeLinecap="round"
++        strokeLinejoin="round"
++      >
++        <circle cx="12" cy="12" r="9" />
++        <path d="M12 16v-4" />
++        <path d="M12 8h.01" />
++      </svg>
++      <span>{HEALTH_WARNING_TEXT}</span>
++    </p>
++  );
+ }
+diff --git a/apps/web/src/ui/ui.module.css b/apps/web/src/ui/ui.module.css
+index 1db0ae1..f51f55b 100644
+--- a/apps/web/src/ui/ui.module.css
++++ b/apps/web/src/ui/ui.module.css
+@@ -1021,25 +1021,36 @@ button.row:focus-visible {
+ 
+ /*
+  * Titre d'écran, sans Retour (GUIDE, Type : 28/700 ; maquettes des onglets : 6 px au-dessus). Deux classes :
+  * passe devant `.page h1`.
+  */
+ .pageTitle.screenTitle {
+   margin-top: 6px;
+   font-size: 1.75rem;
+ }
+ 
++/* Avertissement santé (maquette B07) : petit i cerclé puis le texte, en 13 px secondaire. */
+ .healthWarning {
+-  font-size: 0.875rem;
++  display: flex;
++  align-items: flex-start;
++  gap: var(--space-2);
++  margin: 0;
++  font-size: 0.8125rem;
++  line-height: 1.4;
+   color: var(--text-muted);
+ }
+ 
++.healthWarning svg {
++  flex: none;
++  margin-top: 1px;
++}
++
+ /* Mouvement réduit (spec refonte §7) : ni déplacement ni ressort, des fondus simples. */
+ @media (prefers-reduced-motion: reduce) {
+   .button,
+   .switchThumb {
+     transition-property: background-color;
+   }
+ 
+   .button:active:not(:disabled) {
+     transform: none;
+   }
+diff --git a/apps/web/test/onboarding/celebration.test.tsx b/apps/web/test/onboarding/celebration.test.tsx
+new file mode 100644
+index 0000000..1f492b9
+--- /dev/null
++++ b/apps/web/test/onboarding/celebration.test.tsx
+@@ -0,0 +1,238 @@
++import { readFileSync } from 'node:fs';
++import { resolve } from 'node:path';
++import { COACH_IDS, type CoachId } from '@rune/contracts';
++import { screen } from '@testing-library/react';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { coachText } from '../../src/features/coach/coach-lines';
++import { ReadyStep } from '../../src/features/onboarding/ReadyStep';
++import type { AppDb } from '../../src/local-db/db';
++import { setMeta } from '../../src/local-db/meta';
++import { type CssBlock, normalizeSelector, parseCssBlocks } from '../support/css-blocks';
++import { createFakeApi } from '../support/fake-api';
++import { createTestLocalDb } from '../support/local-db';
++import {
++  button,
++  currentStep,
++  newcomer,
++  seedPrimaryGym,
++  seedProfile,
++  serveProfile,
++} from '../support/onboarding';
++import { DEFAULT_NOW, renderApp, renderWithServices } from '../support/render';
++import { until } from '../support/wait';
++
++// Écran « C'est prêt » en célébration « Éveil terminé » (spec refonte §7 et §10.1, maquette B08, prototype).
++
++const HOUR = 3_600_000;
++const REDUCE = '(prefers-reduced-motion: reduce)';
++const QUESTS = ['Profil complété', 'Lieu principal choisi', 'Prêt hors ligne'] as const;
++const ONBOARDING_CSS = resolve(import.meta.dirname, '../../src/features/onboarding/onboarding.module.css');
++
++afterEach(() => {
++  vi.unstubAllGlobals();
++});
++
++/** Téléphone réglé en mouvement réduit : seule cette media query répond vrai. */
++function reducedMotion() {
++  vi.stubGlobal('matchMedia', (query: string) => ({
++    matches: query === REDUCE,
++    media: query,
++    addEventListener: () => {},
++    removeEventListener: () => {},
++  }));
++}
++
++/** Catalogue à jour et dernier pull il y a `pullAgoMs` : prêt hors ligne à moins de 24 h (R-SYN-33). */
++async function seedReadiness(db: AppDb, pullAgoMs: number) {
++  await setMeta(db, 'catalogVersion', 'cat-1');
++  await setMeta(db, 'serverCatalogVersion', 'cat-1');
++  await setMeta(db, 'lastPullOkAt', new Date(DEFAULT_NOW - pullAgoMs).toISOString());
++}
++
++/** Onboarding repris à « C'est prêt » (santé validée), coach `coach`, dernier pull il y a `pullAgoMs`. */
++async function openReady(o: { coach?: CoachId; pullAgoMs?: number } = {}) {
++  const me = newcomer({ onboardingStep: 'health' });
++  const db = createTestLocalDb();
++  const api = createFakeApi().on('GET', '/api/catalog', { status: 304 });
++  await seedProfile(db, {
++    coach: o.coach ?? 'skald',
++    goal: 'muscle',
++    experience: 'none',
++    daysPerWeek: 3,
++    sessionMinutes: 45,
++  });
++  await seedPrimaryGym(db);
++  await seedReadiness(db, o.pullAgoMs ?? HOUR);
++  serveProfile(api, db, me);
++  const rendered = await renderApp({ path: '/onboarding', me, db, api });
++  await until(() => currentStep() === 'ready');
++  return rendered;
++}
++
++const quest = (name: string) => screen.getByRole('checkbox', { name });
++const isDone = (name: string) => quest(name).getAttribute('aria-checked') === 'true';
++
++describe('« Éveil terminé » (spec refonte §7, §10.1)', () => {
++  it('fenêtre du Système « Éveil terminé. », quêtes 3/3 cochées en lecture seule, rang E', async () => {
++    await openReady();
++    expect(await screen.findByRole('heading', { name: 'Éveil terminé.' })).toBeTruthy();
++    await until(() => QUESTS.every(isDone));
++    for (const name of QUESTS) expect(quest(name).getAttribute('aria-readonly')).toBe('true');
++    expect(screen.getByText("Quêtes d'éveil")).toBeTruthy();
++    expect(screen.getByText('3/3')).toBeTruthy();
++    expect(screen.getByText("Quêtes d'éveil remplies. Ta progression commence au rang E.")).toBeTruthy();
++    expect(screen.getByRole('img', { name: 'Rang E' })).toBeTruthy();
++    await until(() => !button('Commencer').disabled);
++  });
++
++  it.each(COACH_IDS)('bulle du coach choisi (%s) : son mot de la fin, pseudo remplacé', async (coach) => {
++    await openReady({ coach });
++    const line = coachText(coach, 'ready', 'lea');
++    const text = await screen.findByText(line);
++    const bubble = text.closest('[data-mode]');
++    expect(bubble).not.toBeNull();
++    expect(bubble?.textContent).toContain(
++      { ombre: "L'Ombre", skald: 'Le Skald', scribe: 'Le Scribe' }[coach],
++    );
++    expect(bubble?.textContent).toContain("Message d'accueil");
++    expect(line).not.toContain('{pseudo}');
++  });
++
++  it('prêt hors ligne non atteint (dernier pull il y a 25 h) : 2/3, sa case non cochée, « Commencer » désactivé', async () => {
++    await openReady({ pullAgoMs: 25 * HOUR });
++    // « Réessayer » n'apparaît qu'une fois l'état calculé, et seulement s'il n'est pas prêt.
++    await screen.findByRole('button', { name: 'Réessayer' });
++    await until(() => isDone('Profil complété') && isDone('Lieu principal choisi'));
++    expect(isDone('Prêt hors ligne')).toBe(false);
++    expect(screen.getByText('2/3')).toBeTruthy();
++    expect(screen.queryByText('3/3')).toBeNull();
++    expect(screen.queryByText("Quêtes d'éveil remplies. Ta progression commence au rang E.")).toBeNull();
++    expect(button('Commencer').disabled).toBe(true);
++  });
++
++  it('vrais états : sans lieu principal ni niveau, ces quêtes restent décochées', async () => {
++    const db = createTestLocalDb();
++    const me = newcomer({ onboardingStep: 'health' });
++    await seedProfile(db, { goal: 'muscle', experience: null, daysPerWeek: 3, sessionMinutes: 45 });
++    await seedReadiness(db, HOUR);
++    await renderWithServices(<ReadyStep onBack={() => {}} onIncomplete={() => {}} />, { me, db });
++    await until(() => isDone('Prêt hors ligne'));
++    expect(isDone('Profil complété')).toBe(false);
++    expect(isDone('Lieu principal choisi')).toBe(false);
++    expect(screen.getByText('1/3')).toBeTruthy();
++  });
++
++  it('mouvement réduit : « Commencer », la fenêtre, le rang et les quêtes sont là dès le premier rendu', async () => {
++    reducedMotion();
++    const me = newcomer({ onboardingStep: 'health' });
++    const db = createTestLocalDb();
++    await seedProfile(db, { goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45 });
++    await seedPrimaryGym(db);
++    await seedReadiness(db, HOUR);
++    await renderWithServices(<ReadyStep onBack={() => {}} onIncomplete={() => {}} />, { me, db });
++    // Premier rendu : aucune lecture de la base n'a encore abouti, aucune minuterie n'a tourné.
++    expect(button('Commencer')).toBeTruthy();
++    expect(screen.getByRole('heading', { name: 'Éveil terminé.' })).toBeTruthy();
++    expect(screen.getByRole('img', { name: 'Rang E' })).toBeTruthy();
++    expect(screen.getAllByRole('checkbox').map((c) => c.textContent)).toEqual([...QUESTS]);
++    await until(() => QUESTS.every(isDone));
++  });
++});
++
++/** `a, b:not(c, d)` → [`a`, `b:not(c, d)`] : coupe aux virgules hors parenthèses. */
++function selectorList(selector: string): string[] {
++  const out: string[] = [];
++  let depth = 0;
++  let start = 0;
++  for (let i = 0; i < selector.length; i++) {
++    const ch = selector[i];
++    if (ch === '(') depth++;
++    else if (ch === ')') depth--;
++    else if (ch === ',' && depth === 0) {
++      out.push(selector.slice(start, i).trim());
++      start = i + 1;
++    }
++  }
++  out.push(selector.slice(start).trim());
++  return out;
++}
++
++const blocks = () => parseCssBlocks(readFileSync(ONBOARDING_CSS, 'utf8'));
++
++/** Déclarations fusionnées d'un sélecteur dans ce contexte, dans l'ordre du fichier. */
++const declarations = (all: readonly CssBlock[], selector: string, media: string | null = null) =>
++  new Map(
++    all
++      .filter((b) => b.media === media && selectorList(b.selector).includes(normalizeSelector(selector)))
++      .flatMap((b) => [...b.declarations]),
++  );
++
++/** Durées en ms d'une valeur (`600ms`, `1.2s`) ; `var(--dur-celebrate)` vaut 900 ms (motion.css). */
++const times = (value: string) =>
++  [...value.replaceAll('var(--dur-celebrate)', '900ms').matchAll(/(\d+(?:\.\d+)?)(ms|s)\b/g)].map(
++    ([, n, unit]) => Number(n) * (unit === 's' ? 1000 : 1),
++  );
++
++/** Sélecteurs de la célébration, chacun animé (fenêtre, rang, étincelles, quêtes, coach, « Commencer »). */
++const CELEBRATION = [
++  '.celebration',
++  '.rank',
++  '.spark',
++  '.questsFill',
++  '.questCheck',
++  '.coachLine',
++  '.revealActions',
++];
++
++const NTH_CHILD = /:nth-child\(\d+\)/g;
++
++/**
++ * Sélecteurs hors media query qui animent un élément de la célébration ou décalent son départ (une quête après
++ * l'autre), avec leurs déclarations.
++ */
++const animatedRules = (all: readonly CssBlock[]) =>
++  all
++    .filter((b) => b.media === null && !b.selector.startsWith('@'))
++    .filter((b) => b.declarations.has('animation') || b.declarations.has('animation-delay'))
++    .flatMap((b) => selectorList(b.selector).map((selector) => ({ selector, d: b.declarations })))
++    .filter((r) => CELEBRATION.some((c) => r.selector.endsWith(c)));
++
++describe('mouvement de la célébration (onboarding.module.css)', () => {
++  it('600 à 1 200 ms sur la courbe unique, finie à 1 200 ms', () => {
++    const all = blocks();
++    const durations = new Map<string, number>();
++    for (const selector of CELEBRATION) {
++      const animation = declarations(all, selector).get('animation') ?? '';
++      expect(animation, `${selector} : animation`).not.toBe('');
++      expect(animation, `${selector} : courbe`).toContain('var(--ease)');
++      const [duration = 0] = times(animation);
++      expect(duration, `${selector} : durée`).toBeGreaterThanOrEqual(600);
++      expect(duration, `${selector} : durée`).toBeLessThanOrEqual(1200);
++      durations.set(selector, duration);
++    }
++    for (const { selector, d } of animatedRules(all)) {
++      const base = CELEBRATION.find((c) => selector.endsWith(c)) ?? '';
++      const own = d.get('animation');
++      const delay = d.has('animation-delay')
++        ? (times(d.get('animation-delay') ?? '')[0] ?? 0)
++        : own
++          ? (times(own)[1] ?? 0)
++          : 0;
++      const duration = own ? (times(own)[0] ?? 0) : (durations.get(base) ?? 0);
++      expect(delay + duration, `${selector} : fin`).toBeLessThanOrEqual(1200);
++    }
++  });
++
++  it('mouvement réduit : fondus courts sans retard (décalages compris), pas d’étincelles', () => {
++    const all = blocks();
++    const selectors = new Set([...CELEBRATION, ...animatedRules(all).map((r) => r.selector)]);
++    for (const selector of selectors) {
++      const reduced = declarations(all, selector.replace(NTH_CHILD, ':nth-child(n)'), REDUCE);
++      if (reduced.get('animation') === 'none' || reduced.get('display') === 'none') continue;
++      expect(reduced.get('animation-delay'), `${selector} : retard`).toBe('0ms');
++      expect(reduced.get('animation-duration'), `${selector} : durée`).toBe('var(--dur-fast)');
++    }
++    const spark = declarations(all, '.spark', REDUCE);
++    expect(spark.get('display') === 'none' || spark.get('animation') === 'none').toBe(true);
++  });
++});
+diff --git a/apps/web/test/onboarding/flow.test.tsx b/apps/web/test/onboarding/flow.test.tsx
+index e78e696..55c78f4 100644
+--- a/apps/web/test/onboarding/flow.test.tsx
++++ b/apps/web/test/onboarding/flow.test.tsx
+@@ -1,75 +1,119 @@
++import { readFileSync } from 'node:fs';
++import { resolve } from 'node:path';
+ import { firstIncompleteStep } from '@rune/domain';
+ import { fireEvent, screen } from '@testing-library/react';
+-import { describe, expect, it } from 'vitest';
++import { afterEach, describe, expect, it, vi } from 'vitest';
+ import { shownStep } from '../../src/features/onboarding/OnboardingFlow';
+ import { createRepos } from '../../src/repos';
+ import { settle } from '../support/auth';
++import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
+ import { createFakeApi } from '../support/fake-api';
+ import { createTestLocalDb } from '../support/local-db';
+ import {
+   button,
+   choose,
+   currentStep,
+   isChecked,
+   newcomer,
+   radio,
+   seedPrimaryGym,
+   seedProfile,
+   serveProfile,
+   writes,
+ } from '../support/onboarding';
+ import { createTestServices, renderApp } from '../support/render';
+ import { until } from '../support/wait';
+ 
++const ONBOARDING_CSS = resolve(import.meta.dirname, '../../src/features/onboarding/onboarding.module.css');
++
+ /** Onboarding dans l'appli (garde comprise), base et faux serveur fournis par le test. */
+ async function openFlow(me = newcomer()) {
+   const db = createTestLocalDb();
+   const api = createFakeApi();
+   const server = serveProfile(api, db, me);
+   return { db, api, me, server, render: () => renderApp({ path: '/onboarding', me, db, api }) };
+ }
+ 
++afterEach(() => {
++  vi.restoreAllMocks();
++});
++
+ const progress = () => screen.getByText(/^Étape \d sur 9$/).textContent;
+ /** Le titre de l'écran, nommé avec l'indicateur d'étape, a le focus. */
+ const hasFocus = (name: string) =>
+   screen.queryByRole('heading', { level: 2, name }) === document.activeElement;
+ 
+ describe('OnboardingFlow (R-ONB-1, R-ONB-2)', () => {
+   it("départ 'coach', « Étape 1 sur 9 », hors de la coquille de l'appli", async () => {
+     const { render } = await openFlow();
+     const { location } = await render();
+     await until(() => currentStep() === 'coach');
+     expect(progress()).toBe('Étape 1 sur 9');
+     expect(location()).toBe('/onboarding');
+     expect(screen.queryByRole('navigation', { name: 'Navigation principale' })).toBeNull();
+     // La marque ne mène pas hors de l'onboarding (la garde y ramènerait en perdant l'écran).
+     expect(screen.getByText('Rune')).toBeTruthy();
+     expect(screen.queryByRole('link', { name: 'Rune' })).toBeNull();
+   });
+ 
++  it('en-tête des maquettes B01–B08 : la marque Rune, décorative, ouvre la ligne « Étape n sur 9 »', async () => {
++    const { render } = await openFlow();
++    await render();
++    const title = await screen.findByRole('heading', { level: 2, name: 'Étape 1 sur 9 Choisis ton coach' });
++    // La ligne qui nomme le titre commence par la marque, masquée : le nom reste « Étape n sur 9 <titre> ».
++    const row = document.getElementById(title.getAttribute('aria-labelledby')?.split(' ')[0] ?? '');
++    const mark = row?.firstElementChild;
++    expect(mark?.tagName.toLowerCase()).toBe('svg');
++    expect(mark?.getAttribute('viewBox')).toBe('0 0 512 512');
++    expect(mark?.getAttribute('aria-hidden')).toBe('true');
++    expect(row?.textContent).toBe('Étape 1 sur 9');
++  });
++
+   it('changement d’écran : le titre, nommé avec « Étape n sur 9 », reçoit le focus ; pas au premier affichage', async () => {
+     const t = await openFlow();
+     // Coach déjà choisi : reprise à l'objectif.
+     await seedProfile(t.db);
+     await t.render();
+     await screen.findByRole('heading', { level: 2, name: 'Étape 2 sur 9 Objectif' });
+     expect(document.activeElement).toBe(document.body);
+     choose('Prendre du muscle');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => hasFocus('Étape 3 sur 9 Autre sport'));
+     fireEvent.click(button('Retour'));
+     await until(() => hasFocus('Étape 2 sur 9 Objectif'));
+     fireEvent.click(button('Retour'));
+     await until(() => hasFocus('Étape 1 sur 9 Choisis ton coach'));
+   });
+ 
++  it('changement d’écran : le suivant entre par la droite, le retour par la gauche ; rien à la reprise', async () => {
++    const animate = vi.spyOn(Element.prototype, 'animate');
++    /** Entrée jouée en dernier sur l'écran affiché (`data-step`), ou null. */
++    const entrance = () => {
++      const i = animate.mock.contexts.lastIndexOf(screen.getByTestId('onboarding-step'));
++      return i < 0 ? null : (animate.mock.calls[i]?.[0] as { transform?: string[] });
++    };
++    const t = await openFlow();
++    await seedProfile(t.db);
++    await t.render();
++    await until(() => currentStep() === 'goal');
++    expect(entrance()).toBeNull();
++    await screen.findByRole('radio', { name: 'Prendre du muscle' });
++    choose('Prendre du muscle');
++    fireEvent.click(button('Continuer'));
++    await until(() => currentStep() === 'sport');
++    expect(entrance()?.transform).toEqual(['translateX(48px)', 'none']);
++    fireEvent.click(await screen.findByRole('button', { name: 'Retour' }));
++    await until(() => currentStep() === 'goal');
++    expect(entrance()?.transform).toEqual(['translateX(-48px)', 'none']);
++  });
++
+   it('reprise au premier écran incomplet (firstIncompleteStep)', async () => {
+     const t = await openFlow(newcomer({ onboardingStep: 'place' }));
+     await seedProfile(t.db, { goal: 'muscle' });
+     await seedPrimaryGym(t.db);
+     const { services } = await createTestServices({ db: t.db, me: t.me });
+     const expected = firstIncompleteStep(await createRepos(services).profile.onboardingInput());
+     expect(expected).toBe('experience');
+     await t.render();
+     await until(() => currentStep() === 'experience');
+     expect(progress()).toBe('Étape 6 sur 9');
+@@ -101,66 +145,66 @@ describe('OnboardingFlow (R-ONB-1, R-ONB-2)', () => {
+     await seedProfile(t.db, { goal: 'muscle' });
+     const { sync } = await t.render();
+     await until(() => currentStep() === 'sport');
+     fireEvent.click(await screen.findByRole('button', { name: 'Retour' }));
+     await until(() => currentStep() === 'goal');
+     sync.set({ lastPullOkAt: '2026-10-06T12:00:00.000Z' });
+     await settle();
+     expect(currentStep()).toBe('goal');
+   });
+ 
+-  it('« Prendre du muscle » + « Suivant » → PATCH, puis « Autre sport » en 3 sur 9 ; « Retour » garde la réponse', async () => {
++  it('« Prendre du muscle » + « Continuer » → PATCH, puis « Autre sport » en 3 sur 9 ; « Retour » garde la réponse', async () => {
+     const t = await openFlow();
+     await seedProfile(t.db);
+     await t.render();
+     await until(() => currentStep() === 'goal');
+     await screen.findByRole('radio', { name: 'Prendre du muscle' });
+-    expect(button('Suivant').disabled).toBe(true);
++    expect(button('Continuer').disabled).toBe(true);
+     choose('Prendre du muscle');
+     expect(t.server.patches).toEqual([]);
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => currentStep() === 'sport');
+     expect(t.server.patches).toEqual([{ goal: 'muscle', onboardingStep: 'goal' }]);
+     expect(progress()).toBe('Étape 3 sur 9');
+ 
+     fireEvent.click(await screen.findByRole('button', { name: 'Retour' }));
+     await until(() => currentStep() === 'goal');
+     await until(() => isChecked('Prendre du muscle'));
+     expect(progress()).toBe('Étape 2 sur 9');
+     expect(t.server.patches).toHaveLength(1);
+   });
+ 
+   it('« Non » au sport enregistré, puis « Retour » depuis le lieu : « Non » toujours coché', async () => {
+     const t = await openFlow(newcomer({ onboardingStep: 'goal' }));
+     await seedProfile(t.db, { goal: 'muscle' });
+     await t.render();
+     await until(() => currentStep() === 'sport');
+     await screen.findByRole('radio', { name: 'Non' });
+     choose('Non');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => currentStep() === 'place_kind');
+     expect(t.server.patches).toEqual([{ sportCode: null, sportOtherLabel: null, onboardingStep: 'sport' }]);
+     fireEvent.click(button('Retour'));
+     await until(() => currentStep() === 'sport');
+     await until(() => isChecked('Non'));
+-    expect(button('Suivant').disabled).toBe(false);
++    expect(button('Continuer').disabled).toBe(false);
+   });
+ 
+   it('sport enregistré, puis « Retour » depuis le lieu : « Oui » et le sport toujours cochés', async () => {
+     const t = await openFlow(newcomer({ onboardingStep: 'goal' }));
+     await seedProfile(t.db, { goal: 'muscle' });
+     await t.render();
+     await until(() => currentStep() === 'sport');
+     await screen.findByRole('radio', { name: 'Oui' });
+     choose('Oui');
+     choose('Course à pied');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => currentStep() === 'place_kind');
+     fireEvent.click(button('Retour'));
+     await until(() => currentStep() === 'sport');
+     await until(() => isChecked('Oui') && isChecked('Course à pied'));
+   });
+ 
+   it("reprise sans lieu principal : 'place_kind', aucun type coché (le choix n'est pas gardé)", async () => {
+     const t = await openFlow(newcomer({ onboardingStep: 'place_kind' }));
+     await seedProfile(t.db, { goal: 'muscle' });
+     await t.render();
+@@ -178,30 +222,52 @@ describe('OnboardingFlow (R-ONB-1, R-ONB-2)', () => {
+ 
+   it('retour depuis le niveau : le lieu principal existant est affiché, rien n’est recréé', async () => {
+     const t = await openFlow(newcomer({ onboardingStep: 'place' }));
+     await seedProfile(t.db, { goal: 'muscle' });
+     await seedPrimaryGym(t.db);
+     await t.render();
+     await until(() => currentStep() === 'experience');
+     fireEvent.click(await screen.findByRole('button', { name: 'Retour' }));
+     await until(() => currentStep() === 'place');
+     await screen.findByText('Ton lieu principal : Basic Fit');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => currentStep() === 'experience');
+     expect(writes(t.api)).toEqual(['PATCH /api/me/training-profile']);
+     expect(t.server.patches).toEqual([{ onboardingStep: 'place' }]);
+   });
+ 
+   it('hors ligne : « Nécessite le réseau » en alerte, on reste sur l’objectif', async () => {
+     const t = await openFlow();
+     await seedProfile(t.db);
+     await t.render();
+     await until(() => currentStep() === 'goal');
+     await screen.findByRole('radio', { name: 'Gagner en force' });
+     t.api.setOffline('reject');
+     choose('Gagner en force');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
+     expect(currentStep()).toBe('goal');
+     expect(t.server.patches).toEqual([]);
+   });
++
++  it('barre « Retour » / « Continuer » collée en bas (maquettes B01–B08) : l’erreur de l’écran y reste visible', async () => {
++    const t = await openFlow();
++    await seedProfile(t.db);
++    await t.render();
++    await until(() => currentStep() === 'goal');
++    await screen.findByRole('radio', { name: 'Gagner en force' });
++    t.api.setOffline('reject');
++    choose('Gagner en force');
++    fireEvent.click(button('Continuer'));
++    const alert = await screen.findByRole('alert');
++    // Le bloc de l'écran qui porte l'erreur porte aussi les deux boutons : collé en bas, il la garde à l'écran.
++    const bar = [...screen.getByTestId('onboarding-step').children].find((c) => c.contains(alert));
++    expect(bar?.contains(button('Continuer'))).toBe(true);
++    expect(bar?.contains(button('Retour'))).toBe(true);
++    const css = parseCssBlocks(readFileSync(ONBOARDING_CSS, 'utf8'));
++    const sticky = declarationsOf(css, '.flow .bar');
++    expect(sticky?.get('position')).toBe('sticky');
++    expect(sticky?.get('bottom')).toBe('0');
++    // Un champ qui prend le focus défile au-dessus de la barre, jamais dessous (WCAG 2.4.11).
++    expect(declarationsOf(css, ':global(html):has(.flow)')?.get('scroll-padding-bottom')).toBeTruthy();
++  });
+ });
+diff --git a/apps/web/test/onboarding/health-step.test.tsx b/apps/web/test/onboarding/health-step.test.tsx
+index 1322f36..2f7b72b 100644
+--- a/apps/web/test/onboarding/health-step.test.tsx
++++ b/apps/web/test/onboarding/health-step.test.tsx
+@@ -67,60 +67,74 @@ describe('HealthStep sans accord santé (E7, P-CST-1, P-CST-2)', () => {
+       screen.getByText(/^Tes réponses au questionnaire et tes limitations sont des données de santé\./),
+     ).toBeTruthy();
+     expect(screen.queryByText(/Les réponses de cet écran/)).toBeNull();
+     const box = screen.getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text }) as HTMLInputElement;
+     expect(box.checked).toBe(false);
+     expect(button("J'accepte et je renseigne").disabled).toBe(true);
+     fireEvent.click(box);
+     expect(button("J'accepte et je renseigne").disabled).toBe(false);
+   });
+ 
++  it('carte « Accord santé » ; limitations annoncées « Après ton accord » ; aucune voix du Système', async () => {
++    await renderHealth();
++    const consent = screen.getByRole('region', { name: 'Accord santé' });
++    expect(within(consent).getByRole('heading', { level: 3, name: 'Accord santé' })).toBeTruthy();
++    expect(within(consent).getByText(HEALTH_CONSENT_TEXT.text)).toBeTruthy();
++    const locked = screen.getByRole('region', { name: 'Limitations' });
++    expect(within(locked).getByText('Après ton accord')).toBeTruthy();
++    expect(within(locked).getByText(/aucun diagnostic n'est nécessaire/)).toBeTruthy();
++    expect(within(locked).queryByRole('combobox')).toBeNull();
++    // Textes légaux mot pour mot, en « vous » pour l'avertissement, hors de toute fenêtre du Système.
++    expect(screen.getByText(HEALTH_WARNING_TEXT)).toBeTruthy();
++    expect(screen.queryByText('SYSTÈME')).toBeNull();
++  });
++
+   it('« Passer » : les 4 questions en auto-vérification, aucune requête', async () => {
+     const { api } = await renderHealth();
+     fireEvent.click(button('Passer'));
+     await screen.findByText(new RegExp(SELF_CHECK));
+     for (const q of HEALTH_QUESTIONNAIRE.questions) expect(screen.getByText(q)).toBeTruthy();
+     expect(screen.queryByRole('radio')).toBeNull();
+     expect(screen.queryByRole('button', { name: 'Enregistrer mes réponses' })).toBeNull();
+     expect(api.calls).toEqual([]);
+   });
+ 
+-  it('mode prudent : rien à la bascule, enregistré avec l’étape au clic sur « Suivant » (R-ONB-2)', async () => {
++  it('mode prudent : rien à la bascule, enregistré avec l’étape au clic sur « Continuer » (R-ONB-2)', async () => {
+     const t = await renderHealth();
+     expect(toggle().checked).toBe(false);
+     fireEvent.click(toggle());
+     expect(toggle().checked).toBe(true);
+     expect(t.api.calls).toEqual([]);
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ cautiousMode: true, onboardingStep: 'health' }]);
+   });
+ 
+-  it('« Suivant » sans changement : seulement l’étape', async () => {
++  it('« Continuer » sans changement : seulement l’étape', async () => {
+     const t = await renderHealth();
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ onboardingStep: 'health' }]);
+   });
+ 
+   it('mode prudent : présenté comme un réglage enregistré même sans accord (P-CST-2)', async () => {
+     await renderHealth();
+     expect(screen.getByText(NOT_HEALTH_DATA)).toBeTruthy();
+     expect(describedBy(toggle())).toContain(NOT_HEALTH_DATA);
+   });
+ 
+   it('mode prudent enregistré : interrupteur coché ; le décocher envoie cautiousMode: false', async () => {
+     const t = await renderHealth(newcomer(), { cautiousMode: true });
+     await until(() => toggle().checked);
+     fireEvent.click(toggle());
+     expect(toggle().checked).toBe(false);
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ cautiousMode: false, onboardingStep: 'health' }]);
+   });
+ 
+   it('accord donné : POST du consentement, puis le questionnaire enregistré', async () => {
+     const t = await renderHealth();
+     t.api.on('POST', '/api/me/consents', { status: 200, body: consenting() });
+     fireEvent.click(screen.getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text }));
+     fireEvent.click(button("J'accepte et je renseigne"));
+     await screen.findByRole('button', { name: 'Enregistrer mes réponses' });
+@@ -151,70 +165,70 @@ describe('HealthStep avec accord santé', () => {
+   it('un seul « Oui » affiche tout de suite la recommandation, sans requête (E7.2)', async () => {
+     const t = await renderHealth(consenting());
+     expect(screen.queryByText(SEE_DOCTOR)).toBeNull();
+     answer(2, 'Oui');
+     expect(screen.getByText(SEE_DOCTOR)).toBeTruthy();
+     expect(t.api.calls).toEqual([]);
+     answer(2, 'Non');
+     expect(screen.queryByText(SEE_DOCTOR)).toBeNull();
+   });
+ 
+-  it('réponses non enregistrées : « Suivant » envoie le PUT puis le PATCH (R-ONB-2, R-CST-7)', async () => {
++  it('réponses non enregistrées : « Continuer » envoie le PUT puis le PATCH (R-ONB-2, R-CST-7)', async () => {
+     const t = await renderHealth(consenting());
+     let body: unknown;
+     t.api.on('PUT', '/api/me/health-screening', (req) => {
+       body = req.body;
+       return { status: 200, body: { caution: true } };
+     });
+     answer(0, 'Oui');
+     for (const i of [1, 2, 3]) answer(i, 'Non');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(writes(t.api)).toEqual([SCREENING, PATCH]);
+     expect(body).toEqual({ answers: [true, false, false, false], questionnaireVersion: '1.0' });
+     expect(t.patches).toEqual([{ onboardingStep: 'health' }]);
+   });
+ 
+-  it('réponses déjà enregistrées : « Suivant » ne renvoie pas le questionnaire', async () => {
++  it('réponses déjà enregistrées : « Continuer » ne renvoie pas le questionnaire', async () => {
+     const t = await renderHealth(consenting());
+     t.api.on('PUT', '/api/me/health-screening', { status: 200, body: { caution: false } });
+     for (const i of [0, 1, 2, 3]) answer(i, 'Non');
+     fireEvent.click(button('Enregistrer mes réponses'));
+     await screen.findByText('Réponses enregistrées.');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(writes(t.api)).toEqual([SCREENING, PATCH]);
+   });
+ 
+-  it('hors ligne : le « Oui » affiche la recommandation ; « Suivant » → « Nécessite le réseau »', async () => {
++  it('hors ligne : le « Oui » affiche la recommandation ; « Continuer » → « Nécessite le réseau »', async () => {
+     const t = await renderHealth(consenting());
+     t.api.setOffline('reject');
+     answer(0, 'Oui');
+     expect(screen.getByText(SEE_DOCTOR)).toBeTruthy();
+     for (const i of [1, 2, 3]) answer(i, 'Non');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
+     expect(t.onNext).not.toHaveBeenCalled();
+     expect(t.patches).toEqual([]);
+     expect(screen.getByText(SEE_DOCTOR)).toBeTruthy();
+   });
+ 
+-  it('réponses incomplètes : « Suivant » s’arrête avec un message ; « Effacer mes réponses » débloque', async () => {
++  it('réponses incomplètes : « Continuer » s’arrête avec un message ; « Effacer mes réponses » débloque', async () => {
+     const t = await renderHealth(consenting());
+     answer(0, 'Oui');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     expect((await screen.findByRole('alert')).textContent).toBe(SCREENING_INCOMPLETE);
+     expect(t.api.calls).toEqual([]);
+     fireEvent.click(button('Effacer mes réponses'));
+     expect(screen.queryByText(SCREENING_INCOMPLETE)).toBeNull();
+     expect(screen.queryAllByRole('radio', { checked: true })).toEqual([]);
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(writes(t.api)).toEqual([PATCH]);
+   });
+ 
+   it('limitations : « aucun diagnostic », « Aucune », ajout avec note de 200 caractères au plus', async () => {
+     const t = await renderHealth(consenting());
+     let body: unknown;
+     t.api.on('POST', '/api/me/limitations', async (req) => {
+       body = req.body;
+       await seedMirror(t.db, 'limitation', [
+@@ -224,20 +238,21 @@ describe('HealthStep avec accord santé', () => {
+           bodyArea: 'knee',
+           side: 'left',
+           severity: 'mild',
+           note: 'entorse ancienne',
+           active: true,
+         },
+       ]);
+       return { status: 201, body: { id: 'l-1' } };
+     });
+     expect(screen.getByText(/aucun diagnostic n'est nécessaire/)).toBeTruthy();
++    expect(screen.queryByText('Après ton accord')).toBeNull();
+     await screen.findByText('Aucune');
+     expect(button('Ajouter une limitation').disabled).toBe(true);
+     fireEvent.change(screen.getByLabelText('Zone'), { target: { value: 'knee' } });
+     fireEvent.change(screen.getByLabelText('Côté'), { target: { value: 'left' } });
+     fireEvent.click(screen.getByRole('radio', { name: 'Légère' }));
+     const note = screen.getByLabelText('Note') as HTMLInputElement;
+     expect(note.maxLength).toBe(200);
+     fireEvent.change(note, { target: { value: 'entorse ancienne' } });
+     fireEvent.click(button('Ajouter une limitation'));
+     await screen.findByText('Genou · Gauche · Légère');
+@@ -264,56 +279,56 @@ describe('HealthStep avec accord santé', () => {
+       me: consenting(),
+       db,
+       api,
+     });
+     await screen.findByText("Hanche · Les deux · Forte : m'empêche certains mouvements");
+     fireEvent.click(button('Supprimer'));
+     await until(() => api.calls.some((c) => c.method === 'DELETE'));
+     expect(api.calls.find((c) => c.method === 'DELETE')?.path).toBe('/api/me/limitations/l-1');
+   });
+ 
+-  it('limitation remplie sans « Ajouter » : « Suivant » l’envoie, puis l’étape (R-ONB-2)', async () => {
++  it('limitation remplie sans « Ajouter » : « Continuer » l’envoie, puis l’étape (R-ONB-2)', async () => {
+     const t = await renderHealth(consenting());
+     let body: unknown;
+     t.api.on('POST', '/api/me/limitations', (req) => {
+       body = req.body;
+       return { status: 201, body: { id: 'l-1' } };
+     });
+     await screen.findByText('Aucune');
+     fireEvent.change(screen.getByLabelText('Zone'), { target: { value: 'knee' } });
+     fireEvent.change(screen.getByLabelText('Côté'), { target: { value: 'left' } });
+     fireEvent.click(screen.getByRole('radio', { name: 'Légère' }));
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(writes(t.api)).toEqual(['POST /api/me/limitations', PATCH]);
+     expect(body).toEqual({ bodyArea: 'knee', side: 'left', severity: 'mild', note: null });
+   });
+ 
+-  it('limitation incomplète : « Suivant » s’arrête avec un message ; « Effacer la saisie » débloque', async () => {
++  it('limitation incomplète : « Continuer » s’arrête avec un message ; « Effacer la saisie » débloque', async () => {
+     const t = await renderHealth(consenting());
+     await screen.findByText('Aucune');
+     fireEvent.change(screen.getByLabelText('Zone'), { target: { value: 'knee' } });
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     expect((await screen.findByRole('alert')).textContent).toBe(DRAFT_INCOMPLETE);
+     expect(t.api.calls).toEqual([]);
+     fireEvent.click(button('Effacer la saisie'));
+     expect((screen.getByLabelText('Zone') as HTMLSelectElement).value).toBe('');
+     expect(screen.queryByText(DRAFT_INCOMPLETE)).toBeNull();
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(writes(t.api)).toEqual([PATCH]);
+   });
+ });
+ 
+ describe('HealthStep pour un mineur (R-CST-7)', () => {
+-  it('mode prudent coché, désactivé et imposé ; avertissement santé ; « Suivant » actif sans réponse', async () => {
++  it('mode prudent coché, désactivé et imposé ; avertissement santé ; « Continuer » actif sans réponse', async () => {
+     const t = await renderHealth(newcomer({ ageBand: 'minor', cautious: true }));
+     expect(toggle().checked).toBe(true);
+     expect(toggle().disabled).toBe(true);
+     expect(screen.getByText("Imposé jusqu'à 18 ans")).toBeTruthy();
+     expect(screen.getByText(HEALTH_WARNING_TEXT)).toBeTruthy();
+-    expect(button('Suivant').disabled).toBe(false);
+-    fireEvent.click(button('Suivant'));
++    expect(button('Continuer').disabled).toBe(false);
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ onboardingStep: 'health' }]);
+   });
+ });
+diff --git a/apps/web/test/onboarding/ready-step.test.tsx b/apps/web/test/onboarding/ready-step.test.tsx
+index 8bb3efa..c254e6f 100644
+--- a/apps/web/test/onboarding/ready-step.test.tsx
++++ b/apps/web/test/onboarding/ready-step.test.tsx
+@@ -37,71 +37,75 @@ async function openReady(pullAgoMs: number) {
+   await seedPrimaryGym(db);
+   await setMeta(db, 'catalogVersion', 'cat-1');
+   await setMeta(db, 'serverCatalogVersion', 'cat-1');
+   await setMeta(db, 'lastPullOkAt', new Date(DEFAULT_NOW - pullAgoMs).toISOString());
+   serveProfile(api, db, me);
+   const rendered = await renderApp({ path: '/onboarding', me, db, api });
+   await until(() => currentStep() === 'ready');
+   return { ...rendered, api };
+ }
+ 
+-const indicatorState = () => screen.queryByTestId('offline-ready')?.getAttribute('data-state');
++/** Quête « Prêt hors ligne » de la célébration : cochée quand le voyant est au vert (R-SYN-33). */
++const offlineReady = () =>
++  screen.queryByRole('checkbox', { name: 'Prêt hors ligne' })?.getAttribute('aria-checked') === 'true';
+ 
+ describe('ReadyStep (E8, R-SYN-33)', () => {
+   it('récapitulatif, voyant vert, « Commencer » → fin de l’onboarding, événement, accueil', async () => {
+     const { api, location } = await openReady(HOUR);
+     api.on('POST', COMPLETE, { status: 200, body: makeMe() });
+     window.addEventListener(ONBOARDING_COMPLETED_EVENT, count);
+     for (const text of ['Prendre du muscle', '3 séances de 45 min', 'Basic Fit', 'Jamais']) {
+       await screen.findByText(text);
+     }
+-    await until(() => indicatorState() === 'ready');
++    await until(offlineReady);
+     await until(() => !button('Commencer').disabled);
+     fireEvent.click(button('Commencer'));
+     await until(() => location() === '/');
+     expect(api.calls.filter((c) => c.path === COMPLETE).map((c) => c.method)).toEqual(['POST']);
+     await screen.findByText('Bonjour lea');
+     expect(events).toBe(1);
+   });
+ 
+   it('dernier pull il y a 25 h : « Commencer » désactivé, « Réessayer » lance une synchro manuelle', async () => {
+     const { sync, api } = await openReady(25 * HOUR);
+-    await until(() => indicatorState() === 'not-ready');
++    // Pas prêt : le voyant explique ce qui manque, avec « Réessayer ».
++    await until(() => screen.queryByTestId('offline-ready')?.getAttribute('data-state') === 'not-ready');
++    expect(offlineReady()).toBe(false);
+     expect(button('Commencer').disabled).toBe(true);
+     fireEvent.click(button('Réessayer'));
+     await until(() => sync.triggers.includes('manual'));
+     expect(api.calls.some((c) => c.path === COMPLETE)).toBe(false);
+   });
+ 
+   it('409 onboarding_incomplete : retour au premier écran incomplet, avec la raison', async () => {
+     const { api, location } = await openReady(HOUR);
+     api.on('POST', COMPLETE, { status: 409, body: { error: 'onboarding_incomplete', step: 'availability' } });
+     window.addEventListener(ONBOARDING_COMPLETED_EVENT, count);
+-    await until(() => indicatorState() === 'ready');
++    await until(offlineReady);
+     await until(() => !button('Commencer').disabled);
+     expect(screen.queryByText(INCOMPLETE)).toBeNull();
+     fireEvent.click(button('Commencer'));
+     await until(() => currentStep() === 'availability');
+     expect(screen.getByText(INCOMPLETE).closest('[role="status"]')).not.toBeNull();
+     expect(location()).toBe('/onboarding');
+     expect(events).toBe(0);
+     // Message affiché une fois : il disparaît à l'écran suivant.
+     fireEvent.click(await screen.findByRole('button', { name: 'Retour' }));
+     await until(() => currentStep() === 'experience');
+     expect(screen.queryByText(INCOMPLETE)).toBeNull();
+   });
+ 
+   it('409 sans étape lisible : écran recalculé depuis la base locale', async () => {
+     const { api, db, location } = await openReady(HOUR);
+     api.on('POST', COMPLETE, { status: 409, body: { error: 'onboarding_incomplete' } });
+     window.addEventListener(ONBOARDING_COMPLETED_EVENT, count);
+-    await until(() => indicatorState() === 'ready');
++    await until(offlineReady);
+     await until(() => !button('Commencer').disabled);
+     // Disponibilité effacée depuis un autre appareil, sans nouveau pull : l'écran reste « C'est prêt ».
+     await seedProfile(db, { goal: 'muscle', experience: 'none', daysPerWeek: null, sessionMinutes: 45 });
+     fireEvent.click(button('Commencer'));
+     await until(() => currentStep() === 'availability');
+     expect(screen.getByText(INCOMPLETE)).toBeTruthy();
+     expect(location()).toBe('/onboarding');
+     expect(events).toBe(0);
+   });
+ 
+diff --git a/apps/web/test/onboarding/steps.test.tsx b/apps/web/test/onboarding/steps.test.tsx
+index 967fb82..629d8b8 100644
+--- a/apps/web/test/onboarding/steps.test.tsx
++++ b/apps/web/test/onboarding/steps.test.tsx
+@@ -47,59 +47,66 @@ async function renderStep(
+   const onNext = vi.fn();
+   const rendered = await renderWithServices(ui(onNext), { me, db, api });
+   return { ...rendered, ...server, onNext };
+ }
+ 
+ const radioLabels = (group: string) =>
+   within(screen.getByRole('group', { name: group }))
+     .getAllByRole('radio')
+     .map((r) => r.closest('label')?.textContent);
+ 
++/** Textes qui décrivent `el` (`aria-describedby`), dans l'ordre. */
++const describedBy = (el: HTMLElement) =>
++  (el.getAttribute('aria-describedby') ?? '')
++    .split(' ')
++    .filter(Boolean)
++    .map((id) => document.getElementById(id)?.textContent);
++
+ describe('GoalStep (E1)', () => {
+   it('mineur : pas de « Perdre du gras », 4 options (P-MIN, 02 §15 n°11)', async () => {
+     await renderStep((onNext) => <GoalStep mode="onboarding" onNext={onNext} />, {
+       me: newcomer({ ageBand: 'minor' }),
+     });
+     await screen.findByRole('radio', { name: 'Prendre du muscle' });
+     expect(screen.getAllByRole('radio')).toHaveLength(4);
+     expect(screen.queryByRole('radio', { name: 'Perdre du gras' })).toBeNull();
+   });
+ 
+-  it('adulte : les 5 objectifs ; « Suivant » désactivé sans choix', async () => {
++  it('adulte : les 5 objectifs ; « Continuer » désactivé sans choix', async () => {
+     await renderStep((onNext) => <GoalStep mode="onboarding" onNext={onNext} />);
+     await screen.findByRole('radio', { name: 'Prendre du muscle' });
+     expect(screen.getAllByRole('radio').map((r) => r.closest('label')?.textContent)).toEqual(ADULT_GOALS);
+-    expect(button('Suivant').disabled).toBe(true);
++    expect(button('Continuer').disabled).toBe(true);
+   });
+ 
+   it('édition : « Enregistrer » et PATCH { goal } sans onboardingStep', async () => {
+     const t = await renderStep((onNext) => <GoalStep mode="edit" onNext={onNext} />, {
+       me: makeMe(),
+       profile: { goal: 'muscle' },
+     });
+     await until(() => isChecked('Prendre du muscle'));
+-    expect(screen.queryByRole('button', { name: 'Suivant' })).toBeNull();
++    expect(screen.queryByRole('button', { name: 'Continuer' })).toBeNull();
+     choose('Gagner en force');
+     fireEvent.click(button('Enregistrer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ goal: 'strength' }]);
+   });
+ 
+   it('édition sans sport : « Me renforcer pour mon sport » mène au sport, un seul PATCH', async () => {
+     const t = await renderStep((onNext) => <GoalStep mode="edit" onNext={onNext} />, {
+       me: makeMe(),
+       profile: { goal: 'muscle' },
+     });
+     await until(() => isChecked('Prendre du muscle'));
+     choose('Me renforcer pour mon sport');
+     expect(screen.queryByRole('button', { name: 'Enregistrer' })).toBeNull();
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await screen.findByRole('radio', { name: 'Course à pied' });
+     expect(t.patches).toEqual([]);
+     choose('Course à pied');
+     fireEvent.click(button('Enregistrer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ goal: 'sport_support', sportCode: 'running', sportOtherLabel: null }]);
+   });
+ 
+   it('édition avec un sport enregistré : PATCH { goal: sport_support }', async () => {
+     const t = await renderStep((onNext) => <GoalStep mode="edit" onNext={onNext} />, {
+@@ -120,106 +127,111 @@ describe('SportStep (E2)', () => {
+       profile: { goal: 'sport_support' },
+     });
+     await until(() => isChecked('Oui'));
+     expect(radio('Non').disabled).toBe(true);
+     const reason = "Obligatoire avec l'objectif « Me renforcer pour mon sport ».";
+     expect(screen.getByText(reason)).toBeTruthy();
+     const describedBy = radio('Non').getAttribute('aria-describedby');
+     expect(describedBy && document.getElementById(describedBy)?.textContent).toBe(reason);
+   });
+ 
+-  it('« Non » déjà validé (étape sport passée, aucun sport) : « Non » coché, « Suivant » actif', async () => {
++  it('« Non » déjà validé (étape sport passée, aucun sport) : « Non » coché, « Continuer » actif', async () => {
+     const t = await renderStep((onNext) => <SportStep mode="onboarding" onNext={onNext} />, {
+       me: newcomer({ onboardingStep: 'sport' }),
+       profile: { goal: 'muscle' },
+     });
+     await until(() => isChecked('Non'));
+     expect(radio('Oui').checked).toBe(false);
+-    expect(button('Suivant').disabled).toBe(false);
+-    fireEvent.click(button('Suivant'));
++    expect(button('Continuer').disabled).toBe(false);
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ sportCode: null, sportOtherLabel: null, onboardingStep: 'sport' }]);
+   });
+ 
+   it('sport enregistré : « Oui » et ce sport cochés', async () => {
+     await renderStep((onNext) => <SportStep mode="onboarding" onNext={onNext} />, {
+       me: newcomer({ onboardingStep: 'sport' }),
+       profile: { goal: 'muscle', sportCode: 'running' },
+     });
+     await until(() => isChecked('Oui') && isChecked('Course à pied'));
+-    expect(button('Suivant').disabled).toBe(false);
++    expect(button('Continuer').disabled).toBe(false);
+   });
+ 
+   it('« Autre » enregistré : « Ton sport » rempli avec le libellé', async () => {
+     await renderStep((onNext) => <SportStep mode="onboarding" onNext={onNext} />, {
+       me: newcomer({ onboardingStep: 'sport' }),
+       profile: { goal: 'muscle', sportCode: 'other', sportOtherLabel: 'Pétanque' },
+     });
+     await until(() => isChecked('Autre'));
+     expect((screen.getByLabelText('Ton sport') as HTMLInputElement).value).toBe('Pétanque');
+-    expect(button('Suivant').disabled).toBe(false);
++    expect(button('Continuer').disabled).toBe(false);
+   });
+ 
+   it('« Autre » + « Pétanque » : 15 sports, libellé de 40 caractères au plus', async () => {
+     const t = await renderStep((onNext) => <SportStep mode="onboarding" onNext={onNext} />, {
+       profile: { goal: 'muscle' },
+     });
+     await screen.findByRole('radio', { name: 'Oui' });
+     choose('Oui');
+     expect(radioLabels('Quel sport ?')).toEqual(SPORTS.map((s) => s.label));
+     choose('Autre');
+-    expect(button('Suivant').disabled).toBe(true);
++    expect(button('Continuer').disabled).toBe(true);
+     const label = screen.getByLabelText('Ton sport') as HTMLInputElement;
+     expect(label.maxLength).toBe(40);
+     fireEvent.change(label, { target: { value: '   ' } });
+-    expect(button('Suivant').disabled).toBe(true);
++    expect(button('Continuer').disabled).toBe(true);
+     fireEvent.change(label, { target: { value: 'Pétanque' } });
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ sportCode: 'other', sportOtherLabel: 'Pétanque', onboardingStep: 'sport' }]);
+   });
+ 
+   it('« Non » → sport effacé', async () => {
+     const t = await renderStep((onNext) => <SportStep mode="onboarding" onNext={onNext} />, {
+       profile: { goal: 'muscle' },
+     });
+     await screen.findByRole('radio', { name: 'Non' });
+     choose('Non');
+     expect(screen.queryByRole('group', { name: 'Quel sport ?' })).toBeNull();
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ sportCode: null, sportOtherLabel: null, onboardingStep: 'sport' }]);
+   });
+ 
+-  it('« Suivant » désactivé tant que la question n’a pas de réponse', async () => {
++  it('« Continuer » désactivé tant que la question n’a pas de réponse', async () => {
+     await renderStep((onNext) => <SportStep mode="onboarding" onNext={onNext} />, {
+       profile: { goal: 'muscle' },
+     });
+     await screen.findByRole('radio', { name: 'Non' });
+     expect(radio('Non').checked).toBe(false);
+     expect(radio('Oui').checked).toBe(false);
+-    expect(button('Suivant').disabled).toBe(true);
++    expect(button('Continuer').disabled).toBe(true);
+   });
+ });
+ 
+ function PlaceKindHarness(p: { onNext(): void }) {
+   const [kind, setKind] = useState<'gym' | 'home' | null>(null);
+   return <PlaceKindStep mode="onboarding" onNext={p.onNext} value={kind} onChange={setKind} />;
+ }
+ 
+ describe('PlaceKindStep (E3)', () => {
+   it('« Où t’entraîneras-tu le plus souvent ? » : salle ou maison, puis PATCH de l’étape', async () => {
+     const t = await renderStep((onNext) => <PlaceKindHarness onNext={onNext} />);
+-    expect(radioLabels("Où t'entraîneras-tu le plus souvent ?")).toEqual(['À la salle', 'À la maison']);
+-    expect(button('Suivant').disabled).toBe(true);
++    const group = within(screen.getByRole('group', { name: "Où t'entraîneras-tu le plus souvent ?" }));
++    expect(group.getAllByRole('radio').map((r) => r.getAttribute('value'))).toEqual(['gym', 'home']);
++    // Cartes de choix (maquette B03) : le titre nomme, la description dit ce que l'écran suivant demandera.
++    expect(describedBy(radio('À la salle'))).toEqual(["Tu choisiras ta salle à l'étape suivante."]);
++    expect(describedBy(radio('À la maison'))).toEqual(["Tu indiqueras ton matériel à l'étape suivante."]);
++    expect(screen.getByText('Tu pourras ajouter ou changer de lieu dans Profil › Mes lieux.')).toBeTruthy();
++    expect(button('Continuer').disabled).toBe(true);
+     choose('À la maison');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ onboardingStep: 'place_kind' }]);
+   });
+ });
+ 
+ describe('PlaceStep (E4)', () => {
+   it('maison : nom « Maison », sans matériel par défaut, préréglage « Petit matériel », POST puis PATCH', async () => {
+     const t = await renderStep((onNext) => <PlaceStep mode="onboarding" kind="home" onNext={onNext} />);
+     t.api.on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
+     const name = (await screen.findByLabelText('Nom du lieu')) as HTMLInputElement;
+@@ -231,21 +243,21 @@ describe('PlaceStep (E4)', () => {
+     expect(
+       (household.getByRole('checkbox', { name: EQUIPMENT_LABELS.chair }) as HTMLInputElement).checked,
+     ).toBe(true);
+     expect(
+       (household.getByRole('checkbox', { name: EQUIPMENT_LABELS.table }) as HTMLInputElement).checked,
+     ).toBe(true);
+     expect(checkbox(EQUIPMENT_LABELS.dumbbells).checked).toBe(false);
+ 
+     choose('Petit matériel');
+     expect(checkbox(EQUIPMENT_LABELS.dumbbells).checked).toBe(true);
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(writes(t.api)).toEqual(['POST /api/places', 'PATCH /api/me/training-profile']);
+     expect(t.api.calls.find((c) => c.path === '/api/places')?.body).toEqual({
+       kind: 'home',
+       name: 'Maison',
+       equipment: EQUIPMENT.filter((c) => PRESETS.home_small.equipment.includes(c)),
+       isPrimary: true,
+     });
+     expect(t.patches).toEqual([{ onboardingStep: 'place' }]);
+   });
+@@ -255,33 +267,33 @@ describe('PlaceStep (E4)', () => {
+     await screen.findByLabelText('Nom du lieu');
+     fireEvent.click(checkbox(EQUIPMENT_LABELS.table));
+     expect(checkbox(EQUIPMENT_LABELS.table).checked).toBe(false);
+     choose('Home gym');
+     expect(checkbox(EQUIPMENT_LABELS.table).checked).toBe(true);
+     expect(checkbox(EQUIPMENT_LABELS.barbell).checked).toBe(true);
+     choose('Sans matériel');
+     expect(checkbox(EQUIPMENT_LABELS.barbell).checked).toBe(false);
+   });
+ 
+-  it("maison : POST réussi puis PATCH hors ligne → « Suivant » renvoie seulement l'étape", async () => {
++  it("maison : POST réussi puis PATCH hors ligne → « Continuer » renvoie seulement l'étape", async () => {
+     const t = await renderStep((onNext) => <PlaceStep mode="onboarding" kind="home" onNext={onNext} />);
+     // Le réseau tombe juste après la création du lieu : le PATCH qui suit échoue.
+     t.api.on('POST', '/api/places', () => {
+       t.api.setOffline('reject');
+       return { status: 201, body: { id: 'p-1' } };
+     });
+     await screen.findByLabelText('Nom du lieu');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
+     expect(t.onNext).not.toHaveBeenCalled();
+     t.api.setOffline(false);
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(writes(t.api)).toEqual([
+       'POST /api/places',
+       'PATCH /api/me/training-profile',
+       'PATCH /api/me/training-profile',
+     ]);
+   });
+ 
+   it("salle : « Valider » du GymPicker → POST du lieu, PATCH de l'étape, puis le niveau", async () => {
+     const me = newcomer({ onboardingStep: 'place_kind' });
+@@ -290,23 +302,24 @@ describe('PlaceStep (E4)', () => {
+       .on('GET', '/api/gyms', {
+         status: 200,
+         body: [{ id: 'g-1', name: 'Basic Fit', city: 'Lyon', visibleMemberCount: 2 }],
+       })
+       .on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
+     await seedProfile(db, { goal: 'muscle' });
+     const server = serveProfile(api, db, me);
+     await renderApp({ path: '/onboarding', me, db, api });
+     await until(() => currentStep() === 'place_kind');
+     choose('À la salle');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => currentStep() === 'place');
+-    expect(screen.queryByRole('button', { name: 'Suivant' })).toBeNull();
++    expect(screen.queryByRole('button', { name: 'Continuer' })).toBeNull();
++    await screen.findByText('Cherche ta salle ou crée-la.');
+     await screen.findByRole('radio', { name: 'Basic Fit · Lyon · 2 membres visibles' });
+     choose('Basic Fit · Lyon · 2 membres visibles');
+     fireEvent.click(button('Valider'));
+     await until(() => currentStep() === 'experience');
+     expect(server.patches).toEqual([{ onboardingStep: 'place_kind' }, { onboardingStep: 'place' }]);
+     expect(api.calls.find((c) => c.path === '/api/places')?.body).toEqual({
+       kind: 'gym',
+       gymId: 'g-1',
+       isPrimary: true,
+       visibleAtGym: true,
+@@ -320,21 +333,21 @@ describe('PlaceStep (E4)', () => {
+       .on('GET', '/api/gyms', {
+         status: 200,
+         body: [{ id: 'g-1', name: 'Basic Fit', city: 'Lyon', visibleMemberCount: 2 }],
+       })
+       .on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
+     await seedProfile(db, { goal: 'muscle' });
+     serveProfile(api, db, me);
+     await renderApp({ path: '/onboarding', me, db, api });
+     await until(() => currentStep() === 'place_kind');
+     choose('À la salle');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await screen.findByRole('radio', { name: 'Basic Fit · Lyon · 2 membres visibles' });
+     expect(checkbox('Apparaître dans « Qui va à cette salle »').checked).toBe(false);
+     expect(screen.getByText('Désactivé par défaut pour les moins de 18 ans.')).toBeTruthy();
+     choose('Basic Fit · Lyon · 2 membres visibles');
+     fireEvent.click(button('Valider'));
+     await until(() => currentStep() === 'experience');
+     expect(api.calls.find((c) => c.path === '/api/places')?.body).toEqual({
+       kind: 'gym',
+       gymId: 'g-1',
+       isPrimary: true,
+@@ -345,68 +358,81 @@ describe('PlaceStep (E4)', () => {
+   it('lieu principal existant : « Ton lieu principal : Basic Fit », aucun POST', async () => {
+     const me = newcomer({ onboardingStep: 'place_kind' });
+     const db = createTestLocalDb();
+     const api = createFakeApi();
+     await seedPrimaryGym(db);
+     const server = serveProfile(api, db, me);
+     const onNext = vi.fn();
+     await renderWithServices(<PlaceStep mode="onboarding" kind="home" onNext={onNext} />, { me, db, api });
+     await screen.findByText('Ton lieu principal : Basic Fit');
+     expect(screen.queryByLabelText('Nom du lieu')).toBeNull();
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => onNext.mock.calls.length === 1);
+     expect(writes(api)).toEqual(['PATCH /api/me/training-profile']);
+     expect(server.patches).toEqual([{ onboardingStep: 'place' }]);
+   });
+ });
+ 
+ describe('ExperienceStep (E5)', () => {
+   it('question exacte ; « 6 mois à 2 ans » → PATCH', async () => {
+     const t = await renderStep((onNext) => <ExperienceStep mode="onboarding" onNext={onNext} />);
+     await screen.findByRole('radio', { name: 'Jamais' });
+     const legend =
+       'Depuis combien de temps fais-tu de la musculation régulièrement (au moins une fois par semaine) ?';
+     expect(radioLabels(legend)).toEqual(['Jamais', 'Moins de 6 mois', '6 mois à 2 ans', 'Plus de 2 ans']);
+-    expect(button('Suivant').disabled).toBe(true);
++    expect(button('Continuer').disabled).toBe(true);
+     choose('6 mois à 2 ans');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ experience: '6_to_24_months', onboardingStep: 'experience' }]);
+   });
+ 
+-  it('niveau enregistré : coché, « Suivant » actif (R-ONB-2, R-ONB-3)', async () => {
++  it('niveau enregistré : coché, « Continuer » actif (R-ONB-2, R-ONB-3)', async () => {
+     const t = await renderStep((onNext) => <ExperienceStep mode="onboarding" onNext={onNext} />, {
+       me: newcomer({ onboardingStep: 'experience' }),
+       profile: { experience: '6_to_24_months' },
+     });
+     await until(() => isChecked('6 mois à 2 ans'));
+-    expect(button('Suivant').disabled).toBe(false);
+-    fireEvent.click(button('Suivant'));
++    expect(button('Continuer').disabled).toBe(false);
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ experience: '6_to_24_months', onboardingStep: 'experience' }]);
+   });
+ });
+ 
+ describe('AvailabilityStep (E6)', () => {
+   it('« 3 » (exact) et « 60 min » → PATCH ; les deux réponses sont exigées', async () => {
+     const t = await renderStep((onNext) => <AvailabilityStep mode="onboarding" onNext={onNext} />);
+     await screen.findByRole('radio', { name: '30 min' });
+     expect(radioLabels('Séances par semaine')).toEqual(['2', '3', '4']);
+     expect(radioLabels("Durée d'une séance")).toEqual(['30 min', '45 min', '60 min', '75 min', '90 min']);
+     choose('3');
+-    expect(button('Suivant').disabled).toBe(true);
++    expect(button('Continuer').disabled).toBe(true);
+     choose('60 min');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ daysPerWeek: 3, sessionMinutes: 60, onboardingStep: 'availability' }]);
+   });
+ 
++  it('« Ton rythme » : seulement les deux réponses données, jamais de valeur inventée (maquette B06)', async () => {
++    await renderStep((onNext) => <AvailabilityStep mode="onboarding" onNext={onNext} />);
++    await screen.findByRole('radio', { name: '30 min' });
++    expect(screen.queryByText('Ton rythme')).toBeNull();
++    choose('2');
++    expect(screen.queryByText('Ton rythme')).toBeNull();
++    choose('30 min');
++    expect(screen.getByText('Ton rythme')).toBeTruthy();
++    expect(screen.getByText('2 séances de 30 min par semaine')).toBeTruthy();
++    choose('4');
++    expect(screen.getByText('4 séances de 30 min par semaine')).toBeTruthy();
++  });
++
+   it('édition : réponses enregistrées cochées, PATCH sans onboardingStep', async () => {
+     const t = await renderStep((onNext) => <AvailabilityStep mode="edit" onNext={onNext} />, {
+       me: makeMe(),
+       profile: { daysPerWeek: 2, sessionMinutes: 45 },
+     });
+     await until(() => isChecked('2') && isChecked('45 min'));
+     choose('4');
+     fireEvent.click(button('Enregistrer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ daysPerWeek: 4, sessionMinutes: 45 }]);
+diff --git a/apps/web/test/profile/profile-page.test.tsx b/apps/web/test/profile/profile-page.test.tsx
+index 8d4604b..c46b109 100644
+--- a/apps/web/test/profile/profile-page.test.tsx
++++ b/apps/web/test/profile/profile-page.test.tsx
+@@ -311,35 +311,35 @@ describe('ProfilePage › Entraînement (R-ONB-3)', () => {
+     await screen.findByRole('button', { name: "Modifier l'objectif" });
+     expect(t.patches).toEqual([{ goal: 'strength' }]);
+     expect(await screen.findByText('Gagner en force')).toBeTruthy();
+   });
+ 
+   it('objectif sportif sans sport : le sport est demandé, puis un seul PATCH', async () => {
+     const t = await renderProfile();
+     fireEvent.click(await screen.findByRole('button', { name: "Modifier l'objectif" }));
+     await until(() => isChecked('Prendre du muscle'));
+     choose('Me renforcer pour mon sport');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await screen.findByRole('radio', { name: 'Course à pied' });
+     expect(t.patches).toEqual([]);
+     choose('Course à pied');
+     fireEvent.click(button('Enregistrer'));
+     await screen.findByRole('button', { name: "Modifier l'objectif" });
+     expect(t.patches).toEqual([{ goal: 'sport_support', sportCode: 'running', sportOtherLabel: null }]);
+   });
+ 
+   it("objectif sportif sans sport : le focus va au titre du sport, puis revient à l'objectif avec « Retour »", async () => {
+     await renderProfile();
+     fireEvent.click(await screen.findByRole('button', { name: "Modifier l'objectif" }));
+     await until(() => isChecked('Prendre du muscle'));
+     choose('Me renforcer pour mon sport');
+-    fireEvent.click(button('Suivant'));
++    fireEvent.click(button('Continuer'));
+     await screen.findByRole('radio', { name: 'Course à pied' });
+     expect(document.activeElement?.textContent).toBe('Autre sport');
+     fireEvent.click(button('Retour'));
+     await screen.findByRole('radio', { name: 'Me renforcer pour mon sport' });
+     expect(document.activeElement?.textContent).toBe('Objectif');
+   });
+ 
+   it('« Modifier le sport » → SportStep en édition → PATCH { sportCode, sportOtherLabel }', async () => {
+     const t = await renderProfile();
+     fireEvent.click(await screen.findByRole('button', { name: 'Modifier le sport' }));

@@ -1,0 +1,444 @@
+# Review package: 857e972..HEAD
+
+## Commits
+b4360ac test(pwa): E2E mise à jour A vers B, interrupteur d'urgence et 426
+
+## Files changed
+ apps/web/e2e/kill-switch.spec.ts     |  90 ++++++++++++++++++++++++++++
+ apps/web/e2e/protocol.spec.ts        |  58 ++++++++++++++++++
+ apps/web/e2e/support/builds.ts       | 113 +++++++++++++++++++++++++++++++++++
+ apps/web/e2e/support/global-setup.ts |  20 +++----
+ apps/web/e2e/update.spec.ts          | 113 +++++++++++++++++++++++++++++++++++
+ 5 files changed, 381 insertions(+), 13 deletions(-)
+
+## Diff
+diff --git a/apps/web/e2e/kill-switch.spec.ts b/apps/web/e2e/kill-switch.spec.ts
+new file mode 100644
+index 0000000..04d7773
+--- /dev/null
++++ b/apps/web/e2e/kill-switch.spec.ts
+@@ -0,0 +1,90 @@
++import {
++  ILLUSTRATIONS_CACHE,
++  ILLUSTRATIONS_CACHE_PREFIX,
++  SHELL_CACHE_PREFIX,
++} from '../src/sw/precache-manifest';
++import { acrossReload, BUILD_DIRS, shellLabel } from './support/builds';
++import { expect, test } from './support/fixtures';
++import { setupOnboardedAdmin } from './support/flows';
++import {
++  cacheNames,
++  fakeOutboxOp,
++  idbGetAll,
++  idbPut,
++  metaValue,
++  registrationCount,
++  waitForController,
++} from './support/pwa';
++
++const SHELL_CACHE_RE = /^shell-[0-9a-f]{12}$/;
++/** Fenêtre sans rechargement qui prouve l'absence de boucle, une fois l'interrupteur appliqué. */
++const NO_LOOP_MS = 3_000;
++
++test.use({ serverOptions: { publicDir: BUILD_DIRS.A } });
++
++// 01 §9.1.6 scénario 6 : interrupteur d'urgence (R-PWA-6) : désenregistrement, caches vidés, rechargement
++// unique depuis le réseau, IndexedDB intact ; puis retour du SW une fois l'interrupteur levé.
++test("interrupteur d'urgence : SW et caches retirés sans boucle, base intacte, puis SW rétabli", async ({
++  server,
++  context,
++}) => {
++  const page = await setupOnboardedAdmin(server, context);
++  const userId = await metaValue(page, 'userId');
++  if (typeof userId !== 'string') throw new Error('meta.userId absent après l’onboarding');
++  const op = fakeOutboxOp(userId);
++  const doomed = async () =>
++    (await cacheNames(page)).filter(
++      (n) => n.startsWith(SHELL_CACHE_PREFIX) || n.startsWith(ILLUSTRATIONS_CACHE_PREFIX),
++    );
++
++  await test.step('opération en attente, coquille et illustrations en cache', async () => {
++    // La panne d'abord : sinon le moteur pousserait l'opération avant elle.
++    server.setFault({
++      kind: 'status',
++      pathPrefix: '/api/sync/push',
++      status: 503,
++      body: { error: 'internal' },
++    });
++    await idbPut(page, 'outbox', op);
++    const names = await cacheNames(page);
++    expect(names).toContain(ILLUSTRATIONS_CACHE);
++    expect(names.filter((n) => SHELL_CACHE_RE.test(n))).toHaveLength(1);
++  });
++
++  await test.step('interrupteur actif : plus de SW ni de caches, page affichée, pas de boucle', async () => {
++    let navigations = 0;
++    page.on('framenavigated', (frame) => {
++      if (frame === page.mainFrame()) navigations++;
++    });
++    await server.restart({ SW_KILL_SWITCH: '1' });
++    await page.reload({ waitUntil: 'domcontentloaded' });
++    // Le rechargement demandé, puis celui de l'interrupteur (par le SW ou par la page, R-PWA-6).
++    await expect.poll(() => navigations, { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
++    await expect.poll(() => acrossReload(page, () => registrationCount(page)), { timeout: 15_000 }).toBe(0);
++    await expect.poll(() => acrossReload(page, doomed), { timeout: 15_000 }).toEqual([]);
++    // Page servie par le réseau, appli démarrée.
++    await expect(page.getByTestId('connection-status')).toBeAttached();
++    expect(await shellLabel(page)).toBe('A');
++    // Aucun rechargement de plus : aucune navigation et le témoin posé dans la page survit.
++    const before = navigations;
++    await page.evaluate(() => {
++      (window as { e2eSameDocument?: boolean }).e2eSameDocument = true;
++    });
++    await page.waitForTimeout(NO_LOOP_MS);
++    expect(navigations - before, 'navigations après l’interrupteur').toBe(0);
++    expect(await page.evaluate(() => (window as { e2eSameDocument?: boolean }).e2eSameDocument)).toBe(true);
++    expect(await registrationCount(page)).toBe(0);
++  });
++
++  await test.step('IndexedDB jamais touché', async () => {
++    expect((await idbGetAll<{ opId: string }>(page, 'outbox')).map((o) => o.opId)).toEqual([op.opId]);
++    expect(await metaValue(page, 'userId')).toBe(userId);
++  });
++
++  await test.step('interrupteur levé : le SW revient et contrôle la page', async () => {
++    await server.restart({ SW_KILL_SWITCH: '' });
++    await page.reload({ waitUntil: 'domcontentloaded' });
++    await waitForController(page);
++    expect(await registrationCount(page)).toBe(1);
++  });
++});
+diff --git a/apps/web/e2e/protocol.spec.ts b/apps/web/e2e/protocol.spec.ts
+new file mode 100644
+index 0000000..b9a42d6
+--- /dev/null
++++ b/apps/web/e2e/protocol.spec.ts
+@@ -0,0 +1,58 @@
++import { BUILD_DIRS, loadBuilds, shellLabel } from './support/builds';
++import { expect, test } from './support/fixtures';
++import { setupOnboardedAdmin } from './support/flows';
++import { fakeOutboxOp, idbGetAll, idbPut, metaValue, triggerForeground } from './support/pwa';
++
++const PROTOCOL_UNSUPPORTED = { error: 'protocol_unsupported', serverProtocol: 1, minProtocol: 1 };
++
++test.use({ serverOptions: { publicDir: BUILD_DIRS.A } });
++
++// 01 §9.1.6 scénario 5 : 426, puis mise à jour, puis synchro de la file ; R-VER-2, R-PWA-5.
++test('426 : file gardée, bandeau non fermable, mise à jour vers B puis synchro de la file', async ({
++  server,
++  context,
++}) => {
++  const { b } = await loadBuilds();
++  const page = await setupOnboardedAdmin(server, context);
++  const connection = page.getByTestId('connection-status');
++  const banner = page.getByTestId('update-banner');
++  const outboxIds = async () => (await idbGetAll<{ opId: string }>(page, 'outbox')).map((o) => o.opId);
++  expect(await shellLabel(page)).toBe('A');
++
++  const userId = await metaValue(page, 'userId');
++  if (typeof userId !== 'string') throw new Error('meta.userId absent après l’onboarding');
++  const op = fakeOutboxOp(userId);
++
++  await test.step('426 sur la synchro : état protocol_unsupported, file gardée (R-VER-2)', async () => {
++    // La panne d'abord : sinon le moteur pousserait l'opération avant elle.
++    server.setFault({ kind: 'status', pathPrefix: '/api/sync/', status: 426, body: PROTOCOL_UNSUPPORTED });
++    await idbPut(page, 'outbox', op);
++    await server.restart({ APPSPORT_PUBLIC_DIR: b.dir });
++    await triggerForeground(page);
++    await expect(connection).toHaveAttribute('data-state', 'protocol_unsupported', { timeout: 15_000 });
++    expect(await outboxIds()).toEqual([op.opId]);
++  });
++
++  await test.step('bandeau non fermable (R-PWA-5), puis B au clic', async () => {
++    await expect(banner).toBeVisible({ timeout: 30_000 });
++    await expect(banner).toHaveAttribute('data-dismissible', 'false');
++    await expect(banner.getByRole('button', { name: 'Plus tard', exact: true })).toHaveCount(0);
++    await banner.getByRole('button', { name: 'Mettre à jour', exact: true }).click();
++    await expect.poll(() => shellLabel(page), { timeout: 20_000 }).toBe('B');
++  });
++
++  await test.step('protocole rétabli : la file part, le refus du serveur est compté', async () => {
++    server.setFault(null);
++    await triggerForeground(page);
++    await expect(connection).toHaveAttribute('data-state', 'online', { timeout: 15_000 });
++    await expect.poll(outboxIds, { timeout: 15_000 }).toEqual([]);
++    await expect(page.getByTestId('pending-counter')).toHaveAttribute('data-count', '0');
++    // L'opération factice vise une ligne sync_rejection inexistante : le serveur la refuse.
++    const deadletter = await idbGetAll<{ opId: string }>(page, 'deadletter');
++    expect(deadletter.map((d) => d.opId)).toEqual([op.opId]);
++    await expect(page.getByTestId('rejected-counter')).toHaveAttribute(
++      'data-count',
++      String(deadletter.length),
++    );
++  });
++});
+diff --git a/apps/web/e2e/support/builds.ts b/apps/web/e2e/support/builds.ts
+new file mode 100644
+index 0000000..aaed85e
+--- /dev/null
++++ b/apps/web/e2e/support/builds.ts
+@@ -0,0 +1,113 @@
++import { mkdir, readFile, writeFile } from 'node:fs/promises';
++import { join } from 'node:path';
++import type { Page } from '@playwright/test';
++import { build, type InlineConfig, type Plugin } from 'vite';
++import { E2E_DATA_DIR, WEB_DIR } from './server';
++
++// Deux coquilles de production, A et B, pour la mise à jour du SW (01 §9.1.6 scénarios 4 à 6).
++
++export interface E2EBuild {
++  label: 'A' | 'B';
++  dir: string;
++  buildHash: string;
++}
++
++const BUILDS_DIR = join(E2E_DATA_DIR, 'builds');
++const BUILDS_FILE = join(BUILDS_DIR, 'builds.json');
++const BUILD_HASH_RE = /^[0-9a-f]{12}$/;
++/** Ligne du manifeste de précache, en tête de sw.js (`precachePlugin`). */
++const MANIFEST_LINE_RE = /^self\.__APPSPORT_PRECACHE__ = (\{.*\});$/;
++
++/** `<REPO_ROOT>/.e2e-data/builds/{A,B}`. */
++export const BUILD_DIRS: { A: string; B: string } = {
++  A: join(BUILDS_DIR, 'A'),
++  B: join(BUILDS_DIR, 'B'),
++};
++
++/**
++ * Build de production de apps/web avec le chargeur de configuration du script `build` du paquet
++ * (`vite build --configLoader runner`) et le prénom du porteur « Alex » (« hébergé chez Alex »).
++ */
++export async function buildWeb(extra: InlineConfig = {}): Promise<void> {
++  const previous = process.env.VITE_OWNER_FIRST_NAME;
++  process.env.VITE_OWNER_FIRST_NAME = 'Alex';
++  try {
++    await build({ ...extra, root: WEB_DIR, configLoader: 'runner', logLevel: 'error' });
++  } finally {
++    if (previous === undefined) delete process.env.VITE_OWNER_FIRST_NAME;
++    else process.env.VITE_OWNER_FIRST_NAME = previous;
++  }
++}
++
++/** Seule différence entre A et B : `<meta name="e2e-build" content="<L>">` dans index.html. */
++function e2eBuildLabel(label: E2EBuild['label']): Plugin {
++  return {
++    name: 'appsport-e2e-build-label',
++    transformIndexHtml: () => [
++      { tag: 'meta', attrs: { name: 'e2e-build', content: label }, injectTo: 'head' },
++    ],
++  };
++}
++
++/** buildHash du manifeste de précache, lu sur la première ligne de `<dir>/sw.js`. */
++export async function readBuildHash(dir: string): Promise<string> {
++  const firstLine = (await readFile(join(dir, 'sw.js'), 'utf8')).split('\n', 1)[0] ?? '';
++  const json = MANIFEST_LINE_RE.exec(firstLine)?.[1];
++  const buildHash: unknown =
++    json === undefined ? undefined : (JSON.parse(json) as { buildHash?: unknown }).buildHash;
++  if (typeof buildHash !== 'string' || !BUILD_HASH_RE.test(buildHash))
++    throw new Error(`${join(dir, 'sw.js')} : première ligne sans manifeste de précache valide`);
++  return buildHash;
++}
++
++/** Construit A puis B, écrit `.e2e-data/builds/builds.json` ; lève si les deux buildHash sont égaux. */
++export async function buildTwice(): Promise<{ a: E2EBuild; b: E2EBuild }> {
++  const builds: E2EBuild[] = [];
++  for (const label of ['A', 'B'] as const) {
++    const dir = BUILD_DIRS[label];
++    await buildWeb({ build: { outDir: dir, emptyOutDir: true }, plugins: [e2eBuildLabel(label)] });
++    builds.push({ label, dir, buildHash: await readBuildHash(dir) });
++  }
++  const [a, b] = builds as [E2EBuild, E2EBuild];
++  if (a.buildHash === b.buildHash) throw new Error(`builds A et B de même buildHash (${a.buildHash})`);
++  await mkdir(BUILDS_DIR, { recursive: true });
++  await writeFile(BUILDS_FILE, `${JSON.stringify({ a, b }, null, 2)}\n`);
++  return { a, b };
++}
++
++/** Builds écrits par `buildTwice` (global-setup). */
++export async function loadBuilds(): Promise<{ a: E2EBuild; b: E2EBuild }> {
++  let raw: string;
++  try {
++    raw = await readFile(BUILDS_FILE, 'utf8');
++  } catch (error) {
++    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
++      throw new Error('lancer la suite via playwright test : global-setup construit A et B');
++    throw error;
++  }
++  return JSON.parse(raw) as { a: E2EBuild; b: E2EBuild };
++}
++
++const NAVIGATED = 'Execution context was destroyed';
++
++/**
++ * Lecture dans la page refaite dans le nouveau document si un rechargement la coupe (« Mettre à jour »,
++ * interrupteur d'urgence) : `expect.poll` ne reprend pas une lecture qui lève.
++ */
++export async function acrossReload<T>(page: Page, read: () => Promise<T>): Promise<T> {
++  for (let attempt = 1; ; attempt++) {
++    try {
++      return await read();
++    } catch (error) {
++      if (attempt >= 3 || !String(error).includes(NAVIGATED)) throw error;
++      await page.waitForLoadState('domcontentloaded');
++    }
++  }
++}
++
++/** `<meta name="e2e-build">` de la coquille affichée ; `null` hors des builds A et B. */
++export async function shellLabel(page: Page): Promise<string | null> {
++  return acrossReload(page, () =>
++    page.evaluate(() => document.querySelector('meta[name="e2e-build"]')?.getAttribute('content') ?? null),
++  );
++}
+diff --git a/apps/web/e2e/support/global-setup.ts b/apps/web/e2e/support/global-setup.ts
+index a2964e6..1e3612d 100644
+--- a/apps/web/e2e/support/global-setup.ts
++++ b/apps/web/e2e/support/global-setup.ts
+@@ -1,20 +1,14 @@
+ import { mkdirSync } from 'node:fs';
+-import { build } from 'vite';
+-import { E2E_DATA_DIR, WEB_DIR } from './server';
++import { buildTwice, buildWeb } from './builds';
++import { E2E_DATA_DIR } from './server';
+ 
+ /**
+- * Build de production dans apps/web/dist, avec le chargeur de configuration du script `build` du paquet
+- * (`vite build --configLoader runner`) ; prénom du porteur « Alex » (page d'invitation : « hébergé chez
+- * Alex »). Puis `.e2e-data/`, où chaque serveur de test crée son dossier de données.
++ * Build de production dans apps/web/dist (`buildWeb` : chargeur de configuration du script `build` du
++ * paquet, prénom du porteur « Alex »), puis `.e2e-data/`, où chaque serveur de test crée son dossier de
++ * données, et enfin les coquilles A et B de la mise à jour du SW (`.e2e-data/builds/`).
+  */
+ export default async function globalSetup(): Promise<void> {
+-  const previous = process.env.VITE_OWNER_FIRST_NAME;
+-  process.env.VITE_OWNER_FIRST_NAME = 'Alex';
+-  try {
+-    await build({ root: WEB_DIR, configLoader: 'runner', logLevel: 'error' });
+-  } finally {
+-    if (previous === undefined) delete process.env.VITE_OWNER_FIRST_NAME;
+-    else process.env.VITE_OWNER_FIRST_NAME = previous;
+-  }
++  await buildWeb();
+   mkdirSync(E2E_DATA_DIR, { recursive: true });
++  await buildTwice();
+ }
+diff --git a/apps/web/e2e/update.spec.ts b/apps/web/e2e/update.spec.ts
+new file mode 100644
+index 0000000..94ca799
+--- /dev/null
++++ b/apps/web/e2e/update.spec.ts
+@@ -0,0 +1,113 @@
++import { LOCAL_DB_VERSION } from '../src/local-db/db';
++import { SHELL_CACHE_PREFIX } from '../src/sw/precache-manifest';
++import { BUILD_DIRS, loadBuilds, shellLabel } from './support/builds';
++import { expect, test } from './support/fixtures';
++import { setupOnboardedAdmin } from './support/flows';
++import {
++  cacheNames,
++  fakeOutboxOp,
++  idbGetAll,
++  idbPut,
++  idbVersion,
++  metaValue,
++  swStatus,
++  waitForWaitingWorker,
++} from './support/pwa';
++import type { E2EFault } from './support/server';
++
++// Navigation servie par le SW : bornée, pour qu'une régression nomme l'étape et non le délai du test.
++const SHELL_TIMEOUT_MS = 10_000;
++/** Séance en cours simulée (R-PWA-3) : l'écran de séance relève de la brique 3. */
++const SESSION_ID = 'seance-e2e';
++/** Push refusé : l'opération reste dans l'outbox jusqu'à la fin du test. */
++const PUSH_FAULT: E2EFault = {
++  kind: 'status',
++  pathPrefix: '/api/sync/push',
++  status: 503,
++  body: { error: 'internal' },
++};
++
++test.use({ serverOptions: { publicDir: BUILD_DIRS.A } });
++
++// 01 §9.1.6 scénario 4 (séance simulée par meta.activeSessionId) : build A installé, build B déployé ;
++// R-PWA-2, R-PWA-3, R-PWA-4, R-PWA-8, R-VER-4 ; Review Focus 5 (coquille A servie tant que B attend).
++test('mise à jour : B attend pendant la séance, puis remplace A au clic sans toucher la base', async ({
++  server,
++  context,
++  browserName,
++}) => {
++  const { a, b } = await loadBuilds();
++  expect(a.buildHash).not.toBe(b.buildHash);
++  const page = await setupOnboardedAdmin(server, context);
++  const banner = page.getByTestId('update-banner');
++  const label = () => shellLabel(page);
++  const reload = () => page.reload({ waitUntil: 'domcontentloaded', timeout: SHELL_TIMEOUT_MS });
++  expect(await label()).toBe('A');
++
++  const userId = await metaValue(page, 'userId');
++  if (typeof userId !== 'string') throw new Error('meta.userId absent après l’onboarding');
++  const op = fakeOutboxOp(userId);
++
++  await test.step('séance en cours et opération en attente sur A', async () => {
++    // La panne d'abord : sinon le moteur pousserait l'opération avant elle.
++    server.setFault(PUSH_FAULT);
++    await idbPut(page, 'outbox', op);
++    await idbPut(page, 'meta', { key: 'activeSessionId', value: SESSION_ID });
++  });
++
++  await test.step('B déployé : il attend, la coquille A reste servie, pas de bandeau en séance', async () => {
++    await server.restart({ APPSPORT_PUBLIC_DIR: b.dir });
++    await reload();
++    await waitForWaitingWorker(page);
++    expect(await label()).toBe('A');
++    // R-PWA-3 : ni tout de suite, ni une fois le SW en attente évalué (réponse à GET_STATUS en 1 s au plus).
++    await expect(banner).toHaveCount(0);
++    await page.waitForTimeout(3_000);
++    await expect(banner).toHaveCount(0);
++  });
++
++  await test.step('Review Focus 5 : rechargé à froid en ligne puis sans réseau, A tant que B attend', async () => {
++    await reload();
++    expect(await label()).toBe('A');
++    // Requêtes sans réponse (VPN coupé) : la coquille vient du cache, identique sous Chromium et WebKit.
++    server.setFault({ kind: 'blackhole' });
++    await reload();
++    expect(await label()).toBe('A');
++    // Requêtes retenues libérées, puis la panne du push rétablie, sans requête traitée entre les deux.
++    server.setFault(null);
++    server.setFault(PUSH_FAULT);
++    // context.setOffline : WebKit fait échouer toute navigation sous le hors-ligne émulé, même servie par
++    // le SW (« WebKit encountered an internal error », constaté en T38) ; Chromium seul.
++    if (browserName !== 'webkit') {
++      await context.setOffline(true);
++      await reload();
++      expect(await label()).toBe('A');
++      await context.setOffline(false);
++    }
++    await waitForWaitingWorker(page);
++  });
++
++  await test.step('séance finie : bandeau fermable, puis B au clic', async () => {
++    await idbPut(page, 'meta', { key: 'activeSessionId', value: null });
++    await reload();
++    expect(await label()).toBe('A');
++    await expect(banner).toBeVisible({ timeout: 15_000 });
++    await expect(banner).toHaveAttribute('data-dismissible', 'true');
++    await banner.getByRole('button', { name: 'Mettre à jour', exact: true }).click();
++    // R-PWA-4 : SKIP_WAITING, activation de B puis rechargement de la page.
++    await expect.poll(label, { timeout: 20_000 }).toBe('B');
++    await expect.poll(async () => (await swStatus(page))?.buildHash, { timeout: 20_000 }).toBe(b.buildHash);
++  });
++
++  await test.step('base intacte, ancienne coquille purgée, plus de bandeau', async () => {
++    // R-VER-4 : aucune opération jetée ; R-PWA-4 : IndexedDB jamais effacé (même schéma en A et B).
++    expect((await idbGetAll<{ opId: string }>(page, 'outbox')).map((o) => o.opId)).toEqual([op.opId]);
++    expect(await idbVersion(page)).toBe(LOCAL_DB_VERSION * 10);
++    expect(await metaValue(page, 'userId')).toBe(userId);
++    // Seuls les shell-* : illustrations-v1 et le marqueur appsport-meta (ADR 0001 décision 5) restent.
++    await expect
++      .poll(async () => (await cacheNames(page)).filter((n) => n.startsWith(SHELL_CACHE_PREFIX)))
++      .toEqual([`${SHELL_CACHE_PREFIX}${b.buildHash}`]);
++    await expect(banner).toHaveCount(0);
++  });
++});

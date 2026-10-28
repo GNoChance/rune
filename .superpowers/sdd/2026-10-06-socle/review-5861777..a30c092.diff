@@ -1,0 +1,657 @@
+# Review package: 5861777..HEAD
+
+## Commits
+a30c092 feat(salles): lieux salle et maison, lieu principal
+
+## Files changed
+ apps/server/src/places/place-routes.ts           |  77 ++++++++
+ apps/server/src/places/places.ts                 | 190 ++++++++++++++++++
+ apps/server/src/routes.ts                        |   2 +
+ apps/server/test/places/places.test.ts           | 233 +++++++++++++++++++++++
+ apps/server/test/privacy/admin-isolation.test.ts |  14 +-
+ packages/contracts/src/api/places.ts             |  34 ++++
+ 6 files changed, 538 insertions(+), 12 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/places/place-routes.ts b/apps/server/src/places/place-routes.ts
+new file mode 100644
+index 0000000..6c3e99e
+--- /dev/null
++++ b/apps/server/src/places/place-routes.ts
+@@ -0,0 +1,77 @@
++import {
++  CreatePlaceRequest,
++  DeletePlaceRequest,
++  EquipmentCodeSchema,
++  UpdatePlaceRequest,
++} from '@appsport/contracts';
++import { Hono } from 'hono';
++import type { AppEnv } from '../app-env';
++import { requireUser } from '../auth/session';
++import type { AppDeps } from '../deps';
++import { httpError } from '../http/errors';
++import { parseJson } from '../http/validate';
++import { createPlace, deletePlace, loadOwnPlace, setPlaceEquipment, updatePlace } from './places';
++
++export function placeRoutes(deps: AppDeps): Hono<AppEnv> {
++  const routes = new Hono<AppEnv>();
++  routes.use('*', requireUser);
++
++  const userOf = (c: { get(key: 'user'): AppEnv['Variables']['user'] }) => {
++    const user = c.get('user');
++    if (!user) throw httpError('unauthenticated');
++    return user;
++  };
++
++  const equipmentCode = (raw: string) => {
++    const parsed = EquipmentCodeSchema.safeParse(raw);
++    if (!parsed.success) throw httpError('validation', { field: 'code' });
++    return parsed.data;
++  };
++
++  routes.post('/', async (c) => {
++    const user = userOf(c);
++    const body = await parseJson(c, CreatePlaceRequest);
++    const id = await deps.db.transaction().execute((trx) => createPlace(trx, deps, user, body));
++    return c.json({ id }, 201);
++  });
++
++  routes.patch('/:id', async (c) => {
++    const user = userOf(c);
++    const id = c.req.param('id');
++    await loadOwnPlace(deps.db, user.id, id);
++    const body = await parseJson(c, UpdatePlaceRequest);
++    await deps.db.transaction().execute((trx) => updatePlace(trx, deps, user, id, body));
++    return c.body(null, 204);
++  });
++
++  routes.delete('/:id', async (c) => {
++    const user = userOf(c);
++    const id = c.req.param('id');
++    await loadOwnPlace(deps.db, user.id, id);
++    // Le corps est facultatif : un lieu non principal se supprime sans corps.
++    const hasBody = (await c.req.raw.clone().text()).trim() !== '';
++    const body = hasBody ? await parseJson(c, DeletePlaceRequest) : {};
++    await deps.db.transaction().execute((trx) => deletePlace(trx, deps, user, id, body.newPrimaryId));
++    return c.body(null, 204);
++  });
++
++  routes.put('/:id/equipment/:code', async (c) => {
++    const user = userOf(c);
++    const id = c.req.param('id');
++    await loadOwnPlace(deps.db, user.id, id);
++    const code = equipmentCode(c.req.param('code'));
++    await deps.db.transaction().execute((trx) => setPlaceEquipment(trx, deps, user, id, code, true));
++    return c.body(null, 204);
++  });
++
++  routes.delete('/:id/equipment/:code', async (c) => {
++    const user = userOf(c);
++    const id = c.req.param('id');
++    await loadOwnPlace(deps.db, user.id, id);
++    const code = equipmentCode(c.req.param('code'));
++    await deps.db.transaction().execute((trx) => setPlaceEquipment(trx, deps, user, id, code, false));
++    return c.body(null, 204);
++  });
++
++  return routes;
++}
+diff --git a/apps/server/src/places/places.ts b/apps/server/src/places/places.ts
+new file mode 100644
+index 0000000..210b6e6
+--- /dev/null
++++ b/apps/server/src/places/places.ts
+@@ -0,0 +1,190 @@
++import {
++  type CreatePlaceRequest,
++  defaultLoadSettings,
++  EQUIPMENT,
++  type EquipmentCode,
++  HOME_PLACE_DEFAULT_NAME,
++  type UpdatePlaceRequest,
++} from '@appsport/contracts';
++import type { SessionUser } from '../app-env';
++import { writeStamp } from '../db/rev';
++import type { DbExecutor } from '../db/schema';
++import type { AppDeps } from '../deps';
++import { httpError } from '../http/errors';
++import { demotePrimaries, insertGymPlace } from './place-rows';
++
++/** Lieu actif de l'utilisateur, sinon 404 : aucune exception pour l'admin (P-ADM-2). */
++export async function loadOwnPlace(db: DbExecutor, userId: string, placeId: string) {
++  const place = await db
++    .selectFrom('place')
++    .select(['id', 'kind', 'isPrimary'])
++    .where('id', '=', placeId)
++    .where('ownerId', '=', userId)
++    .where('deletedAt', 'is', null)
++    .executeTakeFirst();
++  if (!place) throw httpError('not_found');
++  return place;
++}
++
++/** Ajoute, réactive ou retire une ligne de matériel de maison ; idempotent. */
++async function setHomeEquipment(
++  trx: DbExecutor,
++  deps: AppDeps,
++  userId: string,
++  placeId: string,
++  code: EquipmentCode,
++  present: boolean,
++): Promise<void> {
++  const id = `${placeId}:${code}`;
++  const row = await trx
++    .selectFrom('homeEquipment')
++    .select('deletedAt')
++    .where('id', '=', id)
++    .executeTakeFirst();
++  if ((row !== undefined && row.deletedAt === null) === present) return;
++  const stamp = await writeStamp(trx, deps, userId);
++  if (!row) {
++    await trx
++      .insertInto('homeEquipment')
++      .values({ id, ownerId: userId, placeId, equipmentCode: code, createdAt: stamp.updatedAt, ...stamp })
++      .execute();
++  } else {
++    await trx
++      .updateTable('homeEquipment')
++      .set({ deletedAt: present ? null : stamp.updatedAt, ...stamp })
++      .where('id', '=', id)
++      .execute();
++  }
++}
++
++export async function createPlace(
++  trx: DbExecutor,
++  deps: AppDeps,
++  user: SessionUser,
++  req: CreatePlaceRequest,
++): Promise<string> {
++  if (req.kind === 'gym') {
++    return insertGymPlace(trx, deps, user, {
++      gymId: req.gymId,
++      isPrimary: req.isPrimary,
++      ...(req.visibleAtGym !== undefined ? { visibleAtGym: req.visibleAtGym } : {}),
++    });
++  }
++  const active = await trx
++    .selectFrom('place')
++    .select('id')
++    .where('ownerId', '=', user.id)
++    .where('deletedAt', 'is', null)
++    .limit(1)
++    .executeTakeFirst();
++  const isPrimary = req.isPrimary || active === undefined;
++  if (isPrimary) await demotePrimaries(trx, deps, user.id);
++  const id = deps.ids.uuidv7();
++  const stamp = await writeStamp(trx, deps, user.id);
++  await trx
++    .insertInto('place')
++    .values({
++      id,
++      ownerId: user.id,
++      kind: 'home',
++      gymId: null,
++      name: req.name ?? HOME_PLACE_DEFAULT_NAME,
++      isPrimary: isPrimary ? 1 : 0,
++      visibleAtGym: 0,
++      loadSettings: JSON.stringify(defaultLoadSettings('home')),
++      createdAt: stamp.updatedAt,
++      ...stamp,
++    })
++    .execute();
++  for (const code of EQUIPMENT.filter((c) => (req.equipment as readonly string[]).includes(c))) {
++    await setHomeEquipment(trx, deps, user.id, id, code, true);
++  }
++  return id;
++}
++
++export async function updatePlace(
++  trx: DbExecutor,
++  deps: AppDeps,
++  user: SessionUser,
++  placeId: string,
++  req: UpdatePlaceRequest,
++): Promise<void> {
++  const place = await loadOwnPlace(trx, user.id, placeId);
++  const isHome = place.kind === 'home';
++  // Nom et réglages de charge : maison seulement (R-CHG-3) ; visibilité : salle seulement (R-VIS-3).
++  if (!isHome && req.name !== undefined) throw httpError('validation', { field: 'name' });
++  if (!isHome && req.loadSettings !== undefined) throw httpError('validation', { field: 'loadSettings' });
++  if (isHome && req.visibleAtGym !== undefined) throw httpError('validation', { field: 'visibleAtGym' });
++  if (req.isPrimary) await demotePrimaries(trx, deps, user.id, placeId);
++  const stamp = await writeStamp(trx, deps, user.id);
++  await trx
++    .updateTable('place')
++    .set({
++      ...(req.name !== undefined ? { name: req.name } : {}),
++      ...(req.isPrimary ? { isPrimary: 1 } : {}),
++      ...(req.visibleAtGym !== undefined ? { visibleAtGym: req.visibleAtGym ? 1 : 0 } : {}),
++      ...(req.loadSettings !== undefined ? { loadSettings: JSON.stringify(req.loadSettings) } : {}),
++      ...stamp,
++    })
++    .where('id', '=', placeId)
++    .execute();
++}
++
++export async function deletePlace(
++  trx: DbExecutor,
++  deps: AppDeps,
++  user: SessionUser,
++  placeId: string,
++  newPrimaryId: string | undefined,
++): Promise<void> {
++  const place = await loadOwnPlace(trx, user.id, placeId);
++  const others = await trx
++    .selectFrom('place')
++    .select('id')
++    .where('ownerId', '=', user.id)
++    .where('deletedAt', 'is', null)
++    .where('id', '!=', placeId)
++    .execute();
++  let promote: string | undefined;
++  if (others.length === 0) {
++    const account = await trx
++      .selectFrom('user')
++      .select('onboardingCompletedAt')
++      .where('id', '=', user.id)
++      .executeTakeFirst();
++    if (account?.onboardingCompletedAt != null) throw httpError('last_place');
++  } else if (place.isPrimary === 1) {
++    if (newPrimaryId === undefined) throw httpError('primary_required');
++    if (!others.some((o) => o.id === newPrimaryId)) {
++      throw httpError('validation', { field: 'newPrimaryId' });
++    }
++    promote = newPrimaryId;
++  }
++  const stamp = await writeStamp(trx, deps, user.id);
++  await trx
++    .updateTable('place')
++    .set({ deletedAt: stamp.updatedAt, isPrimary: 0, ...stamp })
++    .where('id', '=', placeId)
++    .execute();
++  if (promote !== undefined) {
++    const next = await writeStamp(trx, deps, user.id);
++    await trx
++      .updateTable('place')
++      .set({ isPrimary: 1, ...next })
++      .where('id', '=', promote)
++      .execute();
++  }
++}
++
++export async function setPlaceEquipment(
++  trx: DbExecutor,
++  deps: AppDeps,
++  user: SessionUser,
++  placeId: string,
++  code: EquipmentCode,
++  present: boolean,
++): Promise<void> {
++  const place = await loadOwnPlace(trx, user.id, placeId);
++  if (place.kind !== 'home') throw httpError('validation', { field: 'kind' });
++  await setHomeEquipment(trx, deps, user.id, placeId, code, present);
++}
+diff --git a/apps/server/src/routes.ts b/apps/server/src/routes.ts
+index 81b34b6..aaaf3af 100644
+--- a/apps/server/src/routes.ts
++++ b/apps/server/src/routes.ts
+@@ -1,22 +1,24 @@
+ import type { Hono } from 'hono';
+ import { adminRoutes } from './admin/routes';
+ import type { AppEnv } from './app-env';
+ import { adminInvitationRoutes, invitationRoutes } from './auth/invitation-routes';
+ import { meRoutes } from './auth/me-routes';
+ import { authRoutes } from './auth/routes';
+ import type { AppDeps } from './deps';
+ import { healthRoutes } from './health/routes';
+ import { gymRoutes } from './places/gym-routes';
++import { placeRoutes } from './places/place-routes';
+ import { profileRoutes } from './profile/routes';
+ 
+ /** Un routeur par ligne ; les routeurs des tâches suivantes s'ajoutent ici. */
+ export function mountRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
+   app.route('/', healthRoutes(deps));
+   app.route('/api/auth', authRoutes(deps));
+   app.route('/api/me', meRoutes(deps));
+   app.route('/api/me', profileRoutes(deps));
+   app.route('/api/gyms', gymRoutes(deps));
++  app.route('/api/places', placeRoutes(deps));
+   app.route('/api/invitations', invitationRoutes(deps));
+   app.route('/api/admin/invitations', adminInvitationRoutes(deps));
+   app.route('/api/admin', adminRoutes(deps));
+ }
+diff --git a/apps/server/test/places/places.test.ts b/apps/server/test/places/places.test.ts
+new file mode 100644
+index 0000000..656d620
+--- /dev/null
++++ b/apps/server/test/places/places.test.ts
+@@ -0,0 +1,233 @@
++import { defaultLoadSettings } from '@appsport/contracts';
++import { afterEach, describe, expect, it } from 'vitest';
++import {
++  completeOnboarding,
++  createTestContext,
++  createUserAndLogin,
++  insertFixtureRow,
++  type TestContext,
++} from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx.close());
++
++type Member = Awaited<ReturnType<typeof createUserAndLogin>>;
++
++const call = (u: Member, path: string, method = 'GET', json?: unknown) =>
++  ctx.request(path, { method, cookie: u.cookie, ...(json !== undefined ? { json } : {}) });
++const post = (u: Member, json: unknown) => call(u, '/api/places', 'POST', json);
++const home = (u: Member, over: Record<string, unknown> = {}) =>
++  post(u, { kind: 'home', equipment: [], isPrimary: false, ...over });
++const idOf = async (res: Response) => ((await res.json()) as { id: string }).id;
++const row = (id: string) =>
++  ctx.deps.db.selectFrom('place').selectAll().where('id', '=', id).executeTakeFirstOrThrow();
++const activeHome = async (placeId: string) =>
++  (
++    await ctx.deps.db
++      .selectFrom('homeEquipment')
++      .select('equipmentCode')
++      .where('placeId', '=', placeId)
++      .where('deletedAt', 'is', null)
++      .orderBy('equipmentCode')
++      .execute()
++  ).map((r) => r.equipmentCode);
++const makeGym = (name = 'Basic-Fit', over: Record<string, unknown> = {}) =>
++  insertFixtureRow(ctx.deps.db, 'gym', { name, nameKey: name.toLowerCase(), ...over });
++
++async function setup(opts: { onboarded?: boolean; birthDate?: string } = {}) {
++  ctx = await createTestContext();
++  const u = await createUserAndLogin(ctx, opts.birthDate ? { birthDate: opts.birthDate } : {});
++  if (opts.onboarded) await completeOnboarding(ctx, u);
++  return u;
++}
++
++describe('POST /api/places (maison)', () => {
++  it('crée une maison avec ses réglages et son matériel dédoublonné', async () => {
++    const u = await setup();
++    const res = await post(u, {
++      kind: 'home',
++      equipment: ['chair', 'table', 'dumbbells', 'dumbbells'],
++      isPrimary: true,
++    });
++    expect(res.status).toBe(201);
++    const id = await idOf(res);
++    const place = await row(id);
++    expect(place).toMatchObject({ kind: 'home', name: 'Maison', gymId: null, isPrimary: 1, visibleAtGym: 0 });
++    expect(JSON.parse(place.loadSettings as string)).toEqual(defaultLoadSettings('home'));
++    const eq = await ctx.deps.db
++      .selectFrom('homeEquipment')
++      .selectAll()
++      .where('placeId', '=', id)
++      .orderBy('id')
++      .execute();
++    expect(eq.map((e) => [e.id, e.ownerId, e.deletedAt])).toEqual([
++      [`${id}:chair`, u.id, null],
++      [`${id}:dumbbells`, u.id, null],
++      [`${id}:table`, u.id, null],
++    ]);
++  });
++
++  it('refuse un nom de 31 caractères et admet plusieurs maisons', async () => {
++    const u = await setup();
++    expect((await home(u, { name: 'x'.repeat(31) })).status).toBe(400);
++    expect((await home(u)).status).toBe(201);
++    expect((await home(u, { name: 'Appart' })).status).toBe(201);
++  });
++});
++
++describe('matériel de la maison', () => {
++  it('est idempotent et refusé sur un lieu salle', async () => {
++    const u = await setup();
++    const id = await idOf(await home(u, { equipment: ['chair', 'table'] }));
++    for (let i = 0; i < 2; i++) {
++      expect((await call(u, `/api/places/${id}/equipment/kettlebell`, 'PUT', {})).status).toBe(204);
++      expect((await call(u, `/api/places/${id}/equipment/chair`, 'DELETE')).status).toBe(204);
++    }
++    expect(await activeHome(id)).toEqual(['kettlebell', 'table']);
++    const gym = await makeGym();
++    const gp = await idOf(await post(u, { kind: 'gym', gymId: gym.id as string, isPrimary: false }));
++    const res = await call(u, `/api/places/${gp}/equipment/kettlebell`, 'PUT', {});
++    expect(res.status).toBe(400);
++  });
++});
++
++describe('POST /api/places (salle)', () => {
++  it('refuse un second lieu actif sur la même salle', async () => {
++    const u = await setup();
++    const gym = await makeGym();
++    const body = { kind: 'gym', gymId: gym.id, isPrimary: false };
++    expect((await post(u, body)).status).toBe(201);
++    const res = await post(u, body);
++    expect(res.status).toBe(409);
++    expect(await res.json()).toEqual({ error: 'place_exists' });
++  });
++
++  it('renvoie 404 pour une salle inconnue ou supprimée', async () => {
++    const u = await setup();
++    const gym = await makeGym('Fermée', { deletedAt: '2026-10-01T00:00:00.000Z' });
++    expect((await post(u, { kind: 'gym', gymId: gym.id, isPrimary: false })).status).toBe(404);
++    expect((await post(u, { kind: 'gym', gymId: 'inconnue', isPrimary: false })).status).toBe(404);
++  });
++
++  it('un lieu salle supprimé libère la salle', async () => {
++    const u = await setup();
++    const gym = await makeGym();
++    const body = { kind: 'gym', gymId: gym.id, isPrimary: false };
++    const id = await idOf(await post(u, body));
++    await home(u, { isPrimary: true });
++    expect((await call(u, `/api/places/${id}`, 'DELETE', {})).status).toBe(204);
++    expect((await post(u, body)).status).toBe(201);
++  });
++});
++
++describe('PATCH /api/places/:id', () => {
++  it('visibilité : mineur à 0, activable ; refusée sur une maison', async () => {
++    const u = await setup({ birthDate: '2012-01-01' });
++    const gym = await makeGym();
++    const id = await idOf(await post(u, { kind: 'gym', gymId: gym.id, isPrimary: true }));
++    expect((await row(id)).visibleAtGym).toBe(0);
++    expect((await call(u, `/api/places/${id}`, 'PATCH', { visibleAtGym: true })).status).toBe(204);
++    expect((await row(id)).visibleAtGym).toBe(1);
++    const h = await idOf(await home(u));
++    expect((await call(u, `/api/places/${h}`, 'PATCH', { visibleAtGym: true })).status).toBe(400);
++  });
++
++  it('réglages de charge et nom : maison seulement', async () => {
++    const u = await setup();
++    const gym = await makeGym();
++    const g = await idOf(await post(u, { kind: 'gym', gymId: gym.id, isPrimary: true }));
++    const h = await idOf(await home(u));
++    const D = defaultLoadSettings('home');
++    expect((await call(u, `/api/places/${g}`, 'PATCH', { loadSettings: D })).status).toBe(400);
++    expect((await call(u, `/api/places/${g}`, 'PATCH', { name: 'Salle' })).status).toBe(400);
++    const ok = { ...D, dumbbellsG: [2000, 4000] };
++    expect((await call(u, `/api/places/${h}`, 'PATCH', { loadSettings: ok })).status).toBe(204);
++    expect(JSON.parse((await row(h)).loadSettings as string)).toEqual(ok);
++    expect((await call(u, `/api/places/${h}`, 'PATCH', { loadSettings: { ...D, barG: 4999 } })).status).toBe(
++      400,
++    );
++    expect((await call(u, `/api/places/${h}`, 'PATCH', { name: 'Appart' })).status).toBe(204);
++    expect((await row(h)).name).toBe('Appart');
++  });
++
++  it("lieu principal : premier d'office, unique, jamais retiré directement", async () => {
++    const u = await setup();
++    const a = await idOf(await home(u));
++    const b = await idOf(await home(u));
++    expect((await row(a)).isPrimary).toBe(1);
++    expect((await row(b)).isPrimary).toBe(0);
++    expect((await call(u, `/api/places/${b}`, 'PATCH', { isPrimary: true })).status).toBe(204);
++    expect([(await row(a)).isPrimary, (await row(b)).isPrimary]).toEqual([0, 1]);
++    expect((await call(u, `/api/places/${b}`, 'PATCH', { isPrimary: false })).status).toBe(400);
++  });
++});
++
++describe('DELETE /api/places/:id', () => {
++  it("refuse le dernier lieu après l'onboarding, l'autorise avant", async () => {
++    const u = await setup({ onboarded: true });
++    const only = await ctx.deps.db
++      .selectFrom('place')
++      .select('id')
++      .where('ownerId', '=', u.id)
++      .executeTakeFirstOrThrow();
++    const res = await call(u, `/api/places/${only.id}`, 'DELETE', {});
++    expect(res.status).toBe(409);
++    expect(await res.json()).toEqual({ error: 'last_place' });
++    ctx.close();
++    const v = await setup();
++    const id = await idOf(await home(v));
++    expect((await call(v, `/api/places/${id}`, 'DELETE', {})).status).toBe(204);
++  });
++
++  it('exige un nouveau lieu principal valide puis supprime', async () => {
++    const u = await setup();
++    const a = await idOf(await home(u));
++    const b = await idOf(await home(u));
++    const noNew = await call(u, `/api/places/${a}`, 'DELETE', {});
++    expect(noNew.status).toBe(409);
++    expect(await noNew.json()).toEqual({ error: 'primary_required' });
++    const self = await call(u, `/api/places/${a}`, 'DELETE', { newPrimaryId: a });
++    expect(self.status).toBe(400);
++    expect(await self.json()).toMatchObject({ error: 'validation', field: 'newPrimaryId' });
++    const before = (await row(a)).rev;
++    ctx.clock.set('2026-10-06T10:00:00.000Z');
++    expect((await call(u, `/api/places/${a}`, 'DELETE', { newPrimaryId: b })).status).toBe(204);
++    const gone = await row(a);
++    expect(gone).toMatchObject({ deletedAt: '2026-10-06T10:00:00.000Z', isPrimary: 0 });
++    expect(gone.rev).toBeGreaterThan(before);
++    expect((await row(b)).isPrimary).toBe(1);
++    expect((await call(u, `/api/places/${a}`, 'DELETE', {})).status).toBe(404);
++  });
++
++  it('un lieu non principal se supprime sans corps', async () => {
++    const u = await setup();
++    await home(u);
++    const b = await idOf(await home(u));
++    expect((await call(u, `/api/places/${b}`, 'DELETE')).status).toBe(204);
++  });
++});
++
++describe("lieu d'un autre, admin compris (P-ADM-2)", () => {
++  it('répond 404 not_found sans rien modifier', async () => {
++    const owner = await setup();
++    const admin = await createUserAndLogin(ctx, { role: 'admin' });
++    const other = await createUserAndLogin(ctx);
++    const id = await idOf(await home(owner, { equipment: ['chair'] }));
++    const before = await row(id);
++    for (const who of [admin, other]) {
++      const calls: [string, string, unknown?][] = [
++        [`/api/places/${id}`, 'PATCH', {}],
++        [`/api/places/${id}`, 'DELETE', {}],
++        [`/api/places/${id}/equipment/table`, 'PUT', {}],
++        [`/api/places/${id}/equipment/chair`, 'DELETE'],
++      ];
++      for (const [path, method, json] of calls) {
++        const res = await call(who, path, method, json);
++        expect(res.status, `${method} ${path}`).toBe(404);
++        expect(await res.json()).toEqual({ error: 'not_found' });
++      }
++    }
++    expect(await row(id)).toEqual(before);
++    expect(await activeHome(id)).toEqual(['chair']);
++  });
++});
+diff --git a/apps/server/test/privacy/admin-isolation.test.ts b/apps/server/test/privacy/admin-isolation.test.ts
+index 80e5503..1ccf480 100644
+--- a/apps/server/test/privacy/admin-isolation.test.ts
++++ b/apps/server/test/privacy/admin-isolation.test.ts
+@@ -1,17 +1,17 @@
+ import { entityRules } from '@appsport/contracts';
+ import { afterEach, describe, expect, it } from 'vitest';
+ import { createTestContext, createUser, insertFixtureRow, login, type TestContext } from '../support';
+ 
+-// Planchers du nombre de routes énumérées : T18 monte MIN_ID_ROUTES à 4, T19 à 6.
++// Planchers du nombre de routes énumérées : T18 a monté MIN_ID_ROUTES à 4, T19 le monte à 6.
+ const MIN_ADMIN_ROUTES = 10;
+-const MIN_ID_ROUTES = 0;
++const MIN_ID_ROUTES = 4;
+ 
+ let ctx: TestContext;
+ afterEach(() => ctx?.close());
+ 
+ const WITNESSES = ['TEMOIN_TP', 'TEMOIN_HS', 'TEMOIN_LIM'];
+ 
+ interface Route {
+   method: string;
+   path: string;
+ }
+@@ -88,21 +88,11 @@ describe("isolation de l'administrateur (P-ADM-1, P-ADM-2, 02 §15 n°14)", () =
+         const res = await ctx.request(fill(r.path, id), {
+           method: r.method,
+           cookie,
+           ...(r.method === 'GET' ? {} : { json: {} }),
+         });
+         expect(res.status, `${r.method} ${r.path} ${id}`).toBe(404);
+         expect(await res.json()).toEqual({ error: 'not_found' });
+       }
+     }
+   });
+-
+-  it.runIf(MIN_ID_ROUTES === 0)(
+-    "cas vide explicite : aucune route /api/(me|places) à :id n'existe encore (le plancher monte avec T18 et T19)",
+-    async () => {
+-      await setup();
+-      expect(
+-        listRoutes().filter((r) => /^\/api\/(me|places)\//.test(r.path) && r.path.includes(':id')),
+-      ).toEqual([]);
+-    },
+-  );
+ });
+diff --git a/packages/contracts/src/api/places.ts b/packages/contracts/src/api/places.ts
+index d277267..342d006 100644
+--- a/packages/contracts/src/api/places.ts
++++ b/packages/contracts/src/api/places.ts
+@@ -59,10 +59,44 @@ export const CreateGymResponse = z.object({ gymId: z.string(), placeId: z.string
+ export type CreateGymResponse = z.infer<typeof CreateGymResponse>;
+ 
+ export const UpdateGymRequest = z
+   .strictObject({
+     name: z.string().trim().min(2).max(60).optional(),
+     city: z.string().trim().min(2).max(60).optional(),
+     loadSettings: LoadSettingsSchema.optional(),
+   })
+   .refine((v) => Object.keys(v).length > 0);
+ export type UpdateGymRequest = z.infer<typeof UpdateGymRequest>;
++
++export const HOME_PLACE_DEFAULT_NAME = 'Maison';
++
++export const CreatePlaceRequest = z.discriminatedUnion('kind', [
++  z.strictObject({
++    kind: z.literal('gym'),
++    gymId: z.string(),
++    isPrimary: z.boolean(),
++    visibleAtGym: z.boolean().optional(),
++  }),
++  z.strictObject({
++    kind: z.literal('home'),
++    name: z.string().trim().min(1).max(30).optional(),
++    equipment: z.array(EquipmentCodeSchema),
++    isPrimary: z.boolean(),
++  }),
++]);
++export type CreatePlaceRequest = z.infer<typeof CreatePlaceRequest>;
++
++export const CreatePlaceResponse = z.object({ id: z.string() });
++export type CreatePlaceResponse = z.infer<typeof CreatePlaceResponse>;
++
++export const UpdatePlaceRequest = z
++  .strictObject({
++    name: z.string().trim().min(1).max(30).optional(),
++    isPrimary: z.literal(true).optional(),
++    visibleAtGym: z.boolean().optional(),
++    loadSettings: LoadSettingsSchema.optional(),
++  })
++  .refine((v) => Object.keys(v).length > 0);
++export type UpdatePlaceRequest = z.infer<typeof UpdatePlaceRequest>;
++
++export const DeletePlaceRequest = z.strictObject({ newPrimaryId: z.string().optional() });
++export type DeletePlaceRequest = z.infer<typeof DeletePlaceRequest>;

@@ -1,0 +1,1833 @@
+# Review package: fb5016a..HEAD
+
+## Commits
+b7f161f feat(web): accueil avec le coach et onglet Progression en avant-goût
+
+## Files changed
+ apps/web/e2e/coach-onboarding.spec.ts              |  19 +-
+ apps/web/src/features/home/HomePage.tsx            | 173 +++++++++-
+ apps/web/src/features/home/home.module.css         | 165 +++++++++-
+ .../src/features/progression/ProgressionPage.tsx   | 100 +++++-
+ .../features/progression/progression.module.css    | 354 +++++++++++++++++++++
+ apps/web/test/app/guard.test.tsx                   |   2 +-
+ apps/web/test/app/shell.test.tsx                   |  18 +-
+ apps/web/test/auth/login.test.tsx                  |  12 +-
+ apps/web/test/auth/logout-reset.test.tsx           |   2 +-
+ apps/web/test/home/home.test.tsx                   | 317 ++++++++++++++++++
+ apps/web/test/onboarding/ready-step.test.tsx       |   2 +-
+ apps/web/test/progression/progression.test.tsx     | 178 +++++++++++
+ 12 files changed, 1310 insertions(+), 32 deletions(-)
+
+## Diff
+diff --git a/apps/web/e2e/coach-onboarding.spec.ts b/apps/web/e2e/coach-onboarding.spec.ts
+index bea65fd..85f4f60 100644
+--- a/apps/web/e2e/coach-onboarding.spec.ts
++++ b/apps/web/e2e/coach-onboarding.spec.ts
+@@ -5,22 +5,29 @@ import { emulateStandalone, requireServiceWorker } from './support/pwa';
+ import { bootstrapAdmin } from './support/server';
+ 
+ // Spec refonte §12 (ruling P9) : le parcours ajouté, du choix du coach jusqu'à « Éveil terminé », puis l'accueil.
+ // Textes du Scribe mot pour mot (spec refonte §8), écrits ici : le code des coachs importe la boîte à outils et
+ // ses feuilles de style, que l'exécuteur des E2E ne charge pas.
+ const SCRIBE = {
+   name: 'Le Scribe',
+   intro:
+     "Je suis le Scribe. Je prépare un plan clair et je note chaque série pour faire le point avec toi. Nos échanges viendront plus tard : pour l'instant, je consigne.",
+   ready: 'Profil complet, lieu noté. Le plan arrivera ici.',
++  /** Lignes du jour de l'accueil, une par jour de Paris à tour de rôle ; `{jours}` = 2 (rythme choisi ici). */
++  daily: [
++    'Profil complet, lieu noté, rythme de 2 séances par semaine. Le plan arrivera ici.',
++    'Point du jour : ton profil est à jour.',
++    'Je consigne. Les premières séances arriveront bientôt.',
++  ],
+ };
+ const QUESTS = ['Profil complété', 'Lieu principal choisi', 'Prêt hors ligne'];
++const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ /** Le voyant « Prêt hors ligne » attend le service worker et le premier pull. */
+ const READY_TIMEOUT_MS = 30_000;
+ 
+ test('onboarding : choix du coach, présentation, les 8 autres écrans, « Éveil terminé » puis l’accueil', async ({
+   server,
+   context,
+   page,
+ }) => {
+   await emulateStandalone(context);
+   const { link } = await bootstrapAdmin(server);
+@@ -79,17 +86,25 @@ test('onboarding : choix du coach, présentation, les 8 autres écrans, « Évei
+     for (const quest of QUESTS) {
+       await expect(page.getByRole('checkbox', { name: quest, exact: true })).toBeChecked({
+         timeout: READY_TIMEOUT_MS,
+       });
+     }
+     await expect(current.getByText('3/3', { exact: true })).toBeVisible();
+     await expect(current.getByText(SCRIBE.ready, { exact: true })).toBeVisible();
+     await expect(button('Commencer')).toBeEnabled();
+     await button('Commencer').click();
+     await page.waitForURL((url) => url.pathname === '/');
+-    // L'accueil : son onglet actif, et le titre qui salue le pseudo (sa formule change avec l'accueil Rune).
++    // L'accueil : son onglet actif, et le titre qui salue le pseudo (« Bonjour, » ou « Bonsoir, » selon l'heure).
+     await expect(
+       page.getByTestId('tab-bar').getByRole('link', { name: 'Accueil', exact: true }),
+     ).toHaveAttribute('aria-current', 'page');
+-    await expect(page.getByRole('heading', { level: 1, name: /\bnoa$/ })).toBeVisible();
++    await expect(page.getByRole('heading', { level: 1, name: /^Bon(jour|soir), noa$/ })).toBeVisible();
++    // La bulle du Scribe choisi, étiquetée « Aujourd'hui », avec sa ligne du jour (laquelle dépend du jour).
++    const bubble = page.getByRole('main').locator('[data-mode="training"]');
++    await expect(bubble).toBeVisible();
++    await expect(bubble).toContainText(SCRIBE.name);
++    await expect(bubble.getByText("Aujourd'hui", { exact: true })).toBeVisible();
++    await expect(
++      bubble.getByText(new RegExp(`^(${SCRIBE.daily.map(escapeRegExp).join('|')})$`)),
++    ).toBeVisible();
+   });
+ });
+diff --git a/apps/web/src/features/home/HomePage.tsx b/apps/web/src/features/home/HomePage.tsx
+index f32bc39..6dda674 100644
+--- a/apps/web/src/features/home/HomePage.tsx
++++ b/apps/web/src/features/home/HomePage.tsx
+@@ -1,33 +1,196 @@
+-import { useLive, useMe } from '../../app-services';
++import { EXPERIENCE_LABELS, GOAL_LABELS } from '@rune/contracts';
++import { useState } from 'react';
++import { Link } from 'wouter';
++import { useLive, useMe, useServices } from '../../app-services';
+ import { useRepos } from '../../repos';
+-import { Banner, Button, Page } from '../../ui';
++import { Banner, Button, CoachBubble, CountUp, Page, plural, SystemPanel } from '../../ui';
++import { coachLine } from '../coach/coach-lines';
++import { AwakeningQuests, awakeningQuests } from '../onboarding/AwakeningQuests';
+ import { OfflineReadyIndicator } from '../status/OfflineReadyIndicator';
++import { useReadiness } from '../status/use-readiness';
+ import styles from './home.module.css';
+ 
+ /** R-AGE-6 : affiché une fois par appareil, au passage de mineur à adulte. */
+ export const ADULT_NOTICE_TEXT =
+   "Tu as 18 ans : tu peux désormais choisir l'objectif « Perdre du gras » dans ton profil.";
+ 
++const parisHour = new Intl.DateTimeFormat('en-GB', {
++  timeZone: 'Europe/Paris',
++  hour: '2-digit',
++  hourCycle: 'h23',
++});
++
++/** « Bonjour, {pseudo} » de 5 h à 17 h 59 à l'heure de Paris, « Bonsoir, {pseudo} » le reste du temps. */
++function greeting(nowMs: number, pseudo: string): string {
++  const hour = Number(parisHour.formatToParts(nowMs).find((part) => part.type === 'hour')?.value);
++  return `${hour >= 5 && hour < 18 ? 'Bonjour' : 'Bonsoir'}, ${pseudo}`;
++}
++
++function PlaceIcon() {
++  return (
++    <svg
++      aria-hidden="true"
++      className={styles.tileIcon}
++      width="22"
++      height="22"
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth="1.9"
++      strokeLinecap="round"
++      strokeLinejoin="round"
++    >
++      <path d="M6 7v10M3 9v6M18 7v10M21 9v6M6 12h12" />
++    </svg>
++  );
++}
++
++function CalendarIcon() {
++  return (
++    <svg
++      aria-hidden="true"
++      className={`${styles.tileIcon} ${styles.rhythmIcon}`}
++      width="22"
++      height="22"
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth="1.9"
++      strokeLinecap="round"
++      strokeLinejoin="round"
++    >
++      <rect x="3" y="5" width="18" height="16" rx="2" />
++      <path d="M3 10h18M8 3v4M16 3v4" />
++    </svg>
++  );
++}
++
++function Chevron() {
++  return (
++    <svg
++      aria-hidden="true"
++      className={styles.chevron}
++      width="20"
++      height="20"
++      viewBox="0 0 24 24"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth="2"
++      strokeLinecap="round"
++      strokeLinejoin="round"
++    >
++      <path d="m9 6 6 6-6 6" />
++    </svg>
++  );
++}
++
++/**
++ * Accueil (spec refonte §10.2, maquettes MixSombre / MixClair, prototype « Accueil ») : salutation selon l'heure
++ * de Paris, bandeaux du compte, bulle du coach « Aujourd'hui » avec sa ligne du jour, fenêtre du Système
++ * « Éveil terminé. » et ses quêtes d'éveil aux vrais états, tuiles lieu principal et rythme, ligne objectif et
++ * niveau, puis le voyant « Prêt hors ligne » (R-SYN-33). Les cartes entrent en cascade.
++ *
++ * Aucune fausse donnée : une valeur pas encore connue (profil pas encore reçu sur ce nouvel appareil) n'affiche
++ * ni bulle, ni tuile, ni ligne ; une quête n'est cochée que quand son état réel l'est. Le voyant et la quête
++ * « Prêt hors ligne » lisent le même calcul. L'heure et le jour viennent de l'horloge des services (injectée
++ * dans les tests) ; le recalcul du voyant, toutes les 5 s, rafraîchit aussi la salutation passé 18 h.
++ */
+ export function HomePage() {
+   const me = useMe();
+   const repos = useRepos();
++  const services = useServices();
+   const adultNotice = useLive(() => repos.me.adultNotice(), [repos]);
++  const profile = useLive(() => repos.profile.get(), [repos]);
++  const places = useLive(() => repos.places.list(), [repos]);
++  const { readiness, loaded, retry } = useReadiness();
++  const [retrying, setRetrying] = useState(false);
+   if (!me) return null;
++
++  const onRetry = () => {
++    setRetrying(true);
++    void retry().finally(() => setRetrying(false));
++  };
++  const now = services.now();
++  const primary = places?.find((place) => place.isPrimary);
++  const quests = awakeningQuests({
++    profile,
++    hasPrimaryPlace: primary !== undefined,
++    offlineReady: loaded && readiness.ready,
++  });
++  const coach = profile?.coach ?? null;
++  const days = profile?.daysPerWeek ?? null;
++  const goal = profile?.goal ?? null;
++  const experience = profile?.experience ?? null;
++
+   return (
+-    <Page title={`Bonjour ${me.username}`}>
++    <Page title={greeting(now, me.username)}>
+       {me.passwordReminderDue ? (
+         <Banner tone="warning">Pense à changer ton mot de passe (rappel annuel).</Banner>
+       ) : null}
+       {adultNotice ? (
+         <Banner tone="info">
+           <p className={styles.notice}>{ADULT_NOTICE_TEXT}</p>
+           <Button variant="secondary" onClick={() => void repos.me.dismissAdultNotice()}>
+             J'ai compris
+           </Button>
+         </Banner>
+       ) : null}
+-      <p className={styles.lead}>Tes programmes et tes séances arriveront ici.</p>
+-      <OfflineReadyIndicator />
++      <div className={`${styles.cards} stagger`}>
++        {coach ? (
++          <CoachBubble coach={coach} label="Aujourd'hui">
++            <p>{coachLine(coach, 'daily', new Date(now), me.username, days)}</p>
++          </CoachBubble>
++        ) : null}
++        <SystemPanel title="Éveil terminé.">
++          <div className={styles.awakening}>
++            <p>Tes programmes et tes séances arriveront ici.</p>
++            <AwakeningQuests quests={quests} />
++          </div>
++        </SystemPanel>
++        {primary || days !== null ? (
++          <div className={styles.tiles}>
++            {primary ? (
++              <Link href={`/places/${primary.id}`} className={styles.tile}>
++                <PlaceIcon />
++                <span className={styles.tileKey}>Lieu principal</span>{' '}
++                <span className={styles.tileValue}>{primary.name}</span>
++              </Link>
++            ) : null}
++            {days !== null ? (
++              <Link href="/profile" className={styles.tile}>
++                <CalendarIcon />
++                <span className={styles.tileKey}>Rythme</span>{' '}
++                <span className={styles.tileNumber}>
++                  <CountUp to={days} />
++                  <small aria-hidden="true">{` ${plural(days, 'séance', 'séances')} / sem.`}</small>
++                  <span className={styles.srOnly}>{` ${plural(days, 'séance', 'séances')} par semaine`}</span>
++                </span>
++              </Link>
++            ) : null}
++          </div>
++        ) : null}
++        {goal && experience ? (
++          <Link href="/profile" className={styles.row}>
++            <span className={styles.rowText}>
++              <span className={styles.tileKey}>Objectif · niveau</span>{' '}
++              <span
++                className={styles.rowValue}
++              >{`${GOAL_LABELS[goal]} · ${EXPERIENCE_LABELS[experience]}`}</span>
++            </span>
++            <Chevron />
++          </Link>
++        ) : null}
++      </div>
++      {loaded ? (
++        <div className={styles.readiness}>
++          <OfflineReadyIndicator readiness={readiness} />
++          {readiness.ready ? null : (
++            <Button variant="secondary" block onClick={onRetry} disabled={retrying}>
++              Réessayer
++            </Button>
++          )}
++        </div>
++      ) : null}
+     </Page>
+   );
+ }
+diff --git a/apps/web/src/features/home/home.module.css b/apps/web/src/features/home/home.module.css
+index 762c42e..4c5b6e8 100644
+--- a/apps/web/src/features/home/home.module.css
++++ b/apps/web/src/features/home/home.module.css
+@@ -1,8 +1,165 @@
+-.lead {
+-  margin: 0;
+-  color: var(--color-muted);
+-}
++/*
++ * Accueil (maquettes MixSombre / MixClair, prototype « Accueil ») : bulle du coach, fenêtre du Système et ses
++ * quêtes, tuiles lieu principal et rythme, ligne objectif · niveau. Couleurs : jetons seulement, donc justes
++ * dans les 5 thèmes ; les ombres, presque noires, ne se voient qu'en clair et en Carnet.
++ */
+ 
+ .notice {
+   margin: 0 0 var(--space-2);
+ }
++
++/* Les cartes de l'accueil, en cascade (classe .stagger de motion.css). */
++.cards {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-4);
++}
++
++/* Texte de la fenêtre, puis ses quêtes (maquette : 14 px entre les deux). */
++.awakening {
++  display: flex;
++  flex-direction: column;
++  gap: 14px;
++}
++
++.awakening > p {
++  margin: 0;
++}
++
++/*
++ * Deux tuiles côte à côte sur téléphone (maquette) ; une seule par ligne quand le texte grandit (200 %) ou que
++ * l'écran est très étroit : chaque colonne garde au moins 8,5 rem, jamais plus d'une moitié de la largeur.
++ */
++.tiles {
++  display: grid;
++  grid-template-columns: repeat(
++      auto-fill,
++      minmax(min(100%, max(8.5rem, calc((100% - 12px) / 2 - 1px))), 1fr)
++    );
++  gap: 12px;
++}
++
++/* Carte de l'accueil (GUIDE, carte) : surface, liseré, ombre douce ; un lien entier, touché n'importe où. */
++.tile,
++.row {
++  min-height: 44px;
++  border-radius: var(--radius-card);
++  border: 1px solid var(--border);
++  background: var(--surface);
++  box-shadow:
++    0 1px 2px rgb(16 21 31 / 0.06),
++    0 6px 18px rgb(16 21 31 / 0.05);
++  color: var(--text);
++  text-decoration: none;
++  transition: transform var(--dur-fast) var(--ease);
++}
++
++.tile:active,
++.row:active {
++  transform: scale(0.98);
++}
++
++.tile {
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++  padding: var(--space-4);
++}
++
++.tileIcon {
++  flex: none;
++  color: var(--accent);
++}
++
++/* Le rythme à l'accent 2 (maquette), élément d'interface à 3:1 dans les 5 thèmes. */
++.rhythmIcon {
++  color: var(--accent-2);
++}
++
++.tileKey {
++  font-size: 0.8125rem;
++  line-height: 1.3;
++  color: var(--text-muted);
++}
++
++.tileValue {
++  font-size: 1rem;
++  font-weight: 600;
++  line-height: 1.25;
++  overflow-wrap: anywhere;
++}
++
++/* Le chiffre en Chakra Petch, « séances / sem. » en Barlow à côté. */
++.tileNumber {
++  font-family: var(--font-display);
++  font-size: 1.625rem;
++  font-weight: 700;
++  line-height: 1;
++  overflow-wrap: anywhere;
++}
++
++.tileNumber small {
++  font-family: var(--font-body);
++  font-size: 0.875rem;
++  font-weight: 500;
++  color: var(--text-muted);
++}
++
++.row {
++  display: flex;
++  align-items: center;
++  gap: var(--space-3);
++  padding: 14px var(--space-4);
++}
++
++.rowText {
++  flex: 1;
++  min-width: 0;
++  display: flex;
++  flex-direction: column;
++  gap: 2px;
++}
++
++.rowValue {
++  font-size: 1rem;
++  font-weight: 600;
++  line-height: 1.3;
++  overflow-wrap: anywhere;
++}
++
++.chevron {
++  flex: none;
++  color: var(--text-muted);
++}
++
++/* Voyant « Prêt hors ligne » et, s'il n'est pas au vert, « Réessayer » dessous. */
++.readiness {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-3);
++}
++
++.srOnly {
++  position: absolute;
++  width: 1px;
++  height: 1px;
++  margin: -1px;
++  padding: 0;
++  overflow: hidden;
++  clip-path: inset(50%);
++  white-space: nowrap;
++  border: 0;
++}
++
++/* Mouvement réduit : aucun déplacement au toucher. */
++@media (prefers-reduced-motion: reduce) {
++  .tile,
++  .row {
++    transition: none;
++  }
++
++  .tile:active,
++  .row:active {
++    transform: none;
++  }
++}
+diff --git a/apps/web/src/features/progression/ProgressionPage.tsx b/apps/web/src/features/progression/ProgressionPage.tsx
+index 869fc60..2161282 100644
+--- a/apps/web/src/features/progression/ProgressionPage.tsx
++++ b/apps/web/src/features/progression/ProgressionPage.tsx
+@@ -1,6 +1,100 @@
+-import { Page } from '../../ui';
++import { type CSSProperties, useId } from 'react';
++import { CountUp, Page, RankBadge } from '../../ui';
++import styles from './progression.module.css';
+ 
+-/** Onglet Progression : page provisoire, sans donnée ; l'avant-goût (rangs, compteurs à 0) arrive ensuite. */
++/** Les 9 groupes musculaires de l'avant-goût, dans l'ordre de la maquette (constante d'affichage). */
++export const MUSCLE_GROUPS_LABELS = [
++  'Pectoraux',
++  'Dos',
++  'Épaules',
++  'Bras',
++  'Abdos',
++  'Fessiers',
++  'Quadriceps',
++  'Ischios',
++  'Mollets',
++] as const;
++
++/**
++ * Onglet Progression en avant-goût (spec refonte §9, maquettes ProgressionSombre / ProgressionClair, prototype
++ * « Progression ») : rang global E et sa barre d'XP vide (seul un reflet la traverse), compteurs à 0 (séances,
++ * kg soulevés, semaines d'assiduité), les 9 groupes musculaires au rang E, puis la note du Système. Aucune
++ * valeur inventée : le calcul réel arrive avec la brique 3. Les cartes entrent en cascade, les compteurs
++ * défilent (`CountUp`, à leur valeur finale tout de suite sous mouvement réduit).
++ */
+ export function ProgressionPage() {
+-  return <Page title="Progression">{null}</Page>;
++  const rankTitle = useId();
++  const musclesTitle = useId();
++  return (
++    <Page title="Progression">
++      <div className={`${styles.content} stagger`}>
++        <section aria-labelledby={rankTitle} className={styles.hero}>
++          <span className={styles.heroBadge}>
++            <RankBadge rank="E" size={92} />
++          </span>
++          <div className={styles.heroInfo}>
++            <h2 id={rankTitle} className={styles.kicker}>
++              Rang global
++            </h2>
++            <p className={styles.rankName}>Rang E</p>
++            <div className={styles.xpBar} data-xp="0" aria-hidden="true">
++              <span className={styles.xpSweep} />
++            </div>
++            <p className={styles.xpMeta}>
++              <span>
++                <span aria-hidden="true">0 / 100 XP</span>
++                <span className={styles.srOnly}>0 sur 100 XP</span>
++              </span>{' '}
++              <span>Prochain : D</span>
++            </p>
++          </div>
++        </section>
++        <ul className={styles.stats}>
++          <li className={styles.stat}>
++            <span className={styles.statValue}>
++              <CountUp to={0} />
++            </span>{' '}
++            <span className={styles.statLabel}>séances</span>
++          </li>
++          <li className={styles.stat}>
++            <span className={styles.statValue}>
++              <CountUp to={0} />
++              <small> kg</small>
++            </span>{' '}
++            <span className={styles.statLabel}>soulevés</span>
++          </li>
++          <li className={styles.stat}>
++            <span className={styles.statValue}>
++              <CountUp to={0} />
++              <small aria-hidden="true"> sem.</small>
++              <span className={styles.srOnly}> semaine</span>
++            </span>{' '}
++            <span className={styles.statLabel}>d'assiduité</span>
++          </li>
++        </ul>
++        <section aria-labelledby={musclesTitle} className={styles.muscles}>
++          <div className={styles.sectionHead}>
++            <h2 id={musclesTitle} className={styles.sectionTitle}>
++              Rangs par muscle
++            </h2>
++            <span className={styles.sectionCount}>{`${MUSCLE_GROUPS_LABELS.length} groupes`}</span>
++          </div>
++          <ul className={styles.muscleGrid}>
++            {MUSCLE_GROUPS_LABELS.map((label, index) => (
++              <li key={label} className={styles.muscle} style={{ '--i': index } as CSSProperties}>
++                <RankBadge rank="E" size={32} mini />
++                <span className={styles.muscleLabel}>{label}</span>
++              </li>
++            ))}
++          </ul>
++        </section>
++        <div role="note" className={styles.systemNote}>
++          <p className={styles.systemLabel}>
++            <span aria-hidden="true">[ </span>SYSTÈME<span aria-hidden="true"> ]</span>
++          </p>{' '}
++          <p className={styles.noteText}>Aucune séance gravée. Ta première séance débloque tes rangs.</p>
++        </div>
++      </div>
++    </Page>
++  );
+ }
+diff --git a/apps/web/src/features/progression/progression.module.css b/apps/web/src/features/progression/progression.module.css
+new file mode 100644
+index 0000000..d2f5ae9
+--- /dev/null
++++ b/apps/web/src/features/progression/progression.module.css
+@@ -0,0 +1,354 @@
++/*
++ * Progression en avant-goût (maquettes ProgressionSombre / ProgressionClair, prototype « Progression ») : carte
++ * forte du rang global, compteurs, grille des 9 groupes, note du Système. Couleurs : jetons seulement, donc
++ * justes dans les 5 thèmes ; les ombres, presque noires, ne se voient qu'en clair et en Carnet.
++ */
++
++.content {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-4);
++}
++
++/* ---------- Rang global : carte forte, comme la fenêtre du Système (GUIDE, carte forte) ---------- */
++
++/* En clair : carte blanche, ombre douce, barre dégradée de 3 px en haut, rognée par la carte. */
++.hero {
++  position: relative;
++  overflow: hidden;
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: var(--space-4);
++  padding: 18px;
++  border-radius: var(--radius-card);
++  background: var(--surface);
++  box-shadow:
++    0 1px 2px rgb(16 21 31 / 0.06),
++    0 10px 28px rgb(16 21 31 / 0.07);
++}
++
++.hero::before {
++  content: "";
++  position: absolute;
++  inset: 0 0 auto;
++  height: 3px;
++  background: linear-gradient(90deg, var(--accent), var(--accent-2));
++}
++
++/* En sombre (forcé ou Auto la nuit) et en Salle de nuit : dégradé de la carte forte, liseré glacé, sans barre. */
++:global(:root[data-theme="sombre"]) .hero,
++:global(:root[data-theme="nuit"]) .hero {
++  background: linear-gradient(180deg, var(--surface-strong), var(--surface));
++  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
++  box-shadow: none;
++}
++
++:global(:root[data-theme="sombre"]) .hero::before,
++:global(:root[data-theme="nuit"]) .hero::before {
++  display: none;
++}
++
++/* En Carnet : carte de papier, cadre d'encre de 1,5 px et ombre franche, sans barre. */
++:global(:root[data-theme="carnet"]) .hero {
++  border: 1.5px solid var(--text);
++  box-shadow: 4px 4px 0 var(--text);
++}
++
++:global(:root[data-theme="carnet"]) .hero::before {
++  display: none;
++}
++
++@media (prefers-color-scheme: dark) {
++  :global(:root:not([data-theme])) .hero {
++    background: linear-gradient(180deg, var(--surface-strong), var(--surface));
++    border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
++    box-shadow: none;
++  }
++
++  :global(:root:not([data-theme])) .hero::before {
++    display: none;
++  }
++}
++
++/* Le rang E grandit en s'allumant, puis garde un halo d'accent. */
++.heroBadge {
++  flex: none;
++  display: grid;
++  place-items: center;
++  width: 92px;
++  height: 92px;
++  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--accent) 40%, transparent));
++  animation: grow-in var(--dur-screen) var(--ease) 200ms backwards;
++}
++
++.heroInfo {
++  flex: 1 1 10rem;
++  min-width: 0;
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++}
++
++/* « RANG GLOBAL » : une étiquette en Chakra Petch (pas la police des titres du Carnet), à l'accent. */
++.kicker {
++  margin: 0;
++  font-family: var(--font-display);
++  font-size: 0.75rem;
++  font-weight: 600;
++  line-height: 1.3;
++  letter-spacing: 0.22em;
++  text-transform: uppercase;
++  color: var(--accent);
++}
++
++.rankName {
++  margin: 0;
++  font-family: var(--font-display);
++  font-size: 1.25rem;
++  font-weight: 700;
++  line-height: 1.2;
++}
++
++/* Barre d'XP vide : la piste seule, qu'un reflet traverse une fois (spec refonte §9 : « juste un reflet »). */
++.xpBar {
++  position: relative;
++  height: 6px;
++  border-radius: 3px;
++  overflow: hidden;
++  background: color-mix(in srgb, var(--text-muted) 18%, var(--surface));
++}
++
++/* Au repos, le reflet attend hors de la piste (rogné) : rien n'est caché par une opacité nulle. */
++.xpSweep {
++  position: absolute;
++  inset: 0 auto 0 0;
++  width: 38%;
++  background: linear-gradient(
++    90deg,
++    transparent,
++    color-mix(in srgb, var(--accent) 45%, transparent),
++    transparent
++  );
++  transform: translateX(-100%);
++  animation: xp-sweep 800ms var(--ease) 600ms;
++}
++
++.xpMeta {
++  margin: 0;
++  display: flex;
++  flex-wrap: wrap;
++  justify-content: space-between;
++  gap: 2px var(--space-2);
++  font-size: 0.8125rem;
++  color: var(--text-muted);
++}
++
++/* ---------- Compteurs ---------- */
++
++/*
++ * Trois compteurs côte à côte (maquette) ; moins par ligne quand le texte grandit (200 %) : chaque colonne
++ * garde au moins 5,25 rem, jamais plus d'un tiers de la largeur.
++ */
++.stats {
++  margin: 0;
++  padding: 0;
++  list-style: none;
++  display: grid;
++  grid-template-columns: repeat(
++      auto-fill,
++      minmax(min(100%, max(5.25rem, calc((100% - 20px) / 3 - 1px))), 1fr)
++    );
++  gap: 10px;
++}
++
++.stat,
++.muscle {
++  border: 1px solid var(--border);
++  background: var(--surface);
++  box-shadow: 0 1px 2px rgb(16 21 31 / 0.06);
++}
++
++.stat {
++  display: flex;
++  flex-direction: column;
++  gap: 2px;
++  padding: var(--space-3);
++  border-radius: var(--radius-card);
++}
++
++.statValue {
++  font-family: var(--font-display);
++  font-size: 1.5rem;
++  font-weight: 700;
++  line-height: 1.2;
++  overflow-wrap: anywhere;
++}
++
++.statValue small {
++  font-size: 0.875rem;
++  color: var(--text-muted);
++}
++
++.statLabel {
++  font-size: 0.8125rem;
++  line-height: 1.3;
++  color: var(--text-muted);
++  overflow-wrap: anywhere;
++}
++
++/* ---------- Rangs par muscle ---------- */
++
++.muscles {
++  display: flex;
++  flex-direction: column;
++  gap: 10px;
++}
++
++.sectionHead {
++  display: flex;
++  flex-wrap: wrap;
++  justify-content: space-between;
++  align-items: baseline;
++  gap: 2px var(--space-2);
++}
++
++.sectionTitle {
++  margin: 0;
++  font-size: 1.0625rem;
++  font-weight: 700;
++  line-height: 1.3;
++}
++
++/* Newsreader n'est embarqué qu'en 600 : pas de gras synthétisé. */
++:global(:root[data-theme="carnet"]) .sectionTitle {
++  font-weight: 600;
++}
++
++.sectionCount {
++  font-size: 0.8125rem;
++  color: var(--text-muted);
++}
++
++/* Grille de 3 sur téléphone (maquette), moins par ligne quand le texte grandit, jamais plus de 3. */
++.muscleGrid {
++  margin: 0;
++  padding: 0;
++  list-style: none;
++  display: grid;
++  grid-template-columns: repeat(
++      auto-fill,
++      minmax(min(100%, max(5.5rem, calc((100% - 16px) / 3 - 1px))), 1fr)
++    );
++  gap: var(--space-2);
++}
++
++/* Chaque groupe surgit à son tour (--i : son rang dans la grille), après l'entrée de sa section. */
++.muscle {
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  gap: var(--space-1);
++  padding: 10px 6px;
++  border-radius: var(--radius-control);
++  text-align: center;
++  animation: muscle-pop 250ms var(--ease) backwards;
++  animation-delay: calc(var(--i, 0) * 45ms + 360ms);
++}
++
++.muscle svg {
++  display: block;
++}
++
++.muscleLabel {
++  font-size: 0.8125rem;
++  line-height: 1.3;
++  overflow-wrap: anywhere;
++}
++
++/* ---------- Note du Système ---------- */
++
++.systemNote {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: var(--space-1) var(--space-3);
++  padding: var(--space-3) 14px;
++  border-radius: var(--radius-card);
++  border: 1px dashed color-mix(in srgb, var(--accent) 40%, var(--border));
++  background: color-mix(in srgb, var(--surface) 50%, transparent);
++}
++
++.systemLabel {
++  flex: none;
++  margin: 0;
++  font-family: var(--font-display);
++  font-size: 0.6875rem;
++  font-weight: 600;
++  letter-spacing: 0.2em;
++  color: var(--accent);
++}
++
++.noteText {
++  flex: 1 1 12rem;
++  margin: 0;
++  font-size: 0.875rem;
++  line-height: 1.4;
++  color: var(--text-muted);
++}
++
++.srOnly {
++  position: absolute;
++  width: 1px;
++  height: 1px;
++  margin: -1px;
++  padding: 0;
++  overflow: hidden;
++  clip-path: inset(50%);
++  white-space: nowrap;
++  border: 0;
++}
++
++@keyframes grow-in {
++  from {
++    opacity: 0;
++    transform: scale(0.55);
++  }
++}
++
++@keyframes xp-sweep {
++  from {
++    transform: translateX(-100%);
++  }
++
++  to {
++    transform: translateX(270%);
++  }
++}
++
++@keyframes muscle-pop {
++  from {
++    opacity: 0;
++    transform: scale(0.5);
++  }
++}
++
++@keyframes fade {
++  from {
++    opacity: 0;
++  }
++}
++
++/* Mouvement réduit (spec refonte §7) : des fondus courts, sans retard ni cascade, et pas de balayage. */
++@media (prefers-reduced-motion: reduce) {
++  .heroBadge,
++  .muscle {
++    animation-name: fade;
++    animation-duration: var(--dur-fast);
++    animation-delay: 0ms;
++  }
++
++  .xpSweep {
++    animation: none;
++  }
++}
+diff --git a/apps/web/test/app/guard.test.tsx b/apps/web/test/app/guard.test.tsx
+index c366da0..b696bc9 100644
+--- a/apps/web/test/app/guard.test.tsx
++++ b/apps/web/test/app/guard.test.tsx
+@@ -83,21 +83,21 @@ describe('App', () => {
+   });
+ 
+   it('session refusée par le serveur → /login', async () => {
+     const sync = createFakeSyncEngine({ connection: 'unauthenticated' });
+     const { location } = await renderApp({ path: '/', sync });
+     await until(() => location() === '/login');
+   });
+ 
+   it("plus d'onglet 'Administration' (l'admin passe par Profil) ; /admin/members reste servi à un admin", async () => {
+     const first = await renderApp({ path: '/', me: admin() });
+-    await screen.findByText('Bonjour lea');
++    await screen.findByText('Bonjour, lea');
+     expect(screen.queryByRole('link', { name: 'Administration' })).toBeNull();
+     first.unmount();
+     await renderApp({ path: '/admin/members', me: admin() });
+     expect(await screen.findByRole('heading', { level: 1, name: 'Membres' })).toBeTruthy();
+   });
+ 
+   it('/profile/places/p-2 → /places/p-2', async () => {
+     const { location } = await renderApp({ path: '/profile/places/p-2' });
+     await until(() => location() === '/places/p-2');
+   });
+diff --git a/apps/web/test/app/shell.test.tsx b/apps/web/test/app/shell.test.tsx
+index f78149b..bea584b 100644
+--- a/apps/web/test/app/shell.test.tsx
++++ b/apps/web/test/app/shell.test.tsx
+@@ -372,21 +372,21 @@ describe('coquille', () => {
+     expect(within(header).getByTestId('connection-status').textContent).toBe('En ligne');
+     const avatar = within(header).getByRole('link', { name: 'Mon profil' });
+     expect(avatar.getAttribute('href')).toBe('/profile');
+     expect(avatar.textContent).toBe('L');
+   });
+ 
+   it("l'en-tête n'affiche plus « 0 en attente » ni les compteurs", async () => {
+     media();
+     await renderApp({ path: '/' });
+     const header = await homeHeader();
+-    await screen.findByText('Bonjour lea');
++    await screen.findByText('Bonjour, lea');
+     expect(header.textContent).not.toContain('en attente');
+     expect(screen.queryByTestId('pending-counter')).toBeNull();
+     expect(screen.queryByTestId('rejected-counter')).toBeNull();
+   });
+ 
+   it('connexion « offline » : la pastille dit « Hors ligne », jamais « En ligne »', async () => {
+     media();
+     await renderApp({ path: '/', sync: createFakeSyncEngine({ connection: 'offline' }) });
+     const header = await homeHeader();
+     expect(within(header).getByTestId('connection-status').textContent).toBe('Hors ligne');
+@@ -411,21 +411,21 @@ describe('coquille', () => {
+     expect(rule?.get('height')).toBe('44px');
+   });
+ 
+   // L'admin passe par Profil : ni onglet « Administration », ni aucun lien /admin, quel que soit son libellé.
+   it.each([
+     ['téléphone, barre d’onglets', [], 'tab-bar'],
+     ['≥ 900 px, navigation latérale', [DESKTOP], 'side-nav'],
+   ] as const)('admin, %s : les 4 onglets de TAB_ITEMS, aucun lien vers /admin', async (_, queries, nav) => {
+     media(...queries);
+     const view = await renderApp({ path: '/', me: makeMe({ role: 'admin' }) });
+-    await screen.findByText('Bonjour lea');
++    await screen.findByText('Bonjour, lea');
+     expect(screen.getByTestId(nav)).toBeTruthy();
+     const hrefs = within(mainNav())
+       .getAllByRole('link')
+       .map((a) => a.getAttribute('href'));
+     expect(hrefs).toEqual(TAB_ITEMS.map((t) => t.href));
+     const toAdmin = (href: string | null) => href?.toLowerCase().startsWith('/admin') ?? false;
+     expect(hrefs.filter(toAdmin)).toEqual([]);
+     expect([...view.container.querySelectorAll('a')].filter((a) => toAdmin(a.getAttribute('href')))).toEqual(
+       [],
+     );
+@@ -435,28 +435,28 @@ describe('coquille', () => {
+   it('les pages /admin restent servies à un admin', async () => {
+     media();
+     await renderApp({ path: '/admin/members', me: makeMe({ role: 'admin' }) });
+     expect(await screen.findByRole('heading', { level: 1, name: 'Membres' })).toBeTruthy();
+     expect(current()).toEqual(['Profil']);
+   });
+ 
+   it('téléphone : barre d’onglets ; ≥ 900 px : navigation latérale, jamais les deux', async () => {
+     media();
+     const phone = await renderApp({ path: '/' });
+-    await screen.findByText('Bonjour lea');
++    await screen.findByText('Bonjour, lea');
+     expect(screen.getAllByRole('navigation', { name: 'Navigation principale' })).toHaveLength(1);
+     expect(screen.getByTestId('tab-bar')).toBeTruthy();
+     expect(screen.queryByTestId('side-nav')).toBeNull();
+     phone.unmount();
+     media(DESKTOP);
+     await renderApp({ path: '/' });
+-    await screen.findByText('Bonjour lea');
++    await screen.findByText('Bonjour, lea');
+     expect(screen.getAllByRole('navigation', { name: 'Navigation principale' })).toHaveLength(1);
+     expect(screen.getByTestId('side-nav')).toBeTruthy();
+     expect(screen.queryByTestId('tab-bar')).toBeNull();
+   });
+ 
+   it('≥ 900 px, accueil : la marque une seule fois (navigation latérale), l’en-tête garde pastille et initiale à droite', async () => {
+     media(DESKTOP);
+     await renderApp({ path: '/' });
+     const header = await homeHeader();
+     expect(screen.getAllByRole('link', { name: 'Rune' })).toHaveLength(1);
+@@ -469,21 +469,21 @@ describe('coquille', () => {
+   });
+ 
+   it('onboarding : ni barre d’onglets ni pastille', async () => {
+     media();
+     await renderApp({ path: '/onboarding', me: newcomer() });
+     await screen.findByTestId('onboarding-step');
+     expect(screen.queryByRole('navigation', { name: 'Navigation principale' })).toBeNull();
+     expect(screen.queryByTestId('connection-status')).toBeNull();
+   });
+ 
+-  it('/progression : page provisoire, titre « Progression », onglet actif', async () => {
++  it('/progression : l’avant-goût, titre « Progression », onglet actif', async () => {
+     media();
+     await renderApp({ path: '/progression' });
+     expect(await screen.findByRole('heading', { level: 1, name: 'Progression' })).toBeTruthy();
+     expect(current()).toEqual(['Progression']);
+   });
+ 
+   it('/places : la liste des lieux, onglet « Salles »', async () => {
+     media();
+     await renderApp({ path: '/places' });
+     expect(await screen.findByRole('heading', { level: 1, name: 'Lieux' })).toBeTruthy();
+@@ -513,21 +513,21 @@ describe('coquille', () => {
+     const header = await homeHeader();
+     const main = screen.getByRole('main');
+     expect(header.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+     expect(banner.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+   });
+ 
+   it("changement d'écran : onglet en fondu, avant depuis la droite, retour depuis la gauche", async () => {
+     media();
+     const entrance = spyEntrances();
+     const view = await renderApp({ path: '/' });
+-    await screen.findByText('Bonjour lea');
++    await screen.findByText('Bonjour, lea');
+     const screenEl = () => view.container.querySelector('[data-screen-transition]');
+     fireEvent.click(tab('Profil'));
+     await screen.findByRole('heading', { level: 1, name: 'Profil' });
+     expect(screenEl()?.getAttribute('data-screen-transition')).toBe('tab');
+     expect(entrance()).toEqual({ keyframes: { opacity: [0, 1] }, options: { duration: 300, easing: EASE } });
+     fireEvent.click(screen.getByRole('link', { name: 'Santé' }));
+     await screen.findByRole('heading', { level: 1, name: 'Santé' });
+     expect(screenEl()?.getAttribute('data-screen-transition')).toBe('forward');
+     expect(entrance()).toEqual({
+       keyframes: { opacity: [0, 1], transform: ['translateX(48px)', 'none'] },
+@@ -539,57 +539,57 @@ describe('coquille', () => {
+     expect(entrance()).toEqual({
+       keyframes: { opacity: [0, 1], transform: ['translateX(-48px)', 'none'] },
+       options: { duration: 380, easing: EASE },
+     });
+   });
+ 
+   it('mouvement réduit : chaque changement d’écran est un fondu simple de 200 ms, sans balayage', async () => {
+     media(REDUCED);
+     const entrance = spyEntrances();
+     await renderApp({ path: '/' });
+-    await screen.findByText('Bonjour lea');
++    await screen.findByText('Bonjour, lea');
+     const fade = { keyframes: { opacity: [0, 1] }, options: { duration: 200, easing: EASE } };
+     fireEvent.click(tab('Profil'));
+     await screen.findByRole('heading', { level: 1, name: 'Profil' });
+     expect(entrance()).toEqual(fade);
+     fireEvent.click(screen.getByRole('link', { name: 'Santé' }));
+     await screen.findByRole('heading', { level: 1, name: 'Santé' });
+     expect(entrance()).toEqual(fade);
+     fireEvent.click(screen.getByRole('link', { name: 'Retour' }));
+     await screen.findByRole('heading', { level: 1, name: 'Profil' });
+     expect(entrance()).toEqual(fade);
+   });
+ 
+   it('mouvement réduit : la pastille de la barre change d’onglet sans glisser', () => {
+     expect(declarationsOf(shellCss(), '.tabPill', REDUCED)?.get('transition')).toBe('none');
+   });
+ 
+   it("changement d'écran : onglet et écran suivant repartent du haut, le retour retrouve la position quittée", async () => {
+     media();
+     await renderApp({ path: '/' });
+-    await screen.findByText('Bonjour lea');
++    await screen.findByText('Bonjour, lea');
+     scrollPage(900);
+     fireEvent.click(tab('Profil'));
+     await screen.findByRole('heading', { level: 1, name: 'Profil' });
+     expect(window.scrollY).toBe(0);
+     scrollPage(420);
+     fireEvent.click(screen.getByRole('link', { name: 'Santé' }));
+     await screen.findByRole('heading', { level: 1, name: 'Santé' });
+     expect(window.scrollY).toBe(0);
+     scrollPage(150);
+     fireEvent.click(screen.getByRole('link', { name: 'Retour' }));
+     await screen.findByRole('heading', { level: 1, name: 'Profil' });
+     expect(window.scrollY).toBe(420);
+     // Revenu en haut par l'onglet, puis de nouveau en avant et en arrière : la position retrouvée est la
+     // dernière quittée, pas une ancienne.
+     fireEvent.click(tab('Accueil'));
+-    await screen.findByText('Bonjour lea');
++    await screen.findByText('Bonjour, lea');
+     expect(window.scrollY).toBe(0);
+     fireEvent.click(tab('Profil'));
+     await screen.findByRole('heading', { level: 1, name: 'Profil' });
+     fireEvent.click(screen.getByRole('link', { name: 'Santé' }));
+     await screen.findByRole('heading', { level: 1, name: 'Santé' });
+     fireEvent.click(screen.getByRole('link', { name: 'Retour' }));
+     await screen.findByRole('heading', { level: 1, name: 'Profil' });
+     expect(window.scrollY).toBe(0);
+   });
+ 
+diff --git a/apps/web/test/auth/login.test.tsx b/apps/web/test/auth/login.test.tsx
+index e5656b5..4eccd29 100644
+--- a/apps/web/test/auth/login.test.tsx
++++ b/apps/web/test/auth/login.test.tsx
+@@ -36,21 +36,21 @@ const signIn = (username: string, password = 'mot de passe correct') => {
+ describe('connexion (R-AUTH-1, R-AUTH-5)', () => {
+   it('Pseudo, Mot de passe, Se connecter → POST /api/auth/login puis accueil', async () => {
+     const api = createFakeApi().on('POST', LOGIN, reply(lea));
+     const { location, visits } = await renderLogin({ me: null, api });
+     const password = (await screen.findByLabelText('Mot de passe')) as HTMLInputElement;
+     expect(password.type).toBe('password');
+     expect(password.autocomplete).toBe('current-password');
+     expect((screen.getByLabelText('Pseudo') as HTMLInputElement).autocomplete).toBe('username');
+     const mark = visits().length;
+     signIn('lea', 'cheval agrafe batterie correcte');
+-    await screen.findByText('Bonjour lea');
++    await screen.findByText('Bonjour, lea');
+     expect(location()).toBe('/');
+     expect(visits().slice(mark)).toEqual(['/']);
+     expect(loginCalls(api)[0]?.body).toEqual({
+       username: 'lea',
+       password: 'cheval agrafe batterie correcte',
+     });
+   });
+ 
+   it('401 invalid_credentials : message unique, formulaire gardé', async () => {
+     const api = createFakeApi().on('POST', LOGIN, reply({ error: 'invalid_credentials' }, 401));
+@@ -125,21 +125,21 @@ describe('autre pseudo sur un appareil qui a des données non envoyées (R-AUTH-
+     expect(await db.outbox.count()).toBe(2);
+     expect(location()).toBe('/login');
+     expect((screen.getByLabelText('Pseudo') as HTMLInputElement).value).toBe('max');
+   });
+ 
+   it('Continuer : connexion, accueil, file effacée', async () => {
+     const { api, db, location } = await renderWithPending();
+     signIn('max');
+     const dialog = await screen.findByRole('dialog');
+     fireEvent.click(within(dialog).getByRole('button', { name: 'Continuer' }));
+-    await screen.findByText('Bonjour max');
++    await screen.findByText('Bonjour, max');
+     expect(location()).toBe('/');
+     expect(await db.outbox.count()).toBe(0);
+     expect(loginCalls(api)).toHaveLength(1);
+     expect(await getMeta(db, 'userId')).toBe('u-2');
+   });
+ 
+   it('Continuer puis identifiants refusés : la file reste', async () => {
+     const { api, db } = await renderWithPending();
+     api.on('POST', LOGIN, reply({ error: 'invalid_credentials' }, 401));
+     signIn('max');
+@@ -156,32 +156,32 @@ describe('autre pseudo sur un appareil qui a des données non envoyées (R-AUTH-
+       '1 élément non envoyé de lea sera effacé de cet appareil',
+     );
+   });
+ 
+   it("même pseudo, casse et forme Unicode différentes des deux côtés : pas d'avertissement, file gardée", async () => {
+     const owner = makeMe({ id: 'u-1', username: 'Léa' });
+     const { api, db, location } = await renderWithPending(2, owner);
+     api.on('POST', LOGIN, reply(owner));
+     // Majuscules et accent décomposé (E + U+0301) : même clé NFKC puis minuscules que « Léa ».
+     signIn('LÉA');
+-    await screen.findByText('Bonjour Léa');
++    await screen.findByText('Bonjour, Léa');
+     expect(location()).toBe('/');
+     expect(screen.queryByRole('dialog')).toBeNull();
+     expect(await db.outbox.count()).toBe(2);
+     expect(await getMeta(db, 'userId')).toBe('u-1');
+   });
+ 
+   it("autre pseudo sans rien en attente : pas d'avertissement", async () => {
+     const api = createFakeApi().on('POST', LOGIN, reply(max));
+     const { location } = await renderLogin({ me: lea, api, sync: lostSession() });
+     signIn('max');
+-    await screen.findByText('Bonjour max');
++    await screen.findByText('Bonjour, max');
+     expect(location()).toBe('/');
+     expect(screen.queryByRole('dialog')).toBeNull();
+   });
+ 
+   it("propriétaire sans nom connu : l'avertissement garde un nom lisible", async () => {
+     const { db } = await renderWithPending();
+     await deleteMeta(db, 'me');
+     signIn('max');
+     expect((await screen.findByRole('dialog')).textContent).toContain(
+       "2 éléments non envoyés de l'ancien compte seront effacés de cet appareil",
+@@ -225,38 +225,38 @@ describe("session perdue, garde de l'appli et moteur réel (R-SYN-12, R-AUTH-8,
+   }
+ 
+   it('401 puis connexion réussie : accueil, sans retour à /login ni bandeau', async () => {
+     const { api, location, visits } = await launchWithLostSession('unauthenticated');
+     api.on('POST', LOGIN, () => {
+       api.open();
+       return reply(lea);
+     });
+     const mark = visits().length;
+     signIn('lea');
+-    await screen.findByText('Bonjour lea');
++    await screen.findByText('Bonjour, lea');
+     const real = engine as SyncEngine;
+     await until(() => real.getState().connection === 'online' && !real.getState().syncing);
+     expect(visits().slice(mark)).toEqual(['/']);
+     expect(location()).toBe('/');
+     expect(screen.queryByText(EXPIRED)).toBeNull();
+     expect(screen.queryByRole('button', { name: 'Se connecter' })).toBeNull();
+   });
+ 
+   it("compte supprimé puis connexion d'un autre compte : accueil, sans retour à /login ni bandeau", async () => {
+     const { api, db, location, visits } = await launchWithLostSession('account_deleted');
+     api.on('POST', LOGIN, () => {
+       api.open();
+       return reply(max);
+     });
+     const mark = visits().length;
+     signIn('max');
+-    await screen.findByText('Bonjour max');
++    await screen.findByText('Bonjour, max');
+     const real = engine as SyncEngine;
+     await until(() => real.getState().connection === 'online' && !real.getState().syncing);
+     expect(visits().slice(mark)).toEqual(['/']);
+     expect(location()).toBe('/');
+     expect(screen.queryByText(DELETED)).toBeNull();
+     expect(await getMeta(db, 'userId')).toBe('u-2');
+   });
+ 
+   it('pendant la session perdue, /login reste stable : premier plan, réseau, avertissement, échec', async () => {
+     const { api, db, location, visits } = await launchWithLostSession('unauthenticated', 2);
+diff --git a/apps/web/test/auth/logout-reset.test.tsx b/apps/web/test/auth/logout-reset.test.tsx
+index 77a4a8c..53c27df 100644
+--- a/apps/web/test/auth/logout-reset.test.tsx
++++ b/apps/web/test/auth/logout-reset.test.tsx
+@@ -348,21 +348,21 @@ describe('ResetPage (R-RST-1, R-RST-3)', () => {
+     const real = view.engine;
+     engine = real;
+     real.start();
+     await until(() => real.getState().connection === 'unauthenticated');
+     await screen.findByLabelText('Nouveau mot de passe pour lea');
+     await settle();
+     const mark = view.visits().length;
+     fill('Nouveau mot de passe pour lea', PHRASE);
+     fill('Confirmation', PHRASE);
+     click('Changer le mot de passe');
+-    await screen.findByText('Bonjour lea');
++    await screen.findByText('Bonjour, lea');
+     await until(() => real.getState().connection === 'online' && !real.getState().syncing);
+     expect(view.visits().slice(mark)).toEqual(['/']);
+     expect(screen.queryByText('Ta session a expiré. Reconnecte-toi.')).toBeNull();
+   });
+ 
+   describe('appareil qui garde des données non envoyées (P-AUT-6, R-AUTH-8)', () => {
+     /** Appareil de lea, 2 éléments à elle en attente ; le lien est pour `username`. */
+     async function renderResetWithPending(username: string, id: string) {
+       openUrl('/reset#abcd-efgh-jkmn-pqrs');
+       const api = createFakeApi()
+diff --git a/apps/web/test/home/home.test.tsx b/apps/web/test/home/home.test.tsx
+new file mode 100644
+index 0000000..d99a870
+--- /dev/null
++++ b/apps/web/test/home/home.test.tsx
+@@ -0,0 +1,317 @@
++import { readFileSync } from 'node:fs';
++import { resolve } from 'node:path';
++import { COACH_IDS, type CoachId, type MeResponse } from '@rune/contracts';
++import { fireEvent, screen, within } from '@testing-library/react';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { coachLine } from '../../src/features/coach/coach-lines';
++import type { AppDb } from '../../src/local-db/db';
++import { setMeta } from '../../src/local-db/meta';
++import { settle } from '../support/auth';
++import { parseCssBlocks } from '../support/css-blocks';
++import { createTestLocalDb } from '../support/local-db';
++import { seedPrimaryGym, seedProfile } from '../support/onboarding';
++import { DEFAULT_NOW, makeMe, renderApp } from '../support/render';
++import { until } from '../support/wait';
++
++// Accueil Rune (spec refonte §10.2, maquettes MixSombre / MixClair, prototype « Accueil ») : salutation selon
++// l'heure de Paris, bulle du coach « Aujourd'hui », fenêtre « Quêtes d'éveil » aux vrais états, tuiles lieu
++// principal et rythme, ligne objectif et niveau ; aucune fausse donnée.
++
++const HOUR = 3_600_000;
++const DAY = 24 * HOUR;
++const REDUCE = '(prefers-reduced-motion: reduce)';
++const QUESTS = ['Profil complété', 'Lieu principal choisi', 'Prêt hors ligne'] as const;
++const HOME_CSS = resolve(import.meta.dirname, '../../src/features/home/home.module.css');
++
++afterEach(() => {
++  vi.unstubAllGlobals();
++});
++
++/** Téléphone réglé en mouvement réduit : seule cette media query répond vrai. */
++function reducedMotion() {
++  vi.stubGlobal('matchMedia', (query: string) => ({
++    matches: query === REDUCE,
++    media: query,
++    addEventListener: () => {},
++    removeEventListener: () => {},
++  }));
++}
++
++interface HomeOptions {
++  /** Horloge injectée (services.now) ; DEFAULT_NOW : 14 h à Paris. */
++  now?: number;
++  /** Coach du profil ; `null` : aucun profil d'entraînement dans le miroir. */
++  coach?: CoachId | null;
++  /** Lieu principal « Basic Fit » dans le miroir (vrai par défaut). */
++  place?: boolean;
++  /** Dernier pull réussi il y a… ; null : jamais (pas prêt hors ligne). */
++  pullAgoMs?: number | null;
++  me?: Partial<MeResponse>;
++}
++
++/** Profil complet (objectif, niveau, 3 séances de 45 min) du coach demandé, lieu principal, catalogue à jour. */
++async function seedHome(db: AppDb, o: HomeOptions, now: number) {
++  const coach = o.coach === undefined ? 'skald' : o.coach;
++  if (coach !== null) {
++    await seedProfile(db, { coach, goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45 });
++  }
++  if (o.place !== false) await seedPrimaryGym(db);
++  await setMeta(db, 'catalogVersion', 'cat-1');
++  await setMeta(db, 'serverCatalogVersion', 'cat-1');
++  const pullAgo = o.pullAgoMs === undefined ? HOUR : o.pullAgoMs;
++  if (pullAgo !== null) await setMeta(db, 'lastPullOkAt', new Date(now - pullAgo).toISOString());
++}
++
++/** Accueil rendu dans l'appli entière (garde, coquille), avec son état local. */
++async function openHome(o: HomeOptions = {}) {
++  const db = createTestLocalDb();
++  const now = o.now ?? DEFAULT_NOW;
++  await seedHome(db, o, now);
++  const rendered = await renderApp({ db, now, me: makeMe(o.me) });
++  await screen.findByRole('heading', { level: 1 });
++  return rendered;
++}
++
++const heading = () => screen.getByRole('heading', { level: 1 }).textContent;
++const questsWindow = () => screen.getByRole('group', { name: 'Éveil terminé.' });
++const quest = (name: string) => within(questsWindow()).getByRole('checkbox', { name });
++const isDone = (name: string) => quest(name).getAttribute('aria-checked') === 'true';
++/** Texte lu par un lecteur d'écran : ce qui est caché (`aria-hidden`) en moins. */
++function spoken(el: Element): string {
++  const copy = el.cloneNode(true) as Element;
++  for (const hidden of copy.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
++  return (copy.textContent ?? '').replace(/\s+/g, ' ').trim();
++}
++
++describe('salutation selon l’heure de Paris (bascule à 18 h)', () => {
++  // Les tests tournent à New York : une heure locale ou UTC à la place de celle de Paris échoue ici.
++  it.each([
++    ['05:00 (heure d’été)', 'Bonjour, lea', '2026-10-06T03:00:00Z'],
++    ['14:00 (heure d’été)', 'Bonjour, lea', '2026-10-06T12:00:00Z'],
++    ['17:59 (heure d’été)', 'Bonjour, lea', '2026-10-06T15:59:00Z'],
++    ['18:00 (heure d’été)', 'Bonsoir, lea', '2026-10-06T16:00:00Z'],
++    ['00:30 (heure d’été)', 'Bonsoir, lea', '2026-10-06T22:30:00Z'],
++    ['04:59 (heure d’été)', 'Bonsoir, lea', '2026-10-06T02:59:00Z'],
++    ['17:59 (heure d’hiver)', 'Bonjour, lea', '2026-12-01T16:59:00Z'],
++    ['18:00 (heure d’hiver)', 'Bonsoir, lea', '2026-12-01T17:00:00Z'],
++    ['05:00 (heure d’hiver)', 'Bonjour, lea', '2026-12-01T04:00:00Z'],
++  ])('%s à Paris : « %s »', async (_, expected, iso) => {
++    await openHome({ now: Date.parse(iso) });
++    expect(heading()).toBe(expected);
++  });
++
++  it('le pseudo tel quel', async () => {
++    await openHome({ me: { username: 'Léa.M' } });
++    expect(heading()).toBe('Bonjour, Léa.M');
++  });
++});
++
++describe('bulle du coach « Aujourd’hui »', () => {
++  it.each(COACH_IDS)(
++    '%s : sa ligne du jour, pseudo et rythme remplacés, étiquetée « Aujourd’hui »',
++    async (coach) => {
++      await openHome({ coach });
++      const line = coachLine(coach, 'daily', new Date(DEFAULT_NOW), 'lea', 3);
++      expect(line).not.toMatch(/[{}]/);
++      const bubble = (await screen.findByText(line)).closest('[data-mode]');
++      expect(bubble).not.toBeNull();
++      expect(bubble?.textContent).toContain(
++        { ombre: "L'Ombre", skald: 'Le Skald', scribe: 'Le Scribe' }[coach],
++      );
++      expect(bubble?.textContent).toContain("Aujourd'hui");
++      expect(bubble?.getAttribute('data-mode')).toBe('training');
++    },
++  );
++
++  it('la ligne suit le jour de l’horloge injectée, et le rythme du profil y est écrit', async () => {
++    const shown: string[] = [];
++    for (let day = 0; day < 3; day++) {
++      const now = DEFAULT_NOW + day * DAY;
++      const { unmount } = await openHome({ coach: 'scribe', now });
++      const line = coachLine('scribe', 'daily', new Date(now), 'lea', 3);
++      await screen.findByText(line);
++      shown.push(line);
++      unmount();
++    }
++    // Trois jours, trois lignes : le jour vient de l'horloge injectée, pas de l'horloge du poste.
++    expect(new Set(shown).size).toBe(3);
++    expect(shown).toContain(
++      'Profil complet, lieu noté, rythme de 3 séances par semaine. Le plan arrivera ici.',
++    );
++  });
++
++  it('aucun coach connu (profil pas encore reçu) : pas de bulle', async () => {
++    await openHome({ coach: null });
++    // Lectures abouties (lieu lu, voyant calculé) : l'absence de bulle n'est pas celle d'avant les lectures.
++    await until(() => isDone('Lieu principal choisi') && isDone('Prêt hors ligne'));
++    await settle();
++    expect(screen.queryByText("Aujourd'hui")).toBeNull();
++    expect(document.querySelector('[data-mode]')).toBeNull();
++  });
++});
++
++describe('fenêtre « Quêtes d’éveil » aux vrais états', () => {
++  it('fenêtre du Système « Éveil terminé. », texte de l’accueil, 3 quêtes cochées à 3/3', async () => {
++    await openHome();
++    const win = questsWindow();
++    expect(within(win).getByText('SYSTÈME')).toBeTruthy();
++    expect(within(win).getByRole('heading', { level: 2, name: 'Éveil terminé.' })).toBeTruthy();
++    expect(within(win).getByText('Tes programmes et tes séances arriveront ici.')).toBeTruthy();
++    expect(within(win).getByText("Quêtes d'éveil")).toBeTruthy();
++    expect(
++      within(win)
++        .getAllByRole('checkbox')
++        .map((c) => c.textContent),
++    ).toEqual([...QUESTS]);
++    await until(() => QUESTS.every(isDone));
++    for (const name of QUESTS) expect(quest(name).getAttribute('aria-readonly')).toBe('true');
++    expect(within(win).getByText('3/3')).toBeTruthy();
++  });
++
++  it('pas prêt hors ligne (dernier pull il y a 25 h) : « Prêt hors ligne » décochée, 2/3', async () => {
++    await openHome({ pullAgoMs: 25 * HOUR });
++    await until(() => isDone('Profil complété') && isDone('Lieu principal choisi'));
++    // Le voyant a rendu son verdict : la quête suit le même état, sans coche inventée.
++    await until(() => screen.queryByTestId('offline-ready')?.getAttribute('data-state') === 'not-ready');
++    expect(isDone('Prêt hors ligne')).toBe(false);
++    expect(within(questsWindow()).getByText('2/3')).toBeTruthy();
++  });
++
++  it('sans lieu principal ni profil : ces quêtes restent décochées', async () => {
++    await openHome({ coach: null, place: false });
++    await until(() => isDone('Prêt hors ligne'));
++    expect(isDone('Profil complété')).toBe(false);
++    expect(isDone('Lieu principal choisi')).toBe(false);
++    expect(within(questsWindow()).getByText('1/3')).toBeTruthy();
++  });
++
++  it('le voyant « Prêt hors ligne » reste affiché, au même état que la quête', async () => {
++    await openHome();
++    await until(() => screen.queryByTestId('offline-ready')?.getAttribute('data-state') === 'ready');
++    expect(isDone('Prêt hors ligne')).toBe(true);
++  });
++
++  it('voyant pas prêt : « Réessayer » lance une synchro manuelle', async () => {
++    const { sync, api } = await openHome({ pullAgoMs: null });
++    api.on('GET', '/api/catalog', { status: 304 });
++    fireEvent.click(await screen.findByRole('button', { name: 'Réessayer' }));
++    await until(() => sync.triggers.includes('manual'));
++  });
++});
++
++describe('tuiles et ligne objectif · niveau', () => {
++  it('« Lieu principal » : le nom du lieu principal, vers sa fiche', async () => {
++    await openHome();
++    const tile = await screen.findByRole('link', { name: /^Lieu principal/ });
++    expect(spoken(tile)).toBe('Lieu principal Basic Fit');
++    expect(tile.getAttribute('href')).toBe('/places/p-1');
++  });
++
++  it('« Rythme » : daysPerWeek du profil, lu « 3 séances par semaine »', async () => {
++    await openHome();
++    const tile = await screen.findByRole('link', { name: /^Rythme/ });
++    expect(spoken(tile)).toBe('Rythme 3 séances par semaine');
++    // À l'écran : le chiffre en grand, « séances / sem. » à côté (maquette).
++    expect(tile.textContent).toContain('séances / sem.');
++    expect(tile.getAttribute('href')).toBe('/profile');
++  });
++
++  it('« Objectif · niveau » : les libellés du profil, avec chevron, vers le profil', async () => {
++    await openHome();
++    const row = await screen.findByRole('link', { name: /^Objectif · niveau/ });
++    expect(spoken(row)).toBe('Objectif · niveau Prendre du muscle · Jamais');
++    expect(row.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
++    expect(row.getAttribute('href')).toBe('/profile');
++  });
++
++  it('aucune fausse donnée : sans profil ni lieu, ni tuile, ni ligne, ni bulle', async () => {
++    await openHome({ coach: null, place: false });
++    await until(() => isDone('Prêt hors ligne'));
++    await settle();
++    expect(screen.queryByText('Lieu principal')).toBeNull();
++    expect(screen.queryByText('Rythme')).toBeNull();
++    expect(screen.queryByText('Objectif · niveau')).toBeNull();
++    expect(screen.queryByText("Aujourd'hui")).toBeNull();
++  });
++
++  it('mouvement réduit : le rythme est à sa valeur finale dès son premier rendu', async () => {
++    reducedMotion();
++    // Aucune image d'animation ne passe : sans mouvement réduit, le compteur resterait à 0.
++    vi.stubGlobal('requestAnimationFrame', () => 1);
++    vi.stubGlobal('cancelAnimationFrame', () => {});
++    await openHome();
++    const tile = await screen.findByRole('link', { name: /^Rythme/ });
++    const digits = [...tile.querySelectorAll('span[aria-hidden="true"]')]
++      .map((s) => s.textContent ?? '')
++      .filter((t) => /^\d+$/.test(t));
++    expect(digits).toEqual(['3']);
++  });
++
++  it('ordre de la maquette : titre, bulle, fenêtre du Système, tuiles, ligne objectif · niveau', async () => {
++    await openHome();
++    const line = coachLine('skald', 'daily', new Date(DEFAULT_NOW), 'lea', 3);
++    const order = [
++      screen.getByRole('heading', { level: 1 }),
++      await screen.findByText(line),
++      questsWindow(),
++      await screen.findByRole('link', { name: /^Lieu principal/ }),
++      await screen.findByRole('link', { name: /^Rythme/ }),
++      await screen.findByRole('link', { name: /^Objectif · niveau/ }),
++    ];
++    for (let i = 1; i < order.length; i++) {
++      const previous = order[i - 1] as Element;
++      const next = order[i] as Element;
++      expect(previous.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
++    }
++  });
++});
++
++describe('bandeaux existants, mêmes conditions et mêmes textes', () => {
++  const REMINDER = 'Pense à changer ton mot de passe (rappel annuel).';
++  const NOTICE = "Tu as 18 ans : tu peux désormais choisir l'objectif « Perdre du gras » dans ton profil.";
++
++  it('rappel annuel du mot de passe et message des 18 ans affichés quand ils s’appliquent', async () => {
++    const db = createTestLocalDb();
++    await seedHome(db, {}, DEFAULT_NOW);
++    await setMeta(db, 'lastAgeBand', 'minor');
++    await renderApp({ db, me: makeMe({ passwordReminderDue: true }) });
++    const reminder = await screen.findByText(REMINDER);
++    expect(reminder.closest('[role="status"]')).not.toBeNull();
++    const notice = await screen.findByText(NOTICE);
++    expect(notice.closest('[role="status"]')).not.toBeNull();
++    expect(screen.getByRole('button', { name: "J'ai compris" })).toBeTruthy();
++  });
++
++  it('ni l’un ni l’autre quand ils ne s’appliquent pas', async () => {
++    await openHome();
++    await until(() => screen.queryByTestId('offline-ready') !== null);
++    expect(screen.queryByText(REMINDER)).toBeNull();
++    expect(screen.queryByText(NOTICE)).toBeNull();
++  });
++});
++
++describe('feuille de l’accueil (home.module.css)', () => {
++  const css = () => readFileSync(HOME_CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
++
++  it('couleurs prises dans les jetons : ni hexadécimal, ni rgb() en dur, hors ombres', () => {
++    for (const block of parseCssBlocks(css())) {
++      for (const [prop, value] of block.declarations) {
++        if (prop === 'box-shadow') continue;
++        expect(value, `${block.selector} { ${prop} }`).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
++      }
++    }
++  });
++
++  it('cibles tactiles : tuiles et ligne d’au moins 44 px de haut', () => {
++    const blocks = parseCssBlocks(css());
++    for (const selector of ['.tile', '.row']) {
++      const block = blocks.find(
++        (b) =>
++          b.media === null && b.selector.split(', ').includes(selector) && b.declarations.has('min-height'),
++      );
++      expect(block, selector).toBeTruthy();
++      const minHeight = block?.declarations.get('min-height') ?? '';
++      expect(Number.parseFloat(minHeight), `${selector} min-height`).toBeGreaterThanOrEqual(44);
++    }
++  });
++});
+diff --git a/apps/web/test/onboarding/ready-step.test.tsx b/apps/web/test/onboarding/ready-step.test.tsx
+index a30043e..5cd1fd5 100644
+--- a/apps/web/test/onboarding/ready-step.test.tsx
++++ b/apps/web/test/onboarding/ready-step.test.tsx
+@@ -57,21 +57,21 @@ describe('ReadyStep (E8, R-SYN-33)', () => {
+     api.on('POST', COMPLETE, { status: 200, body: makeMe() });
+     window.addEventListener(ONBOARDING_COMPLETED_EVENT, count);
+     for (const text of ['Prendre du muscle', '3 séances de 45 min', 'Basic Fit', 'Jamais']) {
+       await screen.findByText(text);
+     }
+     await until(offlineReady);
+     await until(() => !button('Commencer').disabled);
+     fireEvent.click(button('Commencer'));
+     await until(() => location() === '/');
+     expect(api.calls.filter((c) => c.path === COMPLETE).map((c) => c.method)).toEqual(['POST']);
+-    await screen.findByText('Bonjour lea');
++    await screen.findByText('Bonjour, lea');
+     expect(events).toBe(1);
+   });
+ 
+   it('dernier pull il y a 25 h : « Commencer » désactivé, « Réessayer » lance une synchro manuelle', async () => {
+     const { sync, api } = await openReady(25 * HOUR);
+     // Pas prêt : le voyant explique ce qui manque, avec « Réessayer ».
+     await until(() => screen.queryByTestId('offline-ready')?.getAttribute('data-state') === 'not-ready');
+     expect(offlineReady()).toBe(false);
+     expect(button('Commencer').disabled).toBe(true);
+     fireEvent.click(button('Réessayer'));
+diff --git a/apps/web/test/progression/progression.test.tsx b/apps/web/test/progression/progression.test.tsx
+new file mode 100644
+index 0000000..6e748ba
+--- /dev/null
++++ b/apps/web/test/progression/progression.test.tsx
+@@ -0,0 +1,178 @@
++import { readFileSync } from 'node:fs';
++import { resolve } from 'node:path';
++import { screen, within } from '@testing-library/react';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { MUSCLE_GROUPS_LABELS, ProgressionPage } from '../../src/features/progression/ProgressionPage';
++import { type CssBlock, parseCssBlocks } from '../support/css-blocks';
++import { renderApp, renderWithServices } from '../support/render';
++
++// Onglet Progression en avant-goût (spec refonte §9, maquettes ProgressionSombre / ProgressionClair) : rang
++// global E et barre d'XP à 0, compteurs à 0, les 9 groupes musculaires au rang E, la fenêtre du Système.
++// Aucune fausse donnée : le calcul réel arrive avec la brique 3.
++
++const REDUCE = '(prefers-reduced-motion: reduce)';
++const PROGRESSION_CSS = resolve(import.meta.dirname, '../../src/features/progression/progression.module.css');
++const SYSTEM_TEXT = 'Aucune séance gravée. Ta première séance débloque tes rangs.';
++
++afterEach(() => {
++  vi.unstubAllGlobals();
++});
++
++/** Téléphone réglé en mouvement réduit : seule cette media query répond vrai. */
++function reducedMotion() {
++  vi.stubGlobal('matchMedia', (query: string) => ({
++    matches: query === REDUCE,
++    media: query,
++    addEventListener: () => {},
++    removeEventListener: () => {},
++  }));
++}
++
++/** Texte lu par un lecteur d'écran : ce qui est caché (`aria-hidden`) en moins, espaces resserrés. */
++function spoken(el: Element): string {
++  const copy = el.cloneNode(true) as Element;
++  for (const hidden of copy.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
++  return (copy.textContent ?? '').replace(/\s+/g, ' ').trim();
++}
++
++const open = () => renderWithServices(<ProgressionPage />);
++/** Élément de liste qui contient le libellé `label`. */
++const statOf = (label: string) => screen.getByText(label).closest('li') as HTMLElement;
++/** Chiffres affichés d'un compteur (la partie visible, cachée aux lecteurs d'écran). */
++const shownDigits = (root: Element) =>
++  [...root.querySelectorAll('span[aria-hidden="true"]')]
++    .map((s) => s.textContent ?? '')
++    .filter((t) => /^\d+$/.test(t));
++
++describe('Progression en avant-goût (spec refonte §9)', () => {
++  it('titre « Progression », rang global E, « 0 / 100 XP », prochain rang D', async () => {
++    await open();
++    expect(screen.getByRole('heading', { level: 1, name: 'Progression' })).toBeTruthy();
++    const hero = screen.getByRole('region', { name: 'Rang global' });
++    expect(within(hero).getByRole('img', { name: 'Rang E' })).toBeTruthy();
++    expect(within(hero).getByText('Rang E')).toBeTruthy();
++    expect(within(hero).getByText('0 / 100 XP')).toBeTruthy();
++    expect(within(hero).getByText('Prochain : D')).toBeTruthy();
++    // Lu « 0 sur 100 XP » : pas de barre oblique au lecteur d'écran.
++    expect(spoken(hero)).toContain('0 sur 100 XP');
++  });
++
++  it('barre d’XP vide : aucun remplissage inventé, juste un reflet décoratif', async () => {
++    const { container } = await open();
++    const bar = container.querySelector('[data-xp]');
++    expect(bar).not.toBeNull();
++    expect(bar?.getAttribute('aria-hidden')).toBe('true');
++    expect(bar?.getAttribute('data-xp')).toBe('0');
++  });
++
++  it('compteurs à 0 : séances, kg soulevés, semaines d’assiduité', async () => {
++    await open();
++    expect(spoken(statOf('séances'))).toBe('0 séances');
++    expect(spoken(statOf('soulevés'))).toBe('0 kg soulevés');
++    expect(spoken(statOf("d'assiduité"))).toBe("0 semaine d'assiduité");
++    // À l'écran, l'abréviation de la maquette.
++    expect(statOf("d'assiduité").textContent).toContain('sem.');
++    for (const label of ['séances', 'soulevés', "d'assiduité"]) {
++      expect(shownDigits(statOf(label)), label).toEqual(['0']);
++    }
++  });
++
++  it('les 9 groupes musculaires au rang E, dans l’ordre', async () => {
++    expect(MUSCLE_GROUPS_LABELS).toEqual([
++      'Pectoraux',
++      'Dos',
++      'Épaules',
++      'Bras',
++      'Abdos',
++      'Fessiers',
++      'Quadriceps',
++      'Ischios',
++      'Mollets',
++    ]);
++    await open();
++    const section = screen.getByRole('region', { name: 'Rangs par muscle' });
++    expect(within(section).getByRole('heading', { level: 2, name: 'Rangs par muscle' })).toBeTruthy();
++    expect(within(section).getByText('9 groupes')).toBeTruthy();
++    const items = within(section).getAllByRole('listitem');
++    expect(items.map((li) => li.textContent)).toEqual([...MUSCLE_GROUPS_LABELS]);
++    for (const li of items) {
++      expect(within(li).getByRole('img', { name: 'Rang E' }), li.textContent ?? '').toBeTruthy();
++    }
++    expect(within(section).getAllByRole('img', { name: 'Rang E' })).toHaveLength(9);
++  });
++
++  it('fenêtre du Système, texte mot pour mot', async () => {
++    await open();
++    const text = screen.getByText(SYSTEM_TEXT);
++    const note = text.closest('[role="note"]');
++    expect(note).not.toBeNull();
++    expect(spoken(note as Element)).toBe(`SYSTÈME ${SYSTEM_TEXT}`);
++  });
++
++  it('aucune fausse donnée : seuls 0, 100 (seuil du rang D) et 9 (groupes) comme nombres', async () => {
++    const { container } = await open();
++    const numbers = new Set((spoken(container).match(/\d+/g) ?? []).map(Number));
++    expect([...numbers].sort((a, b) => a - b)).toEqual([0, 9, 100]);
++    // Aucun autre rang qu'E porté, et D seulement comme prochain rang.
++    expect(screen.getAllByRole('img').every((img) => img.getAttribute('aria-label') === 'Rang E')).toBe(true);
++  });
++
++  it('mouvement réduit : les compteurs sont à leur valeur finale dès le premier rendu', async () => {
++    reducedMotion();
++    vi.stubGlobal('requestAnimationFrame', () => 1);
++    vi.stubGlobal('cancelAnimationFrame', () => {});
++    await open();
++    for (const label of ['séances', 'soulevés', "d'assiduité"]) {
++      expect(shownDigits(statOf(label)), label).toEqual(['0']);
++    }
++  });
++
++  it('/progression dans l’appli : onglet « Progression » actif, contenu de l’avant-goût', async () => {
++    await renderApp({ path: '/progression' });
++    expect(await screen.findByRole('heading', { level: 1, name: 'Progression' })).toBeTruthy();
++    const tab = screen
++      .getByRole('navigation', { name: 'Navigation principale' })
++      .querySelector('[aria-current="page"]');
++    expect(tab?.textContent).toBe('Progression');
++    expect(screen.getByText(SYSTEM_TEXT)).toBeTruthy();
++  });
++});
++
++describe('feuille de la Progression (progression.module.css)', () => {
++  const css = () => readFileSync(PROGRESSION_CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
++  const blocks = (): CssBlock[] => parseCssBlocks(css());
++  const at = (selector: string, media: string | null) =>
++    blocks().filter((b) => b.media === media && b.selector.split(', ').includes(selector));
++
++  it('couleurs prises dans les jetons : ni hexadécimal, ni rgb() en dur, hors ombres', () => {
++    for (const block of blocks()) {
++      for (const [prop, value] of block.declarations) {
++        if (prop === 'box-shadow') continue;
++        expect(value, `${block.selector} { ${prop} }`).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
++      }
++    }
++  });
++
++  it('jamais caché hors animation : aucune règle ne pose opacity 0 en dehors des keyframes', () => {
++    for (const block of blocks()) {
++      if (block.selector.startsWith('@keyframes')) continue;
++      expect(block.declarations.get('opacity'), block.selector).not.toBe('0');
++      expect(block.declarations.get('visibility'), block.selector).not.toBe('hidden');
++    }
++  });
++
++  it('reflet de la barre d’XP et cascade des groupes : durées de la spec, courbe unique', () => {
++    const sweep = at('.xpSweep', null).find((b) => b.declarations.has('animation'));
++    expect(sweep?.declarations.get('animation')).toMatch(/var\(--ease\)/);
++    const muscle = at('.muscle', null).find((b) => b.declarations.has('animation'));
++    expect(muscle?.declarations.get('animation')).toMatch(/var\(--ease\)/);
++  });
++
++  it('mouvement réduit : ni balayage, ni cascade des groupes (un fondu court, sans retard)', () => {
++    const sweep = new Map(at('.xpSweep', REDUCE).flatMap((b) => [...b.declarations]));
++    expect(sweep.get('animation')).toBe('none');
++    const muscle = new Map(at('.muscle', REDUCE).flatMap((b) => [...b.declarations]));
++    expect(muscle.get('animation-name')).toBe('fade');
++    expect(muscle.get('animation-delay')).toBe('0ms');
++  });
++});

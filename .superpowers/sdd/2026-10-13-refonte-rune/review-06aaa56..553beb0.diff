@@ -1,0 +1,688 @@
+# Review package: 06aaa56..HEAD
+
+## Commits
+553beb0 test(web): composants de base éprouvés contre leurs mutants (Chips contrôlée, Switch sans état propre, chevron, icônes décoratives)
+6a42929 fix(web): bouton block borné hors téléphone, readonly ciblé, valeur de ligne sur plusieurs lignes, interrupteur en couleurs forcées
+58ff3e6 fix(web): étape de la progression bornée comme la barre, onClick d'une ligne lien appelé
+
+## Files changed
+ apps/web/src/ui/ListRow.tsx           |   8 +-
+ apps/web/src/ui/SegmentedProgress.tsx |   8 +-
+ apps/web/src/ui/ui.module.css         |  37 ++++++--
+ apps/web/test/ui/base-styles.test.ts  |  34 ++++++++
+ apps/web/test/ui/components.test.tsx  | 153 +++++++++++++++++++++++++++++++---
+ 5 files changed, 216 insertions(+), 24 deletions(-)
+
+## Diff
+diff --git a/apps/web/src/ui/ListRow.tsx b/apps/web/src/ui/ListRow.tsx
+index 53a5321..f3ec5cf 100644
+--- a/apps/web/src/ui/ListRow.tsx
++++ b/apps/web/src/ui/ListRow.tsx
+@@ -16,41 +16,43 @@ export function ListGroup(p: { title?: string; children: ReactNode }) {
+         {p.title}
+       </h2>
+       {list}
+     </section>
+   );
+ }
+ 
+ function Chevron() {
+   return (
+     <svg
++      data-chevron=""
+       className={styles.rowChevron}
+       aria-hidden="true"
+       width="20"
+       height="20"
+       viewBox="0 0 24 24"
+       fill="none"
+       stroke="currentColor"
+       strokeWidth="2"
+       strokeLinecap="round"
+       strokeLinejoin="round"
+     >
+       <path d="m9 6 6 6-6 6" />
+     </svg>
+   );
+ }
+ 
+ /**
+  * Ligne de liste de 56 px : icône, libellé, valeur, badge. Avec `href`, un lien ; avec `onClick`, un
+  * bouton (chevron dans les deux cas, sauf l'action dangereuse, isolée sans chevron comme « Se
+- * déconnecter ») ; sans l'un ni l'autre, une ligne d'information. Le lien ou le bouton est nommé par le
+- * libellé seul et décrit par la valeur et le badge.
++ * déconnecter ») ; avec les deux, un lien qui appelle `onClick` avant de naviguer ; sans l'un ni
++ * l'autre, une ligne d'information. Le lien ou le bouton est nommé par le libellé seul et décrit par
++ * la valeur et le badge.
+  */
+ export function ListRow(p: {
+   icon?: ReactNode;
+   label: string;
+   value?: ReactNode;
+   href?: string;
+   onClick?(): void;
+   badge?: ReactNode;
+   tone?: 'danger';
+ }) {
+@@ -88,21 +90,21 @@ export function ListRow(p: {
+     className: styles.row,
+     'data-tone': p.tone,
+     'aria-labelledby': labelId,
+     'aria-describedby':
+       [p.value !== undefined ? valueId : null, p.badge ? badgeId : null].filter(Boolean).join(' ') ||
+       undefined,
+   };
+   return (
+     <li className={styles.listItem}>
+       {p.href !== undefined ? (
+-        <Link href={p.href} {...named}>
++        <Link href={p.href} onClick={p.onClick} {...named}>
+           {content}
+         </Link>
+       ) : p.onClick !== undefined ? (
+         <button type="button" onClick={p.onClick} {...named}>
+           {content}
+         </button>
+       ) : (
+         <div className={styles.row} data-tone={p.tone}>
+           {content}
+         </div>
+diff --git a/apps/web/src/ui/SegmentedProgress.tsx b/apps/web/src/ui/SegmentedProgress.tsx
+index 2c01dcd..e975345 100644
+--- a/apps/web/src/ui/SegmentedProgress.tsx
++++ b/apps/web/src/ui/SegmentedProgress.tsx
+@@ -1,29 +1,31 @@
+ import type { CSSProperties } from 'react';
+ import styles from './ui.module.css';
+ 
+ /**
+  * Barre de progression segmentée de l'onboarding : `total` segments, les `step` premiers faits, dans
+- * le dégradé d'accent qui court sur toute la barre ; « Étape n sur total » dit la même chose en texte.
++ * le dégradé d'accent qui court sur toute la barre ; « Étape n sur total » dit la même chose en texte
++ * (seule copie accessible, la barre étant masquée) : l'étape y est bornée à [0, total] et arrondie comme
++ * pour la barre.
+  */
+ export function SegmentedProgress(p: { step: number; total: number }) {
+-  const done = Math.min(Math.max(p.step, 0), p.total);
++  const done = Number.isFinite(p.step) ? Math.min(Math.max(Math.round(p.step), 0), p.total) : 0;
+   return (
+     <div className={styles.progress}>
+       <div className={styles.segments} aria-hidden="true">
+         {Array.from({ length: p.total }, (_, i) => (
+           <span
+             // biome-ignore lint/suspicious/noArrayIndexKey: segments sans identité propre, toujours dans le même ordre
+             key={i}
+             data-segment=""
+             data-done={i < done ? '' : undefined}
+             className={styles.segment}
+             style={{ '--segment-index': i, '--segment-last': Math.max(p.total - 1, 1) } as CSSProperties}
+           />
+         ))}
+       </div>
+       <p className={styles.progressText}>
+-        Étape {p.step} sur {p.total}
++        Étape {done} sur {p.total}
+       </p>
+     </div>
+   );
+ }
+diff --git a/apps/web/src/ui/ui.module.css b/apps/web/src/ui/ui.module.css
+index a8b4bef..e6f7d1e 100644
+--- a/apps/web/src/ui/ui.module.css
++++ b/apps/web/src/ui/ui.module.css
+@@ -154,25 +154,32 @@
+ 
+ .ghost {
+   color: var(--accent);
+ }
+ 
+ .danger {
+   border-color: var(--danger);
+   color: var(--danger);
+ }
+ 
+-/* Pleine largeur (sur téléphone, la largeur de l'écran moins les marges). */
++/* Pleine largeur sur téléphone (la largeur de l'écran moins les marges) ; au-delà, largeur propre. */
+ .block {
+   width: 100%;
+ }
+ 
++@media (min-width: 600px) {
++  .block {
++    width: auto;
++    min-width: 240px;
++  }
++}
++
+ @media (hover: hover) {
+   .primary:hover:not(:disabled) {
+     background: color-mix(in srgb, var(--accent) 88%, var(--text));
+   }
+ 
+   .secondary:hover:not(:disabled),
+   .ghost:hover:not(:disabled) {
+     background: color-mix(in srgb, var(--accent) 8%, transparent);
+   }
+ 
+@@ -195,21 +202,21 @@
+   padding: 13px var(--space-4);
+   border: 1px solid var(--field-border);
+   border-radius: var(--radius-control);
+   background: var(--field-bg);
+   color: var(--text);
+   font: inherit;
+   font-size: 16px;
+ }
+ 
+ /* Valeur qu'on ne modifie pas ici (date de naissance) : contour pointillé, texte secondaire. */
+-.field input:read-only {
++.field input[readonly] {
+   border-style: dashed;
+   background: transparent;
+   color: var(--text-muted);
+ }
+ 
+ /* Erreur : le contour passe au danger et s'épaissit d'un demi-pixel (1,5 px). */
+ .field [aria-invalid="true"] {
+   border-color: var(--danger);
+   box-shadow: inset 0 0 0 0.5px var(--danger);
+ }
+@@ -626,20 +633,41 @@
+ 
+ .switch[aria-checked="true"] .switchTrack {
+   background: var(--accent);
+ }
+ 
+ .switch[aria-checked="true"] .switchThumb {
+   transform: translateX(20px);
+   background: var(--accent-text);
+ }
+ 
++/* Couleurs forcées (contraste élevé Windows) : les fonds disparaissent, on redessine piste et bouton. */
++@media (forced-colors: active) {
++  .switchTrack {
++    border: 1px solid ButtonText;
++  }
++
++  .switchThumb {
++    forced-color-adjust: none;
++    background: ButtonText;
++  }
++
++  .switch[aria-checked="true"] .switchTrack {
++    forced-color-adjust: none;
++    background: Highlight;
++  }
++
++  .switch[aria-checked="true"] .switchThumb {
++    background: HighlightText;
++  }
++}
++
+ /* Progression de l'onboarding : segments de 6 px, dégradé d'accent étalé sur toute la barre. */
+ .progress {
+   display: flex;
+   align-items: center;
+   gap: var(--space-3);
+ }
+ 
+ .segments {
+   flex: 1;
+   display: grid;
+@@ -803,27 +831,26 @@ button.row:focus-visible {
+   display: flex;
+   flex-direction: column;
+   gap: 1px;
+ }
+ 
+ .rowLabel {
+   font-weight: 600;
+   line-height: 1.25;
+ }
+ 
++/* La valeur passe à la ligne : en grand texte ou zoomée, rien n'est coupé (WCAG 1.4.4 et 1.4.10). */
+ .rowValue {
+-  overflow: hidden;
+   font-size: 0.8125rem;
+   line-height: 1.3;
+   color: var(--text-muted);
+-  text-overflow: ellipsis;
+-  white-space: nowrap;
++  overflow-wrap: anywhere;
+ }
+ 
+ .rowBadge {
+   flex: none;
+   display: flex;
+ }
+ 
+ .rowChevron {
+   flex: none;
+   color: var(--text-muted);
+diff --git a/apps/web/test/ui/base-styles.test.ts b/apps/web/test/ui/base-styles.test.ts
+index de53e47..31a4146 100644
+--- a/apps/web/test/ui/base-styles.test.ts
++++ b/apps/web/test/ui/base-styles.test.ts
+@@ -80,10 +80,44 @@ describe('décor de page (spec refonte §4 : lignes et marge du Carnet, fond nui
+ 
+   it('Salle de nuit : halo néon en haut de page sur le fond nuit (maquette Main), retrait habituel', () => {
+     const nuit = themeTokens('nuit');
+     expect(flat(nuit?.get('--page-decor'))).toBe(
+       'radial-gradient(420px 260px at 50% 230px, rgb(94 216 255 / 0.1), rgb(5 7 13 / 0) 70%)',
+     );
+     expect(nuit?.get('--bg')).toBe('#05070d');
+     expect(nuit?.has('--page-inset-start')).toBe(false);
+   });
+ });
++
++describe('composants de base : lisibles à toutes les tailles et en contraste élevé', () => {
++  it('bouton block : pleine largeur sur téléphone seulement, largeur propre au-delà (spec refonte §6)', () => {
++    expect(rule('.block')?.get('width')).toBe('100%');
++    const wide = declarationsOf(base(), '.block', '(min-width: 600px)');
++    expect(wide?.get('width')).toBe('auto');
++    expect(px(wide?.get('min-width'))).toBeGreaterThanOrEqual(240);
++  });
++
++  it('champ en lecture seule : l’attribut readonly seul, pas :read-only (qui prend aussi désactivé, case, radio)', () => {
++    expect(rule('.field input:read-only')).toBeNull();
++    expect(rule('.field input[readonly]')?.get('border-style')).toBe('dashed');
++  });
++
++  it('valeur d’une ligne de liste : elle passe à la ligne au lieu d’être coupée par des points de suspension', () => {
++    const value = rule('.rowValue');
++    expect(value?.get('text-overflow')).toBeUndefined();
++    expect(value?.get('white-space')).not.toBe('nowrap');
++    expect(value?.get('overflow-wrap')).toBe('anywhere');
++  });
++
++  it('interrupteur en couleurs forcées : piste bordée, bouton et état activé dessinés en couleurs système', () => {
++    const media = '(forced-colors: active)';
++    expect(declarationsOf(base(), '.switchTrack', media)?.get('border')).toBe('1px solid ButtonText');
++    const thumb = declarationsOf(base(), '.switchThumb', media);
++    expect(thumb?.get('forced-color-adjust')).toBe('none');
++    expect(thumb?.get('background')).toBe('ButtonText');
++    const on = declarationsOf(base(), '.switch[aria-checked="true"] .switchTrack', media);
++    expect(on?.get('forced-color-adjust')).toBe('none');
++    expect(on?.get('background')).toBe('Highlight');
++    const onThumb = declarationsOf(base(), '.switch[aria-checked="true"] .switchThumb', media);
++    expect(onThumb?.get('background')).toBe('HighlightText');
++  });
++});
+diff --git a/apps/web/test/ui/components.test.tsx b/apps/web/test/ui/components.test.tsx
+index fec344b..6eed65e 100644
+--- a/apps/web/test/ui/components.test.tsx
++++ b/apps/web/test/ui/components.test.tsx
+@@ -1,15 +1,17 @@
+ import { readFileSync } from 'node:fs';
+ import { resolve } from 'node:path';
+ import { fireEvent, render, screen, within } from '@testing-library/react';
+ import { useState } from 'react';
+ import { describe, expect, it, vi } from 'vitest';
++import { Router } from 'wouter';
++import { memoryLocation } from 'wouter/memory-location';
+ import {
+   Badge,
+   Banner,
+   Button,
+   Chips,
+   ChoiceCard,
+   ChoiceGroup,
+   ChoiceList,
+   EmptyState,
+   Field,
+@@ -26,25 +28,34 @@ import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
+ const css = parseCssBlocks(readFileSync(resolve(import.meta.dirname, '../../src/ui/ui.module.css'), 'utf8'));
+ const rule = (selector: string) => declarationsOf(css, selector);
+ const px = (value: string | undefined) => Number.parseFloat(value ?? '');
+ /** Classe générée pour `.name` du module ; son absence est une erreur, jamais un « undefined » qui passerait. */
+ const cls = (name: string): string => {
+   const generated = styles[name];
+   if (!generated) throw new Error(`classe .${name} absente de ui.module.css`);
+   return generated;
+ };
+ 
++/**
++ * Icône qui s'annoncerait d'elle-même (role img, nommée) : seul l'aria-hidden posé par le composant
++ * autour d'elle la tait. Une icône déjà cachée rendrait vides les vérifications « décorative ».
++ */
+ const icon = (
+-  <svg aria-hidden="true" viewBox="0 0 24 24">
++  <svg role="img" aria-label="haltère" viewBox="0 0 24 24">
+     <path d="M6 7v10" />
+   </svg>
+ );
++/** L'icône d'essai est rendue mais pas annoncée : un ancêtre aria-hidden la retire de l'arbre d'accessibilité. */
++const expectIconSilenced = () => {
++  expect(screen.getByRole('img', { name: 'haltère', hidden: true })).toBeTruthy();
++  expect(screen.queryByRole('img', { name: 'haltère' })).toBeNull();
++};
+ 
+ describe('Button', () => {
+   it('bouton de type button par défaut, désactivable, 52 px de haut', () => {
+     render(
+       <>
+         <Button>Continuer</Button>
+         <Button variant="ghost">Plus tard</Button>
+         <Button variant="danger" disabled>
+           Supprimer
+         </Button>
+@@ -122,39 +133,65 @@ describe('ChoiceCard et ChoiceGroup', () => {
+           checked={false}
+           onChange={() => {}}
+           title="Gagner en force"
+         />
+       </ChoiceGroup>,
+     );
+     const group = screen.getByRole('group', { name: 'Quel est ton objectif principal ?' });
+     const radio = within(group).getByRole('radio', { name: 'Prendre du muscle', checked: true });
+     expect(radio.tagName).toBe('INPUT');
+     expect(within(group).getByRole('radio', { name: 'Gagner en force', checked: false })).toBeTruthy();
++    expectIconSilenced();
+   });
+ 
+   it('la description décrit le choix sans allonger son nom', () => {
+     render(
+       <ChoiceCard
+         type="radio"
+         name="gym"
+         value="g-1"
+         checked={false}
+         onChange={() => {}}
+         title="Salle du centre"
+         description="Lyon · 2 membres visibles"
+       />,
+     );
+     expect(
+       screen.getByRole('radio', { name: 'Salle du centre', description: 'Lyon · 2 membres visibles' }),
+     ).toBeTruthy();
+   });
+ 
++  it('description et describedBy ensemble : la carte est décrite par les deux, dans cet ordre', () => {
++    render(
++      <>
++        <p id="raison">Ton objectif demande une salle.</p>
++        <ChoiceCard
++          type="radio"
++          name="place"
++          value="home"
++          checked={false}
++          disabled
++          onChange={() => {}}
++          title="À la maison"
++          description="Poids du corps et haltères"
++          describedBy="raison"
++        />
++      </>,
++    );
++    expect(
++      screen.getByRole('radio', {
++        name: 'À la maison',
++        description: 'Poids du corps et haltères Ton objectif demande une salle.',
++      }),
++    ).toBeTruthy();
++  });
++
+   it('choix multiple : case à cocher ; onChange au clic, sur la case comme sur la carte', () => {
+     const onChange = vi.fn();
+     render(
+       <ChoiceCard type="checkbox" name="eq" value="bench" checked={false} onChange={onChange} title="Banc" />,
+     );
+     fireEvent.click(screen.getByRole('checkbox', { name: 'Banc', checked: false }));
+     fireEvent.click(screen.getByText('Banc'));
+     expect(onChange).toHaveBeenCalledTimes(2);
+   });
+ 
+@@ -223,38 +260,59 @@ describe('Chips', () => {
+       <Chips
+         name="minutes"
+         legend="Durée d'une séance"
+         value={value}
+         onChange={setValue}
+         options={['45', '60', '75'].map((v) => ({ value: v, label: `${v} min` }))}
+       />
+     );
+   }
+ 
+-  it('radios sous une légende ; un clic change la valeur', () => {
+-    render(<Rhythm />);
++  const options = ['45', '60', '75'].map((v) => ({ value: v, label: `${v} min` }));
++  /** Libellés des pastilles qui portent la coche (la sélection ne passe jamais par la seule couleur). */
++  const checkedLabels = () =>
++    ['45 min', '60 min', '75 min'].filter((t) =>
++      (screen.getByText(t).closest('label') as HTMLElement).querySelector('[data-check]'),
++    );
++
++  it('radios sous une légende ; un clic rend la valeur choisie à onChange', () => {
++    const onChange = vi.fn();
++    render(<Chips name="m" legend="Durée d'une séance" value="60" onChange={onChange} options={options} />);
+     const group = screen.getByRole('group', { name: "Durée d'une séance" });
+     expect(within(group).getByRole('radio', { name: '60 min', checked: true })).toBeTruthy();
+     fireEvent.click(within(group).getByRole('radio', { name: '45 min' }));
++    expect(onChange).toHaveBeenCalledTimes(1);
++    expect(onChange).toHaveBeenCalledWith('45');
++  });
++
++  it('contrôlée par value : la coche et l’état suivent le parent, rien de coché sans valeur', () => {
++    const { rerender } = render(<Rhythm />);
++    const group = screen.getByRole('group', { name: "Durée d'une séance" });
++    fireEvent.click(within(group).getByRole('radio', { name: '45 min' }));
+     expect(within(group).getByRole('radio', { name: '45 min', checked: true })).toBeTruthy();
+     expect(within(group).getByRole('radio', { name: '60 min', checked: false })).toBeTruthy();
++    expect(checkedLabels()).toEqual(['45 min']);
++    rerender(
++      <Chips name="m" legend="Durée d'une séance" value={null} onChange={() => {}} options={options} />,
++    );
++    expect(screen.queryByRole('radio', { checked: true })).toBeNull();
++    expect(checkedLabels()).toEqual([]);
+   });
+ 
+   it('chaque pastille est une cible d’au moins 44 px ; la pastille choisie porte une coche', () => {
+     render(<Rhythm />);
+     const labels = ['45 min', '60 min', '75 min'].map(
+       (t) => screen.getByText(t).closest('label') as HTMLElement,
+     );
+     for (const label of labels) expect(label.classList.contains(cls('chip'))).toBe(true);
+     expect(px(rule('.chip')?.get('min-height'))).toBeGreaterThanOrEqual(44);
+-    const checked = labels.filter((l) => l.querySelector('[data-check]'));
+-    expect(checked.map((l) => l.textContent)).toEqual(['60 min']);
++    expect(checkedLabels()).toEqual(['60 min']);
+   });
+ });
+ 
+ describe('Switch', () => {
+   function Prudent() {
+     const [on, setOn] = useState(false);
+     return (
+       <Switch
+         id="prudent"
+         label="Je préfère une progression plus prudente"
+@@ -272,44 +330,98 @@ describe('Switch', () => {
+       description: "Réglage d'entraînement, pas une donnée de santé.",
+     });
+     expect(sw.id).toBe('prudent');
+     expect(sw.getAttribute('aria-checked')).toBe('false');
+     fireEvent.click(sw);
+     expect(sw.getAttribute('aria-checked')).toBe('true');
+     fireEvent.click(screen.getByText('Je préfère une progression plus prudente'));
+     expect(sw.getAttribute('aria-checked')).toBe('false');
+   });
+ 
+-  it('vrai bouton : Espace et Entrée l’actionnent nativement ; cible d’au moins 44 px', () => {
++  it('aria-checked vient du parent : un nouveau checked sans clic est annoncé', () => {
++    const { rerender } = render(<Switch id="s" label="Rappels" checked={false} onChange={() => {}} />);
++    const sw = screen.getByRole('switch', { name: 'Rappels' });
++    expect(sw.getAttribute('aria-checked')).toBe('false');
++    rerender(<Switch id="s" label="Rappels" checked onChange={() => {}} />);
++    expect(sw.getAttribute('aria-checked')).toBe('true');
++    rerender(<Switch id="s" label="Rappels" checked={false} onChange={() => {}} />);
++    expect(sw.getAttribute('aria-checked')).toBe('false');
++  });
++
++  it('parent qui refuse le changement (enregistrement refusé) : aria-checked reste l’état réel', () => {
++    const onChange = vi.fn();
++    function Refuse() {
++      const [on] = useState(false);
++      return <Switch id="r" label="Profil visible" checked={on} onChange={onChange} />;
++    }
++    render(<Refuse />);
++    const sw = screen.getByRole('switch', { name: 'Profil visible' });
++    fireEvent.click(sw);
++    expect(onChange).toHaveBeenLastCalledWith(true);
++    expect(sw.getAttribute('aria-checked')).toBe('false');
++    fireEvent.click(sw);
++    expect(onChange).toHaveBeenLastCalledWith(true);
++    expect(sw.getAttribute('aria-checked')).toBe('false');
++  });
++
++  it('bouton natif de type button sans tabindex forcé (clavier laissé au navigateur) ; cible de 44 px', () => {
+     const onChange = vi.fn();
+     render(<Switch id="v" label="Visible" checked onChange={onChange} />);
+     const sw = screen.getByRole('switch', { name: 'Visible', checked: true });
+     expect(sw.tagName).toBe('BUTTON');
+     expect(sw.getAttribute('type')).toBe('button');
++    expect(sw.hasAttribute('tabindex')).toBe(false);
+     fireEvent.click(sw);
+     expect(onChange).toHaveBeenCalledWith(false);
+     expect(sw.classList.contains(cls('switch'))).toBe(true);
+     expect(px(rule('.switch')?.get('min-height'))).toBeGreaterThanOrEqual(44);
+     expect(px(rule('.switch')?.get('min-width'))).toBeGreaterThanOrEqual(44);
+   });
+ });
+ 
+ describe('SegmentedProgress', () => {
+   it('« Étape 3 sur 9 », 9 segments dont 3 faits', () => {
+     const { container } = render(<SegmentedProgress step={3} total={9} />);
+     expect(screen.getByText('Étape 3 sur 9')).toBeTruthy();
+     expect(container.querySelectorAll('[data-segment]')).toHaveLength(9);
+-    expect(container.querySelectorAll('[data-segment][data-done]')).toHaveLength(3);
++    const done = (c: Element) =>
++      [...c.querySelectorAll('[data-segment]')].map((s) => s.hasAttribute('data-done'));
++    // Les premiers segments sont faits, dans l'ordre (pas les derniers).
++    expect(done(container)).toEqual([true, true, true, false, false, false, false, false, false]);
+     for (const segment of container.querySelectorAll('[data-segment]')) {
+       expect(segment.closest('[aria-hidden="true"]')).not.toBeNull();
+     }
+   });
++
++  it('étape 0 et étape = total : la barre et le texte disent la même chose', () => {
++    const zero = render(<SegmentedProgress step={0} total={9} />);
++    expect(within(zero.container).getByText('Étape 0 sur 9')).toBeTruthy();
++    expect(zero.container.querySelectorAll('[data-segment][data-done]')).toHaveLength(0);
++    zero.unmount();
++    const full = render(<SegmentedProgress step={9} total={9} />);
++    expect(within(full.container).getByText('Étape 9 sur 9')).toBeTruthy();
++    expect(full.container.querySelectorAll('[data-segment][data-done]')).toHaveLength(9);
++  });
++
++  it('hors bornes ou non entière, l’étape est bornée et arrondie comme la barre (seule copie accessible)', () => {
++    for (const [step, shown] of [
++      [11, 9],
++      [-1, 0],
++      [2.6, 3],
++      [Number.NaN, 0],
++    ] as const) {
++      const { container, unmount } = render(<SegmentedProgress step={step} total={9} />);
++      expect(within(container).getByText(`Étape ${shown} sur 9`)).toBeTruthy();
++      expect(container.querySelectorAll('[data-segment][data-done]')).toHaveLength(shown);
++      unmount();
++    }
++  });
+ });
+ 
+ describe('Badge', () => {
+   it('affiche son texte, quel que soit le ton', () => {
+     render(
+       <>
+         <Badge tone="accent">Admin</Badge>
+         <Badge tone="success">Actif</Badge>
+         <Badge tone="muted">Désactivé</Badge>
+         <Badge tone="warning">En attente</Badge>
+@@ -335,67 +447,82 @@ describe('ListGroup et ListRow', () => {
+         />
+       </ListGroup>,
+     );
+     const region = screen.getByRole('region', { name: 'Compte et appli' });
+     expect(within(region).getByRole('list')).toBeTruthy();
+     const link = within(region).getByRole('link', {
+       name: 'Réglages',
+       description: 'Apparence, synchronisation 1 refusé',
+     });
+     expect(link.getAttribute('href')).toBe('/settings');
+-    expect(link.querySelectorAll('svg').length).toBeGreaterThan(0);
++    expect(link.querySelectorAll('[data-chevron]')).toHaveLength(1);
+     for (const svg of link.querySelectorAll('svg'))
+       expect(svg.closest('[aria-hidden="true"]')).not.toBeNull();
++    expectIconSilenced();
+     expect(link.classList.contains(cls('row'))).toBe(true);
+     expect(px(rule('.row')?.get('min-height'))).toBe(56);
+   });
+ 
+   it('ligne bouton (onClick) avec chevron, ligne danger sans chevron, ligne d’information sans action', () => {
+     const onClick = vi.fn();
+     render(
+       <ListGroup>
+         <ListRow label="Mot de passe" onClick={onClick} />
+         <ListRow label="Se déconnecter" tone="danger" onClick={onClick} />
+         <ListRow label="Connexion" value="En ligne" />
+       </ListGroup>,
+     );
+     const password = screen.getByRole('button', { name: 'Mot de passe' });
+     const logout = screen.getByRole('button', { name: 'Se déconnecter' });
+     fireEvent.click(password);
+     fireEvent.click(logout);
+     expect(onClick).toHaveBeenCalledTimes(2);
+     // Maquettes : une ligne qui mène ailleurs a son chevron ; l'action dangereuse isolée (C01) n'en a pas.
+-    expect(password.querySelector('svg')).not.toBeNull();
+-    expect(logout.querySelector('svg')).toBeNull();
++    expect(password.querySelectorAll('[data-chevron]')).toHaveLength(1);
++    expect(logout.querySelector('[data-chevron]')).toBeNull();
++    expect(screen.getByText('En ligne').closest('li')?.querySelector('[data-chevron]')).toBeNull();
+     expect(screen.getAllByRole('listitem')).toHaveLength(3);
+     expect(screen.queryByRole('link')).toBeNull();
+     expect(screen.queryByRole('button', { name: /Connexion/ })).toBeNull();
+     expect(screen.getByText('En ligne')).toBeTruthy();
+   });
++
++  it('ligne lien avec onClick : le clic appelle onClick puis navigue', () => {
++    const memory = memoryLocation({ path: '/profil', record: true });
++    const markSeen = vi.fn();
++    render(
++      <Router hook={memory.hook}>
++        <ListGroup>
++          <ListRow label="Réglages" href="/settings" onClick={markSeen} />
++        </ListGroup>
++      </Router>,
++    );
++    fireEvent.click(screen.getByRole('link', { name: 'Réglages' }));
++    expect(markSeen).toHaveBeenCalledTimes(1);
++    expect(memory.history).toEqual(['/profil', '/settings']);
++  });
+ });
+ 
+ describe('EmptyState', () => {
+   it('titre, phrase et action ; l’icône est décorative', () => {
+     render(
+       <EmptyState
+         icon={icon}
+         title="Aucune salle"
+         text="Ajoute ta salle pour la retrouver ici."
+         action={<Button>Ajouter une salle</Button>}
+       />,
+     );
+     expect(screen.getByText('Aucune salle')).toBeTruthy();
+     expect(screen.getByText('Ajoute ta salle pour la retrouver ici.')).toBeTruthy();
+     expect(screen.getByRole('button', { name: 'Ajouter une salle' })).toBeTruthy();
+-    expect(
+-      screen.getByText('Aucune salle').parentElement?.querySelector('svg')?.closest('[aria-hidden="true"]'),
+-    ).toBeTruthy();
++    expectIconSilenced();
+   });
+ });
+ 
+ describe('PageHeader', () => {
+   it('back="/profile" : lien « Retour » vers /profile, puis le titre de niveau 1', () => {
+     render(<PageHeader title="Réglages" back="/profile" />);
+     const back = screen.getByRole('link', { name: 'Retour' });
+     expect(back.getAttribute('href')).toBe('/profile');
+     expect(screen.getByRole('heading', { level: 1, name: 'Réglages' })).toBeTruthy();
+     expect(back.classList.contains(cls('backButton'))).toBe(true);

@@ -1,0 +1,68 @@
+<style>
+  .rn { --bg:#070A12; --card:#0E1424; --line:rgba(255,255,255,.08); --fg:#EEF6FB; --mut:#9DB0C4; --ice:#5ED8FF; --vio:#8C6BFF; --chip:#16203A; --warn:#F2B33D; --ok:#3DDC97;
+        font-family: "Barlow", "Segoe UI", system-ui, sans-serif; color: var(--fg); }
+  .rn .phone { width: 300px; height: 640px; background: var(--bg); border-radius: 34px; border: 8px solid #1b2232; overflow: hidden; position: relative; margin: 0 auto; box-shadow: 0 20px 50px rgba(0,0,0,.35); }
+  .rn .scr { padding: 12px 14px 20px; height: 100%; overflow: hidden; display: grid; gap: 8px; align-content: start; font-size: 12.5px; line-height: 1.35; }
+  .rn h4 { margin: 0; font-family: "Chakra Petch", sans-serif; font-size: 19px; }
+  .rn .back { color: var(--ice); font-size: 12px; }
+  .rn .pill { background: var(--chip); color: var(--mut); border-radius: 999px; padding: 3px 8px; font-size: 11px; font-weight: 600; display:inline-block; }
+  .rn .pill.w { color: var(--warn); }
+  .rn .pill.o { color: var(--ok); }
+  .rn .chips { display:flex; gap:5px; flex-wrap:wrap; }
+  .rn .row { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; display:grid; gap: 4px; }
+  .rn .row .t { font-weight: 600; }
+  .rn .prog { height: 6px; border-radius: 3px; background: var(--chip); overflow:hidden; }
+  .rn .prog i { display:block; height:100%; width: 34%; background: linear-gradient(90deg, var(--ice), var(--vio)); }
+  .rn .small { color: var(--mut); font-size: 11px; }
+  .rn .sec { display:flex; justify-content:space-between; align-items:center; font-family:"Chakra Petch",sans-serif; font-size: 11.5px; letter-spacing:.12em; text-transform:uppercase; color: var(--mut); margin-top: 2px; }
+  .rn .cm { color: var(--ice); font-family: "Barlow", sans-serif; letter-spacing: 0; text-transform:none; font-size: 11.5px; font-weight:600; }
+  .rn .comment { border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--card)); border-radius: 0 10px 10px 0; padding: 6px 8px; font-size: 11.5px; }
+  .rn .comment b { display:block; font-size: 10.5px; color: var(--warn); }
+  .rn .btn { border-radius: 12px; text-align:center; padding: 10px; font-weight: 700; font-size: 12.5px; }
+  .rn .btn.p { background: var(--ice); color:#05070D; }
+  .rn .btn.g { background: var(--chip); color: var(--mut); }
+  .rn .why { font-size: 11px; color: var(--mut); text-align:center; margin-top: -4px; }
+  .cap { font-size: 13px; color: var(--text-secondary, #888); margin-top: 8px; }
+</style>
+
+<h2>Écran de relecture : est-ce que ça te va ?</h2>
+<p class="subtitle">Choix noté : B, des onglets dans la fiche (avec l'encadré sécurité toujours visible, quel que soit l'onglet). Voici ma proposition unique pour la relecture à trois.</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">La liste (ce que voit une relectrice)</div>
+    <div class="mockup-body rn" style="padding:16px 0">
+      <div class="phone"><div class="scr">
+        <h4>Relecture des exercices</h4>
+        <div class="row"><span class="small">Cœur du catalogue · 41 / 120 publiées</span><div class="prog"><i></i></div></div>
+        <div class="chips"><span class="pill" style="background:#5ED8FF;color:#05070D">À relire · 12</span><span class="pill w">Feu vert santé · 7</span><span class="pill">Mes commentaires · 3</span></div>
+        <div class="row"><span class="t">Soulevé de terre roumain</span><div class="chips"><span class="pill w">Sensible · dos</span><span class="pill">2 commentaires</span></div></div>
+        <div class="row"><span class="t">Fente bulgare</span><div class="chips"><span class="pill w">Sensible · genoux</span><span class="pill o">Validée par toi</span></div></div>
+        <div class="row"><span class="t">Pont fessier</span><div class="chips"><span class="pill">À relire</span></div></div>
+        <div class="row"><span class="t">Développé militaire</span><div class="chips"><span class="pill w">À revalider · modifiée depuis</span></div></div>
+        <div class="row"><span class="t">Curl haltères</span><div class="chips"><span class="pill o">Prête à publier</span></div></div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Une fiche (vue admin, avec un commentaire)</div>
+    <div class="mockup-body rn" style="padding:16px 0">
+      <div class="phone"><div class="scr">
+        <span class="back">‹ Relecture</span>
+        <h4>Soulevé de terre roumain</h4>
+        <div class="chips"><span class="pill">Révision 3</span><span class="pill w">Sensible · dos · niveau 2</span></div>
+        <div class="sec">Comment faire <span class="cm">+ Commenter</span></div>
+        <div class="row">1. Tiens la barre, mains largeur d'épaules.<br>2. Genoux légèrement fléchis, dos neutre.<br>3. Descends la barre le long des cuisses…</div>
+        <div class="comment"><b>Relectrice santé · étape 3</b>Préciser « jusqu'à mi-tibia au plus pour un débutant ».</div>
+        <div class="sec">Sécurité <span class="cm">+ Commenter</span></div>
+        <div class="row">Arrête si ton dos s'arrondit ou si tu sens une douleur vive.</div>
+        <div class="btn g">Modifier la fiche</div>
+        <div class="btn g">Publier</div>
+        <div class="why">Publier : 1 commentaire ouvert · feu vert santé manquant</div>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+<p class="cap">Une relectrice voit les mêmes écrans sans « Modifier » ni « Publier », avec un bouton « Sécurité vérifiée » à la place. Toi, tu marques chaque commentaire « traité ». Exemples de textes fictifs.</p>

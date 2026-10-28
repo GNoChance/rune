@@ -1,0 +1,210 @@
+# Review package: e67fdde..HEAD
+
+## Commits
+d09678a fix(db): ordre des colonnes de consent_event et tests de contraintes plus stricts
+
+## Files changed
+ apps/server/src/db/migrations/0001_socle.ts | 12 ++++++++----
+ apps/server/test/__snapshots__/schema.sql   |  2 +-
+ apps/server/test/db/migrate.test.ts         |  5 ++++-
+ apps/server/test/db/schema.test.ts          | 10 +++++-----
+ apps/server/test/fixtures/schema-v1.sql     |  2 +-
+ 5 files changed, 19 insertions(+), 12 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/db/migrations/0001_socle.ts b/apps/server/src/db/migrations/0001_socle.ts
+index edd9ccf..5d11ae3 100644
+--- a/apps/server/src/db/migrations/0001_socle.ts
++++ b/apps/server/src/db/migrations/0001_socle.ts
+@@ -1,28 +1,28 @@
+ import { sql } from 'kysely';
+ import type { Migration } from './index';
+ 
+ const FK_USER = 'TEXT REFERENCES user(id) ON DELETE SET NULL';
+ 
+ /** Booléen 0/1 ; `DEFAULT 0` sauf demande contraire. */
+ const bool = (col: string, withDefault = true) =>
+   `${col} INTEGER NOT NULL${withDefault ? ' DEFAULT 0' : ''} CHECK (${col} IN (0,1))`;
+ 
+-/** Gabarit +SYNC (09 §0) ; `deleted` à false pour les tables sans suppression logique. */
+-const sync = (deleted = true) =>
++/** Gabarit +SYNC (09 §0). */
++const sync = () =>
+   [
+     'owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE',
+     'rev INTEGER NOT NULL',
+     'created_at TEXT NOT NULL',
+     'updated_at TEXT NOT NULL',
+     `updated_by ${FK_USER}`,
+-    ...(deleted ? ['deleted_at TEXT'] : []),
++    'deleted_at TEXT',
+   ].join(', ');
+ 
+ const table = (name: string, ...defs: string[]) => `CREATE TABLE ${name} (${defs.join(', ')}) STRICT`;
+ 
+ const TABLES: string[] = [
+   table(
+     'server_meta',
+     'id INTEGER PRIMARY KEY CHECK (id = 1)',
+     'server_epoch TEXT NOT NULL',
+     'epoch_started_at TEXT NOT NULL',
+@@ -107,24 +107,28 @@ const TABLES: string[] = [
+     'created_at TEXT NOT NULL',
+     'last_seen_at TEXT NOT NULL',
+     'expires_at TEXT NOT NULL',
+     bool('must_change_password'),
+     'revoked_at TEXT',
+     "revoked_reason TEXT CHECK (revoked_reason IN ('logout','logout_all','password_change','password_reset','admin','account_deleted'))",
+   ),
+   table(
+     'consent_event',
+     'id TEXT PRIMARY KEY',
+-    sync(false),
++    'owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE',
+     "type TEXT NOT NULL CHECK (type IN ('health','ai_coach'))",
+     "action TEXT NOT NULL CHECK (action IN ('grant','withdraw'))",
+     'text_version TEXT NOT NULL',
++    'rev INTEGER NOT NULL',
++    'created_at TEXT NOT NULL',
++    'updated_at TEXT NOT NULL',
++    `updated_by ${FK_USER}`,
+   ),
+   table(
+     'security_event',
+     'id TEXT PRIMARY KEY',
+     'at TEXT NOT NULL',
+     'type TEXT NOT NULL',
+     'actor_id TEXT',
+     'target_id TEXT',
+     'tailnet_ip TEXT',
+     "outcome TEXT NOT NULL CHECK (outcome IN ('success','failure','blocked'))",
+diff --git a/apps/server/test/__snapshots__/schema.sql b/apps/server/test/__snapshots__/schema.sql
+index 21a8bd3..c4b28cd 100644
+--- a/apps/server/test/__snapshots__/schema.sql
++++ b/apps/server/test/__snapshots__/schema.sql
+@@ -1,12 +1,12 @@
+ CREATE TABLE applied_op (op_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, entity TEXT NOT NULL, row_id TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('applied','applied_partial','duplicate','rejected')), assigned_rev INTEGER, applied_at TEXT NOT NULL) STRICT;
+-CREATE TABLE consent_event (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, type TEXT NOT NULL CHECK (type IN ('health','ai_coach')), action TEXT NOT NULL CHECK (action IN ('grant','withdraw')), text_version TEXT NOT NULL) STRICT;
++CREATE TABLE consent_event (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, type TEXT NOT NULL CHECK (type IN ('health','ai_coach')), action TEXT NOT NULL CHECK (action IN ('grant','withdraw')), text_version TEXT NOT NULL, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL) STRICT;
+ CREATE TABLE gym (id TEXT PRIMARY KEY, name TEXT NOT NULL CHECK (length(name) BETWEEN 2 AND 60), name_key TEXT NOT NULL, city TEXT NOT NULL CHECK (length(city) BETWEEN 2 AND 60), city_key TEXT NOT NULL, load_settings TEXT NOT NULL CHECK (json_valid(load_settings)), created_by TEXT REFERENCES user(id) ON DELETE SET NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT, UNIQUE (name_key, city_key)) STRICT;
+ CREATE TABLE gym_equipment (id TEXT PRIMARY KEY, gym_id TEXT NOT NULL REFERENCES gym(id) ON DELETE CASCADE, equipment_code TEXT NOT NULL, added_by TEXT REFERENCES user(id) ON DELETE SET NULL, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT, CHECK (id = gym_id || ':' || equipment_code)) STRICT;
+ CREATE TABLE gym_history (id TEXT PRIMARY KEY, gym_id TEXT NOT NULL REFERENCES gym(id) ON DELETE CASCADE, author_id TEXT REFERENCES user(id) ON DELETE SET NULL, at TEXT NOT NULL, action TEXT NOT NULL CHECK (action IN ('create','update_info','add_equipment','remove_equipment','update_load_settings')), detail TEXT NOT NULL CHECK (json_valid(detail))) STRICT;
+ CREATE TABLE health_screening (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, caution INTEGER CHECK (caution IN (0,1)), questionnaire_version TEXT, answered_at TEXT, CHECK (id = owner_id), CHECK (deleted_at IS NOT NULL OR (caution IS NOT NULL AND questionnaire_version IS NOT NULL AND answered_at IS NOT NULL))) STRICT;
+ CREATE TABLE home_equipment (id TEXT PRIMARY KEY, place_id TEXT NOT NULL REFERENCES place(id) ON DELETE CASCADE, equipment_code TEXT NOT NULL, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, CHECK (id = place_id || ':' || equipment_code)) STRICT;
+ CREATE TABLE invitation (id TEXT PRIMARY KEY, code_hash TEXT NOT NULL UNIQUE, note TEXT CHECK (length(note) <= 60), birth_date TEXT, is_admin_bootstrap INTEGER NOT NULL DEFAULT 0 CHECK (is_admin_bootstrap IN (0,1)), created_by TEXT REFERENCES user(id) ON DELETE SET NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, used_by TEXT REFERENCES user(id) ON DELETE SET NULL, revoked_at TEXT) STRICT;
+ CREATE TABLE limitation (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, body_area TEXT CHECK (body_area IN ('shoulder','elbow','wrist_hand','neck','upper_back','lower_back','hip','knee','ankle_foot','other')), side TEXT CHECK (side IN ('left','right','both','not_applicable')), severity TEXT CHECK (severity IN ('mild','severe')), note TEXT CHECK (length(note) <= 200), active INTEGER CHECK (active IN (0,1)), CHECK (deleted_at IS NOT NULL OR (body_area IS NOT NULL AND side IS NOT NULL AND severity IS NOT NULL AND active IS NOT NULL))) STRICT;
+ CREATE TABLE password_reset (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, code_hash TEXT NOT NULL UNIQUE, created_by TEXT REFERENCES user(id) ON DELETE SET NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, cancelled_at TEXT) STRICT;
+ CREATE TABLE place (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, kind TEXT NOT NULL CHECK (kind IN ('gym','home')), gym_id TEXT REFERENCES gym(id), name TEXT CHECK (length(name) <= 30), is_primary INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0,1)), visible_at_gym INTEGER NOT NULL DEFAULT 0 CHECK (visible_at_gym IN (0,1)), load_settings TEXT CHECK (json_valid(load_settings)), CHECK (kind = 'home' OR load_settings IS NULL), CHECK ((kind = 'gym') = (gym_id IS NOT NULL)), CHECK (kind = 'home' OR name IS NULL)) STRICT;
+ CREATE TABLE schema_migrations (id TEXT PRIMARY KEY, breaking INTEGER NOT NULL CHECK (breaking IN (0,1)), applied_at TEXT NOT NULL) STRICT;
+diff --git a/apps/server/test/db/migrate.test.ts b/apps/server/test/db/migrate.test.ts
+index a823d01..99012a6 100644
+--- a/apps/server/test/db/migrate.test.ts
++++ b/apps/server/test/db/migrate.test.ts
+@@ -59,13 +59,16 @@ describe('migrate', () => {
+       code: 'unknown_breaking_migration',
+     });
+     expect(await tables()).toEqual(['schema_migrations']);
+   });
+ 
+   it('migrations inconnues non cassantes permises', async () => {
+     await migrate(db, [], clock);
+     await sql`INSERT INTO schema_migrations (id, breaking, applied_at) VALUES ('0002_future', 0, 'x')`.execute(
+       db,
+     );
+-    expect(await migrate(db, [], clock)).toEqual({ applied: [], unknownNonBreaking: ['0002_future'] });
++    expect(await migrate(db, MIGRATIONS, clock)).toEqual({
++      applied: ['0001_socle'],
++      unknownNonBreaking: ['0002_future'],
++    });
+   });
+ });
+diff --git a/apps/server/test/db/schema.test.ts b/apps/server/test/db/schema.test.ts
+index 25867e1..c6ff6da 100644
+--- a/apps/server/test/db/schema.test.ts
++++ b/apps/server/test/db/schema.test.ts
+@@ -1,26 +1,26 @@
+ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+ import { migrate } from '../../src/db/migrate';
+ import { MIGRATIONS } from '../../src/db/migrations/index';
+ import { openDatabase } from '../../src/db/open';
+ import { FakeClock } from '../support';
+ import { dumpSchema } from './schema-dump';
+ 
+-const REFUS = /CHECK constraint failed|UNIQUE constraint failed|FOREIGN KEY constraint failed/;
+ const S = "1, '2026-10-06T10:00:00.000Z', '2026-10-06T10:00:00.000Z'";
+ const x = (n: number) => 'x'.repeat(n);
+ 
+ describe('schéma du socle', () => {
+   let h: ReturnType<typeof openDatabase>;
+   const run = (q: string) => h.sqlite.exec(q);
+   const ok = (q: string) => expect(() => run(q)).not.toThrow();
+-  const bad = (q: string) => expect(() => run(q)).toThrow(REFUS);
++  const bad = (q: string, kind: 'CHECK' | 'UNIQUE' | 'FOREIGN KEY' = 'CHECK') =>
++    expect(() => run(q)).toThrow(`${kind} constraint failed`);
+   const count = (q: string) => (h.sqlite.prepare(q).get() as { n: number }).n;
+ 
+   const place = (id: string, owner: string, cols: string, vals: string) =>
+     `INSERT INTO place (id, owner_id, rev, created_at, updated_at, ${cols}) VALUES ('${id}', '${owner}', ${S}, ${vals})`;
+   const gym = (id: string, name: string, key = id) =>
+     `INSERT INTO gym (id, name, name_key, city, city_key, load_settings, rev, created_at, updated_at) VALUES ('${id}', '${name}', '${key}', 'Paris', '${key}', '{}', ${S})`;
+   const profile = (cols: string, vals: string, id = 'u1') =>
+     `INSERT INTO training_profile (id, owner_id, rev, created_at, updated_at, ${cols}) VALUES ('${id}', 'u1', ${S}, ${vals})`;
+   const consent = (action: string) =>
+     `INSERT INTO consent_event (id, owner_id, type, action, text_version, rev, created_at, updated_at) VALUES ('c-${action}', 'u1', 'health', '${action}', 'v1', ${S})`;
+@@ -76,35 +76,35 @@ describe('schéma du socle', () => {
+     bad(limitation(null, null));
+     bad(limitation('tete', null));
+     bad(limitation('knee', x(201)));
+     ok(limitation('knee', x(200)));
+   });
+ 
+   it('place', () => {
+     run(gym('g1', 'Salle un'));
+     run(gym('g2', 'Salle deux'));
+     ok(place('p1', 'u1', 'kind, is_primary', "'home', 1"));
+-    bad(place('p2', 'u1', 'kind, is_primary', "'home', 1"));
++    bad(place('p2', 'u1', 'kind, is_primary', "'home', 1"), 'UNIQUE');
+     ok(place('p3', 'u1', 'kind, is_primary, deleted_at', "'home', 1, 'x'"));
+     ok(place('p4', 'u1', 'kind, gym_id', "'gym', 'g1'"));
+-    bad(place('p5', 'u1', 'kind, gym_id', "'gym', 'g1'"));
++    bad(place('p5', 'u1', 'kind, gym_id', "'gym', 'g1'"), 'UNIQUE');
+     ok(place('p6', 'u2', 'kind, gym_id', "'gym', 'g1'"));
+     bad(place('p7', 'u1', 'kind', "'gym'"));
+     bad(place('p8', 'u2', 'kind, gym_id, load_settings', "'gym', 'g2', '{}'"));
+     bad(place('p9', 'u2', 'kind, gym_id, name', "'gym', 'g2', 'x'"));
+     bad(place('pa', 'u2', 'kind, name', `'home', '${x(31)}'`));
+     ok(place('pb', 'u2', 'kind, name', `'home', '${x(30)}'`));
+   });
+ 
+   it('gym, équipements, invitation, session et journaux', () => {
+     ok(gym('g1', 'Salle un'));
+-    bad(gym('g2', 'Salle deux', 'g1'));
++    bad(gym('g2', 'Salle deux', 'g1'), 'UNIQUE');
+     bad(gym('g3', 'X'));
+     const ge = (id: string) =>
+       `INSERT INTO gym_equipment (id, gym_id, equipment_code, rev, created_at, updated_at) VALUES ('${id}', 'g1', 'barbell', ${S})`;
+     bad(ge('g1:dumbbell'));
+     ok(ge('g1:barbell'));
+     ok(place('p1', 'u1', 'kind', "'home'"));
+     const he = (id: string) =>
+       `INSERT INTO home_equipment (id, place_id, equipment_code, owner_id, rev, created_at, updated_at) VALUES ('${id}', 'p1', 'bench', 'u1', ${S})`;
+     bad(he('p1:other'));
+     ok(he('p1:bench'));
+diff --git a/apps/server/test/fixtures/schema-v1.sql b/apps/server/test/fixtures/schema-v1.sql
+index 21a8bd3..c4b28cd 100644
+--- a/apps/server/test/fixtures/schema-v1.sql
++++ b/apps/server/test/fixtures/schema-v1.sql
+@@ -1,12 +1,12 @@
+ CREATE TABLE applied_op (op_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, entity TEXT NOT NULL, row_id TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('applied','applied_partial','duplicate','rejected')), assigned_rev INTEGER, applied_at TEXT NOT NULL) STRICT;
+-CREATE TABLE consent_event (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, type TEXT NOT NULL CHECK (type IN ('health','ai_coach')), action TEXT NOT NULL CHECK (action IN ('grant','withdraw')), text_version TEXT NOT NULL) STRICT;
++CREATE TABLE consent_event (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, type TEXT NOT NULL CHECK (type IN ('health','ai_coach')), action TEXT NOT NULL CHECK (action IN ('grant','withdraw')), text_version TEXT NOT NULL, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL) STRICT;
+ CREATE TABLE gym (id TEXT PRIMARY KEY, name TEXT NOT NULL CHECK (length(name) BETWEEN 2 AND 60), name_key TEXT NOT NULL, city TEXT NOT NULL CHECK (length(city) BETWEEN 2 AND 60), city_key TEXT NOT NULL, load_settings TEXT NOT NULL CHECK (json_valid(load_settings)), created_by TEXT REFERENCES user(id) ON DELETE SET NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT, UNIQUE (name_key, city_key)) STRICT;
+ CREATE TABLE gym_equipment (id TEXT PRIMARY KEY, gym_id TEXT NOT NULL REFERENCES gym(id) ON DELETE CASCADE, equipment_code TEXT NOT NULL, added_by TEXT REFERENCES user(id) ON DELETE SET NULL, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT, CHECK (id = gym_id || ':' || equipment_code)) STRICT;
+ CREATE TABLE gym_history (id TEXT PRIMARY KEY, gym_id TEXT NOT NULL REFERENCES gym(id) ON DELETE CASCADE, author_id TEXT REFERENCES user(id) ON DELETE SET NULL, at TEXT NOT NULL, action TEXT NOT NULL CHECK (action IN ('create','update_info','add_equipment','remove_equipment','update_load_settings')), detail TEXT NOT NULL CHECK (json_valid(detail))) STRICT;
+ CREATE TABLE health_screening (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, caution INTEGER CHECK (caution IN (0,1)), questionnaire_version TEXT, answered_at TEXT, CHECK (id = owner_id), CHECK (deleted_at IS NOT NULL OR (caution IS NOT NULL AND questionnaire_version IS NOT NULL AND answered_at IS NOT NULL))) STRICT;
+ CREATE TABLE home_equipment (id TEXT PRIMARY KEY, place_id TEXT NOT NULL REFERENCES place(id) ON DELETE CASCADE, equipment_code TEXT NOT NULL, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, CHECK (id = place_id || ':' || equipment_code)) STRICT;
+ CREATE TABLE invitation (id TEXT PRIMARY KEY, code_hash TEXT NOT NULL UNIQUE, note TEXT CHECK (length(note) <= 60), birth_date TEXT, is_admin_bootstrap INTEGER NOT NULL DEFAULT 0 CHECK (is_admin_bootstrap IN (0,1)), created_by TEXT REFERENCES user(id) ON DELETE SET NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, used_by TEXT REFERENCES user(id) ON DELETE SET NULL, revoked_at TEXT) STRICT;
+ CREATE TABLE limitation (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, body_area TEXT CHECK (body_area IN ('shoulder','elbow','wrist_hand','neck','upper_back','lower_back','hip','knee','ankle_foot','other')), side TEXT CHECK (side IN ('left','right','both','not_applicable')), severity TEXT CHECK (severity IN ('mild','severe')), note TEXT CHECK (length(note) <= 200), active INTEGER CHECK (active IN (0,1)), CHECK (deleted_at IS NOT NULL OR (body_area IS NOT NULL AND side IS NOT NULL AND severity IS NOT NULL AND active IS NOT NULL))) STRICT;
+ CREATE TABLE password_reset (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, code_hash TEXT NOT NULL UNIQUE, created_by TEXT REFERENCES user(id) ON DELETE SET NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, cancelled_at TEXT) STRICT;
+ CREATE TABLE place (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, rev INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT REFERENCES user(id) ON DELETE SET NULL, deleted_at TEXT, kind TEXT NOT NULL CHECK (kind IN ('gym','home')), gym_id TEXT REFERENCES gym(id), name TEXT CHECK (length(name) <= 30), is_primary INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0,1)), visible_at_gym INTEGER NOT NULL DEFAULT 0 CHECK (visible_at_gym IN (0,1)), load_settings TEXT CHECK (json_valid(load_settings)), CHECK (kind = 'home' OR load_settings IS NULL), CHECK ((kind = 'gym') = (gym_id IS NOT NULL)), CHECK (kind = 'home' OR name IS NULL)) STRICT;
+ CREATE TABLE schema_migrations (id TEXT PRIMARY KEY, breaking INTEGER NOT NULL CHECK (breaking IN (0,1)), applied_at TEXT NOT NULL) STRICT;

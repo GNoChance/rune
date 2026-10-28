@@ -1,0 +1,562 @@
+# Review package: 69ee5d9..HEAD
+
+## Commits
+9b12646 feat(synchro): catalogue minimal servi par ETag
+
+## Files changed
+ apps/server/src/catalog/loader.ts       | 112 +++++++++++++++++++++++++++
+ apps/server/src/catalog/routes.ts       |  28 +++++++
+ apps/server/src/routes.ts               |   2 +
+ apps/server/src/startup.ts              |   3 +-
+ apps/server/test/catalog/loader.test.ts | 133 ++++++++++++++++++++++++++++++++
+ apps/server/test/catalog/routes.test.ts |  67 ++++++++++++++++
+ data/LICENSE                            |   1 +
+ data/exercises/.gitkeep                 |   0
+ data/illustrations/files/.gitkeep       |   0
+ data/illustrations/manifest.json        |   1 +
+ data/programs/.gitkeep                  |   0
+ packages/contracts/src/catalog.ts       |  19 +++++
+ packages/contracts/src/index.ts         |   1 +
+ packages/contracts/test/catalog.test.ts |  27 +++++++
+ 14 files changed, 393 insertions(+), 1 deletion(-)
+
+## Diff
+diff --git a/apps/server/src/catalog/loader.ts b/apps/server/src/catalog/loader.ts
+new file mode 100644
+index 0000000..d9e9d6c
+--- /dev/null
++++ b/apps/server/src/catalog/loader.ts
+@@ -0,0 +1,112 @@
++import { createHash } from 'node:crypto';
++import { readdir, readFile } from 'node:fs/promises';
++import { join } from 'node:path';
++import { type CatalogBundle, IllustrationRef } from '@appsport/contracts';
++import { z } from 'zod';
++import { getServerMeta } from '../db/server-meta';
++import type { AppDeps } from '../deps';
++import type { StartupTask } from '../startup';
++
++export class CatalogLoadError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = 'CatalogLoadError';
++  }
++}
++
++const loaded = new WeakMap<AppDeps, CatalogBundle>();
++
++/** Dernier catalogue chargé avec succès pour ces dépendances, sinon null. */
++export function getLoadedCatalog(deps: AppDeps): CatalogBundle | null {
++  return loaded.get(deps) ?? null;
++}
++
++function isMissing(error: unknown): boolean {
++  return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
++}
++
++async function readJson(path: string): Promise<unknown> {
++  let raw: string;
++  try {
++    raw = await readFile(path, 'utf8');
++  } catch (error) {
++    if (isMissing(error)) throw error;
++    throw new CatalogLoadError(`fichier illisible : ${path}`);
++  }
++  try {
++    return JSON.parse(raw);
++  } catch {
++    throw new CatalogLoadError(`JSON invalide : ${path}`);
++  }
++}
++
++async function readManifest(dir: string): Promise<IllustrationRef[]> {
++  let json: unknown;
++  try {
++    json = await readJson(join(dir, 'illustrations', 'manifest.json'));
++  } catch (error) {
++    if (isMissing(error)) return [];
++    throw error;
++  }
++  const parsed = z.array(IllustrationRef).safeParse(json);
++  if (!parsed.success) throw new CatalogLoadError('manifeste des illustrations invalide');
++  return parsed.data;
++}
++
++async function readPrograms(dir: string): Promise<unknown[]> {
++  let names: string[];
++  try {
++    names = await readdir(join(dir, 'programs'));
++  } catch (error) {
++    if (isMissing(error)) return [];
++    throw new CatalogLoadError('dossier programs illisible');
++  }
++  const files = names.filter((n) => n.endsWith('.json')).sort();
++  return Promise.all(files.map((n) => readJson(join(dir, 'programs', n))));
++}
++
++/** Sérialisation canonique : clés triées récursivement, sans espaces. */
++function canonical(value: unknown): string {
++  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
++  if (value !== null && typeof value === 'object') {
++    const entries = Object.entries(value as Record<string, unknown>)
++      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
++      .map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`);
++    return `{${entries.join(',')}}`;
++  }
++  return JSON.stringify(value);
++}
++
++/** Lit le contenu, calcule la version et ne touche à server_meta que si elle change. */
++export async function loadCatalog(deps: AppDeps): Promise<CatalogBundle> {
++  const dir = deps.config.contentDir;
++  const content = {
++    adviceSheets: [] as unknown[],
++    exercises: [] as unknown[],
++    illustrations: await readManifest(dir),
++    programTemplates: await readPrograms(dir),
++  };
++  const version = createHash('sha256').update(canonical(content)).digest('hex');
++  const meta = await getServerMeta(deps.db);
++  if (meta.catalogVersion !== version) {
++    await deps.db
++      .updateTable('serverMeta')
++      .set({ catalogVersion: version, catalogUpdatedAt: deps.clock.now().toISOString() })
++      .where('id', '=', 1)
++      .execute();
++  }
++  const bundle: CatalogBundle = { version, ...content };
++  loaded.set(deps, bundle);
++  return bundle;
++}
++
++export const CATALOG_STARTUP_TASK: StartupTask = {
++  name: 'catalog',
++  async run(deps) {
++    try {
++      await loadCatalog(deps);
++    } catch (error) {
++      deps.logger.error('catalog_invalid', { event: error instanceof Error ? error.name : 'unknown' });
++    }
++  },
++};
+diff --git a/apps/server/src/catalog/routes.ts b/apps/server/src/catalog/routes.ts
+new file mode 100644
+index 0000000..18b3fee
+--- /dev/null
++++ b/apps/server/src/catalog/routes.ts
+@@ -0,0 +1,28 @@
++import { Hono } from 'hono';
++import type { AppEnv } from '../app-env';
++import { requireUser } from '../auth/session';
++import type { AppDeps } from '../deps';
++import { getLoadedCatalog, loadCatalog } from './loader';
++
++const etagMatches = (header: string | undefined, etag: string): boolean =>
++  (header ?? '')
++    .split(',')
++    .map((v) => v.trim().replace(/^W\//, ''))
++    .includes(etag);
++
++/** Monté sous /api/catalog : le catalogue complet, validé par ETag = version. */
++export function catalogRoutes(deps: AppDeps): Hono<AppEnv> {
++  const routes = new Hono<AppEnv>();
++  routes.use('*', requireUser);
++
++  routes.get('/', async (c) => {
++    const bundle = getLoadedCatalog(deps) ?? (await loadCatalog(deps));
++    const etag = `"${bundle.version}"`;
++    c.header('ETag', etag);
++    c.header('Cache-Control', 'no-cache');
++    if (etagMatches(c.req.header('If-None-Match'), etag)) return c.body(null, 304);
++    return c.json(bundle);
++  });
++
++  return routes;
++}
+diff --git a/apps/server/src/routes.ts b/apps/server/src/routes.ts
+index 568a82f..13a415e 100644
+--- a/apps/server/src/routes.ts
++++ b/apps/server/src/routes.ts
+@@ -1,16 +1,17 @@
+ import type { Hono } from 'hono';
+ import { adminRoutes } from './admin/routes';
+ import type { AppEnv } from './app-env';
+ import { adminInvitationRoutes, invitationRoutes } from './auth/invitation-routes';
+ import { meRoutes } from './auth/me-routes';
+ import { authRoutes } from './auth/routes';
++import { catalogRoutes } from './catalog/routes';
+ import type { AppDeps } from './deps';
+ import { healthRoutes } from './health/routes';
+ import { gymRoutes } from './places/gym-routes';
+ import { placeRoutes } from './places/place-routes';
+ import { consentRoutes } from './privacy/consent-routes';
+ import { profileRoutes } from './profile/routes';
+ import { syncRoutes } from './sync/routes';
+ 
+ /** Un routeur par ligne ; les routeurs des tâches suivantes s'ajoutent ici. */
+ export function mountRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
+@@ -18,11 +19,12 @@ export function mountRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
+   app.route('/api/auth', authRoutes(deps));
+   app.route('/api/me', meRoutes(deps));
+   app.route('/api/me', profileRoutes(deps));
+   app.route('/api/me', consentRoutes(deps));
+   app.route('/api/gyms', gymRoutes(deps));
+   app.route('/api/places', placeRoutes(deps));
+   app.route('/api/invitations', invitationRoutes(deps));
+   app.route('/api/admin/invitations', adminInvitationRoutes(deps));
+   app.route('/api/admin', adminRoutes(deps));
+   app.route('/api/sync', syncRoutes(deps));
++  app.route('/api/catalog', catalogRoutes(deps));
+ }
+diff --git a/apps/server/src/startup.ts b/apps/server/src/startup.ts
+index 42d9756..b62f00d 100644
+--- a/apps/server/src/startup.ts
++++ b/apps/server/src/startup.ts
+@@ -1,27 +1,28 @@
+ import type { DatabaseSync } from 'node:sqlite';
+ import type { Kysely } from 'kysely';
++import { CATALOG_STARTUP_TASK } from './catalog/loader';
+ import type { AppConfig } from './config';
+ import { migrate } from './db/migrate';
+ import { MIGRATIONS } from './db/migrations/index';
+ import { openDatabase } from './db/open';
+ import type { Database } from './db/schema';
+ import { type AppDeps, type Clock, systemClock } from './deps';
+ import type { Logger } from './logger';
+ 
+ export interface StartupTask {
+   name: string;
+   run(deps: AppDeps): Promise<void>;
+ }
+ 
+ /** Tâches exécutées avant l'écoute ; les tâches suivantes s'ajoutent ici. */
+-export const STARTUP_TASKS: StartupTask[] = [];
++export const STARTUP_TASKS: StartupTask[] = [CATALOG_STARTUP_TASK];
+ 
+ /** Ouvre la base et applique les migrations ; en cas d'échec, la base est refermée avant de relancer. */
+ export async function openMigrated(
+   config: AppConfig,
+   logger: Logger,
+   clock: Clock = systemClock,
+ ): Promise<{ sqlite: DatabaseSync; db: Kysely<Database> }> {
+   const opened = openDatabase(config.dbPath);
+   try {
+     const { unknownNonBreaking } = await migrate(opened.db, MIGRATIONS, clock);
+diff --git a/apps/server/test/catalog/loader.test.ts b/apps/server/test/catalog/loader.test.ts
+new file mode 100644
+index 0000000..28cc7eb
+--- /dev/null
++++ b/apps/server/test/catalog/loader.test.ts
+@@ -0,0 +1,133 @@
++import { createHash } from 'node:crypto';
++import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { dirname, join, resolve } from 'node:path';
++import { fileURLToPath } from 'node:url';
++import { afterEach, describe, expect, it } from 'vitest';
++import {
++  CATALOG_STARTUP_TASK,
++  CatalogLoadError,
++  getLoadedCatalog,
++  loadCatalog,
++} from '../../src/catalog/loader';
++import { getServerMeta } from '../../src/db/server-meta';
++import { createLogger } from '../../src/logger';
++import { STARTUP_TASKS } from '../../src/startup';
++import { createTestContext, type TestContext } from '../support';
++
++const REPO_DATA = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../data');
++const sha = (s: string): string => createHash('sha256').update(s).digest('hex');
++
++let ctx: TestContext;
++const dirs: string[] = [];
++afterEach(() => {
++  ctx?.close();
++  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
++});
++
++function contentDir(files: Record<string, string>): string {
++  const dir = mkdtempSync(join(tmpdir(), 'appsport-catalog-'));
++  dirs.push(dir);
++  for (const [name, content] of Object.entries(files)) {
++    mkdirSync(dirname(join(dir, name)), { recursive: true });
++    writeFileSync(join(dir, name), content);
++  }
++  return dir;
++}
++
++describe('data/', () => {
++  it('data/LICENSE existe', () => {
++    expect(existsSync(join(REPO_DATA, 'LICENSE'))).toBe(true);
++  });
++});
++
++describe('loadCatalog', () => {
++  it('le dossier data/ du dépôt donne un catalogue vide et pose la version', async () => {
++    ctx = await createTestContext({ config: { contentDir: REPO_DATA } });
++    const b = await loadCatalog(ctx.deps);
++    expect(b).toMatchObject({ exercises: [], illustrations: [], programTemplates: [], adviceSheets: [] });
++    expect(b.version).toBe(
++      sha('{"adviceSheets":[],"exercises":[],"illustrations":[],"programTemplates":[]}'),
++    );
++    expect((await getServerMeta(ctx.deps.db)).catalogVersion).toBe(b.version);
++    expect(getLoadedCatalog(ctx.deps)).toEqual(b);
++  });
++
++  it('manifeste absent : illustrations vides', async () => {
++    ctx = await createTestContext({ config: { contentDir: contentDir({}) } });
++    expect((await loadCatalog(ctx.deps)).illustrations).toEqual([]);
++  });
++
++  it('programs/*.json triés par nom ; l ordre des clés ne change pas la version', async () => {
++    const manifest = JSON.stringify([{ id: 'squat', file: 'squat.0a1b2c3d.svg' }]);
++    const a = contentDir({
++      'illustrations/manifest.json': manifest,
++      'programs/b.json': '{"id":"b","title":"B"}',
++      'programs/a.json': '{"id":"a"}',
++    });
++    const b = contentDir({
++      'illustrations/manifest.json': manifest,
++      'programs/b.json': '{"title":"B","id":"b"}',
++      'programs/a.json': '{"id":"a"}',
++    });
++    ctx = await createTestContext({ config: { contentDir: a } });
++    const first = await loadCatalog(ctx.deps);
++    expect(first.programTemplates.map((p) => (p as { id: string }).id)).toEqual(['a', 'b']);
++    expect(first.illustrations).toEqual([{ id: 'squat', file: 'squat.0a1b2c3d.svg' }]);
++    ctx.close();
++    ctx = await createTestContext({ config: { contentDir: b } });
++    expect((await loadCatalog(ctx.deps)).version).toBe(first.version);
++  });
++
++  it('contenu modifié : nouvelle version et catalogUpdatedAt ; identique : aucune écriture', async () => {
++    const dir = contentDir({ 'programs/a.json': '{"id":"a"}' });
++    ctx = await createTestContext({ config: { contentDir: dir } });
++    const v1 = await loadCatalog(ctx.deps);
++    const m1 = await getServerMeta(ctx.deps.db);
++    ctx.clock.set('2026-10-07T08:00:00.000Z');
++    await loadCatalog(ctx.deps);
++    expect(await getServerMeta(ctx.deps.db)).toEqual(m1);
++    writeFileSync(join(dir, 'programs/a.json'), '{"id":"a","v":2}');
++    const v2 = await loadCatalog(ctx.deps);
++    expect(v2.version).not.toBe(v1.version);
++    expect(await getServerMeta(ctx.deps.db)).toMatchObject({
++      catalogVersion: v2.version,
++      catalogUpdatedAt: '2026-10-07T08:00:00.000Z',
++    });
++  });
++
++  it.each([
++    ['fichier invalide', { 'illustrations/manifest.json': '[{"id":"x","file":"pas-bon"}]' }],
++    ['JSON illisible', { 'illustrations/manifest.json': '[' }],
++    ['programme illisible', { 'programs/a.json': '{' }],
++  ])('%s : CatalogLoadError, server_meta inchangé', async (_name, files) => {
++    ctx = await createTestContext({ config: { contentDir: contentDir(files) } });
++    const before = await getServerMeta(ctx.deps.db);
++    await expect(loadCatalog(ctx.deps)).rejects.toBeInstanceOf(CatalogLoadError);
++    expect(await getServerMeta(ctx.deps.db)).toEqual(before);
++    expect(getLoadedCatalog(ctx.deps)).toBeNull();
++  });
++});
++
++describe('CATALOG_STARTUP_TASK', () => {
++  it('est enregistrée', () => {
++    expect(STARTUP_TASKS).toContain(CATALOG_STARTUP_TASK);
++    expect(CATALOG_STARTUP_TASK.name).toBe('catalog');
++  });
++
++  it('une erreur est journalisée sans interrompre le démarrage', async () => {
++    const lines: string[] = [];
++    ctx = await createTestContext({
++      config: { contentDir: contentDir({ 'illustrations/manifest.json': '[' }) },
++      deps: { logger: createLogger((l) => lines.push(l)) },
++    });
++    await expect(CATALOG_STARTUP_TASK.run(ctx.deps)).resolves.toBeUndefined();
++    expect(lines.join('\n')).toContain('catalog_invalid');
++  });
++
++  it('charge le catalogue quand il est valide', async () => {
++    ctx = await createTestContext({ config: { contentDir: REPO_DATA } });
++    await CATALOG_STARTUP_TASK.run(ctx.deps);
++    expect(getLoadedCatalog(ctx.deps)).not.toBeNull();
++  });
++});
+diff --git a/apps/server/test/catalog/routes.test.ts b/apps/server/test/catalog/routes.test.ts
+new file mode 100644
+index 0000000..d25ca58
+--- /dev/null
++++ b/apps/server/test/catalog/routes.test.ts
+@@ -0,0 +1,67 @@
++import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { dirname, join, resolve } from 'node:path';
++import { fileURLToPath } from 'node:url';
++import { afterEach, describe, expect, it } from 'vitest';
++import { getServerMeta } from '../../src/db/server-meta';
++import { createTestContext, createUserAndLogin, type TestContext } from '../support';
++
++const REPO_DATA = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../data');
++
++let ctx: TestContext;
++afterEach(() => ctx?.close());
++
++async function setup(contentDir = REPO_DATA): Promise<string> {
++  ctx = await createTestContext({ config: { contentDir } });
++  const { cookie } = await createUserAndLogin(ctx);
++  return cookie;
++}
++
++describe('GET /api/catalog', () => {
++  it('sans session : 401', async () => {
++    ctx = await createTestContext({ config: { contentDir: REPO_DATA } });
++    expect((await ctx.request('/api/catalog')).status).toBe(401);
++  });
++
++  it('avec session : 200, version, ETag et no-cache', async () => {
++    const cookie = await setup();
++    const res = await ctx.request('/api/catalog', { cookie });
++    expect(res.status).toBe(200);
++    const body = (await res.json()) as { version: string; exercises: unknown[] };
++    expect(body.version).toBe((await getServerMeta(ctx.deps.db)).catalogVersion);
++    expect(body.exercises).toEqual([]);
++    expect(res.headers.get('ETag')).toBe(`"${body.version}"`);
++    expect(res.headers.get('Cache-Control')).toBe('no-cache');
++  });
++
++  it('If-None-Match identique, faible ou dans une liste : 304 sans corps', async () => {
++    const cookie = await setup();
++    const etag = (await ctx.request('/api/catalog', { cookie })).headers.get('ETag') as string;
++    for (const value of [etag, `W/${etag}`, `"autre", ${etag}`]) {
++      const res = await ctx.request('/api/catalog', { cookie, headers: { 'If-None-Match': value } });
++      expect(res.status).toBe(304);
++      expect(await res.text()).toBe('');
++      expect(res.headers.get('ETag')).toBe(etag);
++    }
++  });
++
++  it('If-None-Match différent : 200', async () => {
++    const cookie = await setup();
++    const res = await ctx.request('/api/catalog', { cookie, headers: { 'If-None-Match': '"autre"' } });
++    expect(res.status).toBe(200);
++  });
++
++  it('catalogue invalide jamais chargé : 500 internal', async () => {
++    const dir = mkdtempSync(join(tmpdir(), 'appsport-catalog-'));
++    try {
++      mkdirSync(join(dir, 'illustrations'));
++      writeFileSync(join(dir, 'illustrations/manifest.json'), '[');
++      const cookie = await setup(dir);
++      const res = await ctx.request('/api/catalog', { cookie });
++      expect(res.status).toBe(500);
++      expect(await res.json()).toEqual({ error: 'internal' });
++    } finally {
++      rmSync(dir, { recursive: true, force: true });
++    }
++  });
++});
+diff --git a/data/LICENSE b/data/LICENSE
+new file mode 100644
+index 0000000..06a4b44
+--- /dev/null
++++ b/data/LICENSE
+@@ -0,0 +1 @@
++Textes du catalogue : © les auteurs d'appsport, usage privé. Illustrations : chaque fichier de `illustrations/files/` reste sous la licence indiquée dans `illustrations/manifest.json` (créateurs, source, licence, modifications).
+diff --git a/data/exercises/.gitkeep b/data/exercises/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/data/illustrations/files/.gitkeep b/data/illustrations/files/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/data/illustrations/manifest.json b/data/illustrations/manifest.json
+new file mode 100644
+index 0000000..fe51488
+--- /dev/null
++++ b/data/illustrations/manifest.json
+@@ -0,0 +1 @@
++[]
+diff --git a/data/programs/.gitkeep b/data/programs/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/packages/contracts/src/catalog.ts b/packages/contracts/src/catalog.ts
+new file mode 100644
+index 0000000..e21a676
+--- /dev/null
++++ b/packages/contracts/src/catalog.ts
+@@ -0,0 +1,19 @@
++import { z } from 'zod';
++
++/** Nom d'un fichier d'illustration : `<id>.<empreinte 8 hex>.<ext>`, sans chemin. */
++export const ILLUSTRATION_FILE_RE = /^([a-z0-9][a-z0-9-]*)\.([0-9a-f]{8})\.(svg|png|webp|jpg)$/;
++
++export const IllustrationRef = z.object({
++  id: z.string().min(1),
++  file: z.string().regex(ILLUSTRATION_FILE_RE),
++});
++export type IllustrationRef = z.infer<typeof IllustrationRef>;
++
++export const CatalogBundle = z.object({
++  version: z.string(),
++  exercises: z.array(z.unknown()),
++  illustrations: z.array(IllustrationRef),
++  programTemplates: z.array(z.unknown()),
++  adviceSheets: z.array(z.unknown()),
++});
++export type CatalogBundle = z.infer<typeof CatalogBundle>;
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index 3c24b29..9e9184b 100644
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -1,19 +1,20 @@
+ export * from './api/admin';
+ export * from './api/auth';
+ export * from './api/consent';
+ export * from './api/errors';
+ export * from './api/export';
+ export * from './api/health';
+ export * from './api/places';
+ export * from './api/profile';
+ export * from './auth-constants';
+ export * from './case';
++export * from './catalog';
+ export * from './constants';
+ export * from './entity-rules';
+ export * from './load-settings';
+ export * from './ops';
+ export * from './presets';
+ export * from './sports';
+ export * from './sync';
+ export * from './taxonomy';
+ export * from './texts';
+diff --git a/packages/contracts/test/catalog.test.ts b/packages/contracts/test/catalog.test.ts
+new file mode 100644
+index 0000000..d8675c3
+--- /dev/null
++++ b/packages/contracts/test/catalog.test.ts
+@@ -0,0 +1,27 @@
++import { describe, expect, it } from 'vitest';
++import { CatalogBundle, ILLUSTRATION_FILE_RE, IllustrationRef } from '../src/catalog';
++
++describe('IllustrationRef', () => {
++  it('accepte un fichier haché', () => {
++    expect(IllustrationRef.safeParse({ id: 'squat', file: 'squat.0a1b2c3d.svg' }).success).toBe(true);
++  });
++
++  it('refuse un fichier sans empreinte', () => {
++    expect(IllustrationRef.safeParse({ id: 'squat', file: 'squat.svg' }).success).toBe(false);
++  });
++
++  it('refuse le tiret bas, les majuscules, les chemins et les extensions inconnues', () => {
++    expect(ILLUSTRATION_FILE_RE.test('squat_a.0a1b2c3d.svg')).toBe(false);
++    expect(ILLUSTRATION_FILE_RE.test('Squat.0a1b2c3d.svg')).toBe(false);
++    expect(ILLUSTRATION_FILE_RE.test('squat.0a1b2c3d.gif')).toBe(false);
++    expect(ILLUSTRATION_FILE_RE.test('../squat.0a1b2c3d.svg')).toBe(false);
++    expect(ILLUSTRATION_FILE_RE.test('back-squat.0a1b2c3d.webp')).toBe(true);
++  });
++});
++
++describe('CatalogBundle', () => {
++  it('décrit un catalogue vide', () => {
++    const empty = { version: 'v', exercises: [], illustrations: [], programTemplates: [], adviceSheets: [] };
++    expect(CatalogBundle.safeParse(empty).success).toBe(true);
++  });
++});

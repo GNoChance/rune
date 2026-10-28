@@ -1,0 +1,549 @@
+# Review package: a8151f3..HEAD
+
+## Commits
+f664ed2 test(web): logo comparé à docs/brand avec sa structure et ses styles, ids éprouvés par un useId à caractères interdits
+130953d test(web): l'E2E du thème lit la balise theme-color que le navigateur applique
+963eba4 fix(web): espacement de RuneWordmark réglable par --rune-wordmark-tracking
+1296f64 fix(web): icônes maskable et Apple sans liseré, à coins carrés
+
+## Files changed
+ apps/web/e2e/theme.spec.ts                     |  11 +-
+ apps/web/public/icons/apple-touch-icon-180.png | Bin 28255 -> 26853 bytes
+ apps/web/public/icons/icon-maskable-512.png    | Bin 117608 -> 113377 bytes
+ apps/web/scripts/render-icons.mjs              |  31 ++++-
+ apps/web/src/ui/Logo.tsx                       |  10 +-
+ apps/web/test/app/brand.test.ts                | 164 ++++++++++++++++++-------
+ apps/web/test/pwa/manifest.test.ts             |  61 ++++++++-
+ 7 files changed, 222 insertions(+), 55 deletions(-)
+
+## Diff
+diff --git a/apps/web/e2e/theme.spec.ts b/apps/web/e2e/theme.spec.ts
+index 1dbc355..11e1332 100644
+--- a/apps/web/e2e/theme.spec.ts
++++ b/apps/web/e2e/theme.spec.ts
+@@ -23,26 +23,33 @@ const FACES = [
+   { family: 'Barlow', weight: '600', file: 'barlow-latin-600-normal' },
+   { family: 'Newsreader', weight: '600', file: 'newsreader-latin-600-normal' },
+ ];
+ const FONT_FILE = /\.(woff2?|ttf|otf|eot)$/i;
+ const sorted = (list: string[]) => [...list].sort();
+ 
+ test('apparence : un thème forcé l’emporte sur le téléphone, Auto suit sa media query', async ({
+   server,
+   page,
+ }) => {
+-  /** Thème posé sur <html>, fond de la page et theme-color, lus dans la page. */
++  /**
++   * Thème posé sur <html>, fond de la page et theme-color, lus dans la page. index.html a une balise
++   * theme-color par schéma de couleurs : on lit celle que le navigateur applique, la première sans media ou
++   * dont la media query correspond au téléphone.
++   */
+   const look = () =>
+     page.evaluate(() => ({
+       theme: document.documentElement.getAttribute('data-theme'),
+       background: getComputedStyle(document.body).backgroundColor,
+-      themeColor: document.querySelector('meta[name="theme-color"]')?.getAttribute('content') ?? null,
++      themeColor:
++        [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')].find(
++          (meta) => !meta.media || matchMedia(meta.media).matches,
++        )?.content ?? null,
+     }));
+   /** Choix gardé (null : aucun, donc Auto), puis rechargement : main.tsx l'applique au démarrage. */
+   const reopenWith = async (choice: string | null) => {
+     await page.evaluate(
+       ([key, value]) => {
+         if (value === null) localStorage.removeItem(key);
+         else localStorage.setItem(key, value);
+       },
+       [KEY, choice] as const,
+     );
+diff --git a/apps/web/public/icons/apple-touch-icon-180.png b/apps/web/public/icons/apple-touch-icon-180.png
+index 0223559..306c0c8 100644
+Binary files a/apps/web/public/icons/apple-touch-icon-180.png and b/apps/web/public/icons/apple-touch-icon-180.png differ
+diff --git a/apps/web/public/icons/icon-maskable-512.png b/apps/web/public/icons/icon-maskable-512.png
+index 997c921..77ea06a 100644
+Binary files a/apps/web/public/icons/icon-maskable-512.png and b/apps/web/public/icons/icon-maskable-512.png differ
+diff --git a/apps/web/scripts/render-icons.mjs b/apps/web/scripts/render-icons.mjs
+index 9535fc4..cab647c 100644
+--- a/apps/web/scripts/render-icons.mjs
++++ b/apps/web/scripts/render-icons.mjs
+@@ -1,40 +1,59 @@
+ // Usage : node apps/web/scripts/render-icons.mjs
+ // Génère les icônes PNG de l'appli dans apps/web/public/icons/ (fichiers versionnés) depuis le logo
+ // docs/brand/rune-icon.svg, rendu par le Chromium de Playwright déjà installé pour les E2E
+ // (`pnpm --filter @rune/web exec playwright install chromium` s'il manque).
+ // - « any » 192 et 512, onglet 32 : le badge tel quel, coins arrondis transparents ;
+-// - maskable 512 : badge réduit à 80 % au centre, marge de 10 % sur le fond nuit #070A12, opaque ;
+-// - Apple 180 : badge sur #070A12, opaque (iOS noircit la transparence, puis arrondit lui-même les coins).
++// - maskable 512 et Apple 180, que le système découpe lui-même : badge sans son liseré, à coins carrés ;
++//   - maskable : réduit à 80 % au centre, marge de 10 % sur le fond nuit #070A12, opaque ;
++//   - Apple : plein cadre, opaque (iOS noircit la transparence, puis arrondit lui-même les coins).
+ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+ import { join } from 'node:path';
+ import { fileURLToPath } from 'node:url';
+ import { chromium } from '@playwright/test';
+ 
+ /** Fond nuit du logo : --bg du thème sombre, theme_color et background_color du manifeste. */
+ const NIGHT = '#070A12';
+ 
+ const ICONS = [
+   { file: 'icon-192.png', size: 192 },
+   { file: 'icon-512.png', size: 512 },
+-  { file: 'icon-maskable-512.png', size: 512, background: NIGHT, padding: 0.1 },
+-  { file: 'apple-touch-icon-180.png', size: 180, background: NIGHT },
++  { file: 'icon-maskable-512.png', size: 512, background: NIGHT, padding: 0.1, osMask: true },
++  { file: 'apple-touch-icon-180.png', size: 180, background: NIGHT, osMask: true },
+   { file: 'favicon-32.png', size: 32 },
+ ];
+ 
+ const here = fileURLToPath(new URL('.', import.meta.url));
+ const source = join(here, '..', '..', '..', 'docs', 'brand', 'rune-icon.svg');
+ const outDir = join(here, '..', 'public', 'icons');
+-const logo = `data:image/svg+xml;base64,${readFileSync(source).toString('base64')}`;
++const badge = readFileSync(source, 'utf8');
++
++/**
++ * Badge d'une icône que le système découpe à sa forme (masque rond ou arrondi) : sans le liseré cyan (le rect
++ * `fill="none"`), qui tracerait des arcs sous un masque rond et une tuile dans la tuile sous un masque arrondi,
++ * et avec un fond à coins carrés. Échoue si le dessin de rune-icon.svg n'a plus ce fond et ce liseré.
++ */
++function forOsMask(svg) {
++  const rects = svg.match(/<rect\b[^>]*>/g) ?? [];
++  const rims = rects.filter((rect) => /\bfill="none"/.test(rect));
++  const backgrounds = rects.filter((rect) => !rims.includes(rect));
++  if (rects.length !== 2 || rims.length !== 1 || backgrounds.length !== 1) {
++    throw new Error(`${source} : fond et liseré du badge introuvables`);
++  }
++  const [rim, background] = [rims[0], backgrounds[0]];
++  const square = background.replace(/\b(rx|ry)="[^"]*"/g, '$1="0"');
++  return svg.replace(rim, '').replace(background, square);
++}
+ 
+ /** Page qui ne montre que le badge, à `padding` du bord, sur `background` (transparent sans fond). */
+-function page({ background, padding = 0 }) {
++function page({ background, padding = 0, osMask = false }) {
++  const logo = `data:image/svg+xml;base64,${Buffer.from(osMask ? forOsMask(badge) : badge).toString('base64')}`;
+   const inset = `${padding * 100}%`;
+   const side = `${(1 - 2 * padding) * 100}%`;
+   return `<!doctype html><html><head><style>
+     html, body { margin: 0; width: 100%; height: 100%; background: ${background ?? 'transparent'}; }
+     img { position: absolute; left: ${inset}; top: ${inset}; width: ${side}; height: ${side}; }
+   </style></head><body><img alt="" src="${logo}"></body></html>`;
+ }
+ 
+ mkdirSync(outDir, { recursive: true });
+ const browser = await chromium.launch();
+diff --git a/apps/web/src/ui/Logo.tsx b/apps/web/src/ui/Logo.tsx
+index 9f81d8b..d3f0657 100644
+--- a/apps/web/src/ui/Logo.tsx
++++ b/apps/web/src/ui/Logo.tsx
+@@ -80,23 +80,29 @@ export function RuneMark({ size = 28, glow = false, title }: RuneMarkProps) {
+       <title id={ids.title}>{title}</title>
+       {art}
+     </svg>
+   ) : (
+     <svg viewBox="0 0 512 512" width={size} height={size} aria-hidden="true">
+       {art}
+     </svg>
+   );
+ }
+ 
++/**
++ * Espacement du mot : 0,22 em (en-têtes), ou `--rune-wordmark-tracking` posée par le parent (0,3 em pour le grand
++ * mot de la connexion, A01).
++ */
++const TRACKING = 'var(--rune-wordmark-tracking, 0.22em)';
++
+ /** Le mot RUNE des maquettes ; taille et couleur viennent du parent. */
+ const WORDMARK: CSSProperties = {
+   fontFamily: 'var(--font-display)',
+   fontWeight: 700,
+-  letterSpacing: '0.22em',
++  letterSpacing: TRACKING,
+   // L'espacement suit aussi le E final : la marge négative le retire, le mot se centre sur ses lettres.
+-  marginInlineEnd: '-0.22em',
++  marginInlineEnd: `calc(-1 * ${TRACKING})`,
+ };
+ 
+ /** Le mot « RUNE » en Chakra Petch espacé, identique dans les 5 thèmes. */
+ export function RuneWordmark() {
+   return <span style={WORDMARK}>RUNE</span>;
+ }
+diff --git a/apps/web/test/app/brand.test.ts b/apps/web/test/app/brand.test.ts
+index e9af7a6..8949563 100644
+--- a/apps/web/test/app/brand.test.ts
++++ b/apps/web/test/app/brand.test.ts
+@@ -1,55 +1,98 @@
+ import { existsSync, readFileSync } from 'node:fs';
+ import { join, resolve } from 'node:path';
+-import { render, screen } from '@testing-library/react';
+-import { createElement, Fragment } from 'react';
++import { act, render, screen } from '@testing-library/react';
++import { createElement, Fragment, useId } from 'react';
++import { createRoot } from 'react-dom/client';
+ import { describe, expect, it } from 'vitest';
+ import { RuneMark, RuneWordmark } from '../../src/ui/Logo';
+ 
+ // Marque Rune (spec refonte §3) : logo « Rang brisé » de docs/brand/, nom et couleurs de l'appli installée.
+ 
+ const WEB = resolve(import.meta.dirname, '../..');
+ const BRAND = resolve(WEB, '../../docs/brand');
+ const LOGO_SOURCE = join(WEB, 'src/ui/Logo.tsx');
+ 
+ /** Fond nuit du logo : --bg du thème sombre (tokens.css) et fond de l'icône maskable. */
+ const NIGHT = '#070A12';
+ 
+-/** Éléments sous `svg` dans l'ordre du document, sans le titre ni les simples groupes de mise en couleur. */
++/** Style du groupe qui met cadre et repères de la marque mono à `--rune-mark-frame`. */
++const FRAME_COLOR_STYLE = /^color:\s*var\(--rune-mark-frame,\s*currentColor\);?$/;
++
++/** Ce groupe de mise en couleur, absent des fichiers de docs/brand : un `g` dont ce style est le seul attribut. */
++const isFrameColorGroup = (el: Element): boolean =>
++  el.tagName.toLowerCase() === 'g' &&
++  el.attributes.length === 1 &&
++  FRAME_COLOR_STYLE.test(el.getAttribute('style') ?? '');
++
++/** Éléments sous `svg` dans l'ordre du document, sans le titre ni le groupe de mise en couleur. */
+ function drawing(svg: Element): Element[] {
+-  return [...svg.querySelectorAll('*')].filter((el) => {
+-    const tag = el.tagName.toLowerCase();
+-    if (tag === 'title') return false;
+-    const attrs = [...el.attributes].map((a) => a.name);
+-    return !(tag === 'g' && attrs.every((name) => name === 'style'));
+-  });
++  return [...svg.querySelectorAll('*')].filter(
++    (el) => el.tagName.toLowerCase() !== 'title' && !isFrameColorGroup(el),
++  );
++}
++
++/** Place dans l'arbre : balises des ancêtres depuis le svg, sans le groupe de mise en couleur. */
++function lineage(el: Element, svg: Element): string {
++  const tags: string[] = [];
++  for (let parent = el.parentElement; parent && parent !== svg; parent = parent.parentElement) {
++    if (!isFrameColorGroup(parent)) tags.unshift(parent.tagName.toLowerCase());
++  }
++  return ['svg', ...tags].join('>');
+ }
+ 
+ /**
+- * Dessin normalisé : balise et attributs (noms en minuscules, triés), sans `id` ni `style` ; chaque
+- * `url(#…)` devient le rang de sa cible parmi les définitions, pour comparer deux jeux d'identifiants.
++ * Dessin normalisé : place dans l'arbre, balise et attributs (noms en minuscules, triés, `style` compris),
++ * sans `id` ; chaque `url(#…)` devient le rang de sa cible parmi les définitions, pour comparer deux jeux
++ * d'identifiants.
+  */
+ function normalized(svg: Element): string[] {
+   const elements = drawing(svg);
+   const defs = elements.filter((el) => el.id).map((el) => el.id);
+   return elements.map((el) => {
+     const attrs = [...el.attributes]
+-      .filter((a) => a.name !== 'id' && a.name !== 'style')
++      .filter((a) => a.name !== 'id')
+       .map((a) => {
+         const value = a.value.replace(/url\(#([^)]+)\)/g, (_, id: string) => `url(#def${defs.indexOf(id)})`);
+         return `${a.name.toLowerCase()}=${value}`;
+       })
+       .sort();
+-    return [el.tagName.toLowerCase(), ...attrs].join(' ');
++    return [lineage(el, svg), el.tagName.toLowerCase(), ...attrs].join(' ');
+   });
+ }
+ 
++/** Cibles `#…` d'une marque : ses `url(#…)` et l'id de son titre (`aria-labelledby`). */
++function references(svg: Element): string[] {
++  const values = [svg, ...svg.querySelectorAll('*')].flatMap((el) =>
++    [...el.attributes].map((a) => (a.name === 'aria-labelledby' ? `url(#${a.value})` : a.value)),
++  );
++  return values.flatMap((value) => [...value.matchAll(/url\(#([^)]+)\)/g)].map((m) => m[1] ?? ''));
++}
++
++/**
++ * Identifiants des marques rendues : `perMark` ids par marque, tous distincts et dans [A-Za-z0-9_-] ;
++ * chaque référence d'une marque vise un id de cette même marque.
++ */
++function expectOwnIds(container: Element, perMark: number): void {
++  const svgs = [...container.querySelectorAll('svg')];
++  const ids = [...container.querySelectorAll('[id]')].map((el) => el.id);
++  expect(ids).toHaveLength(svgs.length * perMark);
++  expect(new Set(ids).size).toBe(ids.length);
++  for (const id of ids) expect(id).toMatch(/^[A-Za-z0-9_-]+$/);
++  for (const svg of svgs) {
++    const own = new Set([...svg.querySelectorAll('[id]')].map((el) => el.id));
++    const refs = references(svg);
++    expect(refs.length).toBeGreaterThan(0);
++    for (const ref of refs) expect(own.has(ref), ref).toBe(true);
++  }
++}
++
+ /** Fichier SVG de docs/brand/, analysé comme l'est un SVG en ligne. */
+ function brandSvg(file: string): Element {
+   const host = document.createElement('div');
+   host.innerHTML = readFileSync(join(BRAND, file), 'utf8');
+   const svg = host.querySelector('svg');
+   if (!svg) throw new Error(`${file} : aucun svg`);
+   return svg;
+ }
+ 
+ const svgOf = (container: HTMLElement): SVGSVGElement => {
+@@ -113,64 +156,101 @@ describe('RuneMark', () => {
+     const { container } = render(createElement(RuneMark, { title: 'Rune' }));
+     const svg = svgOf(container);
+     expect(normalized(svg)).toEqual(normalized(brandSvg('rune-mark-mono.svg')));
+     expect(svg.querySelector('linearGradient, radialGradient, filter')).toBeNull();
+   });
+ 
+   it('sans lueur : cadre et repères suivent --rune-mark-frame (repli currentColor), la rune suit currentColor', () => {
+     const { container } = render(createElement(RuneMark));
+     const [frame, ticks, rune] = [...svgOf(container).querySelectorAll('path')];
+     for (const part of [frame, ticks]) {
+-      expect(part?.closest('g')?.getAttribute('style')).toMatch(
+-        /^color:\s*var\(--rune-mark-frame,\s*currentColor\);?$/,
+-      );
++      expect(part?.closest('g')?.getAttribute('style')).toMatch(FRAME_COLOR_STYLE);
+     }
+     expect(rune?.closest('g')).toBeNull();
+     expect(rune?.getAttribute('fill')).toBe('currentColor');
+   });
+ 
+   it('avec lueur : le dessin de rune-mark.svg, dégradés et lueur compris', () => {
+     const { container } = render(createElement(RuneMark, { glow: true, title: 'Rune' }));
+     expect(normalized(svgOf(container))).toEqual(normalized(brandSvg('rune-mark.svg')));
+   });
+ 
+-  it('deux marques avec lueur : aucun id en double, chaque url(#…) vise sa propre marque', () => {
+-    const { container } = render(
+-      createElement(
+-        Fragment,
+-        null,
+-        createElement(RuneMark, { glow: true, title: 'Rune' }),
+-        createElement(RuneMark, { glow: true, title: 'Logo de Rune' }),
+-      ),
+-    );
+-    expect(screen.getAllByRole('img')).toHaveLength(2);
+-    expect(screen.getByRole('img', { name: 'Rune' })).not.toBe(
+-      screen.getByRole('img', { name: 'Logo de Rune' }),
+-    );
+-    const ids = [...container.querySelectorAll('[id]')].map((el) => el.id);
+-    expect(ids).toHaveLength(8); // par marque : titre, 2 dégradés, 1 filtre
+-    expect(new Set(ids).size).toBe(ids.length);
+-    for (const id of ids) expect(id).toMatch(/^[A-Za-z0-9_-]+$/);
+-    for (const svg of container.querySelectorAll('svg')) {
+-      const own = new Set([...svg.querySelectorAll('[id]')].map((el) => el.id));
+-      const refs = [...svg.innerHTML.matchAll(/url\(#([^)]+)\)/g)].map((m) => m[1]);
+-      expect(refs.length).toBeGreaterThan(0);
+-      for (const ref of refs) expect(own.has(ref ?? ''), ref).toBe(true);
++  // Par marque : 2 dégradés et 1 filtre, plus l'id du titre quand elle en a un.
++  it.each([
++    { cas: 'sans titre (décoratives)', titles: [undefined, undefined], perMark: 3 },
++    { cas: 'au même titre', titles: ['Rune', 'Rune'], perMark: 4 },
++    { cas: 'à titres différents', titles: ['Rune', 'Logo de Rune'], perMark: 4 },
++  ])(
++    'deux marques avec lueur $cas : ids distincts, chaque url(#…) vise sa propre marque',
++    ({ titles, perMark }) => {
++      const { container } = render(
++        createElement(
++          Fragment,
++          null,
++          ...titles.map((title, key) => createElement(RuneMark, { key, glow: true, title })),
++        ),
++      );
++      expect(container.querySelectorAll('svg')).toHaveLength(2);
++      expectOwnIds(container, perMark);
++    },
++  );
++
++  it('useId à caractères interdits (identifierPrefix) : ids réduits à [A-Za-z0-9_-], références intactes', () => {
++    // React 19.3 rend déjà des useId sûrs (_r_0_) : ce préfixe y glisse un deux-points et des guillemets
++    // français, pour que l'assainissement de Logo.tsx soit réellement éprouvé (la sonde le vérifie).
++    let raw = '';
++    function Probe() {
++      raw = useId();
++      return null;
++    }
++    const host = document.body.appendChild(document.createElement('div'));
++    const root = createRoot(host, { identifierPrefix: 'p:«»' });
++    try {
++      act(() => {
++        root.render(
++          createElement(
++            Fragment,
++            null,
++            createElement(Probe),
++            createElement(RuneMark, { glow: true, title: 'Rune' }),
++            createElement(RuneMark, { glow: true, title: 'Rune' }),
++          ),
++        );
++      });
++      expect(raw).not.toMatch(/^[A-Za-z0-9_-]+$/);
++      expectOwnIds(host, 4);
++      expect(screen.getAllByRole('img', { name: 'Rune' })).toHaveLength(2);
++    } finally {
++      act(() => root.unmount());
++      host.remove();
+     }
+   });
+ 
+   it('SVG écrit en JSX : aucun dangerouslySetInnerHTML', () => {
+     expect(readFileSync(LOGO_SOURCE, 'utf8')).not.toContain('dangerouslySetInnerHTML');
+   });
+ });
+ 
+ describe('RuneWordmark', () => {
++  /** Le mot, rendu dans un parent en 10 px (1 em = 10 px) qui pose `parentStyle`. */
++  function wordIn(parentStyle: Record<string, string>): HTMLElement {
++    render(
++      createElement('div', { style: { fontSize: '10px', ...parentStyle } }, createElement(RuneWordmark)),
++    );
++    return screen.getByText('RUNE');
++  }
++
+   it('le mot « RUNE » en police d’affichage, espacé de 0,22 em, centré sur ses lettres', () => {
+-    render(createElement(RuneWordmark));
+-    const word = screen.getByText('RUNE');
++    const word = wordIn({});
+     expect(word.style.fontFamily).toBe('var(--font-display)');
+     expect(word.style.fontWeight).toBe('700');
+-    expect(word.style.letterSpacing).toBe('0.22em');
++    expect(getComputedStyle(word).letterSpacing).toBe('2.2px');
+     // L'espacement qui suit le E final est retiré : rien ne dépasse à droite du mot.
+-    expect(word.style.marginInlineEnd).toBe('-0.22em');
++    expect(getComputedStyle(word).marginInlineEnd).toBe('calc(-1 * 0.22em)');
++  });
++
++  it('--rune-wordmark-tracking règle l’espacement et la marge qui le compense (0,3 em de la connexion, A01)', () => {
++    const word = getComputedStyle(wordIn({ '--rune-wordmark-tracking': '0.3em' }));
++    expect(word.letterSpacing).toBe('3px');
++    expect(word.marginInlineEnd).toBe('calc(-1 * 0.3em)');
+   });
+ });
+diff --git a/apps/web/test/pwa/manifest.test.ts b/apps/web/test/pwa/manifest.test.ts
+index 6be8a2e..6d3be9b 100644
+--- a/apps/web/test/pwa/manifest.test.ts
++++ b/apps/web/test/pwa/manifest.test.ts
+@@ -1,19 +1,26 @@
+ import { readFileSync } from 'node:fs';
+ import { join, resolve } from 'node:path';
+ import { inflateSync } from 'node:zlib';
+ import { describe, expect, it } from 'vitest';
+ 
+ const WEB = resolve(import.meta.dirname, '../..');
+ const PUBLIC = join(WEB, 'public');
+ /** Fond nuit du logo (--bg du thème sombre), opaque. */
+ const NIGHT = [0x07, 0x0a, 0x12, 0xff];
++/** Fond du badge de rune-icon.svg dans ses coins : dernier arrêt de son dégradé radial (#04060B), opaque. */
++const BADGE_CORNER = [0x04, 0x06, 0x0b, 0xff];
++/**
++ * Écart toléré, canal par canal, autour de la nuit : le fond du badge près de son bord s'y fond (au plus 7, en bleu,
++ * pour #04060B) ; le liseré cyan à 14 % s'en écarte d'une trentaine.
++ */
++const NEAR_NIGHT = 8;
+ const TRANSPARENT = 0;
+ 
+ interface Png {
+   width: number;
+   height: number;
+   /** [R, V, B, A] ; A vaut 255 pour un PNG sans canal alpha. */
+   pixel(x: number, y: number): number[];
+ }
+ 
+ /** Prédicteur de Paeth (filtre 4 du format PNG). */
+@@ -72,20 +79,33 @@ function readPng(name: string): Png {
+   };
+ }
+ 
+ /** Chaque pixel de l'image, avec ses coordonnées. */
+ function* pixels(png: Png): Generator<[number, number, number[]]> {
+   for (let y = 0; y < png.height; y++) {
+     for (let x = 0; x < png.width; x++) yield [x, y, png.pixel(x, y)];
+   }
+ }
+ 
++/**
++ * Pixels retenus par `keep` qui ne se fondent pas dans la nuit (un canal à plus de NEAR_NIGHT) : leur nombre et
++ * les trois premiers, « (x, y) R,V,B,A ».
++ */
++function offNight(png: Png, keep: (x: number, y: number) => boolean): { count: number; first: string[] } {
++  const off: string[] = [];
++  for (const [x, y, p] of pixels(png)) {
++    if (keep(x, y) && p.some((v, i) => Math.abs(v - (NIGHT[i] ?? 0)) > NEAR_NIGHT))
++      off.push(`(${x}, ${y}) ${p}`);
++  }
++  return { count: off.length, first: off.slice(0, 3) };
++}
++
+ /** Rune glacée de rune-icon.svg au centre de l'icône : bleu glacé opaque (dégradé #F2FDFF → #5ED8FF). */
+ function expectIceRuneAtCenter(png: Png, name: string): void {
+   const c = Math.floor(png.width / 2);
+   const [r = 0, g = 0, b = 0, a = 0] = png.pixel(c, c);
+   expect({ name, a, iceBlue: b >= 220 && g >= 180 && r < g }).toEqual({ name, a: 0xff, iceBlue: true });
+ }
+ 
+ describe('manifeste PWA', () => {
+   const m = JSON.parse(readFileSync(join(PUBLIC, 'manifest.webmanifest'), 'utf8'));
+ 
+@@ -150,27 +170,62 @@ describe('manifeste PWA', () => {
+     const count = { notOpaque: 0, bandNotNight: 0 };
+     for (const [x, y, p] of pixels(png)) {
+       if (p[3] !== 0xff) count.notOpaque++;
+       const inBand = x < band || y < band || x >= png.width - band || y >= png.height - band;
+       if (inBand && p.join() !== NIGHT.join()) count.bandNotNight++;
+     }
+     expect(count).toEqual({ notOpaque: 0, bandNotNight: 0 });
+     expectIceRuneAtCenter(png, 'icon-maskable-512.png');
+   });
+ 
+-  it('Apple : opaque (iOS noircit la transparence), coins sur #070A12, rune glacée au centre', () => {
++  it('maskable : sur le cercle sûr (rayon 40 %) et au-delà, rien que la nuit ; badge sans liseré, à coins carrés', () => {
++    const png = readPng('icon-maskable-512.png');
++    const c = png.width / 2;
++    const safe = 0.4 * png.width;
++    // Le système coupe sur ce cercle (masque rond) ou plus loin : le liseré cyan du badge y tracerait des arcs.
++    expect(offNight(png, (x, y) => Math.hypot(x + 0.5 - c, y + 0.5 - c) >= safe - 0.5)).toEqual({
++      count: 0,
++      first: [],
++    });
++    // Au ras de chaque coin du badge (carré de 80 %, de 51,2 à 460,8 px) : son fond, pas la nuit de la marge.
++    // Des coins arrondis y dessineraient une tuile dans la tuile sous un masque arrondi.
++    const [near, far] = [Math.ceil(0.1 * png.width), png.width - 1 - Math.ceil(0.1 * png.width)];
++    for (const [x, y] of [
++      [near, near],
++      [far, near],
++      [near, far],
++      [far, far],
++    ] as const) {
++      expect(png.pixel(x, y), `(${x}, ${y})`).toEqual(BADGE_CORNER);
++    }
++  });
++
++  it('Apple : opaque (iOS noircit la transparence), badge plein cadre sans liseré, coins carrés, rune glacée au centre', () => {
+     const png = readPng('apple-touch-icon-180.png');
+     let notOpaque = 0;
+     for (const [, , p] of pixels(png)) if (p[3] !== 0xff) notOpaque++;
+     expect(notOpaque).toBe(0);
+-    expect(png.pixel(0, 0)).toEqual(NIGHT);
+-    expect(png.pixel(png.width - 1, png.height - 1)).toEqual(NIGHT);
++    // iOS arrondit lui-même les coins : le long du bord (5 %), le liseré cyan du badge dessinerait un cadre.
++    const band = Math.ceil(0.05 * png.width);
++    const inBand = (x: number, y: number) =>
++      x < band || y < band || x >= png.width - band || y >= png.height - band;
++    expect(offNight(png, inBand)).toEqual({ count: 0, first: [] });
++    // Coins carrés : le fond du badge va jusqu'au coin, la forme finale est celle du masque d'iOS.
++    const last = png.width - 1;
++    for (const [x, y] of [
++      [0, 0],
++      [last, 0],
++      [0, last],
++      [last, last],
++    ] as const) {
++      expect(png.pixel(x, y), `(${x}, ${y})`).toEqual(BADGE_CORNER);
++    }
+     expectIceRuneAtCenter(png, 'apple-touch-icon-180.png');
+   });
+ 
+   it('index.html : titre « Rune », manifeste, icône de l’onglet, icône Apple et couleur du thème', () => {
+     const html = readFileSync(join(WEB, 'index.html'), 'utf8');
+     expect(html).toContain('<title>Rune</title>');
+     expect(html).toContain('<link rel="manifest" href="/manifest.webmanifest">');
+     // Icône déjà en précache : pas de requête /favicon.ico (404 journalisé), même hors ligne.
+     expect(html).toContain('<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">');
+     expect(html).toContain('<link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png">');

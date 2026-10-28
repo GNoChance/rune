@@ -1,0 +1,282 @@
+# Review package: b4360ac..HEAD
+
+## Commits
+1f46c57 test(pwa): interrupteur d'urgence borné à un seul rechargement hors SW
+64c7c1f test(pwa): E2E 426, file d'envoi relue sous la panne et termes du glossaire
+8c9b641 test(pwa): rechargements à froid hors ligne qui vérifient l'affichage et repli WebKit annoté
+
+## Files changed
+ apps/web/e2e/kill-switch.spec.ts | 38 +++++++++++++++++++++++++-------------
+ apps/web/e2e/protocol.spec.ts    | 20 +++++++++++++-------
+ apps/web/e2e/update.spec.ts      | 23 +++++++++++++++++++----
+ 3 files changed, 57 insertions(+), 24 deletions(-)
+
+## Diff
+diff --git a/apps/web/e2e/kill-switch.spec.ts b/apps/web/e2e/kill-switch.spec.ts
+index 04d7773..6a285a4 100644
+--- a/apps/web/e2e/kill-switch.spec.ts
++++ b/apps/web/e2e/kill-switch.spec.ts
+@@ -1,16 +1,16 @@
+ import {
+   ILLUSTRATIONS_CACHE,
+   ILLUSTRATIONS_CACHE_PREFIX,
+   SHELL_CACHE_PREFIX,
+ } from '../src/sw/precache-manifest';
+-import { acrossReload, BUILD_DIRS, shellLabel } from './support/builds';
++import { acrossReload, BUILD_DIRS } from './support/builds';
+ import { expect, test } from './support/fixtures';
+ import { setupOnboardedAdmin } from './support/flows';
+ import {
+   cacheNames,
+   fakeOutboxOp,
+   idbGetAll,
+   idbPut,
+   metaValue,
+   registrationCount,
+   waitForController,
+@@ -23,64 +23,76 @@ const NO_LOOP_MS = 3_000;
+ test.use({ serverOptions: { publicDir: BUILD_DIRS.A } });
+ 
+ // 01 §9.1.6 scénario 6 : interrupteur d'urgence (R-PWA-6) : désenregistrement, caches vidés, rechargement
+ // unique depuis le réseau, IndexedDB intact ; puis retour du SW une fois l'interrupteur levé.
+ test("interrupteur d'urgence : SW et caches retirés sans boucle, base intacte, puis SW rétabli", async ({
+   server,
+   context,
+ }) => {
+   const page = await setupOnboardedAdmin(server, context);
+   const userId = await metaValue(page, 'userId');
+-  if (typeof userId !== 'string') throw new Error('meta.userId absent après l’onboarding');
++  if (typeof userId !== 'string') throw new Error("meta.userId absent après l'onboarding");
+   const op = fakeOutboxOp(userId);
+   const doomed = async () =>
+     (await cacheNames(page)).filter(
+       (n) => n.startsWith(SHELL_CACHE_PREFIX) || n.startsWith(ILLUSTRATIONS_CACHE_PREFIX),
+     );
++  const controlled = () => page.evaluate(() => navigator.serviceWorker?.controller != null);
+ 
+   await test.step('opération en attente, coquille et illustrations en cache', async () => {
+     // La panne d'abord : sinon le moteur pousserait l'opération avant elle.
+     server.setFault({
+       kind: 'status',
+       pathPrefix: '/api/sync/push',
+       status: 503,
+       body: { error: 'internal' },
+     });
+     await idbPut(page, 'outbox', op);
+     const names = await cacheNames(page);
+     expect(names).toContain(ILLUSTRATIONS_CACHE);
+     expect(names.filter((n) => SHELL_CACHE_RE.test(n))).toHaveLength(1);
+   });
+ 
+   await test.step('interrupteur actif : plus de SW ni de caches, page affichée, pas de boucle', async () => {
+-    let navigations = 0;
+-    page.on('framenavigated', (frame) => {
+-      if (frame === page.mainFrame()) navigations++;
++    // Chargements de document de la page (requêtes de navigation, chemin seul) : une navigation dans le
++    // même document (replaceState du routeur) n'en fait pas, un chargement coupé par un autre en fait une.
++    const navigations: string[] = [];
++    page.on('request', (request) => {
++      if (request.isNavigationRequest() && request.frame() === page.mainFrame())
++        navigations.push(new URL(request.url()).pathname);
+     });
++    // Même build A sur le serveur et dans le cache : le libellé ne dirait pas d'où vient la page, le
++    // contrôleur si (un document servi par le SW A en désinstallation reste contrôlé par lui).
+     await server.restart({ SW_KILL_SWITCH: '1' });
+-    await page.reload({ waitUntil: 'domcontentloaded' });
++    // `commit` : la navigation de l'interrupteur peut partir avant le DOMContentLoaded du rechargement.
++    await page.reload({ waitUntil: 'commit' });
+     // Le rechargement demandé, puis celui de l'interrupteur (par le SW ou par la page, R-PWA-6).
+-    await expect.poll(() => navigations, { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
++    await expect.poll(() => navigations.length, { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
+     await expect.poll(() => acrossReload(page, () => registrationCount(page)), { timeout: 15_000 }).toBe(0);
+     await expect.poll(() => acrossReload(page, doomed), { timeout: 15_000 }).toEqual([]);
+-    // Page servie par le réseau, appli démarrée.
+-    await expect(page.getByTestId('connection-status')).toBeAttached();
+-    expect(await shellLabel(page)).toBe('A');
+-    // Aucun rechargement de plus : aucune navigation et le témoin posé dans la page survit.
+-    const before = navigations;
++    // Page rechargée depuis le réseau, à son adresse, hors de tout SW, et appli démarrée.
++    expect(new URL(page.url()).pathname).toBe('/');
++    await expect(page.getByTestId('connection-status')).toBeVisible();
++    expect(await controlled()).toBe(false);
++    // Aucun rechargement de plus : le témoin posé dans la page survit à la fenêtre.
+     await page.evaluate(() => {
+       (window as { e2eSameDocument?: boolean }).e2eSameDocument = true;
+     });
+     await page.waitForTimeout(NO_LOOP_MS);
+-    expect(navigations - before, 'navigations après l’interrupteur').toBe(0);
++    // Rechargement unique : celui demandé plus un seul de l'interrupteur, sur toute l'étape.
++    expect(navigations, 'chargements depuis le rechargement demandé, interrupteur compris').toEqual([
++      '/',
++      '/',
++    ]);
+     expect(await page.evaluate(() => (window as { e2eSameDocument?: boolean }).e2eSameDocument)).toBe(true);
+     expect(await registrationCount(page)).toBe(0);
++    expect(await controlled()).toBe(false);
+   });
+ 
+   await test.step('IndexedDB jamais touché', async () => {
+     expect((await idbGetAll<{ opId: string }>(page, 'outbox')).map((o) => o.opId)).toEqual([op.opId]);
+     expect(await metaValue(page, 'userId')).toBe(userId);
+   });
+ 
+   await test.step('interrupteur levé : le SW revient et contrôle la page', async () => {
+     await server.restart({ SW_KILL_SWITCH: '' });
+     await page.reload({ waitUntil: 'domcontentloaded' });
+diff --git a/apps/web/e2e/protocol.spec.ts b/apps/web/e2e/protocol.spec.ts
+index b9a42d6..a608d80 100644
+--- a/apps/web/e2e/protocol.spec.ts
++++ b/apps/web/e2e/protocol.spec.ts
+@@ -1,58 +1,64 @@
+ import { BUILD_DIRS, loadBuilds, shellLabel } from './support/builds';
+ import { expect, test } from './support/fixtures';
+ import { setupOnboardedAdmin } from './support/flows';
+ import { fakeOutboxOp, idbGetAll, idbPut, metaValue, triggerForeground } from './support/pwa';
+ 
+ const PROTOCOL_UNSUPPORTED = { error: 'protocol_unsupported', serverProtocol: 1, minProtocol: 1 };
+ 
+ test.use({ serverOptions: { publicDir: BUILD_DIRS.A } });
+ 
+-// 01 §9.1.6 scénario 5 : 426, puis mise à jour, puis synchro de la file ; R-VER-2, R-PWA-5.
+-test('426 : file gardée, bandeau non fermable, mise à jour vers B puis synchro de la file', async ({
++// 01 §9.1.6 scénario 5 : 426, puis mise à jour, puis synchro de la file d'envoi ; R-VER-2, R-PWA-5.
++test("426 : file d'envoi gardée, bandeau non fermable, mise à jour vers B puis synchro de la file d'envoi", async ({
+   server,
+   context,
+ }) => {
+   const { b } = await loadBuilds();
+   const page = await setupOnboardedAdmin(server, context);
+   const connection = page.getByTestId('connection-status');
+   const banner = page.getByTestId('update-banner');
+   const outboxIds = async () => (await idbGetAll<{ opId: string }>(page, 'outbox')).map((o) => o.opId);
++  const deadletterIds = async () =>
++    (await idbGetAll<{ opId: string }>(page, 'deadletter')).map((d) => d.opId);
+   expect(await shellLabel(page)).toBe('A');
+ 
+   const userId = await metaValue(page, 'userId');
+-  if (typeof userId !== 'string') throw new Error('meta.userId absent après l’onboarding');
++  if (typeof userId !== 'string') throw new Error("meta.userId absent après l'onboarding");
+   const op = fakeOutboxOp(userId);
+ 
+-  await test.step('426 sur la synchro : état protocol_unsupported, file gardée (R-VER-2)', async () => {
++  await test.step("426 sur la synchro : état protocol_unsupported, file d'envoi gardée (R-VER-2)", async () => {
+     // La panne d'abord : sinon le moteur pousserait l'opération avant elle.
+     server.setFault({ kind: 'status', pathPrefix: '/api/sync/', status: 426, body: PROTOCOL_UNSUPPORTED });
+     await idbPut(page, 'outbox', op);
+     await server.restart({ APPSPORT_PUBLIC_DIR: b.dir });
+     await triggerForeground(page);
+     await expect(connection).toHaveAttribute('data-state', 'protocol_unsupported', { timeout: 15_000 });
+     expect(await outboxIds()).toEqual([op.opId]);
+   });
+ 
+   await test.step('bandeau non fermable (R-PWA-5), puis B au clic', async () => {
+     await expect(banner).toBeVisible({ timeout: 30_000 });
+     await expect(banner).toHaveAttribute('data-dismissible', 'false');
+     await expect(banner.getByRole('button', { name: 'Plus tard', exact: true })).toHaveCount(0);
+     await banner.getByRole('button', { name: 'Mettre à jour', exact: true }).click();
+     await expect.poll(() => shellLabel(page), { timeout: 20_000 }).toBe('B');
++    // Panne 426 toujours active : l'opération est restée dans la file d'envoi, rien dans la file
++    // des rejets (R-VER-2) ; un refus ici ne pourrait venir que du 426, pas du retour du protocole.
++    expect(await outboxIds()).toEqual([op.opId]);
++    expect(await deadletterIds()).toEqual([]);
+   });
+ 
+-  await test.step('protocole rétabli : la file part, le refus du serveur est compté', async () => {
++  await test.step("protocole rétabli : la file d'envoi part, le refus du serveur va dans la file des rejets", async () => {
+     server.setFault(null);
+     await triggerForeground(page);
+     await expect(connection).toHaveAttribute('data-state', 'online', { timeout: 15_000 });
+     await expect.poll(outboxIds, { timeout: 15_000 }).toEqual([]);
+     await expect(page.getByTestId('pending-counter')).toHaveAttribute('data-count', '0');
+     // L'opération factice vise une ligne sync_rejection inexistante : le serveur la refuse.
+-    const deadletter = await idbGetAll<{ opId: string }>(page, 'deadletter');
+-    expect(deadletter.map((d) => d.opId)).toEqual([op.opId]);
++    const deadletter = await deadletterIds();
++    expect(deadletter).toEqual([op.opId]);
+     await expect(page.getByTestId('rejected-counter')).toHaveAttribute(
+       'data-count',
+       String(deadletter.length),
+     );
+   });
+ });
+diff --git a/apps/web/e2e/update.spec.ts b/apps/web/e2e/update.spec.ts
+index 94ca799..da646b7 100644
+--- a/apps/web/e2e/update.spec.ts
++++ b/apps/web/e2e/update.spec.ts
+@@ -38,21 +38,21 @@ test('mise à jour : B attend pendant la séance, puis remplace A au clic sans t
+ }) => {
+   const { a, b } = await loadBuilds();
+   expect(a.buildHash).not.toBe(b.buildHash);
+   const page = await setupOnboardedAdmin(server, context);
+   const banner = page.getByTestId('update-banner');
+   const label = () => shellLabel(page);
+   const reload = () => page.reload({ waitUntil: 'domcontentloaded', timeout: SHELL_TIMEOUT_MS });
+   expect(await label()).toBe('A');
+ 
+   const userId = await metaValue(page, 'userId');
+-  if (typeof userId !== 'string') throw new Error('meta.userId absent après l’onboarding');
++  if (typeof userId !== 'string') throw new Error("meta.userId absent après l'onboarding");
+   const op = fakeOutboxOp(userId);
+ 
+   await test.step('séance en cours et opération en attente sur A', async () => {
+     // La panne d'abord : sinon le moteur pousserait l'opération avant elle.
+     server.setFault(PUSH_FAULT);
+     await idbPut(page, 'outbox', op);
+     await idbPut(page, 'meta', { key: 'activeSessionId', value: SESSION_ID });
+   });
+ 
+   await test.step('B déployé : il attend, la coquille A reste servie, pas de bandeau en séance', async () => {
+@@ -60,35 +60,50 @@ test('mise à jour : B attend pendant la séance, puis remplace A au clic sans t
+     await reload();
+     await waitForWaitingWorker(page);
+     expect(await label()).toBe('A');
+     // R-PWA-3 : ni tout de suite, ni une fois le SW en attente évalué (réponse à GET_STATUS en 1 s au plus).
+     await expect(banner).toHaveCount(0);
+     await page.waitForTimeout(3_000);
+     await expect(banner).toHaveCount(0);
+   });
+ 
+   await test.step('Review Focus 5 : rechargé à froid en ligne puis sans réseau, A tant que B attend', async () => {
++    // Le label vient d'une meta d'index.html, présente même si le JS ou le CSS ne charge pas : on vérifie
++    // aussi que l'application s'est affichée (R-PWA-8), et son état hors ligne quand le réseau est coupé.
++    const connection = page.getByTestId('connection-status');
+     await reload();
+     expect(await label()).toBe('A');
++    await expect(connection).toBeVisible({ timeout: SHELL_TIMEOUT_MS });
+     // Requêtes sans réponse (VPN coupé) : la coquille vient du cache, identique sous Chromium et WebKit.
+     server.setFault({ kind: 'blackhole' });
+     await reload();
+     expect(await label()).toBe('A');
++    await expect(connection).toBeVisible({ timeout: SHELL_TIMEOUT_MS });
++    // navigator.onLine reste vrai : 'unknown' tant que la première requête n'a pas expiré, puis 'offline'.
++    await expect(connection).toHaveAttribute('data-state', /^(offline|unknown)$/);
+     // Requêtes retenues libérées, puis la panne du push rétablie, sans requête traitée entre les deux.
+     server.setFault(null);
+     server.setFault(PUSH_FAULT);
+-    // context.setOffline : WebKit fait échouer toute navigation sous le hors-ligne émulé, même servie par
+-    // le SW (« WebKit encountered an internal error », constaté en T38) ; Chromium seul.
+-    if (browserName !== 'webkit') {
++    if (browserName === 'webkit') {
++      test.info().annotations.push({
++        type: 'webkit-setOffline',
++        description:
++          'context.setOffline(true) + rechargement non exécuté sous WebKit : toute navigation sous le hors-ligne ' +
++          'émulé y échoue (« WebKit encountered an internal error »), même servie par le SW (constaté en T38). ' +
++          'Le rechargement à froid sans réseau y est couvert par le trou noir du proxy ci-dessus (01 §9.1.6, Review Focus 5).',
++      });
++    } else {
+       await context.setOffline(true);
+       await reload();
+       expect(await label()).toBe('A');
++      await expect(connection).toBeVisible({ timeout: SHELL_TIMEOUT_MS });
++      await expect(connection).toHaveAttribute('data-state', 'offline', { timeout: 5_000 });
+       await context.setOffline(false);
+     }
+     await waitForWaitingWorker(page);
+   });
+ 
+   await test.step('séance finie : bandeau fermable, puis B au clic', async () => {
+     await idbPut(page, 'meta', { key: 'activeSessionId', value: null });
+     await reload();
+     expect(await label()).toBe('A');
+     await expect(banner).toBeVisible({ timeout: 15_000 });

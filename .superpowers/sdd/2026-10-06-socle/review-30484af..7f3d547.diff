@@ -1,0 +1,2799 @@
+# Review package: 30484af..HEAD
+
+## Commits
+7f3d547 feat(privacy): confidentialité, accord santé, export, suppression, compteurs et rejets
+
+## Files changed
+ apps/web/src/App.tsx                               |  12 +
+ apps/web/src/app-services.tsx                      |  32 ++-
+ apps/web/src/features/onboarding/HealthStep.tsx    | 127 +++++-----
+ .../src/features/onboarding/LimitationFields.tsx   | 148 ++++++++++++
+ .../src/features/onboarding/onboarding.module.css  |   6 +
+ .../src/features/privacy/ConsentWithdrawDialog.tsx | 104 ++++++++
+ .../src/features/privacy/DeleteAccountDialog.tsx   |  89 +++++++
+ apps/web/src/features/privacy/ExportButton.tsx     |  59 +++++
+ .../src/features/privacy/HealthReconsentGate.tsx   |  62 +++++
+ apps/web/src/features/privacy/HealthSection.tsx    | 139 +++++++++++
+ .../src/features/privacy/PrivacySettingsPage.tsx   | 101 ++++++++
+ apps/web/src/features/privacy/messages.ts          |  32 +++
+ apps/web/src/features/privacy/privacy.module.css   |  71 ++++++
+ apps/web/src/features/status/ConnectionStatus.tsx  |  25 ++
+ apps/web/src/features/status/PendingCounter.tsx    |  31 +++
+ apps/web/src/features/status/RejectionsPage.tsx    |  67 ++++++
+ apps/web/src/features/status/SettingsPage.tsx      |  52 ++++
+ apps/web/src/features/status/status.module.css     |  60 +++++
+ apps/web/src/repos/me-repo.ts                      |   4 +-
+ apps/web/src/ui/AppShell.tsx                       |  12 +-
+ apps/web/src/ui/download.ts                        |  29 +++
+ apps/web/src/ui/index.ts                           |   1 +
+ apps/web/src/ui/ui.module.css                      |  10 +
+ apps/web/test/app/when-signed-out.test.tsx         |  42 ++++
+ apps/web/test/privacy/export-delete.test.tsx       | 243 +++++++++++++++++++
+ apps/web/test/privacy/health-section.test.tsx      | 202 ++++++++++++++++
+ apps/web/test/privacy/withdraw.test.tsx            | 263 +++++++++++++++++++++
+ apps/web/test/status/counters.test.tsx             | 114 +++++++++
+ apps/web/test/status/rejections-settings.test.tsx  | 162 +++++++++++++
+ 29 files changed, 2230 insertions(+), 69 deletions(-)
+
+## Diff
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+index f3889b5..e2f38e3 100644
+--- a/apps/web/src/App.tsx
++++ b/apps/web/src/App.tsx
+@@ -7,25 +7,30 @@ import { InvitationsPage } from './features/admin/InvitationsPage';
+ import { MembersPage } from './features/admin/MembersPage';
+ import { ServerHealthPage } from './features/admin/ServerHealthPage';
+ import { InvitePage } from './features/auth/InvitePage';
+ import { LoginPage } from './features/auth/LoginPage';
+ import { ResetPage } from './features/auth/ResetPage';
+ import { HomePage } from './features/home/HomePage';
+ import { OnboardingFlow } from './features/onboarding/OnboardingFlow';
+ import { GymPage } from './features/places/GymPage';
+ import { PlaceDetail } from './features/places/PlaceDetail';
+ import { PlacesPage } from './features/places/PlacesPage';
++import { HealthReconsentGate } from './features/privacy/HealthReconsentGate';
++import { HealthSection } from './features/privacy/HealthSection';
++import { PrivacySettingsPage } from './features/privacy/PrivacySettingsPage';
+ import { ProfilePage } from './features/profile/ProfilePage';
+ import { CreditsPage } from './features/public/CreditsPage';
+ import { HelpPage } from './features/public/HelpPage';
+ import { NotFound } from './features/public/NotFound';
+ import { PrivacyPage } from './features/public/PrivacyPage';
++import { RejectionsPage } from './features/status/RejectionsPage';
++import { SettingsPage } from './features/status/SettingsPage';
+ import { useRepos } from './repos';
+ import type { ConnectionState } from './sync/engine';
+ import { AppShell, PublicShell } from './ui';
+ 
+ /** Pages lisibles sans session (03 §13 : Confidentialité, Crédits, Aide) et parcours d'accès. */
+ export const PUBLIC_PATHS: readonly string[] = [
+   '/login',
+   '/invite',
+   '/reset',
+   '/privacy',
+@@ -91,20 +96,24 @@ function PublicRoutes() {
+   );
+ }
+ 
+ function ConnectedRoutes() {
+   return (
+     <Switch>
+       <Route path="/" component={HomePage} />
+       <Route path="/profile" component={ProfilePage} />
+       <Route path="/profile/places" component={PlacesPage} />
+       <Route path="/profile/places/:id" component={PlaceDetail} />
++      <Route path="/profile/health" component={HealthSection} />
++      <Route path="/profile/privacy" component={PrivacySettingsPage} />
++      <Route path="/settings" component={SettingsPage} />
++      <Route path="/rejections" component={RejectionsPage} />
+       <Route path="/gyms/:id" component={GymPage} />
+       <Route path="/admin/members" component={MembersPage} />
+       <Route path="/admin/invitations" component={InvitationsPage} />
+       <Route path="/admin/gyms" component={AdminGymsPage} />
+       <Route path="/admin/health" component={ServerHealthPage} />
+       <Route component={NotFound} />
+     </Switch>
+   );
+ }
+ 
+@@ -126,37 +135,40 @@ export function App() {
+ 
+   switch (guard.kind) {
+     case 'wait':
+       return null;
+     case 'redirect':
+       return <Redirect to={guard.to} replace />;
+     case 'not_found':
+       return (
+         <AppShell>
+           <NotFound />
++          <HealthReconsentGate />
+         </AppShell>
+       );
+     case 'render': {
+       const route = normalizePath(path);
+       if (PUBLIC_PATHS.includes(route)) {
+         return (
+           <PublicShell>
+             <PublicRoutes />
+           </PublicShell>
+         );
+       }
+       // L'onboarding n'a ni navigation de compte ni bandeau de mise à jour.
+       if (route === '/onboarding') {
+         return (
+           <PublicShell homeLink={false}>
+             <OnboardingFlow />
+           </PublicShell>
+         );
+       }
++      // Accord santé à redemander (R-CST-6) : sur tout écran connecté, jamais pendant l'onboarding.
+       return (
+         <AppShell>
+           <ConnectedRoutes />
++          <HealthReconsentGate />
+         </AppShell>
+       );
+     }
+   }
+ }
+diff --git a/apps/web/src/app-services.tsx b/apps/web/src/app-services.tsx
+index 5c71218..f2ec7d5 100644
+--- a/apps/web/src/app-services.tsx
++++ b/apps/web/src/app-services.tsx
+@@ -107,23 +107,51 @@ function meStore(db: AppDb): MeStore {
+ export function useMeState(): MeState {
+   const { db } = useServices();
+   const store = meStore(db);
+   return useSyncExternalStore(store.subscribe, store.get);
+ }
+ 
+ export function useMe(): MeResponse | null {
+   return useMeState().me;
+ }
+ 
++/** Attente au plus de `whenSignedOut` : la requête observée répond en quelques millisecondes. */
++const SIGNED_OUT_WAIT_MS = 2000;
++
++/**
++ * Résout quand la requête observée de `meta.me` (celle de la garde) ne voit plus d'utilisateur,
++ * tout de suite si personne ne l'observe, au plus tard après `timeoutMs`. Une navigation faite
++ * ensuite n'est pas renvoyée ailleurs par la garde encore sur l'ancien utilisateur (de
++ * `/login?reason=account_deleted` vers l'accueil, puis vers `/login` sans la raison).
++ */
++export function whenSignedOut(db: AppDb, timeoutMs = SIGNED_OUT_WAIT_MS): Promise<void> {
++  const store = meStores.get(db);
++  if (!store || store.get().me === null) return Promise.resolve();
++  return new Promise((resolve) => {
++    let unsubscribe = () => {};
++    const done = () => {
++      clearTimeout(timer);
++      unsubscribe();
++      resolve();
++    };
++    const timer = setTimeout(done, timeoutMs);
++    unsubscribe = store.subscribe(() => {
++      if (store.get().me === null) done();
++    });
++  });
++}
++
+ /**
+- * `410 account_deleted` (P-DRT-4) : base locale effacée, file comprise, puis écran de connexion.
+- * Un effacement en échec n'empêche pas la navigation et ne rejette pas (appelé en `void`).
++ * `410 account_deleted` (P-DRT-4) : base locale effacée, file comprise, puis écran de connexion
++ * « Ce compte a été supprimé », une fois que la garde ne voit plus l'utilisateur. Un effacement en
++ * échec n'empêche pas la navigation et ne rejette pas (appelé en `void`).
+  */
+ export async function handleAccountDeleted(db: AppDb, navigate: (to: string) => void): Promise<void> {
+   try {
+     await wipeUserData(db, { keepOutbox: false });
++    await whenSignedOut(db);
+   } catch {
+     // Base locale inaccessible : le moteur de synchro l'effacera au prochain 410.
+   } finally {
+     navigate('/login?reason=account_deleted');
+   }
+ }
+diff --git a/apps/web/src/features/onboarding/HealthStep.tsx b/apps/web/src/features/onboarding/HealthStep.tsx
+index 104d6b6..5db8ee0 100644
+--- a/apps/web/src/features/onboarding/HealthStep.tsx
++++ b/apps/web/src/features/onboarding/HealthStep.tsx
+@@ -1,29 +1,23 @@
+ import {
+-  BODY_AREA_LABELS,
+-  BODY_AREAS,
+   type BodyArea,
+   HEALTH_CONSENT_TEXT,
+   HEALTH_QUESTIONNAIRE,
+-  LIMITATION_NOTE_MAX,
+-  LIMITATION_SEVERITIES,
+-  LIMITATION_SEVERITY_LABELS,
+-  LIMITATION_SIDE_LABELS,
+-  LIMITATION_SIDES,
+   type LimitationSeverity,
+   type LimitationSide,
+   type TrainingProfilePatch,
+ } from '@appsport/contracts';
+-import { useId, useState } from 'react';
++import { useEffect, useId, useRef, useState } from 'react';
+ import { useLive, useMe } from '../../app-services';
+ import { useRepos } from '../../repos';
+-import { Banner, Button, ChoiceList, Field, HealthWarning, useAction } from '../../ui';
++import { Banner, Button, ChoiceList, HealthWarning, useAction } from '../../ui';
++import { LimitationEditForm, LimitationFields, limitationLabel } from './LimitationFields';
+ import styles from './onboarding.module.css';
+ import { StepActions, type StepProps, saveLabel, saveStep } from './StepActions';
+ import { StepTitle } from './StepTitle';
+ 
+ const SELF_CHECK_TEXT =
+   "Si l'une de ces situations te concerne, demande l'avis d'un médecin avant de commencer.";
+ const SEE_DOCTOR_TEXT = 'Nous te recommandons de consulter un médecin avant de commencer.';
+ const SCREENING_INCOMPLETE = 'Réponds aux 4 questions ou efface tes réponses avant de continuer.';
+ const DRAFT_INCOMPLETE = 'Termine ou efface la limitation en cours avant de continuer.';
+ const CAUTIOUS_NOT_HEALTH_DATA =
+@@ -201,96 +195,99 @@ export function useLimitationDraft() {
+       await repos.consent.addLimitation({ bodyArea, side, severity, note: trimmed === '' ? null : trimmed });
+       clear();
+     },
+   };
+ }
+ 
+ export type LimitationDraft = ReturnType<typeof useLimitationDraft>;
+ 
+ /**
+  * Limitations facultatives (E7.3) : zone, côté, gêne et note de 200 caractères au plus. `draft` :
+- * saisie tenue par l'écran parent (onboarding), sinon par le composant.
++ * saisie tenue par l'écran parent (onboarding), sinon par le composant. `editable` (Profil › Santé,
++ * P-DRT-2) : chaque limitation a aussi « Modifier », qui la remplace par son formulaire ; à la
++ * fermeture, le focus revient à « Modifier ». `headingLevel` : niveau du titre (3 par défaut).
+  */
+-export function LimitationsEditor(p: { draft?: LimitationDraft } = {}) {
++export function LimitationsEditor(
++  p: { draft?: LimitationDraft; editable?: boolean; headingLevel?: 2 | 3 } = {},
++) {
+   const repos = useRepos();
+   const id = useId();
+   const limitations = useLive(() => repos.consent.limitations(), [repos]);
+   const own = useLimitationDraft();
+   const draft = p.draft ?? own;
+   const add = useAction(() => draft.persist());
+   const remove = useAction((limitationId: string) => repos.consent.removeLimitation(limitationId));
++  const [editing, setEditing] = useState<string | null>(null);
++  const returnTo = useRef<string | null>(null);
++  const listRef = useRef<HTMLUListElement>(null);
++  const Heading = p.headingLevel === 2 ? 'h2' : 'h3';
++
++  useEffect(() => {
++    if (editing !== null || returnTo.current === null) return;
++    listRef.current
++      ?.querySelector<HTMLButtonElement>(`[data-edit="${CSS.escape(returnTo.current)}"]`)
++      ?.focus();
++    returnTo.current = null;
++  }, [editing]);
++
++  function closeEditor() {
++    returnTo.current = editing;
++    setEditing(null);
++  }
+ 
+   return (
+     <section className={styles.panel}>
+-      <h3>Limitations</h3>
++      <Heading>Limitations</Heading>
+       <p className={styles.note}>
+         Facultatif : une zone sensible ou une gêne à ménager ; aucun diagnostic n'est nécessaire.
+       </p>
+       {limitations === undefined ? null : limitations.length === 0 ? (
+         <p>Aucune</p>
+       ) : (
+-        <ul className={styles.limitations}>
+-          {limitations.map((l) => (
+-            <li key={l.id} className={styles.limitation}>
+-              <span>
+-                <span id={`${id}-${l.id}`}>
+-                  {`${BODY_AREA_LABELS[l.bodyArea]} · ${LIMITATION_SIDE_LABELS[l.side]} · ${LIMITATION_SEVERITY_LABELS[l.severity]}`}
++        <ul ref={listRef} className={styles.limitations}>
++          {limitations.map((l) =>
++            editing === l.id ? (
++              <li key={l.id}>
++                <LimitationEditForm limitation={l} onDone={closeEditor} />
++              </li>
++            ) : (
++              <li key={l.id} className={styles.limitation}>
++                <span>
++                  <span id={`${id}-${l.id}`}>{limitationLabel(l)}</span>
++                  {l.note ? <span className={styles.note}> — {l.note}</span> : null}
+                 </span>
+-                {l.note ? <span className={styles.note}> — {l.note}</span> : null}
+-              </span>
+-              <Button
+-                variant="secondary"
+-                aria-describedby={`${id}-${l.id}`}
+-                disabled={remove.pending}
+-                onClick={() => void remove.run(l.id)}
+-              >
+-                Supprimer
+-              </Button>
+-            </li>
+-          ))}
++                <span className={styles.itemActions}>
++                  {p.editable ? (
++                    <Button
++                      variant="secondary"
++                      data-edit={l.id}
++                      aria-describedby={`${id}-${l.id}`}
++                      onClick={() => setEditing(l.id)}
++                    >
++                      Modifier
++                    </Button>
++                  ) : null}
++                  <Button
++                    variant="secondary"
++                    aria-describedby={`${id}-${l.id}`}
++                    disabled={remove.pending}
++                    onClick={() => void remove.run(l.id)}
++                  >
++                    Supprimer
++                  </Button>
++                </span>
++              </li>
++            ),
++          )}
+         </ul>
+       )}
+-      <Field label="Zone">
+-        <select value={draft.bodyArea} onChange={(e) => draft.setBodyArea(e.target.value as BodyArea | '')}>
+-          <option value="">Choisir</option>
+-          {BODY_AREAS.map((a) => (
+-            <option key={a} value={a}>
+-              {BODY_AREA_LABELS[a]}
+-            </option>
+-          ))}
+-        </select>
+-      </Field>
+-      <Field label="Côté">
+-        <select value={draft.side} onChange={(e) => draft.setSide(e.target.value as LimitationSide | '')}>
+-          <option value="">Choisir</option>
+-          {LIMITATION_SIDES.map((s) => (
+-            <option key={s} value={s}>
+-              {LIMITATION_SIDE_LABELS[s]}
+-            </option>
+-          ))}
+-        </select>
+-      </Field>
+-      <ChoiceList<LimitationSeverity>
+-        name={`${id}-severity`}
+-        legend="Gêne"
+-        value={draft.severity}
+-        onChange={draft.setSeverity}
+-        options={LIMITATION_SEVERITIES.map((s) => ({ value: s, label: LIMITATION_SEVERITY_LABELS[s] }))}
+-      />
+-      <Field label="Note" hint={`${LIMITATION_NOTE_MAX} caractères au plus.`}>
+-        <input
+-          type="text"
+-          maxLength={LIMITATION_NOTE_MAX}
+-          value={draft.note}
+-          onChange={(e) => draft.setNote(e.target.value)}
+-        />
+-      </Field>
++      <LimitationFields state={draft} />
+       {add.error ? <Banner tone="error">{add.error}</Banner> : null}
+       {remove.error ? <Banner tone="error">{remove.error}</Banner> : null}
+       <div className={styles.actions}>
+         {draft.empty ? null : (
+           <Button variant="secondary" onClick={draft.clear}>
+             Effacer la saisie
+           </Button>
+         )}
+         <Button variant="secondary" disabled={!draft.complete || add.pending} onClick={() => void add.run()}>
+           Ajouter une limitation
+diff --git a/apps/web/src/features/onboarding/LimitationFields.tsx b/apps/web/src/features/onboarding/LimitationFields.tsx
+new file mode 100644
+index 0000000..df13283
+--- /dev/null
++++ b/apps/web/src/features/onboarding/LimitationFields.tsx
+@@ -0,0 +1,148 @@
++import {
++  BODY_AREA_LABELS,
++  BODY_AREAS,
++  type BodyArea,
++  LIMITATION_NOTE_MAX,
++  LIMITATION_SEVERITIES,
++  LIMITATION_SEVERITY_LABELS,
++  LIMITATION_SIDE_LABELS,
++  LIMITATION_SIDES,
++  type LimitationPatch,
++  type LimitationSeverity,
++  type LimitationSide,
++} from '@appsport/contracts';
++import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
++import { type LimitationView, useRepos } from '../../repos';
++import { Banner, Button, ChoiceList, Field, useAction } from '../../ui';
++import styles from './onboarding.module.css';
++
++/** Valeurs d'une limitation en cours de saisie et leurs setters (ajout ou modification). */
++export interface LimitationFieldState {
++  bodyArea: BodyArea | '';
++  setBodyArea(v: BodyArea | ''): void;
++  side: LimitationSide | '';
++  setSide(v: LimitationSide | ''): void;
++  severity: LimitationSeverity | null;
++  setSeverity(v: LimitationSeverity): void;
++  note: string;
++  setNote(v: string): void;
++}
++
++/** « Genou · Gauche · Légère » : libellés des contrats. */
++export function limitationLabel(l: Pick<LimitationView, 'bodyArea' | 'side' | 'severity'>): string {
++  return `${BODY_AREA_LABELS[l.bodyArea]} · ${LIMITATION_SIDE_LABELS[l.side]} · ${LIMITATION_SEVERITY_LABELS[l.severity]}`;
++}
++
++/** Zone, côté, gêne et note de 200 caractères au plus (E7.3). */
++export function LimitationFields(p: { state: LimitationFieldState }) {
++  const id = useId();
++  const s = p.state;
++  return (
++    <>
++      <Field label="Zone">
++        <select value={s.bodyArea} onChange={(e) => s.setBodyArea(e.target.value as BodyArea | '')}>
++          <option value="">Choisir</option>
++          {BODY_AREAS.map((a) => (
++            <option key={a} value={a}>
++              {BODY_AREA_LABELS[a]}
++            </option>
++          ))}
++        </select>
++      </Field>
++      <Field label="Côté">
++        <select value={s.side} onChange={(e) => s.setSide(e.target.value as LimitationSide | '')}>
++          <option value="">Choisir</option>
++          {LIMITATION_SIDES.map((side) => (
++            <option key={side} value={side}>
++              {LIMITATION_SIDE_LABELS[side]}
++            </option>
++          ))}
++        </select>
++      </Field>
++      <ChoiceList<LimitationSeverity>
++        name={`${id}-severity`}
++        legend="Gêne"
++        value={s.severity}
++        onChange={s.setSeverity}
++        options={LIMITATION_SEVERITIES.map((v) => ({ value: v, label: LIMITATION_SEVERITY_LABELS[v] }))}
++      />
++      <Field label="Note" hint={`${LIMITATION_NOTE_MAX} caractères au plus.`}>
++        <input
++          type="text"
++          maxLength={LIMITATION_NOTE_MAX}
++          value={s.note}
++          onChange={(e) => s.setNote(e.target.value)}
++        />
++      </Field>
++    </>
++  );
++}
++
++/** Champs changés depuis l'ouverture ; note vide ou faite d'espaces → null. */
++function changedFields(
++  initial: LimitationView,
++  v: { bodyArea: BodyArea; side: LimitationSide; severity: LimitationSeverity; note: string },
++): LimitationPatch | null {
++  const trimmed = v.note.trim();
++  const note = trimmed === '' ? null : trimmed;
++  const patch: LimitationPatch = {};
++  if (v.bodyArea !== initial.bodyArea) patch.bodyArea = v.bodyArea;
++  if (v.side !== initial.side) patch.side = v.side;
++  if (v.severity !== initial.severity) patch.severity = v.severity;
++  if (note !== initial.note) patch.note = note;
++  return Object.keys(patch).length === 0 ? null : patch;
++}
++
++/**
++ * Modification d'une limitation (P-DRT-2) : formulaire nommé « Modifier : <libellé> », valeurs de
++ * l'ouverture ; « Enregistrer » envoie les seuls champs changés depuis l'ouverture (PATCH), même si
++ * la limitation est relue entre-temps, et rien s'il n'y en a pas. L'erreur (accord retiré, réseau)
++ * reste dans le formulaire, qui reste ouvert.
++ */
++export function LimitationEditForm(p: { limitation: LimitationView; onDone(): void }) {
++  const repos = useRepos();
++  const [l] = useState(p.limitation);
++  const [bodyArea, setBodyArea] = useState<BodyArea | ''>(l.bodyArea);
++  const [side, setSide] = useState<LimitationSide | ''>(l.side);
++  const [severity, setSeverity] = useState<LimitationSeverity | null>(l.severity);
++  const [note, setNote] = useState(l.note ?? '');
++  const formRef = useRef<HTMLFormElement>(null);
++  const save = useAction((patch: LimitationPatch) =>
++    repos.consent.updateLimitation(l.id, patch).then(() => true),
++  );
++  const complete = bodyArea !== '' && side !== '' && severity !== null;
++
++  useEffect(() => {
++    formRef.current?.querySelector<HTMLElement>('select')?.focus();
++  }, []);
++
++  async function submit(e: FormEvent) {
++    e.preventDefault();
++    if (save.pending || bodyArea === '' || side === '' || severity === null) return;
++    const patch = changedFields(l, { bodyArea, side, severity, note });
++    if (patch === null || (await save.run(patch))) p.onDone();
++  }
++
++  return (
++    <form
++      ref={formRef}
++      aria-label={`Modifier : ${limitationLabel(l)}`}
++      className={styles.panel}
++      noValidate
++      onSubmit={(e) => void submit(e)}
++    >
++      <LimitationFields
++        state={{ bodyArea, setBodyArea, side, setSide, severity, setSeverity, note, setNote }}
++      />
++      {save.error ? <Banner tone="error">{save.error}</Banner> : null}
++      <div className={styles.actions}>
++        <Button variant="secondary" disabled={save.pending} onClick={p.onDone}>
++          Annuler
++        </Button>
++        <Button type="submit" variant="secondary" disabled={!complete || save.pending}>
++          Enregistrer
++        </Button>
++      </div>
++    </form>
++  );
++}
+diff --git a/apps/web/src/features/onboarding/onboarding.module.css b/apps/web/src/features/onboarding/onboarding.module.css
+index 59d9cdc..c4afee2 100644
+--- a/apps/web/src/features/onboarding/onboarding.module.css
++++ b/apps/web/src/features/onboarding/onboarding.module.css
+@@ -81,20 +81,26 @@
+   flex-wrap: wrap;
+   align-items: center;
+   justify-content: space-between;
+   gap: var(--space-2);
+   padding: var(--space-2) var(--space-3);
+   border: 1px solid var(--color-border);
+   border-radius: var(--radius);
+   background: var(--color-surface);
+ }
+ 
++.itemActions {
++  display: flex;
++  flex-wrap: wrap;
++  gap: var(--space-2);
++}
++
+ .panel > button {
+   align-self: flex-start;
+ }
+ 
+ .summary {
+   margin: 0;
+   display: grid;
+   gap: var(--space-2);
+ }
+ 
+diff --git a/apps/web/src/features/privacy/ConsentWithdrawDialog.tsx b/apps/web/src/features/privacy/ConsentWithdrawDialog.tsx
+new file mode 100644
+index 0000000..0724d7e
+--- /dev/null
++++ b/apps/web/src/features/privacy/ConsentWithdrawDialog.tsx
+@@ -0,0 +1,104 @@
++import { type FormEvent, useCallback, useId, useRef, useState } from 'react';
++import { useRepos } from '../../repos';
++import { Banner, Button, Dialog, Field } from '../../ui';
++import { useRestoreFocus } from '../admin/admin-ui';
++import { ExportButton } from './ExportButton';
++import { passwordActionError, WITHDRAW_LIST_TEXT, WITHDRAWN_TEXT } from './messages';
++import styles from './privacy.module.css';
++
++type WithdrawProps = { open: boolean; onClose(): void; onWithdrawn?(): void };
++
++/**
++ * Retrait de l'accord santé (R-CST-5, P-CST-3) : export proposé, liste de ce qui sera effacé, mot
++ * de passe ressaisi (P-AUT-5). Le serveur répond le nouveau profil (meta.me), puis les données de
++ * santé locales sont purgées (`withdrawHealth`). Le dialogue reste ouvert sur le message de
++ * réussite jusqu'à « Fermer ». Fermé, rien n'est monté : chaque ouverture repart vide.
++ */
++export function ConsentWithdrawDialog(p: WithdrawProps) {
++  return p.open ? <OpenWithdrawDialog {...p} /> : null;
++}
++
++function OpenWithdrawDialog(p: WithdrawProps) {
++  const repos = useRepos();
++  const formId = useId();
++  const [password, setPassword] = useState('');
++  const [pending, setPending] = useState(false);
++  const [error, setError] = useState<string | null>(null);
++  const [done, setDone] = useState(false);
++  const busy = useRef(false);
++  const latest = useRef(p);
++  latest.current = p;
++  useRestoreFocus();
++
++  // Référence stable : le dialogue ne reprend pas le focus (champ du mot de passe) à chaque rendu.
++  const close = useCallback(() => {
++    if (!busy.current) latest.current.onClose();
++  }, []);
++
++  async function submit(e: FormEvent) {
++    e.preventDefault();
++    if (busy.current || password === '') return;
++    busy.current = true;
++    setPending(true);
++    setError(null);
++    try {
++      await repos.consent.withdrawHealth(password);
++      setPassword('');
++      setDone(true);
++      latest.current.onWithdrawn?.();
++    } catch (err) {
++      setError(passwordActionError(err));
++    } finally {
++      busy.current = false;
++      setPending(false);
++    }
++  }
++
++  if (done) {
++    return (
++      // Autre clé : le dialogue est remonté et reprend le focus (le bouton qui l'avait a disparu).
++      <Dialog
++        key="done"
++        open
++        title="Retirer l'accord santé"
++        onClose={close}
++        actions={<Button onClick={close}>Fermer</Button>}
++      >
++        <Banner tone="info">{WITHDRAWN_TEXT}</Banner>
++      </Dialog>
++    );
++  }
++
++  return (
++    <Dialog
++      key="form"
++      open
++      title="Retirer l'accord santé"
++      onClose={close}
++      actions={
++        <>
++          <Button variant="secondary" onClick={close} disabled={pending}>
++            Annuler
++          </Button>
++          <Button type="submit" form={formId} variant="danger" disabled={pending || password === ''}>
++            Retirer mon accord
++          </Button>
++        </>
++      }
++    >
++      <form id={formId} className={styles.dialogForm} noValidate onSubmit={(e) => void submit(e)}>
++        <p>{WITHDRAW_LIST_TEXT}</p>
++        <ExportButton label="Télécharger mes données d'abord" />
++        <Field label="Mot de passe">
++          <input
++            type="password"
++            autoComplete="current-password"
++            value={password}
++            onChange={(e) => setPassword(e.target.value)}
++          />
++        </Field>
++        {error ? <Banner tone="error">{error}</Banner> : null}
++      </form>
++    </Dialog>
++  );
++}
+diff --git a/apps/web/src/features/privacy/DeleteAccountDialog.tsx b/apps/web/src/features/privacy/DeleteAccountDialog.tsx
+new file mode 100644
+index 0000000..9e0e213
+--- /dev/null
++++ b/apps/web/src/features/privacy/DeleteAccountDialog.tsx
+@@ -0,0 +1,89 @@
++import { type FormEvent, useCallback, useId, useRef, useState } from 'react';
++import { useLocation } from 'wouter';
++import { useRepos } from '../../repos';
++import { Banner, Button, Dialog, Field } from '../../ui';
++import { useRestoreFocus } from '../admin/admin-ui';
++import { ExportButton } from './ExportButton';
++import { ANTHROPIC_RETENTION_TEXT, DELETE_LIST_TEXT, passwordActionError } from './messages';
++import styles from './privacy.module.css';
++
++type DeleteProps = { open: boolean; onClose(): void };
++
++/**
++ * Suppression du compte par l'utilisateur (R-SUP-1, P-DRT-3) : export proposé, liste de ce qui sera
++ * supprimé, mention Anthropic (P-DRT-6), mot de passe, « Supprimer définitivement ». Réussite : base
++ * locale effacée, file comprise (R-SUP-5), puis écran de connexion « Ce compte a été supprimé ».
++ * Le dernier administrateur est refusé par le serveur (R-SUP-4) et rien n'est effacé.
++ */
++export function DeleteAccountDialog(p: DeleteProps) {
++  return p.open ? <OpenDeleteDialog {...p} /> : null;
++}
++
++function OpenDeleteDialog(p: DeleteProps) {
++  const repos = useRepos();
++  const [, navigate] = useLocation();
++  const formId = useId();
++  const [password, setPassword] = useState('');
++  const [pending, setPending] = useState(false);
++  const [error, setError] = useState<string | null>(null);
++  const busy = useRef(false);
++  const onClose = useRef(p.onClose);
++  onClose.current = p.onClose;
++  useRestoreFocus();
++
++  // Référence stable : le dialogue ne reprend pas le focus (champ du mot de passe) à chaque rendu.
++  const close = useCallback(() => {
++    if (!busy.current) onClose.current();
++  }, []);
++
++  async function submit(e: FormEvent) {
++    e.preventDefault();
++    if (busy.current || password === '') return;
++    busy.current = true;
++    setPending(true);
++    setError(null);
++    try {
++      await repos.me.deleteAccount(password);
++    } catch (err) {
++      setError(passwordActionError(err));
++      busy.current = false;
++      setPending(false);
++      return;
++    }
++    // Pendant la navigation, le dialogue ne se ferme plus : la page qui le porte disparaît.
++    navigate('/login?reason=account_deleted', { replace: true });
++  }
++
++  return (
++    <Dialog
++      open
++      title="Supprimer ton compte ?"
++      onClose={close}
++      actions={
++        <>
++          <Button variant="secondary" onClick={close} disabled={pending}>
++            Annuler
++          </Button>
++          <Button type="submit" form={formId} variant="danger" disabled={pending || password === ''}>
++            Supprimer définitivement
++          </Button>
++        </>
++      }
++    >
++      <form id={formId} className={styles.dialogForm} noValidate onSubmit={(e) => void submit(e)}>
++        <p>{DELETE_LIST_TEXT}</p>
++        <p>{ANTHROPIC_RETENTION_TEXT}</p>
++        <ExportButton label="Télécharger mes données d'abord" />
++        <Field label="Mot de passe">
++          <input
++            type="password"
++            autoComplete="current-password"
++            value={password}
++            onChange={(e) => setPassword(e.target.value)}
++          />
++        </Field>
++        {error ? <Banner tone="error">{error}</Banner> : null}
++      </form>
++    </Dialog>
++  );
++}
+diff --git a/apps/web/src/features/privacy/ExportButton.tsx b/apps/web/src/features/privacy/ExportButton.tsx
+new file mode 100644
+index 0000000..018fa57
+--- /dev/null
++++ b/apps/web/src/features/privacy/ExportButton.tsx
+@@ -0,0 +1,59 @@
++import { useRef, useState } from 'react';
++import { useServices } from '../../app-services';
++import { useRepos } from '../../repos';
++import { Banner, Button, downloadJson, exportFileName, useAction } from '../../ui';
++import styles from './privacy.module.css';
++
++function unsentWarning(n: number): string {
++  return n === 1
++    ? "1 élément n'est pas encore envoyé au serveur : il ne figurera pas dans l'export."
++    : `${n} éléments ne sont pas encore envoyés au serveur : ils ne figureront pas dans l'export.`;
++}
++
++/**
++ * « Télécharger mes données » (R-EXP-1, P-DRT-1) : export du serveur, en ligne, enregistré sous
++ * `appsport-export-AAAA-MM-JJ.json`. Des éléments encore dans la file d'envoi : avertissement
++ * d'abord, et rien ne part avant « Exporter quand même ».
++ */
++export function ExportButton(p: { label?: string }) {
++  const repos = useRepos();
++  const { now } = useServices();
++  const [unsent, setUnsent] = useState<number | null>(null);
++  const checking = useRef(false);
++  const exporting = useAction(async () => {
++    const data = await repos.me.exportData();
++    downloadJson(exportFileName(now()), data);
++    setUnsent(null);
++  });
++
++  async function start() {
++    if (checking.current) return;
++    checking.current = true;
++    exporting.reset();
++    try {
++      // File illisible : rien à signaler, l'export du serveur part quand même.
++      const pending = await repos.status.pendingCount().catch(() => 0);
++      if (pending > 0) setUnsent(pending);
++      else await exporting.run();
++    } finally {
++      checking.current = false;
++    }
++  }
++
++  return (
++    <div className={styles.export}>
++      <Button variant="secondary" disabled={exporting.pending} onClick={() => void start()}>
++        {p.label ?? 'Télécharger mes données'}
++      </Button>
++      {unsent !== null ? (
++        <Banner tone="warning">
++          <p>{unsentWarning(unsent)}</p>
++          <Button variant="secondary" disabled={exporting.pending} onClick={() => void exporting.run()}>
++            Exporter quand même
++          </Button>
++        </Banner>
++      ) : null}
++      {exporting.error ? <Banner tone="error">{exporting.error}</Banner> : null}
++    </div>
++  );
++}
+diff --git a/apps/web/src/features/privacy/HealthReconsentGate.tsx b/apps/web/src/features/privacy/HealthReconsentGate.tsx
+new file mode 100644
+index 0000000..aa2930b
+--- /dev/null
++++ b/apps/web/src/features/privacy/HealthReconsentGate.tsx
+@@ -0,0 +1,62 @@
++import { HEALTH_CONSENT_TEXT } from '@appsport/contracts';
++import { useCallback, useState } from 'react';
++import { useLive, useMe } from '../../app-services';
++import { useRepos } from '../../repos';
++import { Banner, Button, Dialog, useAction } from '../../ui';
++import { ConsentWithdrawDialog } from './ConsentWithdrawDialog';
++import styles from './privacy.module.css';
++
++const ignore = () => {};
++
++/**
++ * Accord santé donné sur une version majeure antérieure du texte (R-CST-6, P-CST-1) : le texte en
++ * vigueur est redemandé, case décochée. Seul l'accord ou le retrait lèvent la porte : pas de
++ * fermeture, Échap sans effet ; « Je refuse » ouvre le retrait (mot de passe, P-AUT-5), et ce
++ * dialogue fermé sans retrait ramène la porte. Rien pendant le changement de mot de passe imposé.
++ */
++export function HealthReconsentGate() {
++  const repos = useRepos();
++  const me = useMe();
++  const needed = useLive(() => repos.consent.needsHealthReconsent(), [repos]);
++  const [refusing, setRefusing] = useState(false);
++  const backToGate = useCallback(() => setRefusing(false), []);
++
++  // Le retrait ouvert reste affiché jusqu'à sa fermeture, même une fois l'accord retiré.
++  if (refusing) return <ConsentWithdrawDialog open onClose={backToGate} />;
++  if (needed !== true || !me || me.mustChangePassword) return null;
++  return <ReconsentDialog onRefuse={() => setRefusing(true)} />;
++}
++
++function ReconsentDialog(p: { onRefuse(): void }) {
++  const repos = useRepos();
++  const [agreed, setAgreed] = useState(false);
++  const grant = useAction(() => repos.consent.grantHealth());
++  return (
++    <Dialog
++      open
++      title="Le texte de l'accord santé a changé"
++      onClose={ignore}
++      actions={
++        <>
++          <Button variant="secondary" disabled={grant.pending} onClick={p.onRefuse}>
++            Je refuse
++          </Button>
++          <Button disabled={!agreed || grant.pending} onClick={() => void grant.run()}>
++            J'accepte
++          </Button>
++        </>
++      }
++    >
++      <div className={styles.dialogForm}>
++        <p>
++          Relis le nouveau texte. Refuser revient à retirer ton accord : tes données de santé seront effacées.
++        </p>
++        <label className={styles.check}>
++          <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
++          <span>{HEALTH_CONSENT_TEXT.text}</span>
++        </label>
++        {grant.error ? <Banner tone="error">{grant.error}</Banner> : null}
++      </div>
++    </Dialog>
++  );
++}
+diff --git a/apps/web/src/features/privacy/HealthSection.tsx b/apps/web/src/features/privacy/HealthSection.tsx
+new file mode 100644
+index 0000000..dc16ddb
+--- /dev/null
++++ b/apps/web/src/features/privacy/HealthSection.tsx
+@@ -0,0 +1,139 @@
++import type { MeResponse } from '@appsport/contracts';
++import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
++import { Link } from 'wouter';
++import { useLive, useMe } from '../../app-services';
++import { useRepos } from '../../repos';
++import { Banner, Button, formatDate, HealthWarning, Page, useAction } from '../../ui';
++import {
++  CautiousModeToggle,
++  HealthConsentPanel,
++  LimitationsEditor,
++  ScreeningQuestions,
++} from '../onboarding/HealthStep';
++import styles from './privacy.module.css';
++
++/**
++ * Profil › Santé (02 §11, E7) : sans accord, l'accord est proposé et les questions s'affichent en
++ * auto-vérification (P-CST-2) ; avec accord, dernière réponse au questionnaire (« Répondre de
++ * nouveau »), limitations modifiables (P-DRT-2). Le mode prudent (C1) est réglable dans tous les cas.
++ * Le retrait de l'accord se fait dans Confidentialité (R-CST-5).
++ */
++export function HealthSection() {
++  const me = useMe();
++  if (!me) return null;
++  const consented = me.consents.health.active;
++  return (
++    <Page title="Santé" back="/profile">
++      {consented ? (
++        <>
++          <ScreeningSection />
++          <LimitationsEditor editable headingLevel={2} />
++          <p className={styles.note}>
++            Ton accord santé se retire dans <Link href="/profile/privacy">Confidentialité</Link>.
++          </p>
++        </>
++      ) : (
++        <Section title="Accord santé">
++          <HealthConsentPanel onGranted={() => {}} />
++          <ScreeningQuestions record={false} />
++        </Section>
++      )}
++      <CautiousSection me={me} />
++      <HealthWarning />
++    </Page>
++  );
++}
++
++/** Section titrée (h2), nommée par son titre. */
++function Section(p: { title: string; children: ReactNode }) {
++  const id = useId();
++  return (
++    <section aria-labelledby={id} className={styles.section}>
++      <h2 id={id}>{p.title}</h2>
++      {p.children}
++    </section>
++  );
++}
++
++/**
++ * Questionnaire de prudence : seuls l'indicateur, la version et la date sont gardés (E7.2). Déjà
++ * répondu : date et indicateur, puis « Répondre de nouveau » ouvre les questions ; enregistrées, le
++ * résumé revient et reprend le focus.
++ */
++function ScreeningSection() {
++  const repos = useRepos();
++  const screening = useLive(() => repos.consent.screening(), [repos]);
++  const [answering, setAnswering] = useState(false);
++  const summaryRef = useRef<HTMLDivElement>(null);
++  const returnFocus = useRef(false);
++  const summary = Boolean(screening) && !answering;
++
++  // Questions fermées (enregistrées ou « Annuler ») : le focus revient à « Répondre de nouveau ».
++  useEffect(() => {
++    if (!summary || !returnFocus.current) return;
++    returnFocus.current = false;
++    summaryRef.current?.querySelector('button')?.focus();
++  }, [summary]);
++
++  if (screening === undefined) return null;
++  const close = () => {
++    returnFocus.current = true;
++    setAnswering(false);
++  };
++  return (
++    <Section title="Questionnaire de prudence">
++      {screening && summary ? (
++        <div ref={summaryRef} className={styles.summary}>
++          <p>{`Dernière réponse le ${formatDate(screening.answeredAt)}`}</p>
++          <p>{`Indicateur de prudence : ${screening.caution ? 'actif' : 'inactif'}`}</p>
++          <Button variant="secondary" onClick={() => setAnswering(true)}>
++            Répondre de nouveau
++          </Button>
++        </div>
++      ) : (
++        <>
++          <ScreeningQuestions record onSaved={close} />
++          {screening ? (
++            <Button variant="secondary" className={styles.start} onClick={close}>
++              Annuler
++            </Button>
++          ) : null}
++        </>
++      )}
++    </Section>
++  );
++}
++
++/**
++ * Mode prudent (E7.5, C1) : envoyé au changement ; le choix s'affiche jusqu'à la relecture du
++ * profil, interrupteur désactivé pendant l'envoi.
++ */
++function CautiousSection(p: { me: MeResponse }) {
++  const repos = useRepos();
++  const profile = useLive(() => repos.profile.get(), [repos]);
++  const [draft, setDraft] = useState<boolean | null>(null);
++  const save = useAction(async (cautiousMode: boolean) => {
++    await repos.profile.update({ cautiousMode });
++    return true;
++  });
++
++  // biome-ignore lint/correctness/useExhaustiveDependencies: chaque lecture du profil efface le brouillon
++  useEffect(() => setDraft(null), [profile]);
++
++  if (profile === undefined) return null;
++  async function change(v: boolean) {
++    setDraft(v);
++    if (!(await save.run(v))) setDraft(null);
++  }
++  return (
++    <Section title="Mode prudent">
++      <CautiousModeToggle
++        value={draft ?? profile?.cautiousMode ?? false}
++        minor={p.me.ageBand === 'minor'}
++        disabled={save.pending}
++        onChange={(v) => void change(v)}
++      />
++      {save.error ? <Banner tone="error">{save.error}</Banner> : null}
++    </Section>
++  );
++}
+diff --git a/apps/web/src/features/privacy/PrivacySettingsPage.tsx b/apps/web/src/features/privacy/PrivacySettingsPage.tsx
+new file mode 100644
+index 0000000..b2560f6
+--- /dev/null
++++ b/apps/web/src/features/privacy/PrivacySettingsPage.tsx
+@@ -0,0 +1,101 @@
++import { type ConsentStatus, PRIVACY_POLICY_VERSION } from '@appsport/contracts';
++import { type ReactNode, type RefObject, useCallback, useEffect, useId, useRef, useState } from 'react';
++import { Link } from 'wouter';
++import { useMe } from '../../app-services';
++import { Button, formatDate, Page } from '../../ui';
++import { ConsentWithdrawDialog } from './ConsentWithdrawDialog';
++import { DeleteAccountDialog } from './DeleteAccountDialog';
++import { ExportButton } from './ExportButton';
++import styles from './privacy.module.css';
++
++function consentLabel(c: ConsentStatus): string {
++  if (!c.active) return 'Non donné';
++  return c.at ? `Donné le ${formatDate(c.at)}` : 'Donné';
++}
++
++/**
++ * Profil › Confidentialité (02 §11) : texte en vigueur, accords et retrait de l'accord santé
++ * (R-CST-5), export (R-EXP-1) et suppression du compte (R-SUP-1). L'accord coach est recueilli par
++ * la brique 4 : ici, son état seulement.
++ */
++export function PrivacySettingsPage() {
++  const me = useMe();
++  const [dialog, setDialog] = useState<'withdraw' | 'delete' | null>(null);
++  const consentsHeading = useRef<HTMLHeadingElement>(null);
++  const opened = useRef(false);
++  const close = useCallback(() => setDialog(null), []);
++
++  // Dialogue fermé après un retrait : le bouton qui l'avait ouvert a disparu (le focus n'a pas pu
++  // lui revenir), le focus va au titre des accords.
++  useEffect(() => {
++    if (dialog !== null) {
++      opened.current = true;
++      return;
++    }
++    const lost = document.activeElement === null || document.activeElement === document.body;
++    if (opened.current && lost) consentsHeading.current?.focus();
++    opened.current = false;
++  }, [dialog]);
++
++  if (!me) return null;
++  const health = me.consents.health;
++  return (
++    <Page title="Confidentialité" back="/profile">
++      <Section title="Confidentialité et règles">
++        <p>{`Version en vigueur : ${PRIVACY_POLICY_VERSION}`}</p>
++        <p>
++          <Link href="/privacy">Lire la page Confidentialité et règles</Link>
++        </p>
++      </Section>
++      <Section title="Accords" headingRef={consentsHeading}>
++        <dl className={styles.consents}>
++          <div>
++            <dt>Accord santé</dt>
++            <dd>{consentLabel(health)}</dd>
++          </div>
++          <div>
++            <dt>Accord coach</dt>
++            <dd>{consentLabel(me.consents.aiCoach)}</dd>
++          </div>
++        </dl>
++        {health.active ? (
++          <Button variant="danger" className={styles.start} onClick={() => setDialog('withdraw')}>
++            Retirer mon accord santé
++          </Button>
++        ) : (
++          <p>
++            <Link href="/profile/health">Donner mon accord santé</Link>
++          </p>
++        )}
++      </Section>
++      <Section title="Mes données">
++        <p>Un fichier JSON avec tout ce qu'appsport garde sur ton compte.</p>
++        <ExportButton />
++      </Section>
++      <Section title="Suppression du compte">
++        <Button variant="danger" className={styles.start} onClick={() => setDialog('delete')}>
++          Supprimer mon compte
++        </Button>
++      </Section>
++      <ConsentWithdrawDialog open={dialog === 'withdraw'} onClose={close} />
++      <DeleteAccountDialog open={dialog === 'delete'} onClose={close} />
++    </Page>
++  );
++}
++
++/** Section titrée (h2), nommée par son titre ; `headingRef` : titre focalisable. */
++function Section(p: {
++  title: string;
++  headingRef?: RefObject<HTMLHeadingElement | null>;
++  children: ReactNode;
++}) {
++  const id = useId();
++  return (
++    <section aria-labelledby={id} className={styles.section}>
++      <h2 id={id} ref={p.headingRef} tabIndex={p.headingRef ? -1 : undefined}>
++        {p.title}
++      </h2>
++      {p.children}
++    </section>
++  );
++}
+diff --git a/apps/web/src/features/privacy/messages.ts b/apps/web/src/features/privacy/messages.ts
+new file mode 100644
+index 0000000..5a2da49
+--- /dev/null
++++ b/apps/web/src/features/privacy/messages.ts
+@@ -0,0 +1,32 @@
++import type { ApiErrorCode } from '@appsport/contracts';
++import { ApiError } from '../../api/client';
++import { errorMessage } from '../../ui';
++import { loginErrorMessage } from '../auth/messages';
++
++/** Ce que le retrait de l'accord santé efface (R-CST-5, P-CST-3 étape 2). */
++export const WITHDRAW_LIST_TEXT =
++  "Seront effacés : ton indicateur de prudence (questionnaire), tes limitations et zones sensibles, et toute donnée de santé enregistrée par l'appli (douleurs, pesées, suivi nutritionnel). Le mode prudent est conservé.";
++
++export const WITHDRAWN_TEXT = 'Accord retiré. Tes données de santé ont été effacées.';
++
++/** Ce que la suppression du compte efface et ce qui subsiste (R-SUP-1, R-SUP-6). */
++export const DELETE_LIST_TEXT =
++  "Ton compte, ton profil, tes lieux, tes données de santé et l'historique de tes accords seront supprimés. Les salles restent : tu y apparaîtras comme « ancien membre ». Le journal de sécurité est gardé 12 mois et les sauvegardes 30 jours au plus.";
++
++/** P-DRT-6 : appsport ne peut pas déclencher l'effacement chez Anthropic. */
++export const ANTHROPIC_RETENTION_TEXT =
++  "Si tu as utilisé le coach, appsport ne peut pas faire effacer tes échanges chez Anthropic : ils y sont effacés sous 30 jours, ou gardés jusqu'à 2 ans si ses filtres de sécurité en ont signalé un.";
++
++const PASSWORD_ERRORS: Partial<Record<ApiErrorCode, string>> = {
++  invalid_credentials: 'Mot de passe incorrect.',
++  last_admin: "Tu es le dernier administrateur : nomme d'abord un autre administrateur.",
++};
++
++/**
++ * Erreur d'une action confirmée par le mot de passe (P-AUT-5) : mot de passe refusé, dernier
++ * administrateur, attente annoncée en minutes (`rate_limited`), sinon le message commun.
++ */
++export function passwordActionError(e: unknown): string {
++  if (e instanceof ApiError && e.code === 'rate_limited') return loginErrorMessage(e);
++  return errorMessage(e, PASSWORD_ERRORS);
++}
+diff --git a/apps/web/src/features/privacy/privacy.module.css b/apps/web/src/features/privacy/privacy.module.css
+new file mode 100644
+index 0000000..0360559
+--- /dev/null
++++ b/apps/web/src/features/privacy/privacy.module.css
+@@ -0,0 +1,71 @@
++.section,
++.dialogForm,
++.export,
++.summary {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-3);
++}
++
++.section h2 {
++  margin: 0;
++  font-size: 1.25rem;
++}
++
++.section p,
++.dialogForm p,
++.summary p {
++  margin: 0;
++}
++
++.start,
++.export > button,
++.summary > button {
++  align-self: flex-start;
++}
++
++.note {
++  margin: 0;
++  font-size: 0.875rem;
++  color: var(--color-muted);
++}
++
++.consents {
++  margin: 0;
++  display: grid;
++  gap: var(--space-2);
++}
++
++.consents div {
++  display: flex;
++  flex-wrap: wrap;
++  justify-content: space-between;
++  gap: var(--space-2);
++  padding: var(--space-2) var(--space-3);
++  border: 1px solid var(--color-border);
++  border-radius: var(--radius);
++  background: var(--color-surface);
++}
++
++.consents dt {
++  color: var(--color-muted);
++}
++
++.consents dd {
++  margin: 0;
++  font-weight: 600;
++}
++
++.check {
++  display: flex;
++  align-items: flex-start;
++  gap: var(--space-3);
++  min-height: 44px;
++}
++
++.check input {
++  flex-shrink: 0;
++  width: 1.5rem;
++  height: 1.5rem;
++  margin: 0;
++}
+diff --git a/apps/web/src/features/status/ConnectionStatus.tsx b/apps/web/src/features/status/ConnectionStatus.tsx
+new file mode 100644
+index 0000000..a2275a3
+--- /dev/null
++++ b/apps/web/src/features/status/ConnectionStatus.tsx
+@@ -0,0 +1,25 @@
++import { useSyncState } from '../../app-services';
++import type { ConnectionState } from '../../sync/engine';
++import styles from './status.module.css';
++
++export const CONNECTION_LABELS: Record<ConnectionState, string> = {
++  online: 'En ligne',
++  offline: 'Hors ligne',
++  unknown: 'Connexion…',
++  unauthenticated: 'Session expirée',
++  protocol_unsupported: 'Mise à jour nécessaire',
++  account_deleted: 'Compte supprimé',
++};
++
++/**
++ * État de connexion tel que le moteur de synchro l'a constaté (résultat des appels et sonde
++ * `/api/health`, R-SYN-30) ; annoncé poliment quand il change.
++ */
++export function ConnectionStatus() {
++  const { connection } = useSyncState();
++  return (
++    <span data-testid="connection-status" data-state={connection} role="status" className={styles.connection}>
++      {CONNECTION_LABELS[connection]}
++    </span>
++  );
++}
+diff --git a/apps/web/src/features/status/PendingCounter.tsx b/apps/web/src/features/status/PendingCounter.tsx
+new file mode 100644
+index 0000000..2450017
+--- /dev/null
++++ b/apps/web/src/features/status/PendingCounter.tsx
+@@ -0,0 +1,31 @@
++import { Link } from 'wouter';
++import { useSyncState } from '../../app-services';
++import { plural } from '../../ui/format';
++import styles from './status.module.css';
++
++/** « N en attente » : opérations de l'outbox pas encore acceptées par le serveur (R-SYN-34). */
++export function PendingCounter() {
++  const { pending } = useSyncState();
++  return (
++    <span data-testid="pending-counter" data-count={pending} className={styles.counter}>
++      {`${pending} en attente`}
++    </span>
++  );
++}
++
++/**
++ * « N refusé(s) », lien vers les rejets (R-SYN-18, R-SYN-34) ; compte du moteur de synchro, mis à
++ * jour à la fin de chaque cycle. Sans refus : élément vide (data-count '0'), rien à lire.
++ */
++export function RejectedCounter() {
++  const { rejected } = useSyncState();
++  return (
++    <span data-testid="rejected-counter" data-count={rejected} className={styles.counter}>
++      {rejected > 0 ? (
++        <Link href="/rejections" className={styles.rejected}>
++          {`${rejected} ${plural(rejected, 'refusé', 'refusés')}`}
++        </Link>
++      ) : null}
++    </span>
++  );
++}
+diff --git a/apps/web/src/features/status/RejectionsPage.tsx b/apps/web/src/features/status/RejectionsPage.tsx
+new file mode 100644
+index 0000000..4c2641d
+--- /dev/null
++++ b/apps/web/src/features/status/RejectionsPage.tsx
+@@ -0,0 +1,67 @@
++import { useId } from 'react';
++import { useLive } from '../../app-services';
++import { type RejectionView, useRepos } from '../../repos';
++import { Banner, Button, formatDateTime, Page, useAction } from '../../ui';
++import styles from './status.module.css';
++
++/** Libellé d'un code de rejet de synchro (R-SYN-18) ; un code inconnu s'affiche tel quel. */
++export const REJECTION_CODE_LABELS: Record<string, string> = {
++  validation: 'Données invalides',
++  forbidden: 'Action non autorisée',
++  parent_rejected: 'Élément parent refusé',
++  stale_revision: 'Version périmée',
++  unknown_entity: 'Type de donnée inconnu',
++  protocol: "Version de l'appli trop ancienne",
++};
++
++const codeLabel = (code: string): string =>
++  Object.hasOwn(REJECTION_CODE_LABELS, code) ? (REJECTION_CODE_LABELS[code] ?? code) : code;
++
++const TITLE = 'Éléments refusés';
++
++/**
++ * Rejets de synchro (R-SYN-18) : rejets du serveur non écartés et rejets reçus au push sur cet
++ * appareil. « Ignorer » écarte un rejet (écriture atomique du dépôt), jamais en silence.
++ */
++export function RejectionsPage() {
++  const repos = useRepos();
++  const rejections = useLive(() => repos.rejections.list(), [repos]);
++  const dismiss = useAction((id: string) => repos.rejections.dismiss(id));
++  const listId = useId();
++  return (
++    <Page title={TITLE} back="/">
++      <p>Le serveur a refusé ces modifications : elles n'ont pas été enregistrées.</p>
++      {dismiss.error ? <Banner tone="error">{dismiss.error}</Banner> : null}
++      {rejections === undefined ? null : rejections.length === 0 ? (
++        <p>Aucun refus.</p>
++      ) : (
++        <ul aria-label={TITLE} className={styles.rejections}>
++          {rejections.map((r) => (
++            <RejectionItem
++              key={r.id}
++              rejection={r}
++              labelId={`${listId}-${r.id}`}
++              busy={dismiss.pending}
++              onDismiss={() => void dismiss.run(r.id)}
++            />
++          ))}
++        </ul>
++      )}
++    </Page>
++  );
++}
++
++function RejectionItem(p: { rejection: RejectionView; labelId: string; busy: boolean; onDismiss(): void }) {
++  const { rejection: r } = p;
++  return (
++    <li className={styles.rejection}>
++      <div>
++        <strong id={p.labelId}>{codeLabel(r.code)}</strong>
++        {r.at ? <span className={styles.meta}>{`Refusé le ${formatDateTime(r.at)}`}</span> : null}
++      </div>
++      <Button variant="secondary" aria-describedby={p.labelId} disabled={p.busy} onClick={p.onDismiss}>
++        Ignorer
++      </Button>
++    </li>
++  );
++}
+diff --git a/apps/web/src/features/status/SettingsPage.tsx b/apps/web/src/features/status/SettingsPage.tsx
+new file mode 100644
+index 0000000..d62919a
+--- /dev/null
++++ b/apps/web/src/features/status/SettingsPage.tsx
+@@ -0,0 +1,52 @@
++import { useId } from 'react';
++import { Link } from 'wouter';
++import { useLive } from '../../app-services';
++import { useRepos } from '../../repos';
++import { Page } from '../../ui';
++import styles from './status.module.css';
++
++const PERSISTENCE_LABELS = {
++  granted: 'Stockage persistant : accordé',
++  refused: 'Stockage persistant : refusé',
++  unknown: 'Stockage persistant : pas encore demandé',
++} as const;
++
++export const STORAGE_ADVICE =
++  "Ton navigateur peut effacer les données de l'appli si l'espace manque. Pense à télécharger tes données régulièrement.";
++
++/**
++ * Réglages : résultat de la demande de stockage persistant (R-SYN-31), faite à la fin de
++ * l'onboarding dans l'appli installée. Un refus ne bloque rien mais conseille l'export.
++ */
++export function SettingsPage() {
++  const repos = useRepos();
++  // undefined : lecture en cours ; null : jamais demandé.
++  const granted = useLive(() => repos.status.persistGranted(), [repos]);
++  const headingId = useId();
++  return (
++    <Page title="Réglages" back="/profile">
++      <section aria-labelledby={headingId} className={styles.section}>
++        <h2 id={headingId}>Stockage</h2>
++        {granted === undefined ? null : (
++          <>
++            <p>
++              {granted === null
++                ? PERSISTENCE_LABELS.unknown
++                : granted
++                  ? PERSISTENCE_LABELS.granted
++                  : PERSISTENCE_LABELS.refused}
++            </p>
++            {granted === false ? (
++              <>
++                <p>{STORAGE_ADVICE}</p>
++                <p>
++                  <Link href="/profile/privacy">Télécharger mes données</Link>
++                </p>
++              </>
++            ) : null}
++          </>
++        )}
++      </section>
++    </Page>
++  );
++}
+diff --git a/apps/web/src/features/status/status.module.css b/apps/web/src/features/status/status.module.css
+index 80514dd..a064db5 100644
+--- a/apps/web/src/features/status/status.module.css
++++ b/apps/web/src/features/status/status.module.css
+@@ -34,10 +34,70 @@
+ 
+ .failures {
+   margin: 0;
+   padding-left: var(--space-6);
+   color: var(--color-muted);
+ }
+ 
+ .indicator > button {
+   justify-self: start;
+ }
++
++/* Compteurs de la zone d'état (R-SYN-34). */
++.connection {
++  font-weight: 600;
++}
++
++.counter:empty {
++  display: none;
++}
++
++.rejected {
++  color: var(--color-danger);
++  font-weight: 600;
++}
++
++.rejections {
++  margin: 0;
++  padding: 0;
++  list-style: none;
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-2);
++}
++
++.rejection {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: var(--space-2) var(--space-3);
++  padding: var(--space-2) var(--space-3);
++  border: 1px solid var(--color-border);
++  border-radius: var(--radius);
++  background: var(--color-surface);
++}
++
++.rejection > div {
++  display: flex;
++  flex-direction: column;
++  margin-right: auto;
++}
++
++.meta {
++  font-size: 0.875rem;
++  color: var(--color-muted);
++}
++
++.section {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-3);
++}
++
++.section h2 {
++  margin: 0;
++  font-size: 1.25rem;
++}
++
++.section p {
++  margin: 0;
++}
+diff --git a/apps/web/src/repos/me-repo.ts b/apps/web/src/repos/me-repo.ts
+index ea4b307..614ab1f 100644
+--- a/apps/web/src/repos/me-repo.ts
++++ b/apps/web/src/repos/me-repo.ts
+@@ -3,21 +3,21 @@ import {
+   type ApiErrorCode,
+   type ChangePasswordRequest,
+   ExportV1,
+   InvitationCheckResponse,
+   type LoginRequest,
+   MeResponse,
+   ResetCheckResponse,
+   type ResetPasswordRequest,
+ } from '@appsport/contracts';
+ import { ApiError, NetworkRequiredError } from '../api/client';
+-import type { AppServices } from '../app-services';
++import { type AppServices, whenSignedOut } from '../app-services';
+ import { deleteMeta, getMeta, setMeta } from '../local-db/meta';
+ import { wipeUserData } from '../local-db/wipe';
+ import { pendingCount } from '../sync/outbox';
+ 
+ /** Erreurs d'une session que le serveur ne connaît plus. */
+ const SESSION_GONE: readonly ApiErrorCode[] = ['unauthenticated', 'account_deleted'];
+ 
+ /** Propriétaire des données de l'appareil et nombre de ses éléments non envoyés. */
+ export interface DeviceOwner {
+   userId: string | null;
+@@ -166,20 +166,22 @@ export function createMeRepo(s: AppServices): MeRepo {
+           if (error.code === 'account_deleted') throw error;
+           return;
+         }
+         await wipeUserData(db, { keepOutbox: false });
+       }),
+     exportData: () => api.get('/api/me/export', ExportV1),
+     deleteAccount: (password) =>
+       withEngineStopped(async () => {
+         await api.send('POST', '/api/me/delete', { password });
+         await wipeUserData(db, { keepOutbox: false });
++        // L'écran navigue ensuite vers « Ce compte a été supprimé » : la garde doit déjà le savoir.
++        await whenSignedOut(db);
+       }),
+     async adultNotice() {
+       const last = await getMeta(db, 'lastAgeBand');
+       return last === 'minor' && (await current())?.ageBand === 'adult';
+     },
+     async dismissAdultNotice() {
+       await setMeta(db, 'lastAgeBand', 'adult');
+     },
+   };
+   return repo;
+diff --git a/apps/web/src/ui/AppShell.tsx b/apps/web/src/ui/AppShell.tsx
+index 82dfb07..a21764f 100644
+--- a/apps/web/src/ui/AppShell.tsx
++++ b/apps/web/src/ui/AppShell.tsx
+@@ -1,29 +1,39 @@
+ import type { ReactNode } from 'react';
+ import { Link } from 'wouter';
+ import { useMe } from '../app-services';
++import { ConnectionStatus } from '../features/status/ConnectionStatus';
++import { PendingCounter, RejectedCounter } from '../features/status/PendingCounter';
+ import styles from './ui.module.css';
+ 
+-/** Cadre des écrans connectés : navigation, liens vers les pages publiques. */
++/**
++ * Cadre des écrans connectés : navigation, zone d'état (connexion, éléments en attente et refusés,
++ * R-SYN-34), liens vers les pages publiques.
++ */
+ export function AppShell(p: { children: ReactNode }) {
+   const me = useMe();
+   return (
+     <div className={styles.shell}>
+       <header className={styles.header}>
+         <Link href="/" className={styles.brand}>
+           appsport
+         </Link>
+         <nav aria-label="Navigation principale" className={styles.nav}>
+           <Link href="/">Accueil</Link>
+           <Link href="/profile">Profil</Link>
+           {me?.role === 'admin' ? <Link href="/admin/members">Administration</Link> : null}
+         </nav>
++        <div className={styles.status}>
++          <ConnectionStatus />
++          <PendingCounter />
++          <RejectedCounter />
++        </div>
+       </header>
+       <main className={styles.main}>{p.children}</main>
+       <PublicLinks />
+     </div>
+   );
+ }
+ 
+ /**
+  * Cadre des pages publiques, lisibles sans session, et de l'onboarding : pas de navigation de
+  * compte. `homeLink` faux (onboarding) : la marque est un simple texte, l'accueil ramènerait à
+diff --git a/apps/web/src/ui/download.ts b/apps/web/src/ui/download.ts
+new file mode 100644
+index 0000000..74653d1
+--- /dev/null
++++ b/apps/web/src/ui/download.ts
+@@ -0,0 +1,29 @@
++import { parisDate } from '@appsport/domain';
++
++/**
++ * Délai avant de libérer l'URL du fichier : Safari annule un téléchargement dont l'URL `blob:` est
++ * révoquée trop tôt ; la valeur est celle de FileSaver.js.
++ */
++const REVOKE_AFTER_MS = 40_000;
++
++/** `appsport-export-AAAA-MM-JJ.json`, date civile de Paris (R-EXP-1). */
++export function exportFileName(nowMs: number): string {
++  return `appsport-export-${parisDate(new Date(nowMs))}.json`;
++}
++
++/** Télécharge `data` en JSON indenté : lien `download` ajouté, cliqué puis retiré, URL libérée ensuite. */
++export function downloadJson(filename: string, data: unknown): void {
++  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
++  const url = URL.createObjectURL(blob);
++  const link = document.createElement('a');
++  link.href = url;
++  link.download = filename;
++  link.hidden = true;
++  document.body.append(link);
++  try {
++    link.click();
++  } finally {
++    link.remove();
++    setTimeout(() => URL.revokeObjectURL(url), REVOKE_AFTER_MS);
++  }
++}
+diff --git a/apps/web/src/ui/index.ts b/apps/web/src/ui/index.ts
+index d8f8026..d0acbdc 100644
+--- a/apps/web/src/ui/index.ts
++++ b/apps/web/src/ui/index.ts
+@@ -1,12 +1,13 @@
+ export * from './AppShell';
+ export * from './Banner';
+ export * from './Button';
+ export * from './ChoiceList';
+ export * from './CopyButton';
+ export * from './Dialog';
++export * from './download';
+ export * from './errors';
+ export * from './Field';
+ export * from './format';
+ export * from './HealthWarning';
+ export * from './Page';
+ export * from './use-action';
+diff --git a/apps/web/src/ui/ui.module.css b/apps/web/src/ui/ui.module.css
+index df9697e..1b5eddd 100644
+--- a/apps/web/src/ui/ui.module.css
++++ b/apps/web/src/ui/ui.module.css
+@@ -78,20 +78,30 @@
+   color: var(--color-text);
+   margin-right: auto;
+ }
+ 
+ .nav {
+   display: flex;
+   flex-wrap: wrap;
+   gap: var(--space-3);
+ }
+ 
++.status {
++  flex-basis: 100%;
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: var(--space-1) var(--space-3);
++  font-size: 0.875rem;
++  color: var(--color-muted);
++}
++
+ .main {
+   flex: 1;
+   width: 100%;
+   max-width: var(--content-width);
+   margin: 0 auto;
+   padding: var(--space-4);
+ }
+ 
+ .footer {
+   display: flex;
+diff --git a/apps/web/test/app/when-signed-out.test.tsx b/apps/web/test/app/when-signed-out.test.tsx
+new file mode 100644
+index 0000000..f48efae
+--- /dev/null
++++ b/apps/web/test/app/when-signed-out.test.tsx
+@@ -0,0 +1,42 @@
++import { screen } from '@testing-library/react';
++import { describe, expect, it } from 'vitest';
++import { useMe, whenSignedOut } from '../../src/app-services';
++import { setMeta } from '../../src/local-db/meta';
++import { wipeUserData } from '../../src/local-db/wipe';
++import { settle } from '../support/auth';
++import { createTestLocalDb } from '../support/local-db';
++import { makeMe, renderWithServices } from '../support/render';
++
++function Who() {
++  const me = useMe();
++  return <p>{me?.username ?? 'personne'}</p>;
++}
++
++describe('whenSignedOut', () => {
++  it('personne n’observe meta.me : résolu tout de suite', async () => {
++    const db = createTestLocalDb();
++    await setMeta(db, 'me', makeMe());
++    await expect(whenSignedOut(db, 10_000)).resolves.toBeUndefined();
++  });
++
++  it('observé : résolu quand la requête ne voit plus l’utilisateur, après l’effacement', async () => {
++    const { db } = await renderWithServices(<Who />);
++    await screen.findByText('lea');
++    let resolved = false;
++    const waiting = whenSignedOut(db, 10_000).then(() => {
++      resolved = true;
++    });
++    await settle();
++    expect(resolved).toBe(false);
++    await wipeUserData(db, { keepOutbox: false });
++    await waiting;
++    expect(screen.getByText('personne')).toBeTruthy();
++  });
++
++  it('observé et jamais effacé : résolu au bout du délai', async () => {
++    const { db } = await renderWithServices(<Who />);
++    await screen.findByText('lea');
++    await expect(whenSignedOut(db, 20)).resolves.toBeUndefined();
++    expect(screen.getByText('lea')).toBeTruthy();
++  });
++});
+diff --git a/apps/web/test/privacy/export-delete.test.tsx b/apps/web/test/privacy/export-delete.test.tsx
+new file mode 100644
+index 0000000..59293c1
+--- /dev/null
++++ b/apps/web/test/privacy/export-delete.test.tsx
+@@ -0,0 +1,243 @@
++import { EXPORT_FORMAT, type MeResponse } from '@appsport/contracts';
++import { fireEvent, screen, waitFor, within } from '@testing-library/react';
++import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
++import { getMeta } from '../../src/local-db/meta';
++import { downloadJson, exportFileName } from '../../src/ui/download';
++import { fill, settle } from '../support/auth';
++import { createFakeApi, type FakeApi } from '../support/fake-api';
++import { createTestLocalDb } from '../support/local-db';
++import { makeMe, renderApp } from '../support/render';
++import { seedOutbox } from '../support/seed';
++import { until } from '../support/wait';
++
++const EXPORT = '/api/me/export';
++const DELETE = '/api/me/delete';
++const PASSWORD = 'cheval agrafe batterie correcte';
++const EXPORTED = {
++  format: EXPORT_FORMAT,
++  exportedAt: '2026-10-06T12:00:00.000Z',
++  account: { id: 'u-1', username: 'lea' },
++  tables: { place: [] },
++  gyms: [],
++  gymHistory: [],
++};
++const DELETE_LIST =
++  "Ton compte, ton profil, tes lieux, tes données de santé et l'historique de tes accords seront supprimés. Les salles restent : tu y apparaîtras comme « ancien membre ». Le journal de sécurité est gardé 12 mois et les sauvegardes 30 jours au plus.";
++const ANTHROPIC =
++  "Si tu as utilisé le coach, appsport ne peut pas faire effacer tes échanges chez Anthropic : ils y sont effacés sous 30 jours, ou gardés jusqu'à 2 ans si ses filtres de sécurité en ont signalé un.";
++
++interface Click {
++  download: string;
++  href: string;
++  connected: boolean;
++}
++
++let clicks: Click[] = [];
++let blobs: Blob[] = [];
++let createUrl: MockInstance<typeof URL.createObjectURL>;
++let revokeUrl: MockInstance<typeof URL.revokeObjectURL>;
++
++beforeEach(() => {
++  clicks = [];
++  blobs = [];
++  createUrl = vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
++    blobs.push(blob as Blob);
++    return `blob:test/${blobs.length}`;
++  });
++  revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
++  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
++    clicks.push({
++      download: this.download,
++      href: this.getAttribute('href') ?? '',
++      connected: this.isConnected,
++    });
++  });
++});
++
++afterEach(() => {
++  vi.useRealTimers();
++  vi.restoreAllMocks();
++});
++
++const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
++const calls = (api: FakeApi, path: string) => api.calls.filter((c) => c.path === path);
++
++describe('download.ts', () => {
++  it('exportFileName : date civile de Paris (AAAA-MM-JJ)', () => {
++    expect(exportFileName(Date.parse('2026-10-06T12:00:00.000Z'))).toBe('appsport-export-2026-10-06.json');
++    // 22 h 30 UTC = 00 h 30 à Paris le lendemain.
++    expect(exportFileName(Date.parse('2026-10-06T22:30:00.000Z'))).toBe('appsport-export-2026-10-07.json');
++  });
++
++  it('downloadJson : Blob JSON indenté, <a download> cliqué une fois puis retiré, URL révoquée ensuite', async () => {
++    vi.useFakeTimers({ toFake: ['setTimeout'] });
++    downloadJson('fichier.json', { a: 1, b: [true] });
++    expect(clicks).toEqual([{ download: 'fichier.json', href: 'blob:test/1', connected: true }]);
++    expect(document.querySelector('a[download]')).toBeNull();
++    expect(blobs[0]?.type).toBe('application/json');
++    expect(await blobs[0]?.text()).toBe(JSON.stringify({ a: 1, b: [true] }, null, 2));
++    vi.runAllTimers();
++    expect(revokeUrl).toHaveBeenCalledWith('blob:test/1');
++  });
++});
++
++async function renderPrivacy(o: { me?: MeResponse; api?: FakeApi; pending?: number } = {}) {
++  const db = createTestLocalDb();
++  if (o.pending) await seedOutbox(db, 'u-1', o.pending);
++  const view = await renderApp({ path: '/profile/privacy', me: o.me, db, api: o.api });
++  await screen.findByRole('heading', { level: 1, name: 'Confidentialité' });
++  return view;
++}
++
++describe('ExportButton (R-EXP-1, P-DRT-1)', () => {
++  it('2 ops en attente : avertissement sans requête ; « Exporter quand même » → téléchargement', async () => {
++    const api = createFakeApi().on('GET', EXPORT, { status: 200, body: EXPORTED });
++    await renderPrivacy({ api, pending: 2 });
++    fireEvent.click(button('Télécharger mes données'));
++    const warning = await screen.findByText(
++      "2 éléments ne sont pas encore envoyés au serveur : ils ne figureront pas dans l'export.",
++    );
++    expect(warning.closest('[role="status"]')).toBeTruthy();
++    await settle();
++    expect(calls(api, EXPORT)).toHaveLength(0);
++    expect(clicks).toHaveLength(0);
++    fireEvent.click(button('Exporter quand même'));
++    await until(() => clicks.length === 1);
++    expect(clicks[0]).toMatchObject({ download: 'appsport-export-2026-10-06.json', href: 'blob:test/1' });
++    expect(createUrl).toHaveBeenCalledTimes(1);
++    expect(JSON.parse((await blobs[0]?.text()) ?? '')).toEqual(EXPORTED);
++    expect(calls(api, EXPORT)).toHaveLength(1);
++    await until(() => screen.queryByText(/ne figureront pas dans l'export/) === null);
++  });
++
++  it('1 op en attente : message au singulier', async () => {
++    await renderPrivacy({ pending: 1 });
++    fireEvent.click(button('Télécharger mes données'));
++    expect(
++      await screen.findByText(
++        "1 élément n'est pas encore envoyé au serveur : il ne figurera pas dans l'export.",
++      ),
++    ).toBeTruthy();
++  });
++
++  it('file vide : téléchargement au premier clic', async () => {
++    const api = createFakeApi().on('GET', EXPORT, { status: 200, body: EXPORTED });
++    await renderPrivacy({ api });
++    fireEvent.click(button('Télécharger mes données'));
++    await until(() => clicks.length === 1);
++    expect(clicks[0]?.download).toBe('appsport-export-2026-10-06.json');
++    expect(createUrl).toHaveBeenCalledTimes(1);
++  });
++
++  it('hors ligne : « Nécessite le réseau », aucun téléchargement', async () => {
++    const api = createFakeApi();
++    await renderPrivacy({ api });
++    api.setOffline('reject');
++    fireEvent.click(button('Télécharger mes données'));
++    expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
++    expect(clicks).toHaveLength(0);
++  });
++});
++
++describe('DeleteAccountDialog (R-SUP-1, R-SUP-4, R-SUP-5, P-DRT-3, P-DRT-6)', () => {
++  async function openDelete() {
++    fireEvent.click(button('Supprimer mon compte'));
++    return within(await screen.findByRole('dialog', { name: 'Supprimer ton compte ?' }));
++  }
++
++  it("liste, mention Anthropic, export d'abord ; « Supprimer définitivement » désactivé sans mot de passe", async () => {
++    await renderPrivacy();
++    const dialog = await openDelete();
++    expect(dialog.getByText(DELETE_LIST)).toBeTruthy();
++    expect(dialog.getByText(ANTHROPIC)).toBeTruthy();
++    expect(dialog.getByRole('button', { name: "Télécharger mes données d'abord" })).toBeTruthy();
++    const confirm = dialog.getByRole('button', { name: 'Supprimer définitivement' }) as HTMLButtonElement;
++    expect(confirm.disabled).toBe(true);
++    fill('Mot de passe', PASSWORD);
++    expect(confirm.disabled).toBe(false);
++  });
++
++  it("« Télécharger mes données d'abord » télécharge l'export depuis le dialogue", async () => {
++    const api = createFakeApi().on('GET', EXPORT, { status: 200, body: EXPORTED });
++    await renderPrivacy({ api });
++    const dialog = await openDelete();
++    fireEvent.click(dialog.getByRole('button', { name: "Télécharger mes données d'abord" }));
++    await until(() => clicks.length === 1);
++    expect(clicks[0]?.download).toBe('appsport-export-2026-10-06.json');
++    expect(screen.getByRole('dialog')).toBeTruthy();
++  });
++
++  it('POST /api/me/delete { password } → base vidée, /login?reason=account_deleted, « Ce compte a été supprimé »', async () => {
++    const api = createFakeApi().on('POST', DELETE, { status: 204 });
++    const { db, location } = await renderPrivacy({ api, pending: 2 });
++    const dialog = await openDelete();
++    fill('Mot de passe', PASSWORD);
++    fireEvent.click(dialog.getByRole('button', { name: 'Supprimer définitivement' }));
++    await waitFor(() => expect(location()).toBe('/login?reason=account_deleted'));
++    expect(calls(api, DELETE).map((c) => [c.method, c.body])).toEqual([['POST', { password: PASSWORD }]]);
++    expect(await db.outbox.count()).toBe(0);
++    expect(await getMeta(db, 'me')).toBeUndefined();
++    expect(await screen.findByText('Ce compte a été supprimé')).toBeTruthy();
++  });
++
++  it("409 last_admin → « Tu es le dernier administrateur : nomme d'abord un autre administrateur. », rien effacé", async () => {
++    const api = createFakeApi().on('POST', DELETE, { status: 409, body: { error: 'last_admin' } });
++    const { db, location } = await renderPrivacy({ api, me: makeMe({ role: 'admin' }), pending: 1 });
++    const dialog = await openDelete();
++    fill('Mot de passe', PASSWORD);
++    fireEvent.click(dialog.getByRole('button', { name: 'Supprimer définitivement' }));
++    expect((await dialog.findByRole('alert')).textContent).toBe(
++      "Tu es le dernier administrateur : nomme d'abord un autre administrateur.",
++    );
++    expect(await db.outbox.count()).toBe(1);
++    expect(await getMeta(db, 'me')).toBeDefined();
++    expect(location()).toBe('/profile/privacy');
++  });
++
++  it('401 → « Mot de passe incorrect. », rien effacé', async () => {
++    const api = createFakeApi().on('POST', DELETE, { status: 401, body: { error: 'invalid_credentials' } });
++    const { db } = await renderPrivacy({ api });
++    const dialog = await openDelete();
++    fill('Mot de passe', 'mauvais mot de passe');
++    fireEvent.click(dialog.getByRole('button', { name: 'Supprimer définitivement' }));
++    expect((await dialog.findByRole('alert')).textContent).toBe('Mot de passe incorrect.');
++    expect(await getMeta(db, 'me')).toBeDefined();
++  });
++
++  it('saisie du mot de passe : le focus reste dans le champ', async () => {
++    await renderPrivacy();
++    await openDelete();
++    const field = screen.getByLabelText('Mot de passe') as HTMLInputElement;
++    field.focus();
++    fill('Mot de passe', 'c');
++    fill('Mot de passe', 'ch');
++    await settle();
++    expect(document.activeElement).toBe(field);
++  });
++});
++
++describe('compte supprimé depuis un autre appareil (P-DRT-4, 03 §17 n°9)', () => {
++  it('GET /api/me → 410 account_deleted : base vidée, file comprise, puis connexion', async () => {
++    const api = createFakeApi().on('GET', '/api/me', { status: 410, body: { error: 'account_deleted' } });
++    const db = createTestLocalDb();
++    await seedOutbox(db, 'u-1', 2);
++    const { location } = await renderApp({ path: '/profile/privacy', db, api });
++    await waitFor(() => expect(location()).toBe('/login?reason=account_deleted'));
++    expect(await db.outbox.count()).toBe(0);
++    expect(await getMeta(db, 'me')).toBeUndefined();
++    expect(await screen.findByText('Ce compte a été supprimé')).toBeTruthy();
++  });
++
++  it('GET /api/me → 410 watermark_expired : rien effacé', async () => {
++    const api = createFakeApi().on('GET', '/api/me', { status: 410, body: { error: 'watermark_expired' } });
++    const db = createTestLocalDb();
++    await seedOutbox(db, 'u-1', 2);
++    const { location } = await renderApp({ path: '/profile/privacy', db, api });
++    await screen.findByRole('heading', { level: 1, name: 'Confidentialité' });
++    await until(() => calls(api, '/api/me').length === 1);
++    await settle();
++    expect(await db.outbox.count()).toBe(2);
++    expect(await getMeta(db, 'me')).toBeDefined();
++    expect(location()).toBe('/profile/privacy');
++  });
++});
+diff --git a/apps/web/test/privacy/health-section.test.tsx b/apps/web/test/privacy/health-section.test.tsx
+new file mode 100644
+index 0000000..658030a
+--- /dev/null
++++ b/apps/web/test/privacy/health-section.test.tsx
+@@ -0,0 +1,202 @@
++import { HEALTH_CONSENT_TEXT, HEALTH_QUESTIONNAIRE, type MeResponse } from '@appsport/contracts';
++import { fireEvent, screen, within } from '@testing-library/react';
++import { describe, expect, it } from 'vitest';
++import { settle } from '../support/auth';
++import { createFakeApi, type FakeApi } from '../support/fake-api';
++import { createTestLocalDb } from '../support/local-db';
++import { button, seedProfile, serveProfile } from '../support/onboarding';
++import { makeMe, renderApp } from '../support/render';
++import { seedMirror } from '../support/seed';
++import { until } from '../support/wait';
++
++const CAUTIOUS = 'Je préfère une progression plus prudente';
++const SELF_CHECK = "Si l'une de ces situations te concerne, demande l'avis d'un médecin avant de commencer.";
++const LIMITATION = 'Genou · Gauche · Légère';
++const SEVERE = "Forte : m'empêche certains mouvements";
++const SCREENING_PATH = '/api/me/health-screening';
++const LIMITATION_PATH = '/api/me/limitations/l-1';
++
++const consented = (o: Partial<MeResponse> = {}): MeResponse =>
++  makeMe({
++    consents: {
++      health: { active: true, textVersion: '1.0', at: '2026-10-01T10:00:00.000Z' },
++      aiCoach: { active: false, textVersion: null, at: null },
++    },
++    ...o,
++  });
++
++async function renderHealth(o: { me?: MeResponse; api?: FakeApi; cautiousMode?: boolean } = {}) {
++  const me = o.me ?? consented();
++  const db = createTestLocalDb();
++  const api = o.api ?? createFakeApi();
++  await seedProfile(db, {
++    goal: 'muscle',
++    experience: 'none',
++    daysPerWeek: 3,
++    sessionMinutes: 45,
++    cautiousMode: o.cautiousMode ?? true,
++  });
++  if (me.consents.health.active) {
++    await seedMirror(db, 'health_screening', [
++      {
++        id: 'u-1',
++        ownerId: 'u-1',
++        caution: false,
++        questionnaireVersion: '1.0',
++        answeredAt: '2026-10-01T10:00:00.000Z',
++      },
++    ]);
++    await seedMirror(db, 'limitation', [
++      {
++        id: 'l-1',
++        ownerId: 'u-1',
++        bodyArea: 'knee',
++        side: 'left',
++        severity: 'mild',
++        note: null,
++        active: true,
++      },
++    ]);
++  }
++  const server = serveProfile(api, db, me);
++  const view = await renderApp({ path: '/profile/health', me, db, api });
++  await screen.findByRole('heading', { level: 1, name: 'Santé' });
++  return { ...view, ...server };
++}
++
++const sent = (api: FakeApi, method: string, path: string) =>
++  api.calls.filter((c) => c.method === method && c.path === path).map((c) => c.body);
++const question = (i: number) =>
++  within(screen.getByRole('group', { name: HEALTH_QUESTIONNAIRE.questions[i] }));
++const editForm = () => within(screen.getByRole('form', { name: `Modifier : ${LIMITATION}` }));
++
++describe('HealthSection sans accord (E7, P-CST-1, P-CST-2)', () => {
++  it("accord proposé (case décochée) et auto-vérification ; l'accord donné ouvre le questionnaire enregistré", async () => {
++    const api = createFakeApi().on('POST', '/api/me/consents', { status: 200, body: consented() });
++    await renderHealth({ me: makeMe(), api });
++    const box = screen.getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text }) as HTMLInputElement;
++    expect(box.checked).toBe(false);
++    expect(screen.getByText(SELF_CHECK)).toBeTruthy();
++    expect(screen.queryByRole('radio', { name: 'Oui' })).toBeNull();
++    fireEvent.click(box);
++    fireEvent.click(button("J'accepte et je renseigne"));
++    await screen.findByRole('group', { name: HEALTH_QUESTIONNAIRE.questions[0] });
++    expect(sent(api, 'POST', '/api/me/consents')).toEqual([{ type: 'health', textVersion: '1.0' }]);
++    expect(button('Enregistrer mes réponses')).toBeTruthy();
++    expect(screen.getByRole('heading', { level: 2, name: 'Limitations' })).toBeTruthy();
++    expect(screen.queryByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text })).toBeNull();
++  });
++});
++
++describe('HealthSection avec accord (E7, P-DRT-2)', () => {
++  it('dernière réponse et limitations « Genou · Gauche · Légère »', async () => {
++    await renderHealth();
++    expect(await screen.findByText('Dernière réponse le 01/10/2026')).toBeTruthy();
++    expect(await screen.findByText(LIMITATION)).toBeTruthy();
++    // Questionnaire déjà répondu : les questions attendent « Répondre de nouveau ».
++    expect(screen.queryByRole('group', { name: HEALTH_QUESTIONNAIRE.questions[0] })).toBeNull();
++  });
++
++  it('« Répondre de nouveau » → PUT /api/me/health-screening { answers, questionnaireVersion }', async () => {
++    const api = createFakeApi().on('PUT', SCREENING_PATH, { status: 200, body: { caution: false } });
++    await renderHealth({ api });
++    fireEvent.click(await screen.findByRole('button', { name: 'Répondre de nouveau' }));
++    for (let i = 0; i < 4; i++) fireEvent.click(question(i).getByRole('radio', { name: 'Non' }));
++    fireEvent.click(button('Enregistrer mes réponses'));
++    await until(() => sent(api, 'PUT', SCREENING_PATH).length === 1);
++    expect(sent(api, 'PUT', SCREENING_PATH)).toEqual([
++      { answers: [false, false, false, false], questionnaireVersion: '1.0' },
++    ]);
++    expect(await screen.findByRole('button', { name: 'Répondre de nouveau' })).toBeTruthy();
++  });
++
++  it('« Supprimer » → DELETE /api/me/limitations/l-1 {}', async () => {
++    const api = createFakeApi().on('DELETE', LIMITATION_PATH, { status: 204 });
++    await renderHealth({ api });
++    await screen.findByText(LIMITATION);
++    fireEvent.click(button('Supprimer'));
++    await until(() => sent(api, 'DELETE', LIMITATION_PATH).length === 1);
++    expect(sent(api, 'DELETE', LIMITATION_PATH)).toEqual([{}]);
++  });
++
++  it('« Modifier » → PATCH /api/me/limitations/l-1 avec les seuls champs changés', async () => {
++    const api = createFakeApi().on('PATCH', LIMITATION_PATH, { status: 204 });
++    await renderHealth({ api });
++    await screen.findByText(LIMITATION);
++    fireEvent.click(button('Modifier'));
++    const form = editForm();
++    expect((form.getByLabelText('Zone') as HTMLSelectElement).value).toBe('knee');
++    expect((form.getByLabelText('Côté') as HTMLSelectElement).value).toBe('left');
++    expect((form.getByRole('radio', { name: 'Légère' }) as HTMLInputElement).checked).toBe(true);
++    fireEvent.click(form.getByRole('radio', { name: SEVERE }));
++    fireEvent.click(form.getByRole('button', { name: 'Enregistrer' }));
++    await until(() => screen.queryByRole('form', { name: `Modifier : ${LIMITATION}` }) === null);
++    expect(sent(api, 'PATCH', LIMITATION_PATH)).toEqual([{ severity: 'severe' }]);
++    await until(() => document.activeElement === button('Modifier'));
++  });
++
++  it("« Modifier » : seuls les champs changés depuis l'ouverture partent, même après une relecture", async () => {
++    const api = createFakeApi().on('PATCH', LIMITATION_PATH, { status: 204 });
++    const { db } = await renderHealth({ api });
++    await screen.findByText(LIMITATION);
++    fireEvent.click(button('Modifier'));
++    // Un autre appareil passe la gêne à « Forte » pendant la saisie.
++    await seedMirror(db, 'limitation', [
++      {
++        id: 'l-1',
++        ownerId: 'u-1',
++        bodyArea: 'knee',
++        side: 'left',
++        severity: 'severe',
++        note: null,
++        active: true,
++      },
++    ]);
++    await settle();
++    fireEvent.change(editForm().getByLabelText('Côté'), { target: { value: 'right' } });
++    fireEvent.click(editForm().getByRole('button', { name: 'Enregistrer' }));
++    await until(() => sent(api, 'PATCH', LIMITATION_PATH).length === 1);
++    expect(sent(api, 'PATCH', LIMITATION_PATH)).toEqual([{ side: 'right' }]);
++  });
++
++  it('« Modifier » puis « Enregistrer » sans changement : aucune requête', async () => {
++    const { api } = await renderHealth();
++    await screen.findByText(LIMITATION);
++    fireEvent.click(button('Modifier'));
++    fireEvent.click(editForm().getByRole('button', { name: 'Enregistrer' }));
++    await until(() => screen.queryByRole('form', { name: `Modifier : ${LIMITATION}` }) === null);
++    expect(sent(api, 'PATCH', LIMITATION_PATH)).toEqual([]);
++  });
++
++  it('403 health_consent_required → « Cette action demande ton accord santé. »', async () => {
++    const api = createFakeApi().on('PATCH', LIMITATION_PATH, {
++      status: 403,
++      body: { error: 'health_consent_required' },
++    });
++    await renderHealth({ api });
++    await screen.findByText(LIMITATION);
++    fireEvent.click(button('Modifier'));
++    fireEvent.click(editForm().getByRole('radio', { name: SEVERE }));
++    fireEvent.click(editForm().getByRole('button', { name: 'Enregistrer' }));
++    expect((await screen.findByRole('alert')).textContent).toBe('Cette action demande ton accord santé.');
++    expect(screen.getByRole('form', { name: `Modifier : ${LIMITATION}` })).toBeTruthy();
++  });
++});
++
++describe('HealthSection › mode prudent (E7.5, R-CST-7)', () => {
++  it('CautiousModeToggle → PATCH /api/me/training-profile { cautiousMode: false }', async () => {
++    const t = await renderHealth({ cautiousMode: true });
++    const toggle = (await screen.findByRole('switch', { name: CAUTIOUS })) as HTMLInputElement;
++    await until(() => toggle.checked);
++    fireEvent.click(toggle);
++    await until(() => t.patches.length === 1);
++    expect(t.patches).toEqual([{ cautiousMode: false }]);
++  });
++
++  it('mineur : interrupteur imposé et désactivé', async () => {
++    await renderHealth({ me: consented({ ageBand: 'minor', birthDate: '2009-01-01' }), cautiousMode: false });
++    const toggle = (await screen.findByRole('switch', { name: CAUTIOUS })) as HTMLInputElement;
++    expect(toggle.disabled).toBe(true);
++    expect(toggle.checked).toBe(true);
++  });
++});
+diff --git a/apps/web/test/privacy/withdraw.test.tsx b/apps/web/test/privacy/withdraw.test.tsx
+new file mode 100644
+index 0000000..3841955
+--- /dev/null
++++ b/apps/web/test/privacy/withdraw.test.tsx
+@@ -0,0 +1,263 @@
++import { HEALTH_CONSENT_TEXT, type MeResponse } from '@appsport/contracts';
++import { fireEvent, screen, waitFor, within } from '@testing-library/react';
++import { describe, expect, it } from 'vitest';
++import type { AppDb } from '../../src/local-db/db';
++import { getMeta } from '../../src/local-db/meta';
++import { fill, settle } from '../support/auth';
++import { createFakeApi, type FakeApi } from '../support/fake-api';
++import { createTestLocalDb, dumpLocalDb } from '../support/local-db';
++import { newcomer } from '../support/onboarding';
++import { makeMe, renderApp } from '../support/render';
++import { seedMirror } from '../support/seed';
++import { until } from '../support/wait';
++
++const WITHDRAWN = 'Accord retiré. Tes données de santé ont été effacées.';
++const WITNESS = 'TEMOIN-C2';
++const WITHDRAW = '/api/me/consents/withdraw';
++const GATE = "Le texte de l'accord santé a changé";
++
++const consented = (textVersion: string | null = '1.0', active = true): MeResponse =>
++  makeMe({
++    consents: {
++      health: { active, textVersion, at: active ? '2026-10-01T10:00:00.000Z' : null },
++      aiCoach: { active: false, textVersion: null, at: null },
++    },
++  });
++
++/** Questionnaire et limitation portant la valeur témoin. */
++async function seedHealth(db: AppDb): Promise<void> {
++  await seedMirror(db, 'health_screening', [
++    {
++      id: 'u-1',
++      ownerId: 'u-1',
++      caution: true,
++      questionnaireVersion: '1.0',
++      answeredAt: '2026-10-01T10:00:00.000Z',
++    },
++  ]);
++  await seedMirror(db, 'limitation', [
++    {
++      id: 'l-1',
++      ownerId: 'u-1',
++      bodyArea: 'knee',
++      side: 'left',
++      severity: 'mild',
++      note: WITNESS,
++      active: true,
++    },
++  ]);
++}
++
++async function renderPrivacy(o: { me?: MeResponse; api?: FakeApi } = {}) {
++  const db = createTestLocalDb();
++  await seedHealth(db);
++  const view = await renderApp({ path: '/profile/privacy', me: o.me ?? consented(), db, api: o.api });
++  await screen.findByRole('heading', { level: 1, name: 'Confidentialité' });
++  return view;
++}
++
++const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
++/** Valeur d'une ligne de la liste des accords (`dt` → `dd`). */
++const consentValue = (label: string) =>
++  screen.getByText(label, { selector: 'dt' }).nextElementSibling?.textContent;
++
++async function openWithdraw() {
++  fireEvent.click(button('Retirer mon accord santé'));
++  return within(await screen.findByRole('dialog'));
++}
++
++describe('PrivacySettingsPage (02 §11, R-CST-5, 03 §13)', () => {
++  it('version en vigueur, lien vers la page, accords santé et coach', async () => {
++    await renderPrivacy();
++    expect(screen.getByText('Version en vigueur : 1.0')).toBeTruthy();
++    expect(
++      screen.getByRole('link', { name: 'Lire la page Confidentialité et règles' }).getAttribute('href'),
++    ).toBe('/privacy');
++    expect(consentValue('Accord santé')).toBe('Donné le 01/10/2026');
++    expect(consentValue('Accord coach')).toBe('Non donné');
++    expect(button('Télécharger mes données')).toBeTruthy();
++    expect(button('Supprimer mon compte')).toBeTruthy();
++  });
++
++  it('sans accord santé : « Non donné », pas de retrait, lien vers Santé', async () => {
++    await renderPrivacy({ me: makeMe() });
++    expect(consentValue('Accord santé')).toBe('Non donné');
++    expect(screen.queryByRole('button', { name: 'Retirer mon accord santé' })).toBeNull();
++    expect(screen.getByRole('link', { name: 'Donner mon accord santé' }).getAttribute('href')).toBe(
++      '/profile/health',
++    );
++  });
++});
++
++describe('ConsentWithdrawDialog (R-CST-5, P-CST-3, P-AUT-5)', () => {
++  it("liste ce qui sera effacé, propose l'export, « Retirer mon accord » désactivé sans mot de passe", async () => {
++    await renderPrivacy();
++    const dialog = await openWithdraw();
++    const text = screen.getByRole('dialog').textContent ?? '';
++    expect(text).toContain('indicateur de prudence');
++    expect(text).toContain('limitations et zones sensibles');
++    expect(text).toContain('Le mode prudent est conservé.');
++    expect(
++      dialog.getByText(
++        "Seront effacés : ton indicateur de prudence (questionnaire), tes limitations et zones sensibles, et toute donnée de santé enregistrée par l'appli (douleurs, pesées, suivi nutritionnel). Le mode prudent est conservé.",
++      ),
++    ).toBeTruthy();
++    expect(dialog.getByRole('button', { name: "Télécharger mes données d'abord" })).toBeTruthy();
++    const confirm = dialog.getByRole('button', { name: 'Retirer mon accord' }) as HTMLButtonElement;
++    expect(confirm.disabled).toBe(true);
++    fill('Mot de passe', 'cheval agrafe batterie correcte');
++    expect(confirm.disabled).toBe(false);
++  });
++
++  it('saisie du mot de passe : le focus reste dans le champ', async () => {
++    await renderPrivacy();
++    await openWithdraw();
++    const field = screen.getByLabelText('Mot de passe') as HTMLInputElement;
++    field.focus();
++    fill('Mot de passe', 'c');
++    fill('Mot de passe', 'ch');
++    await settle();
++    expect(document.activeElement).toBe(field);
++  });
++
++  it('POST withdraw { type, password } → 200 MeResponse : message, meta.me à jour, aucune valeur C2 en local', async () => {
++    const api = createFakeApi().on('POST', WITHDRAW, { status: 200, body: consented(null, false) });
++    const { db, sync } = await renderPrivacy({ api });
++    expect(await dumpLocalDb(db)).toContain(WITNESS);
++    const dialog = await openWithdraw();
++    fill('Mot de passe', 'cheval agrafe batterie correcte');
++    fireEvent.click(dialog.getByRole('button', { name: 'Retirer mon accord' }));
++    expect(await screen.findByText(WITHDRAWN)).toBeTruthy();
++    expect(api.calls.filter((c) => c.path === WITHDRAW).map((c) => [c.method, c.body])).toEqual([
++      ['POST', { type: 'health', password: 'cheval agrafe batterie correcte' }],
++    ]);
++    expect((await getMeta(db, 'me'))?.consents.health.active).toBe(false);
++    expect(await dumpLocalDb(db)).not.toContain(WITNESS);
++    expect(sync.pullCount).toBe(1);
++    fireEvent.click(button('Fermer'));
++    await until(() => screen.queryByRole('dialog') === null);
++    expect(consentValue('Accord santé')).toBe('Non donné');
++    // Le bouton « Retirer mon accord santé » a disparu : le focus va au titre des accords.
++    await until(() => document.activeElement === screen.getByRole('heading', { level: 2, name: 'Accords' }));
++  });
++
++  it('401 → « Mot de passe incorrect. », miroir intact', async () => {
++    const api = createFakeApi().on('POST', WITHDRAW, { status: 401, body: { error: 'invalid_credentials' } });
++    const { db } = await renderPrivacy({ api });
++    const dialog = await openWithdraw();
++    fill('Mot de passe', 'mauvais mot de passe');
++    fireEvent.click(dialog.getByRole('button', { name: 'Retirer mon accord' }));
++    expect((await dialog.findByRole('alert')).textContent).toBe('Mot de passe incorrect.');
++    expect(await dumpLocalDb(db)).toContain(WITNESS);
++    expect((await getMeta(db, 'me'))?.consents.health.active).toBe(true);
++  });
++
++  it('hors ligne → « Nécessite le réseau », rien purgé', async () => {
++    const api = createFakeApi();
++    const { db } = await renderPrivacy({ api });
++    const dialog = await openWithdraw();
++    api.setOffline('reject');
++    fill('Mot de passe', 'cheval agrafe batterie correcte');
++    fireEvent.click(dialog.getByRole('button', { name: 'Retirer mon accord' }));
++    expect((await dialog.findByRole('alert')).textContent).toBe('Nécessite le réseau');
++    expect(await dumpLocalDb(db)).toContain(WITNESS);
++  });
++
++  it('« Annuler » ferme sans requête', async () => {
++    const { api } = await renderPrivacy();
++    const dialog = await openWithdraw();
++    fireEvent.click(dialog.getByRole('button', { name: 'Annuler' }));
++    await until(() => screen.queryByRole('dialog') === null);
++    expect(api.calls.filter((c) => c.path === WITHDRAW)).toHaveLength(0);
++  });
++});
++
++describe('HealthReconsentGate (R-CST-6, P-CST-1)', () => {
++  async function renderGate(me: MeResponse, api = createFakeApi(), path = '/') {
++    const db = createTestLocalDb();
++    await seedHealth(db);
++    return renderApp({ path, me, db, api });
++  }
++
++  it("textVersion '0.9' → « Le texte de l'accord santé a changé », texte en vigueur, case décochée, sans fermeture", async () => {
++    await renderGate(consented('0.9'));
++    const gate = await screen.findByRole('dialog', { name: GATE });
++    const box = within(gate).getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text }) as HTMLInputElement;
++    expect(box.checked).toBe(false);
++    expect((within(gate).getByRole('button', { name: "J'accepte" }) as HTMLButtonElement).disabled).toBe(
++      true,
++    );
++    expect(
++      within(gate)
++        .getAllByRole('button')
++        .map((b) => b.textContent),
++    ).toEqual(['Je refuse', "J'accepte"]);
++    fireEvent.keyDown(document, { key: 'Escape' });
++    await settle();
++    expect(screen.getByRole('dialog', { name: GATE })).toBe(gate);
++  });
++
++  it("« J'accepte » → POST /api/me/consents { type: 'health', textVersion: '1.0' }, la porte se lève", async () => {
++    const api = createFakeApi().on('POST', '/api/me/consents', { status: 200, body: consented('1.0') });
++    await renderGate(consented('0.9'), api);
++    const gate = within(await screen.findByRole('dialog', { name: GATE }));
++    fireEvent.click(gate.getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text }));
++    fireEvent.click(gate.getByRole('button', { name: "J'accepte" }));
++    await until(() => screen.queryByRole('dialog') === null);
++    expect(api.calls.filter((c) => c.path === '/api/me/consents').map((c) => c.body)).toEqual([
++      { type: 'health', textVersion: '1.0' },
++    ]);
++  });
++
++  it('« Je refuse » → ConsentWithdrawDialog ; fermé sans retrait, la porte réapparaît', async () => {
++    await renderGate(consented('0.9'));
++    fireEvent.click(
++      within(await screen.findByRole('dialog', { name: GATE })).getByRole('button', { name: 'Je refuse' }),
++    );
++    const withdraw = within(await screen.findByRole('dialog', { name: "Retirer l'accord santé" }));
++    expect(screen.queryByRole('dialog', { name: GATE })).toBeNull();
++    expect(withdraw.getByLabelText('Mot de passe')).toBeTruthy();
++    fireEvent.click(withdraw.getByRole('button', { name: 'Annuler' }));
++    expect(await screen.findByRole('dialog', { name: GATE })).toBeTruthy();
++  });
++
++  it('« Je refuse » puis retrait avec le mot de passe : message, puis plus de porte', async () => {
++    const api = createFakeApi().on('POST', WITHDRAW, { status: 200, body: consented(null, false) });
++    const { db } = await renderGate(consented('0.9'), api);
++    fireEvent.click(
++      within(await screen.findByRole('dialog', { name: GATE })).getByRole('button', { name: 'Je refuse' }),
++    );
++    const withdraw = within(await screen.findByRole('dialog', { name: "Retirer l'accord santé" }));
++    fill('Mot de passe', 'cheval agrafe batterie correcte');
++    fireEvent.click(withdraw.getByRole('button', { name: 'Retirer mon accord' }));
++    expect(await screen.findByText(WITHDRAWN)).toBeTruthy();
++    expect(await dumpLocalDb(db)).not.toContain(WITNESS);
++    fireEvent.click(button('Fermer'));
++    await until(() => screen.queryByRole('dialog') === null);
++    await settle();
++    expect(screen.queryByRole('dialog')).toBeNull();
++  });
++
++  it.each([
++    ['1.0', true],
++    ['0.9', false],
++  ] as const)("textVersion '%s', actif %s → aucune porte", async (version, active) => {
++    await renderGate(consented(version, active));
++    await screen.findByRole('heading', { level: 1 });
++    await settle();
++    expect(screen.queryByRole('dialog')).toBeNull();
++  });
++
++  it("pas de porte pendant l'onboarding", async () => {
++    await renderGate(newcomer({ consents: consented('0.9').consents }), createFakeApi(), '/onboarding');
++    await screen.findByTestId('onboarding-step');
++    await settle();
++    expect(screen.queryByRole('dialog', { name: GATE })).toBeNull();
++  });
++
++  it('la porte apparaît sur toute page connectée, Confidentialité comprise', async () => {
++    await renderGate(consented('0.9'), createFakeApi(), '/profile/privacy');
++    expect(await screen.findByRole('dialog', { name: GATE })).toBeTruthy();
++    await waitFor(() => expect(screen.getAllByRole('dialog')).toHaveLength(1));
++  });
++});
+diff --git a/apps/web/test/status/counters.test.tsx b/apps/web/test/status/counters.test.tsx
+new file mode 100644
+index 0000000..5523504
+--- /dev/null
++++ b/apps/web/test/status/counters.test.tsx
+@@ -0,0 +1,114 @@
++import { act, fireEvent, screen, within } from '@testing-library/react';
++import { afterEach, describe, expect, it } from 'vitest';
++import { CONNECTION_LABELS, ConnectionStatus } from '../../src/features/status/ConnectionStatus';
++import type { SyncEngine } from '../../src/sync/engine';
++import { createFakeApi, createFakeSyncEngine } from '../support/fake-api';
++import { createTestLocalDb } from '../support/local-db';
++import { newcomer } from '../support/onboarding';
++import { renderApp, renderWithServices } from '../support/render';
++import { seedMirror } from '../support/seed';
++import { until } from '../support/wait';
++
++const rejection = (id: string, opId: string) => ({
++  id,
++  ownerId: 'u-1',
++  opId,
++  entity: 'place',
++  rowId: 'p-1',
++  code: 'validation',
++  detailJson: null,
++  dismissedAt: null,
++  createdAt: '2026-10-06T10:00:00.000Z',
++});
++
++const count = (testId: string) => screen.queryByTestId(testId)?.getAttribute('data-count') ?? null;
++
++let engine: SyncEngine | null = null;
++afterEach(() => {
++  engine?.stop();
++  engine = null;
++});
++
++describe('connection-status (R-SYN-30 : état du moteur, jamais navigator.onLine)', () => {
++  it.each([
++    ['online', 'En ligne'],
++    ['offline', 'Hors ligne'],
++    ['unknown', 'Connexion…'],
++    ['unauthenticated', 'Session expirée'],
++    ['protocol_unsupported', 'Mise à jour nécessaire'],
++    ['account_deleted', 'Compte supprimé'],
++  ] as const)('connection-status %s', async (state, label) => {
++    await renderWithServices(<ConnectionStatus />, { sync: createFakeSyncEngine({ connection: state }) });
++    const status = screen.getByTestId('connection-status');
++    expect(status.getAttribute('data-state')).toBe(state);
++    expect(status.textContent).toBe(label);
++    expect(CONNECTION_LABELS[state]).toBe(label);
++  });
++
++  it("suit l'état du moteur sans rechargement", async () => {
++    const { sync } = await renderWithServices(<ConnectionStatus />);
++    expect(screen.getByTestId('connection-status').textContent).toBe('En ligne');
++    act(() => sync.set({ connection: 'offline' }));
++    expect(screen.getByTestId('connection-status').getAttribute('data-state')).toBe('offline');
++    expect(screen.getByTestId('connection-status').textContent).toBe('Hors ligne');
++  });
++});
++
++describe("zone d'état de la coquille (R-SYN-34)", () => {
++  it("chaque écran connecté porte l'état de connexion et les deux compteurs dans l'en-tête", async () => {
++    await renderApp({ path: '/profile' });
++    const header = await screen.findByRole('banner');
++    expect(within(header).getByTestId('connection-status')).toBeTruthy();
++    expect(within(header).getByTestId('pending-counter')).toBeTruthy();
++    expect(within(header).getByTestId('rejected-counter')).toBeTruthy();
++  });
++
++  it("l'onboarding n'a pas de zone d'état", async () => {
++    await renderApp({ path: '/onboarding', me: newcomer() });
++    await screen.findByTestId('onboarding-step');
++    expect(screen.queryByTestId('pending-counter')).toBeNull();
++    expect(screen.queryByTestId('connection-status')).toBeNull();
++  });
++
++  it("pending-counter : data-count '0' puis '3' après sync.set({ pending: 3 }), « 3 en attente »", async () => {
++    const { sync } = await renderApp({ path: '/' });
++    await until(() => count('pending-counter') === '0');
++    expect(screen.getByTestId('pending-counter').textContent).toBe('0 en attente');
++    act(() => sync.set({ pending: 3 }));
++    expect(count('pending-counter')).toBe('3');
++    expect(screen.getByTestId('pending-counter').textContent).toBe('3 en attente');
++  });
++
++  it("rejected-counter : un sync_rejection non ignoré, compté par le moteur → '1 refusé', lien /rejections", async () => {
++    const db = createTestLocalDb();
++    await seedMirror(db, 'sync_rejection', [rejection('r-1', 'op-1')]);
++    const api = createFakeApi();
++    api.setOffline('reject');
++    const view = await renderApp({ path: '/', db, api, realSync: true });
++    engine = view.engine;
++    view.engine.start();
++    await until(() => count('rejected-counter') === '1');
++    const counter = screen.getByTestId('rejected-counter');
++    expect(counter.textContent).toBe('1 refusé');
++    const link = within(counter).getByRole('link', { name: '1 refusé' });
++    expect(link.getAttribute('href')).toBe('/rejections');
++    fireEvent.click(link);
++    expect(await screen.findByRole('heading', { level: 1, name: 'Éléments refusés' })).toBeTruthy();
++    expect(view.location()).toBe('/rejections');
++  });
++
++  it("rejected-counter : deux refus → '2 refusés'", async () => {
++    const { sync } = await renderApp({ path: '/' });
++    act(() => sync.set({ rejected: 2 }));
++    await until(() => count('rejected-counter') === '2');
++    expect(screen.getByTestId('rejected-counter').textContent).toBe('2 refusés');
++  });
++
++  it("rejected-counter : aucun refus → data-count '0', ni texte ni lien", async () => {
++    await renderApp({ path: '/' });
++    await until(() => count('rejected-counter') === '0');
++    const counter = screen.getByTestId('rejected-counter');
++    expect(counter.textContent).toBe('');
++    expect(within(counter).queryByRole('link')).toBeNull();
++  });
++});
+diff --git a/apps/web/test/status/rejections-settings.test.tsx b/apps/web/test/status/rejections-settings.test.tsx
+new file mode 100644
+index 0000000..e5eadfe
+--- /dev/null
++++ b/apps/web/test/status/rejections-settings.test.tsx
+@@ -0,0 +1,162 @@
++import { fireEvent, screen, within } from '@testing-library/react';
++import { afterEach, describe, expect, it } from 'vitest';
++import { REJECTION_CODE_LABELS } from '../../src/features/status/RejectionsPage';
++import type { AppDb, DeadletterEntry } from '../../src/local-db/db';
++import { setMeta } from '../../src/local-db/meta';
++import type { SyncEngine } from '../../src/sync/engine';
++import { createFakeApi } from '../support/fake-api';
++import { createTestLocalDb } from '../support/local-db';
++import { renderApp } from '../support/render';
++import { seedMirror } from '../support/seed';
++import { until } from '../support/wait';
++
++const AT = '2026-10-06T10:00:00.000Z';
++const rejection = (id: string, opId: string, code = 'validation') => ({
++  id,
++  ownerId: 'u-1',
++  opId,
++  entity: 'place',
++  rowId: 'p-1',
++  code,
++  detailJson: { field: 'name' },
++  dismissedAt: null,
++  createdAt: AT,
++});
++const dead = (opId: string, code: string): DeadletterEntry => ({
++  opId,
++  userId: 'u-1',
++  entity: 'place',
++  id: `row-${opId}`,
++  code,
++  detail: null,
++  receivedAt: '2026-10-06T11:00:00.000Z',
++});
++
++let engine: SyncEngine | null = null;
++afterEach(() => {
++  engine?.stop();
++  engine = null;
++});
++
++/** Écran des refus avec le moteur réel, hors ligne : ses compteurs viennent de la base locale. */
++async function renderRejections(seed: (db: AppDb) => Promise<void>) {
++  const db = createTestLocalDb();
++  await seed(db);
++  const api = createFakeApi();
++  api.setOffline('reject');
++  const view = await renderApp({ path: '/rejections', db, api, realSync: true });
++  engine = view.engine;
++  view.engine.start();
++  await screen.findByRole('heading', { level: 1, name: 'Éléments refusés' });
++  return view;
++}
++
++const counter = () => screen.getByTestId('rejected-counter').getAttribute('data-count');
++const item = (text: string) => {
++  const li = screen.getByText(text).closest('li');
++  if (!li) throw new Error(`aucun élément pour ${text}`);
++  return li;
++};
++
++describe('RejectionsPage (R-SYN-18)', () => {
++  it.each([
++    ['validation', 'Données invalides'],
++    ['forbidden', 'Action non autorisée'],
++    ['parent_rejected', 'Élément parent refusé'],
++    ['stale_revision', 'Version périmée'],
++    ['unknown_entity', 'Type de donnée inconnu'],
++    ['protocol', "Version de l'appli trop ancienne"],
++  ])('REJECTION_CODE_LABELS.%s', (code, label) => {
++    expect(REJECTION_CODE_LABELS[code]).toBe(label);
++  });
++
++  it('rejet serveur r-1 (validation) et rejet local op-7 (parent_rejected), libellés traduits', async () => {
++    await renderRejections(async (db) => {
++      await seedMirror(db, 'sync_rejection', [rejection('r-1', 'op-1')]);
++      await db.deadletter.put(dead('op-7', 'parent_rejected'));
++    });
++    await screen.findByText('Données invalides');
++    expect(screen.getByText('Élément parent refusé')).toBeTruthy();
++    const list = screen.getByRole('list', { name: 'Éléments refusés' });
++    expect(within(list).getAllByRole('listitem')).toHaveLength(2);
++    expect(within(item('Données invalides')).getByRole('button', { name: 'Ignorer' })).toBeTruthy();
++  });
++
++  it("code inconnu : le code lui-même s'affiche", async () => {
++    await renderRejections(async (db) => {
++      await db.deadletter.put(dead('op-9', 'quota_exceeded'));
++    });
++    expect(await screen.findByText('quota_exceeded')).toBeTruthy();
++  });
++
++  it("« Ignorer » r-1 → op patch { dismissedAt }, élément retiré, rejected-counter '1'", async () => {
++    const { db } = await renderRejections(async (db) => {
++      await seedMirror(db, 'sync_rejection', [rejection('r-1', 'op-1')]);
++      await db.deadletter.put(dead('op-7', 'parent_rejected'));
++    });
++    await screen.findByText('Données invalides');
++    await until(() => counter() === '2');
++    fireEvent.click(within(item('Données invalides')).getByRole('button', { name: 'Ignorer' }));
++    await until(() => screen.queryByText('Données invalides') === null);
++    expect(screen.getByText('Élément parent refusé')).toBeTruthy();
++    const ops = await db.outbox.toArray();
++    expect(ops).toHaveLength(1);
++    expect(ops[0]).toMatchObject({
++      entity: 'sync_rejection',
++      id: 'r-1',
++      kind: 'patch',
++      fields: { dismissedAt: '2026-10-06T12:00:00.000Z' },
++    });
++    await until(() => counter() === '1');
++  });
++
++  it('« Ignorer » un rejet local : retiré sans op', async () => {
++    const { db } = await renderRejections(async (db) => {
++      await db.deadletter.put(dead('op-7', 'parent_rejected'));
++    });
++    await screen.findByText('Élément parent refusé');
++    fireEvent.click(within(item('Élément parent refusé')).getByRole('button', { name: 'Ignorer' }));
++    expect(await screen.findByText('Aucun refus.')).toBeTruthy();
++    expect(await db.outbox.count()).toBe(0);
++    await until(() => counter() === '0');
++  });
++
++  it('aucun refus → « Aucun refus. »', async () => {
++    await renderRejections(async () => {});
++    expect(await screen.findByText('Aucun refus.')).toBeTruthy();
++    expect(screen.queryByRole('list', { name: 'Éléments refusés' })).toBeNull();
++  });
++});
++
++describe('SettingsPage (R-SYN-31)', () => {
++  const ADVICE =
++    "Ton navigateur peut effacer les données de l'appli si l'espace manque. Pense à télécharger tes données régulièrement.";
++
++  async function renderSettings(persistGranted?: boolean) {
++    const db = createTestLocalDb();
++    if (persistGranted !== undefined) await setMeta(db, 'persistGranted', persistGranted);
++    const view = await renderApp({ path: '/settings', db });
++    await screen.findByRole('heading', { level: 1, name: 'Réglages' });
++    return view;
++  }
++
++  it('persistGranted true → « Stockage persistant : accordé », sans conseil', async () => {
++    await renderSettings(true);
++    expect(await screen.findByText('Stockage persistant : accordé')).toBeTruthy();
++    expect(screen.queryByText(ADVICE)).toBeNull();
++  });
++
++  it('persistGranted false → « Stockage persistant : refusé » et conseil d’export avec lien', async () => {
++    await renderSettings(false);
++    expect(await screen.findByText('Stockage persistant : refusé')).toBeTruthy();
++    expect(screen.getByText(ADVICE)).toBeTruthy();
++    const link = screen.getByRole('link', { name: 'Télécharger mes données' });
++    expect(link.getAttribute('href')).toBe('/profile/privacy');
++  });
++
++  it('persistGranted absent → « Stockage persistant : pas encore demandé »', async () => {
++    await renderSettings();
++    expect(await screen.findByText('Stockage persistant : pas encore demandé')).toBeTruthy();
++    expect(screen.queryByText(ADVICE)).toBeNull();
++  });
++});

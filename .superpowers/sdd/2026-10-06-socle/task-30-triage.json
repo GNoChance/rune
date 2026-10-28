@@ -1,0 +1,316 @@
+[
+ {
+  "id": "T30-F1",
+  "severity": "Important",
+  "lenses": [
+   "spec",
+   "correctness",
+   "ux",
+   "security",
+   "tests"
+  ],
+  "file": "apps/web/src/features/auth/LoginPage.tsx",
+  "line": "40 (same pattern ResetPage.tsx:36, InvitePage.tsx:66; root cause apps/web/src/repos/me-repo.ts:56-89, apps/web/src/sync/engine.ts:366-380, 486-492; test apps/web/test/auth/login.test.tsx:184)",
+  "title": "After a successful login, reset or account creation, the guard bounces back to /login with a false « Ta session a expiré » / « Ce compte a été supprimé » banner",
+  "problem": "Nothing resets the engine's `connection` when a session is adopted. MeRepo.openSession only stops and restarts the engine (start() never touches connection). runCycle resets it to 'unknown' only when meta.userId changes and after an async read; otherwise it becomes 'online' only when /api/health answers (engine.ts:380). LoginPage calls navigate('/') at once, resolveGuard (App.tsx:51-56) still sees 'unauthenticated' or 'account_deleted' and redirects to /login, which remounts with empty fields and the banner. The wait is bounded by the 4 s sync timeout on a network failure, but is unbounded while /api/health returns an unhandled HTTP error (handleFailure only schedules retries). Same bounce after ResetPage and InvitePage, and after account_deleted. The Dexie liveQuery behind useMeState may also lag and bounce a fresh device. login.test.tsx renders LoginPage without the App guard and the fake engine's start() never changes connection, so the ruling 'after account_deleted the login screen works for a fresh session' is not verified.",
+  "fix": "Add SyncEngine.sessionOpened() (name free): synchronously set connection to 'unknown' (at least from 'unauthenticated'/'account_deleted'), failures = 0, lastUserId = null, notify subscribers. Call it in MeRepo.openSession right after adoptSession succeeds, before start() and before login/acceptInvitation/resetPassword resolve. Do NOT call it in start() or in the finally of withEngineStopped: after a wrong password it would clear 'unauthenticated' and loop /login -> / -> /login. Mirror it in createFakeSyncEngine. Navigate only once the guard sees the new session: drop navigate('/') on /login and let the guard's '/login' -> '/' rule act, or navigate in an effect once useMe()?.id equals the opened id (InvitePage, ResetPage). Add renderApp tests: (1) /login, me=lea, connection 'unauthenticated', successful login -> location '/', no banner, no login form; (2) '?reason=account_deleted' with connection 'account_deleted' and a new user; (3) a 401 from 'unauthenticated' keeps the banner on '/login'; (4) the /reset path. Wrap memory.navigate to record every target so transient bounces are caught.",
+  "specRef": "Named risk (a); 02 R-AUTH-8; 03 P-DRT-4; controller ruling on account_deleted re-login",
+  "minorAction": "n/a"
+ },
+ {
+  "id": "T30-F2",
+  "severity": "Important",
+  "lenses": [
+   "spec",
+   "correctness",
+   "ux",
+   "security",
+   "tests"
+  ],
+  "file": "apps/web/src/features/auth/CreateAccountForm.tsx",
+  "line": "41 (also ResetPage.tsx:35; entry links LoginPage.tsx:86-87)",
+  "title": "Account creation and password reset wipe another user's unsent queue with no P-AUT-6 / R-AUTH-8 warning",
+  "problem": "Only LoginPage calls deviceOwner() and shows the « N éléments non envoyés de <pseudo> seront effacés » dialog. CreateAccountForm calls acceptInvitation and NewPasswordForm calls resetPassword directly. Both go through MeRepo.openSession -> adoptSession, which runs wipeUserData({ keepOutbox: false }) whenever the new user differs from meta.userId (me-repo.ts:71-76). /invite and /reset are public and render whatever the session state. Scenario: on a shared device Lea's session expired with 2 unsent ops; another person creates an account or resets a password and the ops are erased silently. At the socle the outbox holds only sync_rejection dismissals, but later bricks queue sessions and sets. No test seeds another user's outbox before accept or reset.",
+  "fix": "Extract LoginPage's dialog and deviceOwner check into one shared hook or component. Before acceptInvitation (always a new user) and before resetPassword when usernameKey(checked.username) !== usernameKey(owner.username ?? ''), call repos.me.deviceOwner(); if pending > 0 show pendingWarning(pending, owner.username ?? FORMER_ACCOUNT_NAME): « Annuler » sends nothing, « Continuer » proceeds. Tests with seedOutbox(db,'u-1',2): invite and reset show the dialog before any request; Annuler -> no accept/reset call and outbox kept; Continuer -> request sent and outbox empty; reset for the device owner -> no dialog.",
+  "specRef": "03 P-AUT-6; 02 R-AUTH-8, R-CPT-2, §5; controller ruling P-AUT-6",
+  "minorAction": "n/a"
+ },
+ {
+  "id": "T30-F3",
+  "severity": "Important",
+  "lenses": [
+   "ux"
+  ],
+  "file": "apps/web/src/sync/engine.ts",
+  "line": "346-347, 378-380; me-repo.ts:56-63; triggers.ts:16-26",
+  "title": "While the session is lost, every sync cycle sends /login to Home and back, clearing the form, errors and the P-AUT-6 dialog",
+  "problem": "With a cached me and connection 'unauthenticated', each cycle first calls the public GET /api/health, which sets 'online' before push/pull gets its 401 and sets 'unauthenticated' again. Nothing pauses cycles after a 401 (enqueue() only checks `stopped`). Cycles are restarted by the withEngineStopped finally after every failed login, by the 'foreground' trigger (e.g. back from a password manager) and by the 60 s interval when pending > 0. During each cycle resolveGuard treats '/login' + me + 'online' as a valid session and redirects to '/' then back to a freshly mounted LoginPage: « Pseudo ou mot de passe incorrect » and « Trop de tentatives » vanish, the typed pseudo is cleared and the P-AUT-6 dialog closes, repeatedly while the user types when data is pending. Cause is T28/T29 code, but the broken screen is T30's login. Tests render LoginPage without the guard and with a static fake engine, so they cannot see it.",
+  "fix": "After 'unauthenticated' or 'account_deleted', make enqueue() and syncNow() return early for launch and every trigger until sessionOpened() (F1) lifts the pause (R-SYN-12 / P-DRT-4: a 401 pauses sync). At minimum never move from 'unauthenticated' to 'online' on the result of /api/health; set 'online' only after an authenticated push or pull succeeds. Add a renderApp test with the real engine and a fake API (health 200, push/pull 401), a cached me and pending ops: fire visibilitychange, then a failed login, and assert the location stays '/login' and the alert stays visible.",
+  "specRef": "01 R-SYN-12; 03 P-DRT-4; 02 R-AUTH-1, R-AUTH-2, R-AUTH-8",
+  "minorAction": "n/a"
+ },
+ {
+  "id": "T30-F4",
+  "severity": "Minor",
+  "lenses": [
+   "spec",
+   "ux"
+  ],
+  "file": "apps/web/src/features/auth/InvitePage.tsx",
+  "line": "58-79",
+  "title": "The 03 §13.1 notice is missing from the « Crée ton compte » screen reached directly",
+  "problem": "The « pas un service médical » text and Confidentialité link appear only on the welcome screen. In the installed app opened with a #code link, the check runs at once and the form replaces the welcome screen within a few hundred ms, so the notice is never read.",
+  "fix": "Show the welcome paragraph (OWNER_FIRST_NAME plus the Confidentialité link) above CreateAccountForm, or in a header shared by both steps. Test: installed mode with a fragment -> once « Date de naissance » is visible, the text still contains « Ce n'est pas un service médical. ».",
+  "specRef": "03 §13.1; 02 R-ARR-1",
+  "minorAction": "fix_now"
+ },
+ {
+  "id": "T30-F5",
+  "severity": "Minor",
+  "lenses": [
+   "spec",
+   "ux",
+   "tests"
+  ],
+  "file": "apps/web/src/ui/AppShell.tsx",
+  "line": "32, 46-48 (shown on InvitePage.tsx:79)",
+  "title": "Public shell logo and footer links lose the in-progress code and duplicate « Confidentialité et règles »",
+  "problem": "On /invite and /reset, the PublicShell same-tab wouter Links (logo, Confidentialité et règles, Aide, Crédits) unmount the page after the fragment was cleared: code, birth date, pseudo and passwords are lost, and the install guide has no code to copy on Back. The footer link has the same accessible name as the in-page link (which opens a new tab), which confuses users and breaks Playwright strict-mode getByRole. Acceptable for the socle (the check does not consume the invitation; R-INV-9 keeps the link in the message). The tests also pin only href, not target, on the in-page links, so removing target='_blank' stays green.",
+  "fix": "On /invite and /reset render the PublicShell links with target=\"_blank\" rel=\"noopener noreferrer\" (a `newTab` prop set by the router for those paths) and make the logo link inert there. Do not persist the code anywhere (R-INV-4, P-AUT-2). In tests assert target === '_blank' and rel containing 'noopener' on both in-page links (InvitePage.tsx:79, CreateAccountForm.tsx:76) and that localStorage and sessionStorage stay empty at the end of the invite and reset flows.",
+  "specRef": "Named risks (c) and (e); 02 R-INV-4, R-ARR-2; 03 P-AUT-2",
+  "minorAction": "defer"
+ },
+ {
+  "id": "T30-F6",
+  "severity": "Minor",
+  "lenses": [
+   "spec",
+   "correctness",
+   "ux",
+   "security",
+   "tests"
+  ],
+  "file": "apps/web/src/features/auth/ResetPage.tsx",
+  "line": "45-46",
+  "title": "The reset form has no autocomplete=\"username\" field for password managers",
+  "problem": "NewPasswordForm has two new-password inputs; the pseudo appears only in the label. Keychain, Chrome and Bitwarden save the new password with no username or leave the old entry, so the next login autofills the old password and burns attempts in the per-pseudo limiter. Also, the autocomplete of the « Confirmation » field (PasswordFields.tsx:33) is never asserted by any test.",
+  "fix": "Add `<input type=\"text\" autoComplete=\"username\" value={p.username} readOnly hidden />` (or a visually hidden equivalent) before PasswordFields. In logout-reset.test.tsx assert its autocomplete and value; in the invite and reset tests assert (getByLabelText('Confirmation') as HTMLInputElement).autocomplete === 'new-password'.",
+  "specRef": "Named risk (d); 02 R-MDP-2",
+  "minorAction": "fix_now"
+ },
+ {
+  "id": "T30-F7",
+  "severity": "Minor",
+  "lenses": [
+   "spec",
+   "correctness"
+  ],
+  "file": "apps/web/src/features/auth/LoginPage.tsx",
+  "line": "34",
+  "title": "The P-AUT-6 check compares the cached pseudo instead of the device owner's userId",
+  "problem": "The ruling says to warn when the user logging in differs from deviceOwner().userId, but the page compares usernameKey(typed) with the cached meta.me.username, while adoptSession erases on a userId mismatch. If the owner renamed elsewhere (R-CPT-3) while this device's session was expired, the same person gets a false warning (nothing is erased); a different user who now holds the old pseudo gets no warning and the queue is erased.",
+  "fix": "Keep the pre-check but make the repo the authority: pass a confirmation flag to MeRepo.login/openSession. If the opened me.id differs from deviceOwner().userId, pending > 0 and the wipe is unconfirmed, log out the session just opened and throw a typed error carrying the count; LoginPage then shows the dialog and retries with the flag.",
+  "specRef": "03 P-AUT-6; controller ruling P-AUT-6",
+  "minorAction": "defer"
+ },
+ {
+  "id": "T30-F8",
+  "severity": "Minor",
+  "lenses": [
+   "spec",
+   "ux"
+  ],
+  "file": "apps/web/src/features/auth/InvitePage.tsx",
+  "line": "30, 92",
+  "title": "Truncated fragment in a browser: the install guide shows neither the code nor « Code incomplet »",
+  "problem": "With /invite#abc in a non-installed browser, fragment.present is true but code is null. InstallGuide shows « colle le code » with nothing to copy and no INCOMPLETE_CODE_MESSAGE. Messaging apps often truncate long links. Installed mode does show the message.",
+  "fix": "Pass fragment.present to InstallGuide and show INCOMPLETE_CODE_MESSAGE (role alert) plus a hint to ask the administrator for the full link or code when present && !code. Add a browser-mode test for '/invite#abc'.",
+  "specRef": "02 R-ARR-2, R-INV-5, R-INV-8",
+  "minorAction": "fix_now"
+ },
+ {
+  "id": "T30-F9",
+  "severity": "Minor",
+  "lenses": [
+   "correctness",
+   "security"
+  ],
+  "file": "apps/web/src/features/auth/CodeStep.tsx",
+  "line": "23-32",
+  "title": "A fragment arriving after mount is never read or cleared",
+  "problem": "useFragmentCode reads location.hash once (useState initializer) and clears it in a mount-only effect. A same-document fragment navigation (Android installed app receiving a link while on /invite, or a link pasted in the address bar) triggers hashchange but wouter keeps the pathname, so the page is not remounted: no check is sent, the field stays empty, and the live code stays in the address bar and a new history entry (R-INV-4).",
+  "fix": "In useFragmentCode also listen to 'hashchange': read the code, clear it with history.replaceState, expose it as state, and have CodeStep run one check per new readable code (or show « Code incomplet »). Test: render /invite, set window.location.hash -> exactly one check call and hash === ''.",
+  "specRef": "02 R-INV-4, R-RST-1; 03 P-AUT-2; named risk (b)",
+  "minorAction": "fix_now"
+ },
+ {
+  "id": "T30-F10",
+  "severity": "Minor",
+  "lenses": [
+   "correctness",
+   "ux"
+  ],
+  "file": "apps/web/src/features/auth/LogoutDialog.tsx",
+  "line": "17-31",
+  "title": "LogoutDialog keeps a stale error across close and reopen, and Escape closes it mid-request",
+  "problem": "The dialog stays mounted while closed, so its `error` state survives: an old « Nécessite le réseau » alert shows on reopen before any action. Dialog's Escape handler (ui/Dialog.tsx:19-21) calls onClose even while busy, so the dialog vanishes while the logout continues, and a later failure sets an error invisibly that shows on the next open.",
+  "fix": "Reset error and busy when p.open becomes true (effect or key on open). Pass Dialog an onClose that ignores calls while busy. Add a test: offline error, close, reopen online -> no alert.",
+  "specRef": "Brief Step 1 (logout-reset: hors ligne -> alerte)",
+  "minorAction": "fix_now"
+ },
+ {
+  "id": "T30-F11",
+  "severity": "Minor",
+  "lenses": [
+   "correctness",
+   "ux"
+  ],
+  "file": "apps/web/src/features/auth/LogoutDialog.tsx",
+  "line": "29 (also LoginPage.tsx:40, InvitePage.tsx:66, ResetPage.tsx:36)",
+  "title": "Screens navigate before useMeState reflects the new or ended session, causing guard flicker",
+  "problem": "useMeState is a Dexie liveQuery that re-emits after an async read, but pages navigate as soon as the repo call resolves. Fresh-device login goes '/' -> '/login' -> '/'; account creation goes /onboarding -> /login -> / -> /onboarding; logout goes '/login' while me is still lea and connection 'online', so the guard sends the user to '/' and Home flashes with stale data before /login. It never loops but there is visible flicker and remounts.",
+  "fix": "Let the guard drive: remove navigate on LoginPage and LogoutDialog (the guard redirects '/login' -> '/' with a session and protected paths -> '/login' once me is null). In InvitePage and ResetPage navigate in an effect once useMe()?.id equals the returned id. Add renderApp tests that record every visited location. Overlaps with the navigation part of T30-F1.",
+  "specRef": "T28 resolveGuard App.tsx:51-56",
+  "minorAction": "defer"
+ },
+ {
+  "id": "T30-F12",
+  "severity": "Minor",
+  "lenses": [
+   "correctness"
+  ],
+  "file": "apps/web/src/features/auth/LogoutDialog.tsx",
+  "line": "31",
+  "title": "Logout on an already-revoked session never wipes local data",
+  "problem": "POST /api/auth/logout and /logout-all sit behind requireUser (apps/server/src/auth/routes.ts:127,145), so a revoked or expired session gets 401 (or 410). MeRepo.logout throws before wipeUserData and the dialog shows « Ta session a expiré. Reconnecte-toi. »; meta.me, data and outbox stay and every retry fails identically, although R-AUTH-9 says local data is wiped once logout is confirmed. If the device is later opened offline, the data is shown.",
+  "fix": "Treat ApiError 'unauthenticated' or 'account_deleted' from the logout call as « session already closed »: run wipeUserData and navigate to /login (in MeRepo.logout or by catching in confirm()). Keep NetworkRequiredError as the only failure that leaves data intact. Test: logout replies 401 -> outbox and meta.me are gone.",
+  "specRef": "02 R-AUTH-9; 01 R-SYN-14",
+  "minorAction": "fix_now"
+ },
+ {
+  "id": "T30-F13",
+  "severity": "Minor",
+  "lenses": [
+   "correctness"
+  ],
+  "file": "apps/web/src/features/auth/CreateAccountForm.tsx",
+  "line": "49 (also ResetPage.tsx:38)",
+  "title": "A lost response on accept or reset turns the retry into a misleading dead end",
+  "problem": "If accept succeeds server-side but the response is lost, the form shows « Nécessite le réseau »; the retry returns invitation_used and the user reads « Demande un nouveau code à l'administrateur » although the account exists. The reset flow behaves the same with reset_invalid.",
+  "fix": "Remember in the form that an earlier attempt failed with NetworkRequiredError; if the next attempt returns invitation_used (accept) or reset_invalid (reset), show « Ton compte a peut-être déjà été créé : connecte-toi avec ce pseudo » or « Ton mot de passe a peut-être déjà été changé » with a link to /login.",
+  "specRef": "02 R-CPT-1, R-RST-1",
+  "minorAction": "defer"
+ },
+ {
+  "id": "T30-F14",
+  "severity": "Minor",
+  "lenses": [
+   "ux"
+  ],
+  "file": "apps/web/src/features/auth/CreateAccountForm.tsx",
+  "line": "81 (also ResetPage.tsx:53)",
+  "title": "Local validation errors are not linked to a field and pseudo messages do not name it",
+  "problem": "All local errors go to one form-level Banner below the consent box; no input gets aria-invalid or aria-describedby, focus stays on the submit button, and USERNAME_MESSAGES do not name the field. « 3 à 24 caractères. » appears under the passphrase hint and reads as a password rule. Screen-reader users do not know which field is concerned (WCAG 3.3.1).",
+  "fix": "Pass each local error to the `error` prop of its Field (sets aria-invalid and aria-describedby) and move focus to that input; keep the role=alert Banner for server and network errors. At minimum prefix the pseudo messages (« Pseudo : 3 à 24 caractères. »).",
+  "specRef": "WCAG 3.3.1; labels and errors associated to inputs",
+  "minorAction": "defer"
+ },
+ {
+  "id": "T30-F15",
+  "severity": "Minor",
+  "lenses": [
+   "ux"
+  ],
+  "file": "apps/web/src/features/auth/InvitePage.tsx",
+  "line": "58 (CodeStep.tsx:94)",
+  "title": "Focus is lost on step change and « Code incomplet » is never announced",
+  "problem": "When the code is accepted or « Continuer dans ce navigateur » is pressed, the focused button is removed and focus falls to body with no announcement. On « Suivant » with an incomplete code, the message is only an aria-describedby text while focus stays on the button, so screen readers say nothing. Page (ui/Page.tsx) does not manage focus.",
+  "fix": "On step change focus the step's h1 (tabIndex={-1}) or its first field. On the incomplete-code error focus the code input or render the message in a live region.",
+  "specRef": "Focus and keyboard use; 02 R-ARR-2",
+  "minorAction": "defer"
+ },
+ {
+  "id": "T30-F16",
+  "severity": "Important",
+  "lenses": [
+   "tests"
+  ],
+  "file": "apps/web/test/auth/login.test.tsx",
+  "line": "184",
+  "title": "The account_deleted re-login test bypasses the App guard and a fake engine that never resets",
+  "problem": "The test renders LoginPage alone (no resolveGuard) and createFakeSyncEngine.start() never changes connection, so the '/' assertion holds only because no guard runs and the banner is never checked to disappear. No test signs in through renderApp from 'unauthenticated' either, so the bounce described in T30-F1 stays invisible.",
+  "fix": "Covered by the renderApp tests listed in T30-F1: (1) '/login' + me lea + 'unauthenticated' + successful login -> '/', banner and login form gone; (2) '/login?reason=account_deleted' + 'account_deleted' + new user; (3) 401 from 'unauthenticated' keeps the banner on '/login'. Record every navigation target since memoryLocation record mode collapses replace navigations. Add sessionOpened() to the fake engine.",
+  "specRef": "Named risk (a); controller ruling account_deleted; 02 R-AUTH-8; 03 P-DRT-4",
+  "minorAction": "n/a"
+ },
+ {
+  "id": "T30-F17",
+  "severity": "Minor",
+  "lenses": [
+   "tests"
+  ],
+  "file": "apps/web/test/auth/invite.test.tsx",
+  "line": "93 (also 154, 179, 259; logout-reset.test.tsx:126)",
+  "title": "Fragment-clearing tests check only location.hash, so a pushState regression stays green",
+  "problem": "They assert only window.location.hash === ''. In happy-dom 20.14.5, history.pushState and location.hash = '' also give hash '' but history.length goes 1 -> 2, so the code stays in browser history while all tests pass. Also query.toString() === '' and method POST are asserted only for invitations/check (lines 91-92), not for accept, reset/check or reset (P-AUT-2).",
+  "fix": "Record const before = window.history.length after openUrl; after the fragment is read assert history.length === before and href has no '#' (or spy that pushState is never called). Add query.toString() === '' and method === 'POST' assertions for ACCEPT, reset/check and reset.",
+  "specRef": "Named risk (b); brief Step 3; 02 R-INV-4, R-RST-1; 03 P-AUT-2",
+  "minorAction": "fix_now"
+ },
+ {
+  "id": "T30-F18",
+  "severity": "Minor",
+  "lenses": [
+   "tests"
+  ],
+  "file": "apps/web/test/auth/logout-reset.test.tsx",
+  "line": "100",
+  "title": "« fermé : rien à l'écran » is vacuous",
+  "problem": "It checks queryByRole('dialog') synchronously after render, before the Dexie round trip (a macrotask) could make a dialog appear, so dropping the open guard (useLive + if (!device) return null) stays green.",
+  "fix": "Await settling (await act(() => new Promise(r => setTimeout(r, 50)))) before asserting, or mount a wrapper that switches open true -> false, wait for the dialog, switch it and assert it is gone.",
+  "specRef": "02 R-AUTH-9",
+  "minorAction": "fix_now"
+ },
+ {
+  "id": "T30-F19",
+  "severity": "Minor",
+  "lenses": [
+   "tests"
+  ],
+  "file": "apps/web/test/auth/invite.test.tsx",
+  "line": "69 (also test/app/public-pages.test.tsx:16)",
+  "title": "The welcome-text assertion depends on VITE_OWNER_FIRST_NAME in the environment",
+  "problem": "The expected text hard-codes « hébergé chez l'administrateur », only the fallback of OWNER_FIRST_NAME. If the variable is exported in the shell or CI, the test fails with no code change.",
+  "fix": "Import OWNER_FIRST_NAME and build the expectation from it: `appsport est un outil de suivi entre proches, hébergé chez ${OWNER_FIRST_NAME}. Ce n'est pas un service médical.` Apply the same to public-pages.test.tsx:16.",
+  "specRef": "03 §13.1 welcome text; test determinism",
+  "minorAction": "fix_now"
+ },
+ {
+  "id": "T30-F20",
+  "severity": "Minor",
+  "lenses": [
+   "tests"
+  ],
+  "file": "apps/web/src/features/auth/messages.ts",
+  "line": "52 (test messages.test.ts:111-118)",
+  "title": "The NFC comparison of the confirmation is not pinned",
+  "problem": "checkNewPassword compares after NFC deliberately, but no test passes equal strings in different normalization forms. Reverting to i.password === i.confirm passes all tests and would show « Les deux mots de passe ne correspondent pas. » for 'é' typed vs pasted, while the server accepts it.",
+  "fix": "Add a case with password 'cheval agrafé batterie' and the same text with 'e' + U+0301, expecting checkNewPassword(...) toBeNull().",
+  "specRef": "Global constraints: mot de passe 12 à 128 points de code après NFC",
+  "minorAction": "fix_now"
+ },
+ {
+  "id": "T30-F21",
+  "severity": "Minor",
+  "lenses": [
+   "tests"
+  ],
+  "file": "apps/web/test/auth/login.test.tsx",
+  "line": "138 (LoginPage.tsx:34)",
+  "title": "The same-username test varies only the typed side, so a one-sided usernameKey passes",
+  "problem": "The test stores 'lea' and types 'LEA'; a regression to usernameKey(typed) !== (device.username ?? '') or a toLowerCase comparison still passes because the stored name is already lowercase and NFKC. A stored display name like 'Léa' would then wrongly trigger the wipe warning.",
+  "fix": "In renderWithPending store makeMe({ id: 'u-1', username: 'Léa' }) and sign in as 'LÉA' (uppercase, decomposed accent), expecting no dialog and the outbox kept.",
+  "specRef": "Brief Step 3 usernameKey on both sides; clé NFKC puis minuscules; 03 P-AUT-6",
+  "minorAction": "fix_now"
+ }
+]

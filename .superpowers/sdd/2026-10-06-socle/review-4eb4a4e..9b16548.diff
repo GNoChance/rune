@@ -1,0 +1,1376 @@
+# Review package: 4eb4a4e..HEAD
+
+## Commits
+9b16548 fix(synchro): file sans recouvrement, échéance sur le corps, reprises et garde utilisateur
+
+## Files changed
+ apps/web/src/sync/catalog.ts         |  14 +-
+ apps/web/src/sync/engine.ts          | 332 ++++++++++-------------------------
+ apps/web/src/sync/epoch.ts           | 146 +++++++++++++++
+ apps/web/src/sync/push-results.ts    |  74 ++++++++
+ apps/web/src/sync/transport.ts       | 117 ++++++++++--
+ apps/web/test/sync/engine.test.ts    | 192 ++++++++++++++++++++
+ apps/web/test/sync/transport.test.ts |  53 +++++-
+ 7 files changed, 668 insertions(+), 260 deletions(-)
+
+## Diff
+diff --git a/apps/web/src/sync/catalog.ts b/apps/web/src/sync/catalog.ts
+index 172e720..df77d86 100644
+--- a/apps/web/src/sync/catalog.ts
++++ b/apps/web/src/sync/catalog.ts
+@@ -1,37 +1,45 @@
+ import { IllustrationRef } from '@appsport/contracts';
+ import { z } from 'zod';
+ import type { AppDb } from '../local-db/db';
+ import { getMeta, setMeta } from '../local-db/meta';
+ import { postToSw } from '../sw/sw-client';
+-import { fetchWithTimeout, type SyncTransport } from './transport';
++import { fetchJsonWithTimeout, type SyncTransport } from './transport';
++
++/** Budget du catalogue, corps compris : plus long que celui des appels de synchro. */
++export const CATALOG_TIMEOUT_MS = 30_000;
+ 
+ const Item = z.looseObject({ id: z.string() });
+ const LocalCatalog = z.object({
+   version: z.string(),
+   exercises: z.array(Item),
+   illustrations: z.array(IllustrationRef),
+   programTemplates: z.array(Item),
+   adviceSheets: z.array(Item),
+ });
+ 
+ /**
+  * Catalogue (classe C) par ETag : 304 → inchangé ; 200 → les quatre magasins remplacés en une
+  * transaction, versions locales alignées, puis le SW est prié de mettre les illustrations en cache.
+  */
+ export async function refreshCatalog(db: AppDb, t: SyncTransport): Promise<'unchanged' | 'updated'> {
+   const current = await getMeta(db, 'catalogVersion');
+   const headers: Record<string, string> = current === undefined ? {} : { 'If-None-Match': `"${current}"` };
+-  const res = await fetchWithTimeout(t, '/api/catalog', { method: 'GET', headers });
++  const { res, body } = await fetchJsonWithTimeout(
++    t,
++    '/api/catalog',
++    { method: 'GET', headers },
++    CATALOG_TIMEOUT_MS,
++  );
+   if (res.status === 304) return 'unchanged';
+   if (res.status !== 200) throw new Error(`catalog_http_${res.status}`);
+-  const bundle = LocalCatalog.parse(await res.json());
++  const bundle = LocalCatalog.parse(body);
+ 
+   await db.transaction(
+     'rw',
+     ['exercises', 'illustrations', 'programTemplates', 'adviceSheets', 'meta'],
+     async () => {
+       for (const store of ['exercises', 'illustrations', 'programTemplates', 'adviceSheets'] as const) {
+         await db.table(store).clear();
+         await db.table(store).bulkPut(bundle[store]);
+       }
+       await setMeta(db, 'catalogVersion', bundle.version);
+diff --git a/apps/web/src/sync/engine.ts b/apps/web/src/sync/engine.ts
+index 0749e1a..04a2e39 100644
+--- a/apps/web/src/sync/engine.ts
++++ b/apps/web/src/sync/engine.ts
+@@ -1,41 +1,44 @@
+ import {
+-  type EntityRule,
+   type EntityRulesMap,
+   EPOCH_HEADER,
+-  EPOCH_RESEND_DAYS,
+   entityRules,
+   PROTOCOL_HEADER,
+   PullResponse,
+   PushResponse,
+   type PushResult,
+   SYNC_DEBOUNCE_MS,
+   SYNC_PROTOCOL,
+   SYNC_PUSH_MAX,
+   SYNC_RETRY_MAX_MS,
+   SYNC_RETRY_MIN_MS,
+   SYNC_TIMEOUT_MS,
+-  snakeToCamel,
+ } from '@appsport/contracts';
+ import { createMonotonicUuidV7 } from '@appsport/domain';
+-import Dexie from 'dexie';
+-import { z } from 'zod';
+-import { stripC2Fields } from '../local-db/c2';
+ import { localHealthConsentActive } from '../local-db/consent';
+-import { type AppDb, type DeadletterEntry, mirrorStoreNames, type OutboxOp } from '../local-db/db';
++import { type AppDb, mirrorStoreNames, type OutboxOp } from '../local-db/db';
+ import { deleteMeta, getMeta, setMeta } from '../local-db/meta';
+ import { clearMirrors, purgeHealthData, wipeUserData } from '../local-db/wipe';
+ import { applyPulledRows } from './apply-pull';
+ import { refreshCatalog } from './catalog';
++import { type EpochIo, handleEpoch } from './epoch';
+ import { pendingCount } from './outbox';
+ import { convertOutboxOp } from './protocol-converters';
+-import { fetchWithTimeout, OfflineError, type SyncTransport } from './transport';
++import { applyPushResults } from './push-results';
++import {
++  fetchJsonWithTimeout,
++  HttpError,
++  httpErrorOf,
++  type JsonReply,
++  OfflineError,
++  type SyncTransport,
++} from './transport';
+ import { installSyncTriggers } from './triggers';
+ 
+ export type ConnectionState =
+   | 'unknown'
+   | 'online'
+   | 'offline'
+   | 'unauthenticated'
+   | 'protocol_unsupported'
+   | 'account_deleted';
+ export type SyncTrigger =
+@@ -76,105 +79,83 @@ export interface SyncEngineDeps {
+   timeoutMs?: number;
+   rules?: EntityRulesMap;
+   triggers?: (e: SyncEngine) => () => void;
+ }
+ 
+ /** Attente avant la reprise n° `failures` : 2 s doublées à chaque échec, 5 min au plus. */
+ export function retryDelayMs(failures: number): number {
+   return Math.min(SYNC_RETRY_MAX_MS, SYNC_RETRY_MIN_MS * 2 ** (Math.max(1, failures) - 1));
+ }
+ 
+-const DAY_MS = 86_400_000;
+-
+-/** Fin de cycle sans échec : utilisateur changé ou moteur arrêté. */
++/** Fin de cycle sans échec : utilisateur changé, ou cycle d'avant un stop(). */
+ class CycleEnd extends Error {}
+ /** Réponse portant une autre époque que celle du cycle (en-tête lu avant le corps). */
+ class EpochChanged extends Error {}
+-class HttpError extends Error {
+-  constructor(
+-    readonly status: number,
+-    readonly code: string | null,
+-  ) {
+-    super(code ?? `http_${status}`);
+-  }
+-}
+-
+-async function httpError(res: Response): Promise<HttpError> {
+-  let code: string | null = null;
+-  try {
+-    const body: unknown = await res.json();
+-    if (typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'string') {
+-      code = body.error;
+-    }
+-  } catch {
+-    // corps absent ou illisible : seul le statut reste
+-  }
+-  return new HttpError(res.status, code);
+-}
+-
+-const MeConsents = z.looseObject({
+-  consents: z.looseObject({ health: z.looseObject({ active: z.boolean() }) }),
+-});
+ 
+ type CycleKind = 'full' | 'pull';
+ interface Cycle {
+   userId: string;
+   epoch: string | null;
++  /** Génération du moteur au lancement : un stop() la fait avancer. */
++  generation: number;
++}
++interface Queued {
++  kind: CycleKind;
++  promise: Promise<void>;
++  resolve: () => void;
+ }
+ 
+ /**
+  * Moteur de synchro client : un seul cycle en vol (health → époque → push → pull → catalogue),
+  * décisions prises sur `error` et jamais sur le seul statut, l'en-tête d'époque d'abord.
+  */
+ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
+   const { db, transport } = deps;
+   const rules = deps.rules ?? entityRules;
+   const now = deps.now ?? Date.now;
+   const newOpId =
+     deps.newOpId ?? createMonotonicUuidV7(now, (n) => crypto.getRandomValues(new Uint8Array(n)));
+   const timeoutMs = deps.timeoutMs ?? SYNC_TIMEOUT_MS;
+   const nowIso = () => new Date(now()).toISOString();
+-  const ruleOf = (entity: string): EntityRule | undefined =>
+-    Object.hasOwn(rules, entity) ? rules[entity] : undefined;
+-  const hasMirror = (entity: string) => db.mirrorNames.includes(entity);
+ 
+   let state: SyncState = {
+     connection: 'unknown',
+     pending: 0,
+     rejected: 0,
+     lastPullOkAt: null,
+     syncing: false,
+     serverEpoch: null,
+   };
+   const listeners = new Set<(s: SyncState) => void>();
+   let lastUserId: string | null = null;
+   let failures = 0;
+   let started = false;
+   let stopped = false;
++  let generation = 0;
+   let uninstall: (() => void) | null = null;
+   let retryTimer: ReturnType<typeof setTimeout> | undefined;
+   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+   let debounceWaiters: (() => void)[] = [];
+-  let running: Promise<void> | null = null;
+-  let next: { kind: CycleKind; promise: Promise<void> } | null = null;
++  let running = false;
++  let next: Queued | null = null;
+ 
+   function setState(patch: Partial<SyncState>): void {
+     const updated = { ...state, ...patch };
+     const keys = Object.keys(updated) as (keyof SyncState)[];
+     if (keys.every((k) => updated[k] === state[k])) return;
+     state = updated;
+     for (const fn of listeners) fn(state);
+   }
+ 
+   async function rejectedCount(userId: string): Promise<number> {
+     const opIds = new Set((await db.deadletter.where('userId').equals(userId).toArray()).map((d) => d.opId));
+-    if (hasMirror('sync_rejection')) {
++    if (db.mirrorNames.includes('sync_rejection')) {
+       for (const r of await db.mirror('sync_rejection').toArray()) {
+         if (
+           r.ownerId === userId &&
+           r.dismissedAt == null &&
+           r.deletedAt == null &&
+           typeof r.opId === 'string'
+         ) {
+           opIds.add(r.opId);
+         }
+       }
+@@ -187,221 +168,83 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
+     setState({
+       pending: userId ? await pendingCount(db, userId) : 0,
+       rejected: userId ? await rejectedCount(userId) : 0,
+       lastPullOkAt: (await getMeta(db, 'lastPullOkAt')) ?? null,
+       serverEpoch: (await getMeta(db, 'serverEpoch')) ?? null,
+     });
+   }
+ 
+   // ---- HTTP ----
+ 
+-  async function request(
+-    cycle: Cycle,
+-    method: 'GET' | 'POST',
+-    path: string,
+-    body?: unknown,
+-  ): Promise<Response> {
++  /** Requête de synchro ; l'échéance couvre la lecture du corps, l'époque est lue avant lui. */
++  function request(cycle: Cycle, method: 'GET' | 'POST', path: string, body?: unknown): Promise<JsonReply> {
+     const headers: Record<string, string> = { [PROTOCOL_HEADER]: String(SYNC_PROTOCOL) };
+     const init: RequestInit = { method, headers };
+     if (method === 'POST') {
+       headers['Content-Type'] = 'application/json';
+       init.body = JSON.stringify(body ?? {});
+     }
+-    const res = await fetchWithTimeout(transport, path, init, timeoutMs);
+-    const epoch = res.headers.get(EPOCH_HEADER);
+-    if (cycle.epoch !== null && epoch !== null && epoch !== cycle.epoch) throw new EpochChanged();
+-    return res;
++    return fetchJsonWithTimeout(transport, path, init, timeoutMs, (res) => {
++      const epoch = res.headers.get(EPOCH_HEADER);
++      if (cycle.epoch !== null && epoch !== null && epoch !== cycle.epoch) throw new EpochChanged();
++    });
++  }
++
++  function okBody(reply: JsonReply): unknown {
++    if (!reply.res.ok) throw httpErrorOf(reply);
++    return reply.body;
+   }
+ 
+-  async function okJson(res: Response): Promise<unknown> {
+-    if (!res.ok) throw await httpError(res);
+-    return res.json();
++  async function isCurrent(cycle: Cycle): Promise<boolean> {
++    return cycle.generation === generation && (await getMeta(db, 'userId')) === cycle.userId;
+   }
+ 
+   async function assertCurrent(cycle: Cycle): Promise<void> {
+-    if (stopped || (await getMeta(db, 'userId')) !== cycle.userId) throw new CycleEnd();
++    if (!(await isCurrent(cycle))) throw new CycleEnd();
+   }
+ 
+   async function sendPush(cycle: Cycle, ops: OutboxOp[]): Promise<PushResult[]> {
+-    const res = await request(cycle, 'POST', '/api/sync/push', { ops });
+-    return PushResponse.parse(await okJson(res)).results;
++    return PushResponse.parse(okBody(await request(cycle, 'POST', '/api/sync/push', { ops }))).results;
+   }
+ 
+-  const effectiveStatus = (r: PushResult) =>
+-    r.status === 'duplicate' ? (r.originalStatus ?? 'applied') : r.status;
+-
+-  const deadletterOf = (op: OutboxOp, code: string | undefined): DeadletterEntry => ({
+-    opId: op.opId,
+-    userId: op.userId,
+-    entity: op.entity,
+-    id: op.id,
+-    code: code ?? 'unknown',
+-    detail: { kind: op.kind, fieldNames: Object.keys(op.fields).sort() },
+-    receivedAt: nowIso(),
++  const epochIo = (cycle: Cycle): EpochIo => ({
++    db,
++    rules,
++    userId: cycle.userId,
++    now,
++    newOpId,
++    assertCurrent: () => assertCurrent(cycle),
++    sendPush: (ops) => sendPush(cycle, ops),
++    request: (method, path, body) => request(cycle, method, path, body),
+   });
+ 
+-  // ---- 2. Époque ----
+-
+-  function depth(entity: string, guard = 0): number {
+-    const parent = ruleOf(entity)?.parent;
+-    return parent && guard < 16 ? 1 + depth(parent.entity, guard + 1) : 0;
+-  }
+-
+-  /** a. restore_upsert des lignes J récentes, parents d'abord, jamais dans l'outbox. */
+-  async function resendJournal(cycle: Cycle): Promise<void> {
+-    const consent = await localHealthConsentActive(db);
+-    const since = now() - EPOCH_RESEND_DAYS * DAY_MS;
+-    const candidates: { entity: string; id: string; fields: Record<string, unknown>; seen: number | null }[] =
+-      [];
+-    for (const entity of mirrorStoreNames(db)) {
+-      const rule = ruleOf(entity);
+-      if (rule?.syncClass !== 'J' || entity === 'sync_rejection') continue;
+-      if (!consent && rule.category === 'C2') continue;
+-      for (const row of await db.mirror(entity).toArray()) {
+-        if (row.ownerId !== cycle.userId || typeof row.updatedAt !== 'string') continue;
+-        if (!(Date.parse(row.updatedAt) >= since)) continue;
+-        let fields: Record<string, unknown> = {};
+-        for (const column of rule.clientWritable) {
+-          const key = snakeToCamel(column);
+-          if (Object.hasOwn(row, key) && row[key] !== undefined) fields[key] = row[key];
+-        }
+-        if (!consent) fields = stripC2Fields(rule, fields).fields;
+-        fields.deletedAt = row.deletedAt ?? null;
+-        candidates.push({ entity, id: row.id, fields, seen: row.serverRevSeen ?? null });
+-      }
+-    }
+-    candidates.sort(
+-      (a, b) =>
+-        depth(a.entity) - depth(b.entity) ||
+-        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) ||
+-        (a.entity < b.entity ? -1 : a.entity > b.entity ? 1 : 0),
+-    );
+-    const ops: OutboxOp[] = candidates.map((c) => ({
+-      opId: newOpId(),
+-      userId: cycle.userId,
+-      entity: c.entity,
+-      id: c.id,
+-      kind: 'restore_upsert',
+-      fields: c.fields,
+-      clientTs: nowIso(),
+-      protocol: SYNC_PROTOCOL,
+-      attempts: 0,
+-      serverRevSeen: c.seen,
+-    }));
+-    for (let i = 0; i < ops.length; i += SYNC_PUSH_MAX) {
+-      await assertCurrent(cycle);
+-      const batch = ops.slice(i, i + SYNC_PUSH_MAX);
+-      const byId = new Map(batch.map((o) => [o.opId, o]));
+-      const results = await sendPush(cycle, batch);
+-      // Un renvoi rejeté va en deadletter : ce n'est pas un échec du cycle.
+-      const dead = results.flatMap((r) => {
+-        const op = byId.get(r.opId);
+-        return op && effectiveStatus(r) === 'rejected' ? [deadletterOf(op, r.code)] : [];
+-      });
+-      if (dead.length > 0) await db.deadletter.bulkPut(dead);
+-    }
+-  }
+-
+-  /** b. R-SYN-28 : renvoi d'un retrait d'accord santé perdu par une restauration. */
+-  async function replayWithdrawal(cycle: Cycle): Promise<void> {
+-    if (!hasMirror('consent_event')) return;
+-    const last = await db
+-      .mirror('consent_event')
+-      .where('[type+createdAt]')
+-      .between(['health', Dexie.minKey], ['health', Dexie.maxKey])
+-      .last();
+-    if (last?.action !== 'withdraw' || typeof last.createdAt !== 'string') return;
+-    const me = MeConsents.parse(await okJson(await request(cycle, 'GET', '/api/me')));
+-    if (!me.consents.health.active) return;
+-    const res = await request(cycle, 'POST', '/api/me/consents/health/replay-withdraw', {
+-      withdrawnAt: last.createdAt,
+-    });
+-    if (res.ok) return;
+-    const error = await httpError(res);
+-    if (error.code !== 'conflict') throw error;
+-  }
+-
+-  async function handleEpoch(cycle: Cycle): Promise<void> {
+-    if (cycle.epoch === null) return;
+-    const local = await getMeta(db, 'serverEpoch');
+-    if (local === cycle.epoch) return;
+-    if (local !== undefined) {
+-      // Outbox en pause jusqu'à la fin du renvoi ; un échec ici laisse l'époque locale inchangée.
+-      await resendJournal(cycle);
+-      await replayWithdrawal(cycle);
+-    }
+-    await assertCurrent(cycle);
+-    const epoch = cycle.epoch;
+-    await db.transaction('rw', db.meta, async () => {
+-      await setMeta(db, 'serverEpoch', epoch);
+-      if (local !== undefined) await deleteMeta(db, 'watermark');
+-    });
+-  }
+-
+   // ---- 3. Push ----
+ 
+-  async function applyPushResults(batch: OutboxOp[], results: PushResult[]): Promise<void> {
+-    const byId = new Map(batch.map((o) => [o.opId, o]));
+-    const stores = [...new Set(batch.map((o) => o.entity))].filter(hasMirror).map((e) => db.mirror(e));
+-    await db.transaction('rw', [db.outbox, db.deadletter, db.meta, ...stores], async () => {
+-      const rejected: OutboxOp[] = [];
+-      for (const r of results) {
+-        const op = byId.get(r.opId);
+-        if (!op) continue;
+-        byId.delete(r.opId);
+-        await db.outbox.delete(op.opId);
+-        if (effectiveStatus(r) === 'rejected') {
+-          await db.deadletter.put(deadletterOf(op, r.code));
+-          rejected.push(op);
+-          continue;
+-        }
+-        if (!hasMirror(op.entity)) continue;
+-        const mirror = db.mirror(op.entity);
+-        if (r.dropped) {
+-          await mirror.delete(op.id);
+-          continue;
+-        }
+-        const row = await mirror.get(op.id);
+-        if (!row) continue;
+-        const updated = { ...row };
+-        if (r.rev !== undefined) updated.serverRevSeen = r.rev;
+-        for (const field of r.droppedFields ?? []) updated[field] = null;
+-        await mirror.put(updated);
+-      }
+-      let refetch = false;
+-      for (const op of rejected) {
+-        const row = hasMirror(op.entity) ? await db.mirror(op.entity).get(op.id) : undefined;
+-        const others = await db.outbox.where('[entity+id]').equals([op.entity, op.id]).count();
+-        if (row && row.serverRevSeen == null && others === 0) await db.mirror(op.entity).delete(op.id);
+-        else refetch = true;
+-      }
+-      if (refetch) await deleteMeta(db, 'watermark');
+-    });
+-  }
+-
+   async function push(cycle: Cycle): Promise<void> {
+     const opIds = (await db.outbox.where('userId').equals(cycle.userId).primaryKeys()).sort();
+     for (let i = 0; i < opIds.length; i += SYNC_PUSH_MAX) {
+       await assertCurrent(cycle);
+       const keys = opIds.slice(i, i + SYNC_PUSH_MAX);
+       const batch = await db.transaction('rw', db.outbox, async () => {
+         const ops = (await db.outbox.bulkGet(keys)).filter((o): o is OutboxOp => o !== undefined);
+         const bumped = ops.map((o) => ({ ...o, attempts: o.attempts + 1 }));
+         await db.outbox.bulkPut(bumped);
+         return bumped;
+       });
+       if (batch.length === 0) continue;
+       const results = await sendPush(
+         cycle,
+         batch.map((o) => convertOutboxOp(o)),
+       );
+-      await applyPushResults(batch, results);
++      // Utilisateur changé pendant la requête : rien n'est appliqué.
++      await assertCurrent(cycle);
++      await applyPushResults(db, batch, results, nowIso());
+     }
+   }
+ 
+   // ---- 4. Pull ----
+ 
+   async function dropUnreceived(received: Map<string, Set<string>>, watermark: string): Promise<void> {
+     const stores = mirrorStoreNames(db);
+     await db.transaction('rw', [db.outbox, db.meta, ...stores.map((s) => db.mirror(s))], async () => {
+       for (const store of stores) {
+         const got = received.get(store) ?? new Set<string>();
+@@ -417,36 +260,37 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
+   }
+ 
+   async function pull(cycle: Cycle): Promise<void> {
+     let since = (await getMeta(db, 'watermark')) ?? null;
+     let full = since === null;
+     let expiredHandled = false;
+     const received = new Map<string, Set<string>>();
+     for (;;) {
+       await assertCurrent(cycle);
+       const path = since === null ? '/api/sync/pull' : `/api/sync/pull?since=${encodeURIComponent(since)}`;
+-      const res = await request(cycle, 'GET', path);
+-      if (!res.ok) {
+-        const error = await httpError(res);
++      const reply = await request(cycle, 'GET', path);
++      if (!reply.res.ok) {
++        const error = httpErrorOf(reply);
+         if (error.code === 'watermark_expired' && since !== null && !expiredHandled) {
++          await assertCurrent(cycle);
+           // Miroirs vidés, outbox intacte, un seul pull complet.
+           expiredHandled = true;
+           await clearMirrors(db);
+           await deleteMeta(db, 'watermark');
+           since = null;
+           full = true;
+           received.clear();
+           continue;
+         }
+         throw error;
+       }
+-      const page = PullResponse.parse(await res.json());
++      const page = PullResponse.parse(reply.body);
+       await assertCurrent(cycle);
+       await applyPulledRows(db, page.rows);
+       if (full) {
+         for (const { entity, row } of page.rows) {
+           const ids = received.get(entity) ?? new Set<string>();
+           ids.add(String(row.id));
+           received.set(entity, ids);
+         }
+       } else {
+         await setMeta(db, 'watermark', page.nextWatermark);
+@@ -480,22 +324,24 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
+   function scheduleRetry(): void {
+     failures += 1;
+     if (!started || stopped) return;
+     clearTimeout(retryTimer);
+     retryTimer = setTimeout(() => {
+       retryTimer = undefined;
+       void enqueue('full');
+     }, retryDelayMs(failures));
+   }
+ 
+-  async function handleFailure(error: unknown): Promise<void> {
++  async function handleFailure(cycle: Cycle, error: unknown): Promise<void> {
+     if (error instanceof CycleEnd) return;
++    // Utilisateur changé ou moteur arrêté pendant la requête : la réponse ne le concerne plus.
++    if (!(await isCurrent(cycle))) return;
+     if (error instanceof OfflineError) {
+       setState({ connection: 'offline' });
+       scheduleRetry();
+       return;
+     }
+     if (error instanceof HttpError) {
+       switch (error.code) {
+         case 'unauthenticated':
+           setState({ connection: 'unauthenticated' });
+           return;
+@@ -508,89 +354,97 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
+           return;
+         case 'protocol_unsupported':
+           setState({ connection: 'protocol_unsupported' });
+           return;
+       }
+     }
+     scheduleRetry();
+   }
+ 
+   /** Un cycle ; 'epoch_changed' quand une réponse a porté une autre époque que celle du cycle. */
+-  async function runCycle(kind: CycleKind, isRerun: boolean): Promise<'done' | 'epoch_changed'> {
++  async function runCycle(kind: CycleKind, isRerun: boolean, gen: number): Promise<'done' | 'epoch_changed'> {
+     const userId = await getMeta(db, 'userId');
+-    if (!userId || stopped) return 'done';
++    if (!userId || gen !== generation) return 'done';
+     if (userId !== lastUserId) {
+       lastUserId = userId;
+       failures = 0;
+       setState({ connection: 'unknown' });
+     }
+-    const cycle: Cycle = { userId, epoch: null };
++    const cycle: Cycle = { userId, epoch: null, generation: gen };
+     try {
+       const health = await request(cycle, 'GET', '/api/health');
+-      const body = (await okJson(health)) as { epoch?: unknown } | null;
+-      cycle.epoch = health.headers.get(EPOCH_HEADER) ?? (typeof body?.epoch === 'string' ? body.epoch : null);
+-      failures = 0;
++      const body = okBody(health) as { epoch?: unknown } | null;
++      cycle.epoch =
++        health.res.headers.get(EPOCH_HEADER) ?? (typeof body?.epoch === 'string' ? body.epoch : null);
++      await assertCurrent(cycle);
+       setState({ connection: 'online' });
+-      await handleEpoch(cycle);
++      await handleEpoch(epochIo(cycle), cycle.epoch);
+       if (kind === 'full') await push(cycle);
+       await pull(cycle);
+       await syncCatalog();
++      // Seul un cycle réussi de bout en bout remet les reprises à zéro.
++      failures = 0;
+       return 'done';
+     } catch (error) {
+       if (error instanceof EpochChanged && !isRerun) return 'epoch_changed';
+-      await handleFailure(error);
++      await handleFailure(cycle, error);
+       return 'done';
+     }
+   }
+ 
+-  async function runSlot(kind: CycleKind): Promise<void> {
++  async function runSlot(kind: CycleKind, gen: number): Promise<void> {
+     try {
+       // Au plus un cycle immédiat de plus quand l'époque a changé en cours de cycle.
+-      if ((await runCycle(kind, false)) === 'epoch_changed') await runCycle(kind, true);
++      if ((await runCycle(kind, false, gen)) === 'epoch_changed') await runCycle(kind, true, gen);
+     } finally {
+       await refreshState();
+     }
+   }
+ 
++  /**
++   * Lance un cycle. À sa fin, le cycle programmé démarre de façon synchrone, avant que les
++   * appelants qui attendaient ne reprennent la main : aucun créneau où deux cycles partiraient.
++   */
+   function launch(kind: CycleKind): Promise<void> {
+-    if (stopped) {
+-      setState({ syncing: false });
+-      return Promise.resolve();
+-    }
++    running = true;
+     clearTimeout(retryTimer);
+     retryTimer = undefined;
+     setState({ syncing: true });
+-    const promise = runSlot(kind)
++    return runSlot(kind, generation)
+       .catch(() => {})
+       .finally(() => {
+-        running = null;
+-        if (!next) setState({ syncing: false });
++        const queued = next;
++        next = null;
++        if (queued && !stopped) {
++          void launch(queued.kind).then(queued.resolve);
++          return;
++        }
++        running = false;
++        setState({ syncing: false });
++        queued?.resolve();
+       });
+-    running = promise;
+-    return promise;
+   }
+ 
+   /** File unique : un cycle en vol, au plus un autre programmé (complet s'il est demandé une fois). */
+   function enqueue(kind: CycleKind): Promise<void> {
+     if (stopped) return Promise.resolve();
+-    if (!running) return launch(kind);
+     if (next) {
+       if (kind === 'full') next.kind = 'full';
+       return next.promise;
+     }
+-    const queued: { kind: CycleKind; promise: Promise<void> } = { kind, promise: Promise.resolve() };
+-    queued.promise = running.then(() => {
+-      next = null;
+-      return launch(queued.kind);
++    if (!running) return launch(kind);
++    let resolve: () => void = () => {};
++    const promise = new Promise<void>((r) => {
++      resolve = r;
+     });
+-    next = queued;
+-    return queued.promise;
++    next = { kind, promise, resolve };
++    return promise;
+   }
+ 
+   function debounced(): Promise<void> {
+     if (stopped) return Promise.resolve();
+     clearTimeout(debounceTimer);
+     const done = new Promise<void>((resolve) => debounceWaiters.push(resolve));
+     debounceTimer = setTimeout(() => {
+       debounceTimer = undefined;
+       const waiters = debounceWaiters;
+       debounceWaiters = [];
+@@ -631,20 +485,22 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
+     start() {
+       if (started) return;
+       started = true;
+       stopped = false;
+       uninstall = (deps.triggers ?? installSyncTriggers)(engine);
+       void engine.syncNow('launch');
+     },
+     stop() {
+       stopped = true;
+       started = false;
++      // Le cycle en vol s'arrête à sa prochaine vérification et n'agit plus sur sa réponse.
++      generation += 1;
+       uninstall?.();
+       uninstall = null;
+       clearTimeout(retryTimer);
+       retryTimer = undefined;
+       clearTimeout(debounceTimer);
+       debounceTimer = undefined;
+       const waiters = debounceWaiters;
+       debounceWaiters = [];
+       for (const w of waiters) w();
+     },
+diff --git a/apps/web/src/sync/epoch.ts b/apps/web/src/sync/epoch.ts
+new file mode 100644
+index 0000000..2ad567c
+--- /dev/null
++++ b/apps/web/src/sync/epoch.ts
+@@ -0,0 +1,146 @@
++import {
++  type EntityRule,
++  type EntityRulesMap,
++  EPOCH_RESEND_DAYS,
++  type PushResult,
++  SYNC_PROTOCOL,
++  SYNC_PUSH_MAX,
++  snakeToCamel,
++} from '@appsport/contracts';
++import Dexie from 'dexie';
++import { z } from 'zod';
++import { stripC2Fields } from '../local-db/c2';
++import { localHealthConsentActive } from '../local-db/consent';
++import { type AppDb, mirrorStoreNames, type OutboxOp } from '../local-db/db';
++import { deleteMeta, getMeta, setMeta } from '../local-db/meta';
++import { deadletterOf, effectiveStatus } from './push-results';
++import { httpErrorOf, type JsonReply } from './transport';
++
++const DAY_MS = 86_400_000;
++
++const MeConsents = z.looseObject({
++  consents: z.looseObject({ health: z.looseObject({ active: z.boolean() }) }),
++});
++
++/** Ce dont l'étape « époque » a besoin du cycle en cours. */
++export interface EpochIo {
++  db: AppDb;
++  rules: EntityRulesMap;
++  userId: string;
++  now(): number;
++  newOpId(): string;
++  /** Lève si l'utilisateur a changé ou si le cycle n'est plus le courant. */
++  assertCurrent(): Promise<void>;
++  sendPush(ops: OutboxOp[]): Promise<PushResult[]>;
++  request(method: 'GET' | 'POST', path: string, body?: unknown): Promise<JsonReply>;
++}
++
++function depth(rules: EntityRulesMap, entity: string, guard = 0): number {
++  const parent = Object.hasOwn(rules, entity) ? rules[entity]?.parent : undefined;
++  return parent && guard < 16 ? 1 + depth(rules, parent.entity, guard + 1) : 0;
++}
++
++const compare = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
++
++/**
++ * a. restore_upsert des lignes J de l'utilisateur (sauf sync_rejection) modifiées depuis moins de
++ * EPOCH_RESEND_DAYS, parents d'abord puis par id, par lots de SYNC_PUSH_MAX, jamais dans l'outbox ;
++ * sans accord local, tables C2 exclues et valeurs C2 retirées. Un rejet va en deadletter.
++ */
++export async function resendJournal(io: EpochIo): Promise<void> {
++  const { db, rules } = io;
++  const consent = await localHealthConsentActive(db);
++  const since = io.now() - EPOCH_RESEND_DAYS * DAY_MS;
++  const candidates: { entity: string; id: string; fields: Record<string, unknown>; seen: number | null }[] =
++    [];
++  for (const entity of mirrorStoreNames(db)) {
++    const rule: EntityRule | undefined = Object.hasOwn(rules, entity) ? rules[entity] : undefined;
++    if (rule?.syncClass !== 'J' || entity === 'sync_rejection') continue;
++    if (!consent && rule.category === 'C2') continue;
++    for (const row of await db.mirror(entity).toArray()) {
++      if (row.ownerId !== io.userId || typeof row.updatedAt !== 'string') continue;
++      if (!(Date.parse(row.updatedAt) >= since)) continue;
++      let fields: Record<string, unknown> = {};
++      for (const column of rule.clientWritable) {
++        const key = snakeToCamel(column);
++        if (Object.hasOwn(row, key) && row[key] !== undefined) fields[key] = row[key];
++      }
++      if (!consent) fields = stripC2Fields(rule, fields).fields;
++      fields.deletedAt = row.deletedAt ?? null;
++      candidates.push({ entity, id: row.id, fields, seen: row.serverRevSeen ?? null });
++    }
++  }
++  candidates.sort(
++    (a, b) =>
++      depth(rules, a.entity) - depth(rules, b.entity) || compare(a.id, b.id) || compare(a.entity, b.entity),
++  );
++  const clientTs = new Date(io.now()).toISOString();
++  const ops: OutboxOp[] = candidates.map((c) => ({
++    opId: io.newOpId(),
++    userId: io.userId,
++    entity: c.entity,
++    id: c.id,
++    kind: 'restore_upsert',
++    fields: c.fields,
++    clientTs,
++    protocol: SYNC_PROTOCOL,
++    attempts: 0,
++    serverRevSeen: c.seen,
++  }));
++  for (let i = 0; i < ops.length; i += SYNC_PUSH_MAX) {
++    await io.assertCurrent();
++    const batch = ops.slice(i, i + SYNC_PUSH_MAX);
++    const byId = new Map(batch.map((o) => [o.opId, o]));
++    const results = await io.sendPush(batch);
++    await io.assertCurrent();
++    const receivedAt = new Date(io.now()).toISOString();
++    // Un renvoi rejeté va en deadletter : ce n'est pas un échec du cycle.
++    const dead = results.flatMap((r) => {
++      const op = byId.get(r.opId);
++      return op && effectiveStatus(r) === 'rejected' ? [deadletterOf(op, r.code, receivedAt)] : [];
++    });
++    if (dead.length > 0) await db.deadletter.bulkPut(dead);
++  }
++}
++
++/** b. R-SYN-28 : renvoi d'un retrait d'accord santé perdu par une restauration. */
++export async function replayWithdrawal(io: EpochIo): Promise<void> {
++  const { db } = io;
++  if (!db.mirrorNames.includes('consent_event')) return;
++  const last = await db
++    .mirror('consent_event')
++    .where('[type+createdAt]')
++    .between(['health', Dexie.minKey], ['health', Dexie.maxKey])
++    .last();
++  if (last?.action !== 'withdraw' || typeof last.createdAt !== 'string') return;
++  const me = await io.request('GET', '/api/me');
++  if (!me.res.ok) throw httpErrorOf(me);
++  if (!MeConsents.parse(me.body).consents.health.active) return;
++  const reply = await io.request('POST', '/api/me/consents/health/replay-withdraw', {
++    withdrawnAt: last.createdAt,
++  });
++  if (reply.res.ok) return;
++  const error = httpErrorOf(reply);
++  if (error.code !== 'conflict') throw error;
++}
++
++/**
++ * 2. Époque du cycle face à `meta.serverEpoch` : absente → enregistrée ; différente → renvoi puis
++ * R-SYN-28, puis époque enregistrée et watermark retiré. Un échec laisse l'époque locale inchangée.
++ */
++export async function handleEpoch(io: EpochIo, epoch: string | null): Promise<void> {
++  if (epoch === null) return;
++  const { db } = io;
++  const local = await getMeta(db, 'serverEpoch');
++  if (local === epoch) return;
++  if (local !== undefined) {
++    // Outbox en pause jusqu'à la fin du renvoi.
++    await resendJournal(io);
++    await replayWithdrawal(io);
++  }
++  await io.assertCurrent();
++  await db.transaction('rw', db.meta, async () => {
++    await setMeta(db, 'serverEpoch', epoch);
++    if (local !== undefined) await deleteMeta(db, 'watermark');
++  });
++}
+diff --git a/apps/web/src/sync/push-results.ts b/apps/web/src/sync/push-results.ts
+new file mode 100644
+index 0000000..c4d0048
+--- /dev/null
++++ b/apps/web/src/sync/push-results.ts
+@@ -0,0 +1,74 @@
++import type { PushResult } from '@appsport/contracts';
++import type { AppDb, DeadletterEntry, OutboxOp } from '../local-db/db';
++import { deleteMeta } from '../local-db/meta';
++
++/** Issue à appliquer : un `duplicate` vaut son issue d'origine. */
++export const effectiveStatus = (r: PushResult): 'applied' | 'applied_partial' | 'rejected' =>
++  r.status === 'duplicate' ? (r.originalStatus ?? 'applied') : r.status;
++
++export const deadletterOf = (
++  op: OutboxOp,
++  code: string | undefined,
++  receivedAt: string,
++): DeadletterEntry => ({
++  opId: op.opId,
++  userId: op.userId,
++  entity: op.entity,
++  id: op.id,
++  code: code ?? 'unknown',
++  detail: { kind: op.kind, fieldNames: Object.keys(op.fields).sort() },
++  receivedAt,
++});
++
++/**
++ * Résultats d'un lot de push, en une transaction : op acquittée retirée (serverRevSeen = rev si
++ * présent, droppedFields → null, dropped → copie supprimée) ; op rejetée → deadletter puis retirée.
++ * En fin de lot, une ligne rejetée jamais acceptée et sans autre op perd sa copie ; une ligne
++ * présente déjà acceptée, ou avec d'autres ops, impose un pull complet (watermark retiré).
++ * Une op sans résultat reste dans l'outbox.
++ */
++export async function applyPushResults(
++  db: AppDb,
++  batch: readonly OutboxOp[],
++  results: readonly PushResult[],
++  receivedAt: string,
++): Promise<void> {
++  const hasMirror = (entity: string) => db.mirrorNames.includes(entity);
++  const byId = new Map(batch.map((o) => [o.opId, o]));
++  const stores = [...new Set(batch.map((o) => o.entity))].filter(hasMirror).map((e) => db.mirror(e));
++  await db.transaction('rw', [db.outbox, db.deadletter, db.meta, ...stores], async () => {
++    const rejected: OutboxOp[] = [];
++    for (const r of results) {
++      const op = byId.get(r.opId);
++      if (!op) continue;
++      byId.delete(r.opId);
++      await db.outbox.delete(op.opId);
++      if (effectiveStatus(r) === 'rejected') {
++        await db.deadletter.put(deadletterOf(op, r.code, receivedAt));
++        rejected.push(op);
++        continue;
++      }
++      if (!hasMirror(op.entity)) continue;
++      const mirror = db.mirror(op.entity);
++      if (r.dropped) {
++        await mirror.delete(op.id);
++        continue;
++      }
++      const row = await mirror.get(op.id);
++      if (!row) continue;
++      const updated = { ...row };
++      if (r.rev !== undefined) updated.serverRevSeen = r.rev;
++      for (const field of r.droppedFields ?? []) updated[field] = null;
++      await mirror.put(updated);
++    }
++    let refetch = false;
++    for (const op of rejected) {
++      const row = hasMirror(op.entity) ? await db.mirror(op.entity).get(op.id) : undefined;
++      if (!row) continue;
++      const others = await db.outbox.where('[entity+id]').equals([op.entity, op.id]).count();
++      if (row.serverRevSeen == null && others === 0) await db.mirror(op.entity).delete(op.id);
++      else refetch = true;
++    }
++    if (refetch) await deleteMeta(db, 'watermark');
++  });
++}
+diff --git a/apps/web/src/sync/transport.ts b/apps/web/src/sync/transport.ts
+index fc3ea95..219f312 100644
+--- a/apps/web/src/sync/transport.ts
++++ b/apps/web/src/sync/transport.ts
+@@ -10,44 +10,125 @@ export function browserTransport(baseUrl = ''): SyncTransport {
+ }
+ 
+ /** Pas de réponse à temps, ou réseau injoignable : seule source de l'état « hors ligne ». */
+ export class OfflineError extends Error {
+   constructor(message = 'offline') {
+     super(message);
+     this.name = 'OfflineError';
+   }
+ }
+ 
++/** Réponse HTTP en erreur ; `code` = champ `error` du corps, seule base des décisions. */
++export class HttpError extends Error {
++  constructor(
++    readonly status: number,
++    readonly code: string | null,
++  ) {
++    super(code ?? `http_${status}`);
++    this.name = 'HttpError';
++  }
++}
++
++/** Réponse et corps JSON déjà lu (`null` si vide, `undefined` si illisible). */
++export interface JsonReply {
++  res: Response;
++  body: unknown;
++}
++
++export function httpErrorOf(reply: JsonReply): HttpError {
++  const { body } = reply;
++  const code =
++    typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'string'
++      ? body.error
++      : null;
++  return new HttpError(reply.res.status, code);
++}
++
++interface Deadline {
++  signal: AbortSignal;
++  race<T>(p: Promise<T>): Promise<T>;
++  /** Annule l'échéance ; `abort` libère aussi la requête (corps non lu). */
++  end(abort: boolean): void;
++}
++
++function createDeadline(timeoutMs: number): Deadline {
++  const controller = new AbortController();
++  let timer: ReturnType<typeof setTimeout> | undefined;
++  const expired = new Promise<never>((_, reject) => {
++    timer = setTimeout(() => {
++      controller.abort();
++      reject(new OfflineError('timeout'));
++    }, timeoutMs);
++  });
++  expired.catch(() => {});
++  return {
++    signal: controller.signal,
++    race(p) {
++      // Rejet tardif d'une étape déjà abandonnée : ignoré.
++      p.catch(() => {});
++      return Promise.race([p, expired]);
++    },
++    end(abort) {
++      clearTimeout(timer);
++      if (abort) controller.abort();
++    },
++  };
++}
++
++function asOffline(error: unknown): unknown {
++  if (error instanceof OfflineError) return error;
++  if (error instanceof TypeError || (error instanceof Error && error.name === 'AbortError')) {
++    return new OfflineError(error.message);
++  }
++  return error;
++}
++
+ /**
+  * Requête abandonnée sans réponse après `timeoutMs` (OfflineError) ; une erreur réseau (TypeError)
+  * devient OfflineError ; toute réponse HTTP, même 5xx, est rendue telle quelle. Le délai couvre
+- * l'arrivée de la réponse, pas la lecture du corps.
++ * l'arrivée des en-têtes seulement : l'appelant lit le corps à ses risques.
+  */
+ export async function fetchWithTimeout(
+   t: SyncTransport,
+   path: string,
+   init: RequestInit,
+   timeoutMs: number = SYNC_TIMEOUT_MS,
+ ): Promise<Response> {
+-  const controller = new AbortController();
+-  let timer: ReturnType<typeof setTimeout> | undefined;
+-  const timeout = new Promise<never>((_, reject) => {
+-    timer = setTimeout(() => {
+-      controller.abort();
+-      reject(new OfflineError('timeout'));
+-    }, timeoutMs);
+-  });
+-  const request = t.fetch(path, { ...init, signal: controller.signal });
+-  // Rejet tardif d'une requête déjà abandonnée : ignoré.
+-  request.catch(() => {});
++  const deadline = createDeadline(timeoutMs);
+   try {
+-    return await Promise.race([request, timeout]);
++    return await deadline.race(t.fetch(path, { ...init, signal: deadline.signal }));
+   } catch (error) {
+-    if (error instanceof OfflineError) throw error;
+-    if (error instanceof TypeError || (error instanceof Error && error.name === 'AbortError')) {
+-      throw new OfflineError(error.message);
++    throw asOffline(error);
++  } finally {
++    deadline.end(false);
++  }
++}
++
++/**
++ * Comme `fetchWithTimeout`, mais l'échéance court jusqu'à la fin de la lecture du corps : un corps
++ * bloqué donne OfflineError au lieu de geler l'appelant. `onHeaders` est appelé avant la lecture
++ * du corps (lecture de l'époque) ; son exception est propagée et la requête abandonnée.
++ */
++export async function fetchJsonWithTimeout(
++  t: SyncTransport,
++  path: string,
++  init: RequestInit,
++  timeoutMs: number = SYNC_TIMEOUT_MS,
++  onHeaders?: (res: Response) => void,
++): Promise<JsonReply> {
++  const deadline = createDeadline(timeoutMs);
++  try {
++    const res = await deadline.race(t.fetch(path, { ...init, signal: deadline.signal }));
++    onHeaders?.(res);
++    const text = await deadline.race(res.text());
++    if (text === '') return { res, body: null };
++    try {
++      return { res, body: JSON.parse(text) as unknown };
++    } catch {
++      return { res, body: undefined };
+     }
+-    throw error;
++  } catch (error) {
++    throw asOffline(error);
+   } finally {
+-    clearTimeout(timer);
++    deadline.end(true);
+   }
+ }
+diff --git a/apps/web/test/sync/engine.test.ts b/apps/web/test/sync/engine.test.ts
+index 6b0f5e4..1d9e45a 100644
+--- a/apps/web/test/sync/engine.test.ts
++++ b/apps/web/test/sync/engine.test.ts
+@@ -573,10 +573,202 @@ describe('file unique et déclencheurs', () => {
+     await engine.syncNow('manual');
+     expect(engine.getState()).toMatchObject({ pending: 1, rejected: 2, serverEpoch: 'E1', syncing: false });
+     expect(states.at(-1)).toEqual(engine.getState());
+     expect(states.some((s) => s.syncing)).toBe(true);
+     unsubscribe();
+     const n = states.length;
+     await engine.syncNow('manual');
+     expect(states).toHaveLength(n);
+   });
+ });
++
++/** Laisse passer `n` tours de la vraie boucle (fenêtre de recouvrement des cycles). */
++const turns = async (n: number) => {
++  for (let i = 0; i < n; i++) await new Promise<void>((r) => setImmediate(r));
++};
++const stalledBody = () =>
++  new Response(new ReadableStream<Uint8Array>({ start() {} }), {
++    status: 200,
++    headers: { 'X-Appsport-Epoch': server.epoch },
++  });
++
++describe('reprises et file (revue)', () => {
++  it('health OK puis push 500 → reprises à +2 s puis +4 s (failures remis à zéro seulement en fin de cycle)', async () => {
++    await createNote();
++    server.on('POST /api/sync/push', () => server.json(500, { error: 'internal' }));
++    makeEngine().start();
++    await idle();
++    await vi.advanceTimersByTimeAsync(1999);
++    expect(count('GET /api/health')).toBe(1);
++    await vi.advanceTimersByTimeAsync(1);
++    await until(() => count('GET /api/health') === 2);
++    await idle();
++    await vi.advanceTimersByTimeAsync(3999);
++    expect(count('GET /api/health')).toBe(2);
++    await vi.advanceTimersByTimeAsync(1);
++    await until(() => count('GET /api/health') === 3);
++    await idle();
++  });
++
++  it('cycle réussi → failures remis à zéro : échec suivant repris à +2 s', async () => {
++    let fail = true;
++    server.on('POST /api/sync/push', (req) => {
++      server.sent.push(req.body.ops);
++      if (fail) return server.json(500, { error: 'internal' });
++      return server.json(200, { results: [] });
++    });
++    await createNote();
++    makeEngine().start();
++    await idle();
++    await vi.advanceTimersByTimeAsync(2000);
++    await until(() => count('GET /api/health') === 2);
++    await idle();
++    fail = false;
++    await vi.advanceTimersByTimeAsync(4000);
++    await until(() => count('GET /api/health') === 3);
++    await idle();
++    fail = true;
++    await engine.syncNow('manual');
++    await vi.advanceTimersByTimeAsync(1999);
++    expect(count('GET /api/health')).toBe(4);
++    await vi.advanceTimersByTimeAsync(1);
++    await until(() => count('GET /api/health') === 5);
++    await idle();
++  });
++
++  it('await syncNow puis syncNow pendant qu’un autre appelant a programmé un cycle → jamais deux en vol', async () => {
++    server.on('GET /api/health', async () => {
++      await turns(20);
++      return server.json(200, { epoch: 'E1' });
++    });
++    makeEngine();
++    const a = (async () => {
++      await engine.syncNow('manual');
++      await engine.syncNow('manual');
++    })();
++    await until(() => count('GET /api/health') === 1);
++    const b = engine.syncNow('mutation');
++    await Promise.all([a, b]);
++    expect(server.maxInFlight).toBe(1);
++    // 1er cycle, celui de b (lancé dès la fin du 1er), puis le second appel de a, venu après ce lancement.
++    expect(count('GET /api/health')).toBe(3);
++  });
++
++  it('corps de pull bloqué → cycle terminé hors ligne à l’échéance, syncNow suivant exécuté', async () => {
++    server.on('GET /api/sync/pull', () => stalledBody());
++    makeEngine();
++    const p = engine.syncNow('manual');
++    await until(() => count('GET /api/sync/pull') === 1);
++    await vi.advanceTimersByTimeAsync(4000);
++    await p;
++    expect(engine.getState().connection).toBe('offline');
++    server.on('GET /api/sync/pull', undefined);
++    await engine.syncNow('manual');
++    expect(count('GET /api/sync/pull')).toBe(2);
++    expect(engine.getState().connection).toBe('online');
++  });
++
++  it('corps de health bloqué → offline, la file n’est pas gelée', async () => {
++    server.on('GET /api/health', () => stalledBody());
++    makeEngine();
++    const p = engine.syncNow('manual');
++    await until(() => count('GET /api/health') === 1);
++    await vi.advanceTimersByTimeAsync(4000);
++    await p;
++    expect(engine.getState()).toMatchObject({ connection: 'offline', syncing: false });
++  });
++
++  it('stop() pendant un cycle en vol puis start() aussitôt → l’ancien cycle n’agit plus', async () => {
++    await createNote();
++    const gates: (() => void)[] = [];
++    server.on('GET /api/health', async () => {
++      await new Promise<void>((r) => gates.push(r));
++      return server.json(200, { epoch: 'E1' });
++    });
++    makeEngine();
++    engine.start();
++    await until(() => gates.length === 1);
++    engine.stop();
++    engine.start();
++    gates[0]?.();
++    await until(() => gates.length === 2);
++    gates[1]?.();
++    await idle();
++    expect(server.paths()).toEqual([
++      'GET /api/health',
++      'GET /api/health',
++      'POST /api/sync/push',
++      'GET /api/sync/pull',
++    ]);
++    expect(server.maxInFlight).toBe(1);
++  });
++
++  it('stop() pendant un cycle en vol → plus aucune requête', async () => {
++    await createNote();
++    const gates: (() => void)[] = [];
++    server.on('GET /api/health', async () => {
++      await new Promise<void>((r) => gates.push(r));
++      return server.json(200, { epoch: 'E1' });
++    });
++    makeEngine().start();
++    await until(() => gates.length === 1);
++    engine.stop();
++    gates[0]?.();
++    await idle();
++    expect(server.paths()).toEqual(['GET /api/health']);
++    expect(await db.outbox.count()).toBe(1);
++  });
++});
++
++describe('utilisateur changé pendant une requête (revue)', () => {
++  it('410 account_deleted → rien effacé, onAccountDeleted non appelé', async () => {
++    await createNote();
++    server.on('GET /api/health', async () => {
++      await setMeta(db, 'userId', 'u2');
++      return server.json(410, { error: 'account_deleted' });
++    });
++    const onAccountDeleted = vi.fn();
++    await makeEngine({ onAccountDeleted }).syncNow('manual');
++    expect(onAccountDeleted).not.toHaveBeenCalled();
++    expect(await getMeta(db, 'userId')).toBe('u2');
++    expect(await db.outbox.count()).toBe(1);
++    expect(engine.getState().connection).not.toBe('account_deleted');
++  });
++
++  it('401 unauthenticated → connection inchangée', async () => {
++    server.on('GET /api/health', async () => {
++      await setMeta(db, 'userId', 'u2');
++      return server.json(401, { error: 'unauthenticated' });
++    });
++    await makeEngine().syncNow('manual');
++    expect(engine.getState().connection).not.toBe('unauthenticated');
++  });
++
++  it('résultats de push non appliqués', async () => {
++    const { id, op } = await createNote();
++    server.on('POST /api/sync/push', async (req) => {
++      await setMeta(db, 'userId', 'u2');
++      const ops = req.body.ops as SyncOp[];
++      return server.json(200, { results: ops.map((o) => ({ opId: o.opId, status: 'applied', rev: 50 })) });
++    });
++    await makeEngine().syncNow('manual');
++    expect(await db.outbox.get(op.opId)).toBeDefined();
++    expect((await db.mirror('fixture_note').get(id))?.serverRevSeen).toBeNull();
++  });
++});
++
++describe('rejet d’une op sur une ligne absente (revue)', () => {
++  it('pas de pull complet : watermark gardé', async () => {
++    const op = makeOp({
++      userId: 'u1',
++      entity: 'fixture_note',
++      id: newId(),
++      kind: 'patch',
++      fields: { title: 'x' },
++    });
++    await db.outbox.add(op);
++    pushWith(() => [{ opId: op.opId, status: 'rejected', code: 'validation' }]);
++    await makeEngine().syncNow('manual');
++    expect(pullSince()).toEqual(['E1:1']);
++    expect(await db.deadletter.get(op.opId)).toBeDefined();
++  });
++});
+diff --git a/apps/web/test/sync/transport.test.ts b/apps/web/test/sync/transport.test.ts
+index d4e430e..1580220 100644
+--- a/apps/web/test/sync/transport.test.ts
++++ b/apps/web/test/sync/transport.test.ts
+@@ -1,13 +1,18 @@
+ // @vitest-environment node
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+-import { fetchWithTimeout, OfflineError, type SyncTransport } from '../../src/sync/transport';
++import {
++  fetchJsonWithTimeout,
++  fetchWithTimeout,
++  OfflineError,
++  type SyncTransport,
++} from '../../src/sync/transport';
+ 
+ beforeEach(() => {
+   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+ });
+ afterEach(() => {
+   vi.useRealTimers();
+ });
+ 
+ describe('fetchWithTimeout', () => {
+   it('transport muet → OfflineError à 4000 ms', async () => {
+@@ -47,10 +52,56 @@ describe('fetchWithTimeout', () => {
+     const res = await fetchWithTimeout(t, '/api/health', {});
+     expect(res.status).toBe(500);
+     expect(await res.json()).toEqual({ error: 'internal' });
+   });
+ 
+   it('autre erreur propagée', async () => {
+     const t: SyncTransport = { fetch: () => Promise.reject(new Error('boum')) };
+     await expect(fetchWithTimeout(t, '/x', {})).rejects.toThrow('boum');
+   });
+ });
++
++const stalled = (status = 200) => new Response(new ReadableStream<Uint8Array>({ start() {} }), { status });
++
++describe('fetchJsonWithTimeout', () => {
++  it('corps lu et décodé dans le délai', async () => {
++    const t: SyncTransport = { fetch: async () => new Response('{"a":1}', { status: 200 }) };
++    const reply = await fetchJsonWithTimeout(t, '/x', {});
++    expect(reply.res.status).toBe(200);
++    expect(reply.body).toEqual({ a: 1 });
++  });
++
++  it('corps vide → null', async () => {
++    const t: SyncTransport = { fetch: async () => new Response(null, { status: 304 }) };
++    expect((await fetchJsonWithTimeout(t, '/x', {})).body).toBeNull();
++  });
++
++  it('corps bloqué → OfflineError à l’échéance, requête abandonnée', async () => {
++    let signal: AbortSignal | undefined;
++    const t: SyncTransport = {
++      fetch: async (_p, init) => {
++        signal = init.signal ?? undefined;
++        return stalled();
++      },
++    };
++    let settled: unknown = null;
++    const p = fetchJsonWithTimeout(t, '/x', {}, 4000).catch((e: unknown) => {
++      settled = e;
++    });
++    await vi.advanceTimersByTimeAsync(3999);
++    expect(settled).toBeNull();
++    await vi.advanceTimersByTimeAsync(1);
++    await p;
++    expect(settled).toBeInstanceOf(OfflineError);
++    expect(signal?.aborted).toBe(true);
++  });
++
++  it('onHeaders appelé avant la lecture du corps ; son exception est propagée', async () => {
++    const t: SyncTransport = { fetch: async () => stalled() };
++    const boom = new Error('epoch');
++    await expect(
++      fetchJsonWithTimeout(t, '/x', {}, 4000, () => {
++        throw boom;
++      }),
++    ).rejects.toBe(boom);
++  });
++});

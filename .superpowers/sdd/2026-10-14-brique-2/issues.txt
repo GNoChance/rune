@@ -1,0 +1,18 @@
+1 69 Taxonomie complète et schéma de fiche
+2 70 Fonctions partagées du catalogue
+3 71 Fonctions de la relecture
+4 72 Validateur du catalogue, style et glossaire
+5 73 Migration du catalogue et registre
+6 74 Chargeur, bloc servi et version du catalogue
+7 75 Drapeaux de relecteur et garde
+8 76 API de relecture (commentaires, validations, files)
+9 77 Édition admin, transitions, révisions et export du catalogue
+10 78 Client IA et rédaction des brouillons
+11 79 Illustrations, nettoyage des SVG et Crédits
+12 80 Dépôt du catalogue côté web et composant d'onglets
+13 81 Fiche d'un exercice
+14 82 Onglet Exercices, liste d'un groupe et lien depuis Progression
+15 83 Dépôt de relecture et arrivée des relectrices
+16 84 Écran de relecture (liste, fiche, commentaires, validation)
+17 85 Outils de l'admin et parcours de bout en bout
+18 86 Fiches étalons, squelettes du lot A et pilote

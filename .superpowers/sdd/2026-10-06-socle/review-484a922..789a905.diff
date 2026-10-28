@@ -1,0 +1,1632 @@
+# Review package: 484a922..HEAD
+
+## Commits
+789a905 feat(socle): serveur Hono, en-têtes de sécurité, CSRF, journaux sans données et /api/health
+
+## Files changed
+ apps/server/package.json                       |   5 +-
+ apps/server/src/app-env.ts                     |  18 +++++
+ apps/server/src/app.ts                         |  30 +++++++
+ apps/server/src/config.ts                      |  79 +++++++++++++++++++
+ apps/server/src/deps.ts                        |  52 +++++++++++++
+ apps/server/src/health/routes.ts               |  26 +++++++
+ apps/server/src/http/client-ip.ts              |  31 ++++++++
+ apps/server/src/http/epoch-header.ts           |  19 +++++
+ apps/server/src/http/errors.ts                 |  34 ++++++++
+ apps/server/src/http/origin-guard.ts           |  22 ++++++
+ apps/server/src/http/request-log.ts            |  19 +++++
+ apps/server/src/http/security-headers.ts       |  19 +++++
+ apps/server/src/http/validate.ts               |  26 +++++++
+ apps/server/src/logger.ts                      |  53 +++++++++++++
+ apps/server/src/routes.ts                      |   9 +++
+ apps/server/test/config.test.ts                |  67 ++++++++++++++++
+ apps/server/test/health/health.test.ts         |  40 ++++++++++
+ apps/server/test/http/client-ip.test.ts        |  53 +++++++++++++
+ apps/server/test/http/errors.test.ts           |  91 ++++++++++++++++++++++
+ apps/server/test/http/origin-guard.test.ts     |  63 +++++++++++++++
+ apps/server/test/http/request-log.test.ts      |  29 +++++++
+ apps/server/test/http/security-headers.test.ts |  72 +++++++++++++++++
+ apps/server/test/logger.test.ts                |  25 ++++++
+ apps/server/test/support/context.ts            | 103 +++++++++++++++++++++++++
+ apps/server/test/support/index.ts              |   1 +
+ packages/contracts/package.json                |   3 +
+ packages/contracts/src/api/errors.ts           |  77 ++++++++++++++++++
+ packages/contracts/src/api/health.ts           |  12 +++
+ packages/contracts/src/index.ts                |   2 +
+ packages/contracts/test/errors.test.ts         |  84 ++++++++++++++++++++
+ pnpm-lock.yaml                                 |  36 ++++++++-
+ 31 files changed, 1198 insertions(+), 2 deletions(-)
+
+## Diff
+diff --git a/apps/server/package.json b/apps/server/package.json
+index f76a549..b53ac0c 100644
+--- a/apps/server/package.json
++++ b/apps/server/package.json
+@@ -7,17 +7,20 @@
+     ".": "./src/main.ts",
+     "./testing": "./test/support/index.ts"
+   },
+   "scripts": {
+     "typecheck": "tsc --noEmit -p tsconfig.json",
+     "test": "vitest run --root ../.. --project server"
+   },
+   "dependencies": {
+     "@appsport/contracts": "workspace:*",
+     "@appsport/domain": "workspace:*",
+-    "kysely": "~0.29.6"
++    "@hono/node-server": "~2.1.3",
++    "hono": "~4.13.13",
++    "kysely": "~0.29.6",
++    "zod": "^4.6.5"
+   },
+   "devDependencies": {
+     "@types/better-sqlite3": "^9.6.0",
+     "better-sqlite3": "^13.0.3"
+   }
+ }
+diff --git a/apps/server/src/app-env.ts b/apps/server/src/app-env.ts
+new file mode 100644
+index 0000000..ad334d1
+--- /dev/null
++++ b/apps/server/src/app-env.ts
+@@ -0,0 +1,18 @@
++import type { Role } from '@appsport/contracts';
++
++export interface SessionUser {
++  id: string;
++  username: string;
++  role: Role;
++  birthDate: string;
++  mustChangePassword: boolean;
++}
++
++export type AppEnv = {
++  Variables: {
++    requestId: string;
++    clientIp: string | null;
++    user: SessionUser | null;
++    sessionId: string | null;
++  };
++};
+diff --git a/apps/server/src/app.ts b/apps/server/src/app.ts
+new file mode 100644
+index 0000000..1825ce2
+--- /dev/null
++++ b/apps/server/src/app.ts
+@@ -0,0 +1,30 @@
++import { randomUUID } from 'node:crypto';
++import { Hono } from 'hono';
++import type { AppEnv } from './app-env';
++import type { AppDeps } from './deps';
++import { clientIp } from './http/client-ip';
++import { epochHeader } from './http/epoch-header';
++import { errorHandler } from './http/errors';
++import { originGuard } from './http/origin-guard';
++import { requestLog } from './http/request-log';
++import { securityHeaders } from './http/security-headers';
++import { mountRoutes } from './routes';
++
++export function createApp(deps: AppDeps): Hono<AppEnv> {
++  const app = new Hono<AppEnv>();
++  app.use('*', async (c, next) => {
++    c.set('requestId', randomUUID());
++    c.set('clientIp', clientIp(c));
++    c.set('user', null);
++    c.set('sessionId', null);
++    await next();
++  });
++  app.use('*', requestLog(deps.logger));
++  app.use('*', securityHeaders());
++  app.use('/api/*', epochHeader(deps.db));
++  app.use('*', originGuard(deps.config));
++  mountRoutes(app, deps);
++  app.notFound((c) => c.json({ error: 'not_found' }, 404));
++  app.onError(errorHandler(deps.logger));
++  return app;
++}
+diff --git a/apps/server/src/config.ts b/apps/server/src/config.ts
+new file mode 100644
+index 0000000..7d3b1c3
+--- /dev/null
++++ b/apps/server/src/config.ts
+@@ -0,0 +1,79 @@
++import { join } from 'node:path';
++import { ARGON2_PARAMS, type Argon2Params } from './deps';
++
++export interface AppConfig {
++  appOrigin: string;
++  version: string;
++  port: number;
++  host: string;
++  dataDir: string;
++  dbPath: string;
++  sentinelPath: string;
++  publicDir: string;
++  contentDir: string;
++  swKillSwitch: boolean;
++  coachModel: string;
++  anthropicApiKey: string | null;
++  argon2: Argon2Params;
++  sessionCookieName: '__Host-session' | 'dev-session';
++  secureCookie: boolean;
++}
++
++export class ConfigError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = 'ConfigError';
++  }
++}
++
++const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1']);
++
++function parseOrigin(raw: string | undefined): URL {
++  if (!raw) throw new ConfigError('APP_ORIGIN est obligatoire (ex. https://appsport.exemple.ts.net).');
++  let url: URL;
++  try {
++    url = new URL(raw);
++  } catch {
++    throw new ConfigError("APP_ORIGIN n'est pas une URL valide.");
++  }
++  if (url.pathname !== '/' || url.search || url.hash || url.username || url.password) {
++    throw new ConfigError('APP_ORIGIN doit être une origine seule (schéma, hôte, port), sans chemin.');
++  }
++  if (url.protocol === 'https:') return url;
++  if (url.protocol === 'http:' && LOCAL_HOSTS.has(url.hostname)) return url;
++  throw new ConfigError('APP_ORIGIN doit être en https (http seulement pour localhost ou 127.0.0.1).');
++}
++
++function parsePort(raw: string | undefined): number {
++  if (raw === undefined || raw === '') return 3000;
++  if (!/^\d+$/.test(raw) || Number(raw) > 65535) {
++    throw new ConfigError('PORT doit être un entier de 0 à 65535.');
++  }
++  return Number(raw);
++}
++
++const orDefault = (value: string | undefined, fallback: string): string =>
++  value === undefined || value === '' ? fallback : value;
++
++export function loadConfig(env: Record<string, string | undefined>): AppConfig {
++  const origin = parseOrigin(env.APP_ORIGIN);
++  const secure = origin.protocol === 'https:';
++  const dataDir = orDefault(env.APPSPORT_DATA_DIR, '/data');
++  return {
++    appOrigin: origin.origin,
++    version: orDefault(env.APP_VERSION, 'dev'),
++    port: parsePort(env.PORT),
++    host: orDefault(env.HOST, '0.0.0.0'),
++    dataDir,
++    dbPath: join(dataDir, 'appsport.db'),
++    sentinelPath: join(dataDir, '.appsport-volume'),
++    publicDir: orDefault(env.APPSPORT_PUBLIC_DIR, '/app/public'),
++    contentDir: orDefault(env.APPSPORT_CONTENT_DIR, '/app/data'),
++    swKillSwitch: env.SW_KILL_SWITCH === '1',
++    coachModel: orDefault(env.COACH_MODEL, 'claude-opus-5-5'),
++    anthropicApiKey: env.ANTHROPIC_API_KEY ? env.ANTHROPIC_API_KEY : null,
++    argon2: { ...ARGON2_PARAMS },
++    sessionCookieName: secure ? '__Host-session' : 'dev-session',
++    secureCookie: secure,
++  };
++}
+diff --git a/apps/server/src/deps.ts b/apps/server/src/deps.ts
+index 17add52..b527570 100644
+--- a/apps/server/src/deps.ts
++++ b/apps/server/src/deps.ts
+@@ -1,18 +1,70 @@
+ import { randomBytes } from 'node:crypto';
++import type { DatabaseSync } from 'node:sqlite';
++import { entityRules as defaultEntityRules, type EntityRulesMap } from '@appsport/contracts';
+ import { createMonotonicUuidV7 } from '@appsport/domain';
++import type { Kysely } from 'kysely';
++import type { AppConfig } from './config';
++import type { Database } from './db/schema';
++import { createLogger, type Logger } from './logger';
+ 
+ export interface Clock {
+   now(): Date;
+ }
+ 
+ export interface IdGen {
+   uuidv7(): string;
+   randomBytes(n: number): Uint8Array;
+ }
+ 
+ export const systemClock: Clock = { now: () => new Date() };
+ 
+ export function cryptoIds(): IdGen {
+   const bytes = (n: number): Uint8Array => new Uint8Array(randomBytes(n));
+   return { uuidv7: createMonotonicUuidV7(() => Date.now(), bytes), randomBytes: bytes };
+ }
++
++export interface Argon2Params {
++  memoryKiB: number;
++  passes: number;
++  parallelism: number;
++  tagLength: number;
++  saltLength: number;
++}
++
++export const ARGON2_PARAMS: Argon2Params = {
++  memoryKiB: 19456,
++  passes: 2,
++  parallelism: 1,
++  tagLength: 32,
++  saltLength: 16,
++};
++
++export interface AppDeps {
++  db: Kysely<Database>;
++  sqlite: DatabaseSync;
++  clock: Clock;
++  ids: IdGen;
++  config: AppConfig;
++  logger: Logger;
++  entityRules: EntityRulesMap;
++}
++
++export function createAppDeps(o: {
++  sqlite: DatabaseSync;
++  db: Kysely<Database>;
++  config: AppConfig;
++  clock?: Clock;
++  ids?: IdGen;
++  logger?: Logger;
++  entityRules?: EntityRulesMap;
++}): AppDeps {
++  return {
++    db: o.db,
++    sqlite: o.sqlite,
++    config: o.config,
++    clock: o.clock ?? systemClock,
++    ids: o.ids ?? cryptoIds(),
++    logger: o.logger ?? createLogger(),
++    entityRules: o.entityRules ?? defaultEntityRules,
++  };
++}
+diff --git a/apps/server/src/health/routes.ts b/apps/server/src/health/routes.ts
+new file mode 100644
+index 0000000..5bbc7a1
+--- /dev/null
++++ b/apps/server/src/health/routes.ts
+@@ -0,0 +1,26 @@
++import { type HealthResponse, MIN_PROTOCOL, SYNC_PROTOCOL } from '@appsport/contracts';
++import { Hono } from 'hono';
++import type { AppEnv } from '../app-env';
++import { getServerMeta } from '../db/server-meta';
++import type { AppDeps } from '../deps';
++
++export function healthRoutes(deps: AppDeps): Hono<AppEnv> {
++  const routes = new Hono<AppEnv>();
++  routes.get('/api/health', async (c) => {
++    const base = {
++      version: deps.config.version,
++      protocol: SYNC_PROTOCOL,
++      minProtocol: MIN_PROTOCOL,
++      swKill: deps.config.swKillSwitch,
++    };
++    try {
++      const meta = await getServerMeta(deps.db);
++      const body: HealthResponse = { status: 'ok', db: 'ok', epoch: meta.serverEpoch, ...base };
++      return c.json(body);
++    } catch {
++      const body: HealthResponse = { status: 'error', db: 'error', epoch: null, ...base };
++      return c.json(body, 503);
++    }
++  });
++  return routes;
++}
+diff --git a/apps/server/src/http/client-ip.ts b/apps/server/src/http/client-ip.ts
+new file mode 100644
+index 0000000..9986178
+--- /dev/null
++++ b/apps/server/src/http/client-ip.ts
+@@ -0,0 +1,31 @@
++import type { Context } from 'hono';
++import type { AppEnv } from '../app-env';
++
++function peerAddress(c: Context<AppEnv>): string | null {
++  const env = c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined;
++  const raw = env?.incoming?.socket?.remoteAddress;
++  if (!raw) return null;
++  return raw.startsWith('::ffff:') ? raw.slice(7) : raw;
++}
++
++function isTrustedProxyPeer(ip: string): boolean {
++  if (ip === '::1') return true;
++  const m = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(ip);
++  if (!m) return false;
++  const a = Number(m[1]);
++  const b = Number(m[2]);
++  return a === 127 || a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31);
++}
++
++/**
++ * Adresse du client. `tailscale serve` joint le conteneur par docker-proxy : le pair TCP est alors
++ * loopback ou le pont Docker, et seul X-Forwarded-For porte l'adresse réelle. Tout autre pair est pris tel quel.
++ */
++export function clientIp(c: Context<AppEnv>): string | null {
++  const peer = peerAddress(c);
++  if (peer === null || isTrustedProxyPeer(peer)) {
++    const first = c.req.header('X-Forwarded-For')?.split(',')[0]?.trim();
++    if (first) return first;
++  }
++  return peer;
++}
+diff --git a/apps/server/src/http/epoch-header.ts b/apps/server/src/http/epoch-header.ts
+new file mode 100644
+index 0000000..332f6c3
+--- /dev/null
++++ b/apps/server/src/http/epoch-header.ts
+@@ -0,0 +1,19 @@
++import { EPOCH_HEADER } from '@appsport/contracts';
++import type { MiddlewareHandler } from 'hono';
++import type { Kysely } from 'kysely';
++import type { AppEnv } from '../app-env';
++import type { Database } from '../db/schema';
++import { getServerMeta } from '../db/server-meta';
++
++/** Lit l'époque à chaque requête (pas de cache) ; l'en-tête est omis si la lecture échoue. */
++export function epochHeader(db: Kysely<Database>): MiddlewareHandler<AppEnv> {
++  return async (c, next) => {
++    await next();
++    try {
++      const meta = await getServerMeta(db);
++      c.res.headers.set(EPOCH_HEADER, meta.serverEpoch);
++    } catch {
++      // base illisible : pas d'en-tête
++    }
++  };
++}
+diff --git a/apps/server/src/http/errors.ts b/apps/server/src/http/errors.ts
+new file mode 100644
+index 0000000..1281a61
+--- /dev/null
++++ b/apps/server/src/http/errors.ts
+@@ -0,0 +1,34 @@
++import { type ApiErrorCode, ERROR_STATUS } from '@appsport/contracts';
++import type { ErrorHandler } from 'hono';
++import type { ContentfulStatusCode } from 'hono/utils/http-status';
++import type { AppEnv } from '../app-env';
++import type { Logger } from '../logger';
++
++export class HttpError extends Error {
++  readonly status: number;
++  readonly code: ApiErrorCode;
++  readonly extra?: Record<string, unknown>;
++
++  constructor(status: number, code: ApiErrorCode, extra?: Record<string, unknown>) {
++    super(code);
++    this.name = 'HttpError';
++    this.status = status;
++    this.code = code;
++    if (extra) this.extra = extra;
++  }
++}
++
++export function httpError(code: ApiErrorCode, extra?: Record<string, unknown>): HttpError {
++  return new HttpError(ERROR_STATUS[code], code, extra);
++}
++
++/** Les erreurs inattendues ne laissent ni message ni pile : seul le nom de l'erreur est journalisé. */
++export function errorHandler(logger: Logger): ErrorHandler<AppEnv> {
++  return (err, c) => {
++    if (err instanceof HttpError) {
++      return c.json({ error: err.code, ...err.extra }, err.status as ContentfulStatusCode);
++    }
++    logger.error('unhandled_error', { requestId: c.get('requestId'), code: 'internal', event: err.name });
++    return c.json({ error: 'internal' }, 500);
++  };
++}
+diff --git a/apps/server/src/http/origin-guard.ts b/apps/server/src/http/origin-guard.ts
+new file mode 100644
+index 0000000..e6184a2
+--- /dev/null
++++ b/apps/server/src/http/origin-guard.ts
+@@ -0,0 +1,22 @@
++import type { MiddlewareHandler } from 'hono';
++import type { AppEnv } from '../app-env';
++import type { AppConfig } from '../config';
++import { httpError } from './errors';
++
++const ORIGIN_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
++const JSON_METHODS = new Set(['POST', 'PUT', 'PATCH']);
++
++/** CSRF : Origin exacte sur les écritures, JSON obligatoire. Les en-têtes d'identité du proxy ne sont jamais lus. */
++export function originGuard(config: AppConfig): MiddlewareHandler<AppEnv> {
++  return async (c, next) => {
++    const method = c.req.method;
++    if (ORIGIN_METHODS.has(method) && c.req.header('Origin') !== config.appOrigin) {
++      throw httpError('origin_mismatch');
++    }
++    if (JSON_METHODS.has(method)) {
++      const mediaType = (c.req.header('Content-Type') ?? '').split(';')[0]?.trim().toLowerCase();
++      if (mediaType !== 'application/json') throw httpError('unsupported_media_type');
++    }
++    await next();
++  };
++}
+diff --git a/apps/server/src/http/request-log.ts b/apps/server/src/http/request-log.ts
+new file mode 100644
+index 0000000..4cf9718
+--- /dev/null
++++ b/apps/server/src/http/request-log.ts
+@@ -0,0 +1,19 @@
++import type { MiddlewareHandler } from 'hono';
++import { routePath } from 'hono/route';
++import type { AppEnv } from '../app-env';
++import type { Logger } from '../logger';
++
++/** Une ligne par requête : méthode, route (motif, sans paramètres), statut, durée. Rien d'autre (P-LOG-2). */
++export function requestLog(logger: Logger): MiddlewareHandler<AppEnv> {
++  return async (c, next) => {
++    const start = performance.now();
++    await next();
++    logger.info('request', {
++      requestId: c.get('requestId'),
++      method: c.req.method,
++      route: routePath(c, -1),
++      status: c.res.status,
++      durationMs: Math.round(performance.now() - start),
++    });
++  };
++}
+diff --git a/apps/server/src/http/security-headers.ts b/apps/server/src/http/security-headers.ts
+new file mode 100644
+index 0000000..d9e47f4
+--- /dev/null
++++ b/apps/server/src/http/security-headers.ts
+@@ -0,0 +1,19 @@
++import type { MiddlewareHandler } from 'hono';
++import type { AppEnv } from '../app-env';
++
++export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
++  'Strict-Transport-Security': 'max-age=31536000',
++  'Content-Security-Policy':
++    "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
++  'Referrer-Policy': 'no-referrer',
++  'X-Content-Type-Options': 'nosniff',
++  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
++};
++
++/** Posés après `next()` : couvre aussi les 404 et les réponses de `onError`. */
++export function securityHeaders(): MiddlewareHandler<AppEnv> {
++  return async (c, next) => {
++    await next();
++    for (const [name, value] of Object.entries(SECURITY_HEADERS)) c.res.headers.set(name, value);
++  };
++}
+diff --git a/apps/server/src/http/validate.ts b/apps/server/src/http/validate.ts
+new file mode 100644
+index 0000000..4043079
+--- /dev/null
++++ b/apps/server/src/http/validate.ts
+@@ -0,0 +1,26 @@
++import type { Context } from 'hono';
++import type { z } from 'zod';
++import type { AppEnv } from '../app-env';
++import { httpError } from './errors';
++
++function issuesOf(error: z.ZodError): { path: string; message: string }[] {
++  return error.issues.map((i) => ({ path: i.path.map(String).join('.'), message: i.message }));
++}
++
++export async function parseJson<T>(c: Context<AppEnv>, schema: z.ZodType<T>): Promise<T> {
++  let raw: unknown;
++  try {
++    raw = await c.req.json();
++  } catch {
++    throw httpError('validation');
++  }
++  const result = schema.safeParse(raw);
++  if (!result.success) throw httpError('validation', { issues: issuesOf(result.error) });
++  return result.data;
++}
++
++export function parseQuery<T>(c: Context<AppEnv>, schema: z.ZodType<T>): T {
++  const result = schema.safeParse(c.req.query());
++  if (!result.success) throw httpError('validation', { issues: issuesOf(result.error) });
++  return result.data;
++}
+diff --git a/apps/server/src/logger.ts b/apps/server/src/logger.ts
+new file mode 100644
+index 0000000..4ffce5b
+--- /dev/null
++++ b/apps/server/src/logger.ts
+@@ -0,0 +1,53 @@
++export type LogFields = Partial<{
++  requestId: string;
++  method: string;
++  route: string;
++  status: number;
++  durationMs: number;
++  event: string;
++  code: string;
++  count: number;
++  migration: string;
++  job: string;
++}>;
++
++export interface Logger {
++  info(msg: string, f?: LogFields): void;
++  warn(msg: string, f?: LogFields): void;
++  error(msg: string, f?: LogFields): void;
++}
++
++const ALLOWED: readonly (keyof LogFields)[] = [
++  'requestId',
++  'method',
++  'route',
++  'status',
++  'durationMs',
++  'event',
++  'code',
++  'count',
++  'migration',
++  'job',
++];
++
++const defaultWrite = (line: string): void => {
++  process.stdout.write(`${line}\n`);
++};
++
++/** Une ligne JSON par événement ; seuls les champs de la liste blanche sont écrits (P-LOG-2). */
++export function createLogger(write: (line: string) => void = defaultWrite): Logger {
++  const emit = (level: 'info' | 'warn' | 'error', msg: string, f?: LogFields): void => {
++    const entry: Record<string, unknown> = { level, msg };
++    for (const key of ALLOWED) {
++      const value = f?.[key];
++      if (value !== undefined) entry[key] = value;
++    }
++    entry.time = new Date().toISOString();
++    write(JSON.stringify(entry));
++  };
++  return {
++    info: (msg, f) => emit('info', msg, f),
++    warn: (msg, f) => emit('warn', msg, f),
++    error: (msg, f) => emit('error', msg, f),
++  };
++}
+diff --git a/apps/server/src/routes.ts b/apps/server/src/routes.ts
+new file mode 100644
+index 0000000..9ee7f0c
+--- /dev/null
++++ b/apps/server/src/routes.ts
+@@ -0,0 +1,9 @@
++import type { Hono } from 'hono';
++import type { AppEnv } from './app-env';
++import type { AppDeps } from './deps';
++import { healthRoutes } from './health/routes';
++
++/** Un routeur par ligne ; les routeurs des tâches suivantes s'ajoutent ici. */
++export function mountRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
++  app.route('/', healthRoutes(deps));
++}
+diff --git a/apps/server/test/config.test.ts b/apps/server/test/config.test.ts
+new file mode 100644
+index 0000000..4cc5f41
+--- /dev/null
++++ b/apps/server/test/config.test.ts
+@@ -0,0 +1,67 @@
++import { join } from 'node:path';
++import { describe, expect, it } from 'vitest';
++import { ConfigError, loadConfig } from '../src/config';
++
++describe('loadConfig', () => {
++  it('exige APP_ORIGIN', () => {
++    expect(() => loadConfig({})).toThrow(ConfigError);
++  });
++
++  it('refuse une origine avec chemin, ou http hors localhost', () => {
++    expect(() => loadConfig({ APP_ORIGIN: 'https://appsport.x.ts.net/chemin' })).toThrow(ConfigError);
++    expect(() => loadConfig({ APP_ORIGIN: 'http://appsport.x.ts.net' })).toThrow(ConfigError);
++  });
++
++  it('applique les valeurs par défaut en production', () => {
++    const cfg = loadConfig({ APP_ORIGIN: 'https://appsport.x.ts.net' });
++    expect(cfg).toMatchObject({
++      appOrigin: 'https://appsport.x.ts.net',
++      version: 'dev',
++      port: 3000,
++      host: '0.0.0.0',
++      dataDir: '/data',
++      publicDir: '/app/public',
++      contentDir: '/app/data',
++      swKillSwitch: false,
++      coachModel: 'claude-opus-5-5',
++      anthropicApiKey: null,
++      argon2: { memoryKiB: 19456, passes: 2, parallelism: 1, tagLength: 32, saltLength: 16 },
++      sessionCookieName: '__Host-session',
++      secureCookie: true,
++    });
++    expect(cfg.dbPath).toBe(join('/data', 'appsport.db'));
++    expect(cfg.sentinelPath).toBe(join('/data', '.appsport-volume'));
++  });
++
++  it('autorise http sur localhost et 127.0.0.1 avec le cookie de développement', () => {
++    expect(loadConfig({ APP_ORIGIN: 'http://localhost:5173' })).toMatchObject({
++      sessionCookieName: 'dev-session',
++      secureCookie: false,
++    });
++    expect(loadConfig({ APP_ORIGIN: 'http://127.0.0.1:5173' })).toMatchObject({
++      sessionCookieName: 'dev-session',
++    });
++  });
++
++  it('lit les variables optionnelles', () => {
++    expect(
++      loadConfig({
++        APP_ORIGIN: 'https://a.ts.net',
++        SW_KILL_SWITCH: '1',
++        PORT: '8080',
++        APP_VERSION: 'v1.2.3',
++        ANTHROPIC_API_KEY: '',
++      }),
++    ).toMatchObject({ swKillSwitch: true, port: 8080, version: 'v1.2.3', anthropicApiKey: null });
++    expect(loadConfig({ APP_ORIGIN: 'https://a.ts.net', ANTHROPIC_API_KEY: 'k' }).anthropicApiKey).toBe('k');
++  });
++
++  it('accepte le port 0 (port libre)', () => {
++    expect(loadConfig({ APP_ORIGIN: 'https://a.ts.net', PORT: '0' }).port).toBe(0);
++  });
++
++  it('refuse un port invalide', () => {
++    expect(() => loadConfig({ APP_ORIGIN: 'https://a.ts.net', PORT: 'abc' })).toThrow(ConfigError);
++    expect(() => loadConfig({ APP_ORIGIN: 'https://a.ts.net', PORT: '70000' })).toThrow(ConfigError);
++  });
++});
+diff --git a/apps/server/test/health/health.test.ts b/apps/server/test/health/health.test.ts
+new file mode 100644
+index 0000000..b8b7fd9
+--- /dev/null
++++ b/apps/server/test/health/health.test.ts
+@@ -0,0 +1,40 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { getServerMeta } from '../../src/db/server-meta';
++import { createTestContext, type TestContext } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx.close());
++
++describe('GET /api/health', () => {
++  it('répond ok avec époque et protocole', async () => {
++    ctx = await createTestContext();
++    const meta = await getServerMeta(ctx.deps.db);
++    const res = await ctx.request('/api/health');
++    expect(res.status).toBe(200);
++    expect(await res.json()).toEqual({
++      status: 'ok',
++      version: 'dev',
++      db: 'ok',
++      protocol: 1,
++      minProtocol: 1,
++      epoch: meta.serverEpoch,
++      swKill: false,
++    });
++  });
++
++  it('reflète la configuration', async () => {
++    ctx = await createTestContext({ config: { swKillSwitch: true, version: 'v1.0.0' } });
++    expect(await (await ctx.request('/api/health')).json()).toMatchObject({
++      swKill: true,
++      version: 'v1.0.0',
++    });
++  });
++
++  it('répond 503 quand la base est fermée', async () => {
++    ctx = await createTestContext();
++    ctx.deps.sqlite.close();
++    const res = await ctx.request('/api/health');
++    expect(res.status).toBe(503);
++    expect(await res.json()).toMatchObject({ status: 'error', db: 'error', epoch: null });
++  });
++});
+diff --git a/apps/server/test/http/client-ip.test.ts b/apps/server/test/http/client-ip.test.ts
+new file mode 100644
+index 0000000..84d1a2f
+--- /dev/null
++++ b/apps/server/test/http/client-ip.test.ts
+@@ -0,0 +1,53 @@
++import { afterEach, beforeEach, describe, expect, it } from 'vitest';
++import { clientIp } from '../../src/http/client-ip';
++import { createTestContext, type TestContext } from '../support';
++
++let ctx: TestContext;
++beforeEach(async () => {
++  ctx = await createTestContext();
++  ctx.app.get('/api/test/ip', (c) => c.json({ ip: clientIp(c) }));
++});
++afterEach(() => ctx.close());
++
++async function ipOf(xff?: string, peer?: string): Promise<string | null> {
++  const headers: Record<string, string> = xff === undefined ? {} : { 'X-Forwarded-For': xff };
++  const env = peer === undefined ? undefined : { incoming: { socket: { remoteAddress: peer } } };
++  const res = await ctx.app.request('http://localhost/api/test/ip', { headers }, env);
++  return ((await res.json()) as { ip: string | null }).ip;
++}
++
++describe('clientIp', () => {
++  it('sans socket, prend le premier élément de X-Forwarded-For', async () => {
++    expect(await ipOf('100.64.0.7')).toBe('100.64.0.7');
++    expect(await ipOf('100.64.0.7, 10.0.0.1')).toBe('100.64.0.7');
++  });
++
++  it('sans pair ni en-tête, renvoie null', async () => {
++    expect(await ipOf()).toBeNull();
++  });
++
++  it('fait confiance à X-Forwarded-For quand le pair est loopback ou privé', async () => {
++    const peers = [
++      '172.18.0.1',
++      '::ffff:172.18.0.1',
++      '127.0.0.1',
++      '::1',
++      '10.1.2.3',
++      '192.168.1.5',
++      '172.16.0.1',
++    ];
++    for (const peer of [...peers, '172.31.255.1']) {
++      expect(await ipOf('100.64.0.7', peer)).toBe('100.64.0.7');
++    }
++  });
++
++  it('ignore X-Forwarded-For quand le pair est public ou hors RFC 1918', async () => {
++    expect(await ipOf('100.64.0.7', '100.64.0.9')).toBe('100.64.0.9');
++    expect(await ipOf('100.64.0.7', '172.32.0.1')).toBe('172.32.0.1');
++    expect(await ipOf('100.64.0.7', '::ffff:8.8.8.8')).toBe('8.8.8.8');
++  });
++
++  it('renvoie le pair loopback sans en-tête', async () => {
++    expect(await ipOf(undefined, '127.0.0.1')).toBe('127.0.0.1');
++  });
++});
+diff --git a/apps/server/test/http/errors.test.ts b/apps/server/test/http/errors.test.ts
+new file mode 100644
+index 0000000..d64827f
+--- /dev/null
++++ b/apps/server/test/http/errors.test.ts
+@@ -0,0 +1,91 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { z } from 'zod';
++import { httpError } from '../../src/http/errors';
++import { parseJson, parseQuery } from '../../src/http/validate';
++import { createLogger } from '../../src/logger';
++import { createTestContext, type TestContext } from '../support';
++
++let ctx: TestContext;
++let lines: string[];
++afterEach(() => ctx.close());
++
++async function setup() {
++  lines = [];
++  ctx = await createTestContext({ deps: { logger: createLogger((l) => lines.push(l)) } });
++}
++
++describe('erreurs HTTP', () => {
++  it('httpError prend le statut dans ERROR_STATUS et ajoute les champs', async () => {
++    await setup();
++    ctx.app.get('/api/test/dup', () => {
++      throw httpError('gym_duplicate', { gymId: 'g1' });
++    });
++    const res = await ctx.request('/api/test/dup');
++    expect(res.status).toBe(409);
++    expect(await res.json()).toEqual({ error: 'gym_duplicate', gymId: 'g1' });
++  });
++
++  it('une erreur inattendue donne 500 internal sans fuite', async () => {
++    await setup();
++    ctx.app.get('/api/test/boom', () => {
++      throw new Error('boom TEMOIN');
++    });
++    const res = await ctx.request('/api/test/boom');
++    expect(res.status).toBe(500);
++    const text = await res.text();
++    expect(JSON.parse(text)).toEqual({ error: 'internal' });
++    expect(text).not.toContain('boom');
++    expect(text).not.toContain('.ts:');
++    const errorLine = lines.map((l) => JSON.parse(l)).find((l) => l.level === 'error');
++    expect(errorLine).toMatchObject({ msg: 'unhandled_error', code: 'internal', event: 'Error' });
++    expect(lines.join('\n')).not.toContain('TEMOIN');
++  });
++
++  it('une route inconnue donne 404 not_found', async () => {
++    await setup();
++    const res = await ctx.request('/api/inexistant');
++    expect(res.status).toBe(404);
++    expect(await res.json()).toEqual({ error: 'not_found' });
++  });
++});
++
++describe('parseJson et parseQuery', () => {
++  const schema = z.object({ n: z.number() });
++
++  it('refuse un JSON invalide', async () => {
++    await setup();
++    ctx.app.post('/api/test/p', async (c) => c.json(await parseJson(c, schema)));
++    const res = await ctx.request('/api/test/p', {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++    });
++    expect(res.status).toBe(400);
++    expect(await res.json()).toEqual({ error: 'validation' });
++  });
++
++  it('renvoie les anomalies avec chemin et message', async () => {
++    await setup();
++    ctx.app.post('/api/test/p', async (c) => c.json(await parseJson(c, schema)));
++    const res = await ctx.request('/api/test/p', { method: 'POST', json: { n: 'x' } });
++    expect(res.status).toBe(400);
++    const body = (await res.json()) as { error: string; issues: unknown[] };
++    expect(body.error).toBe('validation');
++    expect(body.issues[0]).toEqual({ path: 'n', message: expect.any(String) });
++  });
++
++  it('accepte un corps valide', async () => {
++    await setup();
++    ctx.app.post('/api/test/p', async (c) => c.json(await parseJson(c, schema)));
++    const res = await ctx.request('/api/test/p', { method: 'POST', json: { n: 4 } });
++    expect(await res.json()).toEqual({ n: 4 });
++  });
++
++  it('parseQuery valide la chaîne de requête', async () => {
++    await setup();
++    ctx.app.get('/api/test/q', (c) => c.json(parseQuery(c, z.object({ limit: z.coerce.number() }))));
++    expect(await (await ctx.request('/api/test/q?limit=5')).json()).toEqual({ limit: 5 });
++    const bad = await ctx.request('/api/test/q?limit=abc');
++    expect(bad.status).toBe(400);
++    expect(((await bad.json()) as { error: string }).error).toBe('validation');
++  });
++});
+diff --git a/apps/server/test/http/origin-guard.test.ts b/apps/server/test/http/origin-guard.test.ts
+new file mode 100644
+index 0000000..fc7a8ae
+--- /dev/null
++++ b/apps/server/test/http/origin-guard.test.ts
+@@ -0,0 +1,63 @@
++import { readdirSync, readFileSync } from 'node:fs';
++import { join } from 'node:path';
++import { afterEach, beforeEach, describe, expect, it } from 'vitest';
++import { createTestContext, type TestContext } from '../support';
++
++let ctx: TestContext;
++beforeEach(async () => {
++  ctx = await createTestContext();
++  ctx.app.post('/api/test/echo', (c) => c.json({ ok: true }));
++  ctx.app.put('/api/test/echo', (c) => c.json({ ok: true }));
++  ctx.app.delete('/api/test/echo', (c) => c.body(null, 204));
++  ctx.app.get('/api/test/echo', (c) => c.json({ ok: true }));
++  ctx.app.get('/api/test/whoami', (c) => c.json({ user: c.get('user') ?? null }));
++});
++afterEach(() => ctx.close());
++
++describe('originGuard', () => {
++  it('refuse une origine étrangère ou absente sur les méthodes à effet de bord', async () => {
++    for (const init of [
++      { method: 'POST', json: {}, origin: 'https://evil.example' },
++      { method: 'POST', json: {}, origin: null },
++      { method: 'PUT', json: {}, origin: 'https://evil.example' },
++      { method: 'DELETE', origin: 'https://evil.example' },
++    ]) {
++      const res = await ctx.request('/api/test/echo', init);
++      expect(res.status).toBe(403);
++      expect(await res.json()).toEqual({ error: 'origin_mismatch' });
++    }
++  });
++
++  it('exige application/json sur POST, PUT et PATCH', async () => {
++    const res = await ctx.request('/api/test/echo', {
++      method: 'POST',
++      headers: { 'Content-Type': 'text/plain' },
++    });
++    expect(res.status).toBe(415);
++    expect(await res.json()).toEqual({ error: 'unsupported_media_type' });
++    const noType = await ctx.request('/api/test/echo', { method: 'PUT' });
++    expect(noType.status).toBe(415);
++  });
++
++  it('laisse passer les requêtes légitimes', async () => {
++    const post = await ctx.request('/api/test/echo', {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json; charset=utf-8' },
++    });
++    expect(post.status).toBe(200);
++    expect((await ctx.request('/api/test/echo', { method: 'DELETE' })).status).toBe(204);
++    expect((await ctx.request('/api/test/echo', { origin: 'https://evil.example' })).status).toBe(200);
++  });
++
++  it('ignore les en-têtes Tailscale-User-* (P-AUT-7)', async () => {
++    const res = await ctx.request('/api/test/whoami', {
++      headers: { 'Tailscale-User-Login': 'admin@exemple' },
++    });
++    expect(await res.json()).toEqual({ user: null });
++    const srcDir = join(__dirname, '../../src');
++    const files = readdirSync(srcDir, { recursive: true, encoding: 'utf8' });
++    for (const f of files.filter((p) => p.endsWith('.ts'))) {
++      expect(readFileSync(join(srcDir, f), 'utf8')).not.toMatch(/tailscale-user/i);
++    }
++  });
++});
+diff --git a/apps/server/test/http/request-log.test.ts b/apps/server/test/http/request-log.test.ts
+new file mode 100644
+index 0000000..6ba7cb7
+--- /dev/null
++++ b/apps/server/test/http/request-log.test.ts
+@@ -0,0 +1,29 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { createLogger } from '../../src/logger';
++import { createTestContext, type TestContext } from '../support';
++
++let ctx: TestContext;
++afterEach(() => ctx.close());
++
++describe('requestLog', () => {
++  it('journalise la route et le statut, sans chaîne de requête, cookie, corps ni identifiant', async () => {
++    const lines: string[] = [];
++    ctx = await createTestContext({ deps: { logger: createLogger((l) => lines.push(l)) } });
++    ctx.app.post('/api/test/items/:id', (c) => c.json({ ok: true }));
++    const res = await ctx.request('/api/test/items/123?q=TEMOIN_QS', {
++      method: 'POST',
++      cookie: 'dev-session=TEMOIN_COOKIE',
++      json: { pain: 'TEMOIN_C2' },
++    });
++    expect(res.status).toBe(200);
++    expect(lines).toHaveLength(1);
++    const line = JSON.parse(lines[0] as string);
++    expect(line).toMatchObject({ msg: 'request', method: 'POST', route: '/api/test/items/:id', status: 200 });
++    expect(typeof line.durationMs).toBe('number');
++    expect(line.requestId).toEqual(expect.any(String));
++    expect(line.requestId).not.toBe('');
++    for (const temoin of ['TEMOIN_QS', 'TEMOIN_COOKIE', 'TEMOIN_C2', '123']) {
++      expect(lines.join('\n')).not.toContain(temoin);
++    }
++  });
++});
+diff --git a/apps/server/test/http/security-headers.test.ts b/apps/server/test/http/security-headers.test.ts
+new file mode 100644
+index 0000000..f6eed25
+--- /dev/null
++++ b/apps/server/test/http/security-headers.test.ts
+@@ -0,0 +1,72 @@
++import { EPOCH_HEADER } from '@appsport/contracts';
++import { afterEach, describe, expect, it } from 'vitest';
++import { getServerMeta } from '../../src/db/server-meta';
++import { createTestContext, type TestContext } from '../support';
++
++const HEADER_NAMES = [
++  'strict-transport-security',
++  'content-security-policy',
++  'referrer-policy',
++  'x-content-type-options',
++  'permissions-policy',
++];
++
++function pick(headers: Headers): Record<string, string> {
++  const out: Record<string, string> = {};
++  for (const name of HEADER_NAMES) {
++    const v = headers.get(name);
++    if (v !== null) out[name] = v;
++  }
++  return out;
++}
++
++const EXPECTED = {
++  'strict-transport-security': 'max-age=31536000',
++  'content-security-policy':
++    "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
++  'referrer-policy': 'no-referrer',
++  'x-content-type-options': 'nosniff',
++  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
++};
++
++let ctx: TestContext;
++afterEach(() => ctx.close());
++
++describe('en-têtes de sécurité', () => {
++  it('sont posés sur une réponse normale, un 404 et une erreur 500', async () => {
++    ctx = await createTestContext();
++    ctx.app.get('/api/test/boom', () => {
++      throw new Error('boom');
++    });
++    const ok = await ctx.request('/api/health');
++    const missing = await ctx.request('/api/inexistant');
++    const boom = await ctx.request('/api/test/boom');
++    expect(ok.status).toBe(200);
++    expect(missing.status).toBe(404);
++    expect(boom.status).toBe(500);
++    for (const res of [ok, missing, boom]) expect(pick(res.headers)).toEqual(EXPECTED);
++  });
++});
++
++describe("en-tête d'époque", () => {
++  it('suit serverEpoch sur /api/health et sur un 404 /api/…', async () => {
++    ctx = await createTestContext();
++    const meta = await getServerMeta(ctx.deps.db);
++    expect((await ctx.request('/api/health')).headers.get(EPOCH_HEADER)).toBe(meta.serverEpoch);
++    expect((await ctx.request('/api/inexistant')).headers.get(EPOCH_HEADER)).toBe(meta.serverEpoch);
++  });
++
++  it('est absent hors /api', async () => {
++    ctx = await createTestContext();
++    ctx.app.get('/privacy', (c) => c.text('ok'));
++    const res = await ctx.request('/privacy');
++    expect(res.status).toBe(200);
++    expect(res.headers.get(EPOCH_HEADER)).toBeNull();
++  });
++
++  it('est omis quand server_meta est illisible', async () => {
++    ctx = await createTestContext();
++    ctx.deps.sqlite.close();
++    expect((await ctx.request('/api/inexistant')).headers.get(EPOCH_HEADER)).toBeNull();
++  });
++});
+diff --git a/apps/server/test/logger.test.ts b/apps/server/test/logger.test.ts
+new file mode 100644
+index 0000000..22dd0b8
+--- /dev/null
++++ b/apps/server/test/logger.test.ts
+@@ -0,0 +1,25 @@
++import { describe, expect, it } from 'vitest';
++import { createLogger } from '../src/logger';
++
++describe('createLogger', () => {
++  it('écrit une ligne JSON et ignore les champs hors liste blanche', () => {
++    const lines: string[] = [];
++    const logger = createLogger((l) => lines.push(l));
++    logger.info('x', { requestId: 'r1', secret: 'TEMOIN' } as never);
++    expect(lines).toHaveLength(1);
++    const line = JSON.parse(lines[0] as string);
++    expect(line).toMatchObject({ level: 'info', msg: 'x', requestId: 'r1' });
++    expect(typeof line.time).toBe('string');
++    expect(Object.keys(line).sort()).toEqual(['level', 'msg', 'requestId', 'time']);
++    expect(lines[0]).not.toContain('secret');
++    expect(lines[0]).not.toContain('TEMOIN');
++  });
++
++  it('porte les niveaux warn et error', () => {
++    const lines: string[] = [];
++    const logger = createLogger((l) => lines.push(l));
++    logger.warn('w');
++    logger.error('e', { code: 'internal' });
++    expect(lines.map((l) => JSON.parse(l).level)).toEqual(['warn', 'error']);
++  });
++});
+diff --git a/apps/server/test/support/context.ts b/apps/server/test/support/context.ts
+new file mode 100644
+index 0000000..9248434
+--- /dev/null
++++ b/apps/server/test/support/context.ts
+@@ -0,0 +1,103 @@
++import type { EntityRulesMap } from '@appsport/contracts';
++import type { Hono } from 'hono';
++import { createApp } from '../../src/app';
++import type { AppEnv } from '../../src/app-env';
++import { type AppConfig, loadConfig } from '../../src/config';
++import { migrate } from '../../src/db/migrate';
++import { MIGRATIONS, type Migration } from '../../src/db/migrations/index';
++import { openDatabase } from '../../src/db/open';
++import { initServerMeta } from '../../src/db/server-meta';
++import { type AppDeps, type Argon2Params, createAppDeps } from '../../src/deps';
++import { createLogger } from '../../src/logger';
++import { FakeClock } from './clock';
++import { seqIds } from './ids';
++
++export const TEST_ARGON2: Argon2Params = {
++  memoryKiB: 1024,
++  passes: 1,
++  parallelism: 1,
++  tagLength: 32,
++  saltLength: 16,
++};
++
++export interface TestRequestInit {
++  method?: string;
++  json?: unknown;
++  cookie?: string;
++  origin?: string | null;
++  ip?: string;
++  headers?: Record<string, string>;
++}
++
++export interface TestContext {
++  app: Hono<AppEnv>;
++  deps: AppDeps;
++  clock: FakeClock;
++  request(path: string, init?: TestRequestInit): Promise<Response>;
++  close(): void;
++}
++
++const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
++
++export async function createTestContext(
++  opts: {
++    now?: string;
++    config?: Partial<AppConfig>;
++    extraMigrations?: Migration[];
++    entityRules?: EntityRulesMap;
++    deps?: Partial<AppDeps>;
++    /** Fichier au lieu de ':memory:' ; initServerMeta si server_meta est vide. */
++    dbPath?: string;
++  } = {},
++): Promise<TestContext> {
++  const clock = new FakeClock(opts.now);
++  const ids = seqIds();
++  const { sqlite, db } = openDatabase(opts.dbPath ?? ':memory:');
++  try {
++    await migrate(db, [...MIGRATIONS, ...(opts.extraMigrations ?? [])], clock);
++    const existing = await db.selectFrom('serverMeta').select('serverEpoch').executeTakeFirst();
++    if (!existing) await initServerMeta(db, { ids, clock });
++  } catch (error) {
++    sqlite.close();
++    throw error;
++  }
++  const config: AppConfig = {
++    ...loadConfig({ APP_ORIGIN: 'https://appsport.test.ts.net' }),
++    argon2: TEST_ARGON2,
++    ...opts.config,
++  };
++  const deps: AppDeps = {
++    ...createAppDeps({
++      sqlite,
++      db,
++      config,
++      clock,
++      ids,
++      logger: createLogger(() => {}),
++      ...(opts.entityRules ? { entityRules: opts.entityRules } : {}),
++    }),
++    ...opts.deps,
++  };
++  const app = createApp(deps);
++  return {
++    app,
++    deps,
++    clock,
++    request(path, init = {}) {
++      const method = (init.method ?? 'GET').toUpperCase();
++      const headers: Record<string, string> = {};
++      if (WRITE_METHODS.has(method) && init.origin !== null) {
++        headers.Origin = init.origin ?? deps.config.appOrigin;
++      }
++      if (init.json !== undefined) headers['Content-Type'] = 'application/json';
++      if (init.cookie) headers.Cookie = init.cookie;
++      if (init.ip) headers['X-Forwarded-For'] = init.ip;
++      Object.assign(headers, init.headers);
++      const body = init.json !== undefined ? JSON.stringify(init.json) : undefined;
++      return Promise.resolve(app.request(path, { method, headers, ...(body !== undefined ? { body } : {}) }));
++    },
++    close() {
++      if (deps.sqlite.isOpen) deps.sqlite.close();
++    },
++  };
++}
+diff --git a/apps/server/test/support/index.ts b/apps/server/test/support/index.ts
+index cf2b825..7532362 100644
+--- a/apps/server/test/support/index.ts
++++ b/apps/server/test/support/index.ts
+@@ -1,3 +1,4 @@
+ export { FakeClock } from './clock';
++export { createTestContext, TEST_ARGON2, type TestContext, type TestRequestInit } from './context';
+ export { insertFixtureRow } from './factories';
+ export { seqIds } from './ids';
+diff --git a/packages/contracts/package.json b/packages/contracts/package.json
+index dfdf70c..8e4871b 100644
+--- a/packages/contracts/package.json
++++ b/packages/contracts/package.json
+@@ -2,12 +2,15 @@
+   "name": "@appsport/contracts",
+   "version": "0.0.0",
+   "private": true,
+   "type": "module",
+   "exports": {
+     ".": "./src/index.ts"
+   },
+   "scripts": {
+     "typecheck": "tsc --noEmit -p tsconfig.json",
+     "test": "vitest run --root ../.. --project contracts"
++  },
++  "dependencies": {
++    "zod": "^4.6.5"
+   }
+ }
+diff --git a/packages/contracts/src/api/errors.ts b/packages/contracts/src/api/errors.ts
+new file mode 100644
+index 0000000..ff458c9
+--- /dev/null
++++ b/packages/contracts/src/api/errors.ts
+@@ -0,0 +1,77 @@
++import { z } from 'zod';
++
++export const ApiErrorCode = z.enum([
++  'validation',
++  'unauthenticated',
++  'invalid_credentials',
++  'forbidden',
++  'origin_mismatch',
++  'unsupported_media_type',
++  'account_disabled',
++  'password_change_required',
++  'health_consent_required',
++  'reset_self_forbidden',
++  'not_found',
++  'conflict',
++  'username_taken',
++  'last_admin',
++  'gym_duplicate',
++  'gym_in_use',
++  'place_exists',
++  'last_place',
++  'primary_required',
++  'onboarding_incomplete',
++  'password_rejected',
++  'username_invalid',
++  'under_min_age',
++  'invitation_expired',
++  'invitation_used',
++  'invitation_revoked',
++  'invitation_unknown',
++  'reset_invalid',
++  'account_deleted',
++  'watermark_expired',
++  'protocol_unsupported',
++  'rate_limited',
++  'internal',
++]);
++export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
++
++export const ERROR_STATUS: Record<ApiErrorCode, number> = {
++  validation: 400,
++  password_rejected: 400,
++  username_invalid: 400,
++  under_min_age: 400,
++  invitation_expired: 400,
++  invitation_used: 400,
++  invitation_revoked: 400,
++  invitation_unknown: 400,
++  reset_invalid: 400,
++  unauthenticated: 401,
++  invalid_credentials: 401,
++  forbidden: 403,
++  origin_mismatch: 403,
++  account_disabled: 403,
++  password_change_required: 403,
++  health_consent_required: 403,
++  reset_self_forbidden: 403,
++  not_found: 404,
++  conflict: 409,
++  username_taken: 409,
++  last_admin: 409,
++  gym_duplicate: 409,
++  gym_in_use: 409,
++  place_exists: 409,
++  last_place: 409,
++  primary_required: 409,
++  onboarding_incomplete: 409,
++  account_deleted: 410,
++  watermark_expired: 410,
++  unsupported_media_type: 415,
++  protocol_unsupported: 426,
++  rate_limited: 429,
++  internal: 500,
++};
++
++export const ApiErrorBody = z.object({ error: ApiErrorCode }).passthrough();
++export type ApiErrorBody = z.infer<typeof ApiErrorBody>;
+diff --git a/packages/contracts/src/api/health.ts b/packages/contracts/src/api/health.ts
+new file mode 100644
+index 0000000..468fe8a
+--- /dev/null
++++ b/packages/contracts/src/api/health.ts
+@@ -0,0 +1,12 @@
++import { z } from 'zod';
++
++export const HealthResponse = z.object({
++  status: z.enum(['ok', 'error']),
++  version: z.string(),
++  db: z.enum(['ok', 'error']),
++  protocol: z.number().int(),
++  minProtocol: z.number().int(),
++  epoch: z.string().nullable(),
++  swKill: z.boolean(),
++});
++export type HealthResponse = z.infer<typeof HealthResponse>;
+diff --git a/packages/contracts/src/index.ts b/packages/contracts/src/index.ts
+index 534443f..819570a 100644
+--- a/packages/contracts/src/index.ts
++++ b/packages/contracts/src/index.ts
+@@ -1,3 +1,5 @@
++export * from './api/errors';
++export * from './api/health';
+ export * from './case';
+ export * from './constants';
+ export * from './entity-rules';
+diff --git a/packages/contracts/test/errors.test.ts b/packages/contracts/test/errors.test.ts
+new file mode 100644
+index 0000000..c9ef864
+--- /dev/null
++++ b/packages/contracts/test/errors.test.ts
+@@ -0,0 +1,84 @@
++import { describe, expect, it } from 'vitest';
++import { ApiErrorBody, ApiErrorCode, ERROR_STATUS, HealthResponse } from '../src/index';
++
++const GROUPS: Record<number, string[]> = {
++  400: [
++    'validation',
++    'password_rejected',
++    'username_invalid',
++    'under_min_age',
++    'invitation_expired',
++    'invitation_used',
++    'invitation_revoked',
++    'invitation_unknown',
++    'reset_invalid',
++  ],
++  401: ['unauthenticated', 'invalid_credentials'],
++  403: [
++    'forbidden',
++    'origin_mismatch',
++    'account_disabled',
++    'password_change_required',
++    'health_consent_required',
++    'reset_self_forbidden',
++  ],
++  404: ['not_found'],
++  409: [
++    'conflict',
++    'username_taken',
++    'last_admin',
++    'gym_duplicate',
++    'gym_in_use',
++    'place_exists',
++    'last_place',
++    'primary_required',
++    'onboarding_incomplete',
++  ],
++  410: ['account_deleted', 'watermark_expired'],
++  415: ['unsupported_media_type'],
++  426: ['protocol_unsupported'],
++  429: ['rate_limited'],
++  500: ['internal'],
++};
++
++describe('ApiErrorCode et ERROR_STATUS', () => {
++  it('compte 33 codes', () => {
++    expect(ApiErrorCode.options).toHaveLength(33);
++  });
++
++  it('associe chaque code au statut de son groupe', () => {
++    const expected: Record<string, number> = {};
++    for (const [status, codes] of Object.entries(GROUPS)) for (const c of codes) expected[c] = Number(status);
++    expect(Object.keys(expected).sort()).toEqual([...ApiErrorCode.options].sort());
++    for (const code of ApiErrorCode.options) expect(ERROR_STATUS[code]).toBe(expected[code]);
++  });
++});
++
++describe('ApiErrorBody', () => {
++  it('conserve les champs supplémentaires', () => {
++    expect(ApiErrorBody.parse({ error: 'protocol_unsupported', serverProtocol: 1, minProtocol: 1 })).toEqual({
++      error: 'protocol_unsupported',
++      serverProtocol: 1,
++      minProtocol: 1,
++    });
++  });
++
++  it('refuse un code inconnu', () => {
++    expect(ApiErrorBody.safeParse({ error: 'boum' }).success).toBe(false);
++  });
++});
++
++describe('HealthResponse', () => {
++  it('accepte une époque nulle', () => {
++    const body = {
++      status: 'error',
++      version: 'dev',
++      db: 'error',
++      protocol: 1,
++      minProtocol: 1,
++      epoch: null,
++      swKill: false,
++    };
++    expect(HealthResponse.parse(body)).toEqual(body);
++  });
++});
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 88769fe..a6778e1 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -22,23 +22,32 @@ importers:
+         version: 5.0.3(@types/node@24.19.1)(happy-dom@20.14.5)(vite@8.3.3(@types/node@24.19.1))
+ 
+   apps/server:
+     dependencies:
+       '@appsport/contracts':
+         specifier: workspace:*
+         version: link:../../packages/contracts
+       '@appsport/domain':
+         specifier: workspace:*
+         version: link:../../packages/domain
++      '@hono/node-server':
++        specifier: ~2.1.3
++        version: 2.1.3(hono@4.13.13)
++      hono:
++        specifier: ~4.13.13
++        version: 4.13.13
+       kysely:
+         specifier: ~0.29.6
+         version: 0.29.6
++      zod:
++        specifier: ^4.6.5
++        version: 4.6.5
+     devDependencies:
+       '@types/better-sqlite3':
+         specifier: ^9.6.0
+         version: 9.6.0
+       better-sqlite3:
+         specifier: ^13.0.3
+         version: 13.0.3
+ 
+   apps/web:
+     dependencies:
+@@ -49,21 +58,25 @@ importers:
+         specifier: workspace:*
+         version: link:../../packages/domain
+     devDependencies:
+       '@appsport/server':
+         specifier: workspace:*
+         version: link:../server
+       happy-dom:
+         specifier: ^20
+         version: 20.14.5
+ 
+-  packages/contracts: {}
++  packages/contracts:
++    dependencies:
++      zod:
++        specifier: ^4.6.5
++        version: 4.6.5
+ 
+   packages/domain:
+     dependencies:
+       '@appsport/contracts':
+         specifier: workspace:*
+         version: link:../contracts
+     devDependencies:
+       fast-check:
+         specifier: ^4.10.2
+         version: 4.10.2
+@@ -120,20 +133,26 @@ packages:
+     engines: {node: '>=14.21.3'}
+     cpu: [arm64]
+     os: [win32]
+ 
+   '@biomejs/cli-win32-x64@2.5.15':
+     resolution: {integrity: sha512-yAzh4UqEImV6Hcy0zjUqNfJAsUhoD64FBQCdTG8Md/Z2wQeVP/ZmJ3XRYAs1g8J9fjTFyl2fCtc5FB5til47+g==}
+     engines: {node: '>=14.21.3'}
+     cpu: [x64]
+     os: [win32]
+ 
++  '@hono/node-server@2.1.3':
++    resolution: {integrity: sha512-TA//nWMqPhbfdfneACk6t5a9eqbS9lABEPyKn0/xZTah3H3U2XaVg85rJFl0/Fyit0I552YDHgXGVSf3GwqbUw==}
++    engines: {node: '>=20'}
++    peerDependencies:
++      hono: ^4
++
+   '@jridgewell/resolve-uri@3.1.2':
+     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
+     engines: {node: '>=6.0.0'}
+ 
+   '@jridgewell/sourcemap-codec@1.6.0':
+     resolution: {integrity: sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==}
+ 
+   '@jridgewell/trace-mapping@0.3.31':
+     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+ 
+@@ -443,20 +462,24 @@ packages:
+ 
+   fsevents@2.3.3:
+     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
+     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
+     os: [darwin]
+ 
+   happy-dom@20.14.5:
+     resolution: {integrity: sha512-x/RzkpWO40bTjIoT30iQtt64FLLmH/iRcUCN2X//bLx7H3ifkdfPXyqsro/OYtqzIAhiLMMA7mmiOR9C3NOKjQ==}
+     engines: {node: '>=20.0.0'}
+ 
++  hono@4.13.13:
++    resolution: {integrity: sha512-CQ46U0ZkAGmbT/4UxdzzGJpacP2IeKgY4a5/tOI9AABbpOMfK739wfDXmv1usCk+3RkKj1hQy4/fjhiwa2xlrA==}
++    engines: {node: '>=16.9.0'}
++
+   kysely@0.29.6:
+     resolution: {integrity: sha512-hHaB8C/rfzDDtr/t8YZwxAuPJTT0zHyaPoVzcXwDYhYNAgH/4sIfVhi/XLLIY+bL/FqaIJnjATDbi8ObSELmxg==}
+     engines: {node: '>=22.0.0'}
+ 
+   lightningcss-android-arm64@1.33.0:
+     resolution: {integrity: sha512-gEpRTalKdosp4Bb8qWtc2iOgE5SeIHlpS1up9bFq2wAyYhl1UdTObYiHe98zEM9SQvSoqQZ1IQD0JNpg3Ml5pg==}
+     engines: {node: '>= 12.0.0'}
+     cpu: [arm64]
+     os: [android]
+ 
+@@ -688,20 +711,23 @@ packages:
+     engines: {node: '>=10.0.0'}
+     peerDependencies:
+       bufferutil: ^4.0.1
+       utf-8-validate: '>=5.0.2'
+     peerDependenciesMeta:
+       bufferutil:
+         optional: true
+       utf-8-validate:
+         optional: true
+ 
++  zod@4.6.5:
++    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
++
+ snapshots:
+ 
+   '@biomejs/biome@2.5.15':
+     optionalDependencies:
+       '@biomejs/cli-darwin-arm64': 2.5.15
+       '@biomejs/cli-darwin-x64': 2.5.15
+       '@biomejs/cli-linux-arm64': 2.5.15
+       '@biomejs/cli-linux-arm64-musl': 2.5.15
+       '@biomejs/cli-linux-x64': 2.5.15
+       '@biomejs/cli-linux-x64-musl': 2.5.15
+@@ -725,20 +751,24 @@ snapshots:
+ 
+   '@biomejs/cli-linux-x64@2.5.15':
+     optional: true
+ 
+   '@biomejs/cli-win32-arm64@2.5.15':
+     optional: true
+ 
+   '@biomejs/cli-win32-x64@2.5.15':
+     optional: true
+ 
++  '@hono/node-server@2.1.3(hono@4.13.13)':
++    dependencies:
++      hono: 4.13.13
++
+   '@jridgewell/resolve-uri@3.1.2': {}
+ 
+   '@jridgewell/sourcemap-codec@1.6.0': {}
+ 
+   '@jridgewell/trace-mapping@0.3.31':
+     dependencies:
+       '@jridgewell/resolve-uri': 3.1.2
+       '@jridgewell/sourcemap-codec': 1.6.0
+ 
+   '@oxc-project/types@0.152.0': {}
+@@ -925,20 +955,22 @@ snapshots:
+       '@types/whatwg-mimetype': 3.0.2
+       '@types/ws': 8.18.2
+       buffer-image-size: 0.6.4
+       entities: 7.0.1
+       whatwg-mimetype: 3.0.0
+       ws: 8.22.0
+     transitivePeerDependencies:
+       - bufferutil
+       - utf-8-validate
+ 
++  hono@4.13.13: {}
++
+   kysely@0.29.6: {}
+ 
+   lightningcss-android-arm64@1.33.0:
+     optional: true
+ 
+   lightningcss-darwin-arm64@1.33.0:
+     optional: true
+ 
+   lightningcss-darwin-x64@1.33.0:
+     optional: true
+@@ -1095,10 +1127,12 @@ snapshots:
+       '@types/node': 24.19.1
+       happy-dom: 20.14.5
+     transitivePeerDependencies:
+       - msw
+ 
+   whatwg-mimetype@3.0.0: {}
+ 
+   why-is-node-running@3.2.1: {}
+ 
+   ws@8.22.0: {}
++
++  zod@4.6.5: {}

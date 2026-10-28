@@ -1,0 +1,2369 @@
+# Review package: a1820c2..HEAD
+
+## Commits
+4eb4a4e feat(synchro): moteur client (push, pull, époque, reprises, catalogue)
+
+## Files changed
+ apps/web/src/sw/protocol.ts               |   5 +
+ apps/web/src/sw/sw-client.ts              |   9 +
+ apps/web/src/sync/apply-pull.ts           |  25 ++
+ apps/web/src/sync/catalog.ts              |  43 ++
+ apps/web/src/sync/engine.ts               | 653 ++++++++++++++++++++++++++++++
+ apps/web/src/sync/transport.ts            |  53 +++
+ apps/web/src/sync/triggers.ts             |  32 ++
+ apps/web/test/support/fake-sync-server.ts | 121 ++++++
+ apps/web/test/support/wait.ts             |  12 +
+ apps/web/test/sync/apply-pull.test.ts     | 115 ++++++
+ apps/web/test/sync/catalog.test.ts        | 128 ++++++
+ apps/web/test/sync/engine-epoch.test.ts   | 327 +++++++++++++++
+ apps/web/test/sync/engine.test.ts         | 582 ++++++++++++++++++++++++++
+ apps/web/test/sync/transport.test.ts      |  56 +++
+ apps/web/test/sync/triggers.test.ts       |  94 +++++
+ 15 files changed, 2255 insertions(+)
+
+## Diff
+diff --git a/apps/web/src/sw/protocol.ts b/apps/web/src/sw/protocol.ts
+new file mode 100644
+index 0000000..2ca4ea0
+--- /dev/null
++++ b/apps/web/src/sw/protocol.ts
+@@ -0,0 +1,5 @@
++/** Messages de la page vers le service worker. */
++export type PageToSw =
++  | { type: 'SKIP_WAITING' }
++  | { type: 'GET_STATUS' }
++  | { type: 'SYNC_ILLUSTRATIONS'; files: string[] };
+diff --git a/apps/web/src/sw/sw-client.ts b/apps/web/src/sw/sw-client.ts
+new file mode 100644
+index 0000000..72b3018
+--- /dev/null
++++ b/apps/web/src/sw/sw-client.ts
+@@ -0,0 +1,9 @@
++import type { PageToSw } from './protocol';
++
++/** Poste au service worker qui contrôle la page ; `false` sans contrôleur. */
++export function postToSw(msg: PageToSw): boolean {
++  const controller = typeof navigator === 'undefined' ? undefined : navigator.serviceWorker?.controller;
++  if (!controller) return false;
++  controller.postMessage(msg);
++  return true;
++}
+diff --git a/apps/web/src/sync/apply-pull.ts b/apps/web/src/sync/apply-pull.ts
+new file mode 100644
+index 0000000..f43fca4
+--- /dev/null
++++ b/apps/web/src/sync/apply-pull.ts
+@@ -0,0 +1,25 @@
++import type { PulledRow } from '@appsport/contracts';
++import type { AppDb, MirrorRow } from '../local-db/db';
++
++/**
++ * Écrit les lignes tirées dans les miroirs, en une transaction (R-SYN-22) : la ligne serveur
++ * remplace la copie, puis les ops en attente sur la même ligne sont rejouées dans l'ordre des
++ * opId (patch → champs, delete → deletedAt ; un create en attente est ignoré). Entité sans miroir
++ * ignorée.
++ */
++export async function applyPulledRows(db: AppDb, rows: PulledRow[]): Promise<void> {
++  const known = rows.filter((r) => db.mirrorNames.includes(r.entity));
++  if (known.length === 0) return;
++  const stores = [...new Set(known.map((r) => r.entity))].map((e) => db.mirror(e));
++  await db.transaction('rw', [db.outbox, ...stores], async () => {
++    for (const { entity, rev, row } of known) {
++      const merged = { ...row, serverRevSeen: rev } as MirrorRow;
++      const pending = await db.outbox.where('[entity+id]').equals([entity, merged.id]).sortBy('opId');
++      for (const op of pending) {
++        if (op.kind === 'patch') Object.assign(merged, op.fields);
++        else if (op.kind === 'delete') merged.deletedAt = op.clientTs;
++      }
++      await db.mirror(entity).put(merged);
++    }
++  });
++}
+diff --git a/apps/web/src/sync/catalog.ts b/apps/web/src/sync/catalog.ts
+new file mode 100644
+index 0000000..172e720
+--- /dev/null
++++ b/apps/web/src/sync/catalog.ts
+@@ -0,0 +1,43 @@
++import { IllustrationRef } from '@appsport/contracts';
++import { z } from 'zod';
++import type { AppDb } from '../local-db/db';
++import { getMeta, setMeta } from '../local-db/meta';
++import { postToSw } from '../sw/sw-client';
++import { fetchWithTimeout, type SyncTransport } from './transport';
++
++const Item = z.looseObject({ id: z.string() });
++const LocalCatalog = z.object({
++  version: z.string(),
++  exercises: z.array(Item),
++  illustrations: z.array(IllustrationRef),
++  programTemplates: z.array(Item),
++  adviceSheets: z.array(Item),
++});
++
++/**
++ * Catalogue (classe C) par ETag : 304 → inchangé ; 200 → les quatre magasins remplacés en une
++ * transaction, versions locales alignées, puis le SW est prié de mettre les illustrations en cache.
++ */
++export async function refreshCatalog(db: AppDb, t: SyncTransport): Promise<'unchanged' | 'updated'> {
++  const current = await getMeta(db, 'catalogVersion');
++  const headers: Record<string, string> = current === undefined ? {} : { 'If-None-Match': `"${current}"` };
++  const res = await fetchWithTimeout(t, '/api/catalog', { method: 'GET', headers });
++  if (res.status === 304) return 'unchanged';
++  if (res.status !== 200) throw new Error(`catalog_http_${res.status}`);
++  const bundle = LocalCatalog.parse(await res.json());
++
++  await db.transaction(
++    'rw',
++    ['exercises', 'illustrations', 'programTemplates', 'adviceSheets', 'meta'],
++    async () => {
++      for (const store of ['exercises', 'illustrations', 'programTemplates', 'adviceSheets'] as const) {
++        await db.table(store).clear();
++        await db.table(store).bulkPut(bundle[store]);
++      }
++      await setMeta(db, 'catalogVersion', bundle.version);
++      await setMeta(db, 'serverCatalogVersion', bundle.version);
++    },
++  );
++  postToSw({ type: 'SYNC_ILLUSTRATIONS', files: bundle.illustrations.map((i) => i.file) });
++  return 'updated';
++}
+diff --git a/apps/web/src/sync/engine.ts b/apps/web/src/sync/engine.ts
+new file mode 100644
+index 0000000..0749e1a
+--- /dev/null
++++ b/apps/web/src/sync/engine.ts
+@@ -0,0 +1,653 @@
++import {
++  type EntityRule,
++  type EntityRulesMap,
++  EPOCH_HEADER,
++  EPOCH_RESEND_DAYS,
++  entityRules,
++  PROTOCOL_HEADER,
++  PullResponse,
++  PushResponse,
++  type PushResult,
++  SYNC_DEBOUNCE_MS,
++  SYNC_PROTOCOL,
++  SYNC_PUSH_MAX,
++  SYNC_RETRY_MAX_MS,
++  SYNC_RETRY_MIN_MS,
++  SYNC_TIMEOUT_MS,
++  snakeToCamel,
++} from '@appsport/contracts';
++import { createMonotonicUuidV7 } from '@appsport/domain';
++import Dexie from 'dexie';
++import { z } from 'zod';
++import { stripC2Fields } from '../local-db/c2';
++import { localHealthConsentActive } from '../local-db/consent';
++import { type AppDb, type DeadletterEntry, mirrorStoreNames, type OutboxOp } from '../local-db/db';
++import { deleteMeta, getMeta, setMeta } from '../local-db/meta';
++import { clearMirrors, purgeHealthData, wipeUserData } from '../local-db/wipe';
++import { applyPulledRows } from './apply-pull';
++import { refreshCatalog } from './catalog';
++import { pendingCount } from './outbox';
++import { convertOutboxOp } from './protocol-converters';
++import { fetchWithTimeout, OfflineError, type SyncTransport } from './transport';
++import { installSyncTriggers } from './triggers';
++
++export type ConnectionState =
++  | 'unknown'
++  | 'online'
++  | 'offline'
++  | 'unauthenticated'
++  | 'protocol_unsupported'
++  | 'account_deleted';
++export type SyncTrigger =
++  | 'launch'
++  | 'foreground'
++  | 'online'
++  | 'set_logged'
++  | 'interval'
++  | 'coach'
++  | 'mutation'
++  | 'manual';
++
++export interface SyncState {
++  connection: ConnectionState;
++  pending: number;
++  rejected: number;
++  lastPullOkAt: string | null;
++  syncing: boolean;
++  serverEpoch: string | null;
++}
++
++export interface SyncEngine {
++  syncNow(t: SyncTrigger): Promise<void>;
++  pullNow(): Promise<void>;
++  flushBefore(ms: number): Promise<void>;
++  getState(): SyncState;
++  subscribe(fn: (s: SyncState) => void): () => void;
++  start(): void;
++  stop(): void;
++}
++
++export interface SyncEngineDeps {
++  db: AppDb;
++  transport: SyncTransport;
++  now?: () => number;
++  newOpId?: () => string;
++  onAccountDeleted?: () => void;
++  timeoutMs?: number;
++  rules?: EntityRulesMap;
++  triggers?: (e: SyncEngine) => () => void;
++}
++
++/** Attente avant la reprise n° `failures` : 2 s doublées à chaque échec, 5 min au plus. */
++export function retryDelayMs(failures: number): number {
++  return Math.min(SYNC_RETRY_MAX_MS, SYNC_RETRY_MIN_MS * 2 ** (Math.max(1, failures) - 1));
++}
++
++const DAY_MS = 86_400_000;
++
++/** Fin de cycle sans échec : utilisateur changé ou moteur arrêté. */
++class CycleEnd extends Error {}
++/** Réponse portant une autre époque que celle du cycle (en-tête lu avant le corps). */
++class EpochChanged extends Error {}
++class HttpError extends Error {
++  constructor(
++    readonly status: number,
++    readonly code: string | null,
++  ) {
++    super(code ?? `http_${status}`);
++  }
++}
++
++async function httpError(res: Response): Promise<HttpError> {
++  let code: string | null = null;
++  try {
++    const body: unknown = await res.json();
++    if (typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'string') {
++      code = body.error;
++    }
++  } catch {
++    // corps absent ou illisible : seul le statut reste
++  }
++  return new HttpError(res.status, code);
++}
++
++const MeConsents = z.looseObject({
++  consents: z.looseObject({ health: z.looseObject({ active: z.boolean() }) }),
++});
++
++type CycleKind = 'full' | 'pull';
++interface Cycle {
++  userId: string;
++  epoch: string | null;
++}
++
++/**
++ * Moteur de synchro client : un seul cycle en vol (health → époque → push → pull → catalogue),
++ * décisions prises sur `error` et jamais sur le seul statut, l'en-tête d'époque d'abord.
++ */
++export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
++  const { db, transport } = deps;
++  const rules = deps.rules ?? entityRules;
++  const now = deps.now ?? Date.now;
++  const newOpId =
++    deps.newOpId ?? createMonotonicUuidV7(now, (n) => crypto.getRandomValues(new Uint8Array(n)));
++  const timeoutMs = deps.timeoutMs ?? SYNC_TIMEOUT_MS;
++  const nowIso = () => new Date(now()).toISOString();
++  const ruleOf = (entity: string): EntityRule | undefined =>
++    Object.hasOwn(rules, entity) ? rules[entity] : undefined;
++  const hasMirror = (entity: string) => db.mirrorNames.includes(entity);
++
++  let state: SyncState = {
++    connection: 'unknown',
++    pending: 0,
++    rejected: 0,
++    lastPullOkAt: null,
++    syncing: false,
++    serverEpoch: null,
++  };
++  const listeners = new Set<(s: SyncState) => void>();
++  let lastUserId: string | null = null;
++  let failures = 0;
++  let started = false;
++  let stopped = false;
++  let uninstall: (() => void) | null = null;
++  let retryTimer: ReturnType<typeof setTimeout> | undefined;
++  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
++  let debounceWaiters: (() => void)[] = [];
++  let running: Promise<void> | null = null;
++  let next: { kind: CycleKind; promise: Promise<void> } | null = null;
++
++  function setState(patch: Partial<SyncState>): void {
++    const updated = { ...state, ...patch };
++    const keys = Object.keys(updated) as (keyof SyncState)[];
++    if (keys.every((k) => updated[k] === state[k])) return;
++    state = updated;
++    for (const fn of listeners) fn(state);
++  }
++
++  async function rejectedCount(userId: string): Promise<number> {
++    const opIds = new Set((await db.deadletter.where('userId').equals(userId).toArray()).map((d) => d.opId));
++    if (hasMirror('sync_rejection')) {
++      for (const r of await db.mirror('sync_rejection').toArray()) {
++        if (
++          r.ownerId === userId &&
++          r.dismissedAt == null &&
++          r.deletedAt == null &&
++          typeof r.opId === 'string'
++        ) {
++          opIds.add(r.opId);
++        }
++      }
++    }
++    return opIds.size;
++  }
++
++  async function refreshState(): Promise<void> {
++    const userId = await getMeta(db, 'userId');
++    setState({
++      pending: userId ? await pendingCount(db, userId) : 0,
++      rejected: userId ? await rejectedCount(userId) : 0,
++      lastPullOkAt: (await getMeta(db, 'lastPullOkAt')) ?? null,
++      serverEpoch: (await getMeta(db, 'serverEpoch')) ?? null,
++    });
++  }
++
++  // ---- HTTP ----
++
++  async function request(
++    cycle: Cycle,
++    method: 'GET' | 'POST',
++    path: string,
++    body?: unknown,
++  ): Promise<Response> {
++    const headers: Record<string, string> = { [PROTOCOL_HEADER]: String(SYNC_PROTOCOL) };
++    const init: RequestInit = { method, headers };
++    if (method === 'POST') {
++      headers['Content-Type'] = 'application/json';
++      init.body = JSON.stringify(body ?? {});
++    }
++    const res = await fetchWithTimeout(transport, path, init, timeoutMs);
++    const epoch = res.headers.get(EPOCH_HEADER);
++    if (cycle.epoch !== null && epoch !== null && epoch !== cycle.epoch) throw new EpochChanged();
++    return res;
++  }
++
++  async function okJson(res: Response): Promise<unknown> {
++    if (!res.ok) throw await httpError(res);
++    return res.json();
++  }
++
++  async function assertCurrent(cycle: Cycle): Promise<void> {
++    if (stopped || (await getMeta(db, 'userId')) !== cycle.userId) throw new CycleEnd();
++  }
++
++  async function sendPush(cycle: Cycle, ops: OutboxOp[]): Promise<PushResult[]> {
++    const res = await request(cycle, 'POST', '/api/sync/push', { ops });
++    return PushResponse.parse(await okJson(res)).results;
++  }
++
++  const effectiveStatus = (r: PushResult) =>
++    r.status === 'duplicate' ? (r.originalStatus ?? 'applied') : r.status;
++
++  const deadletterOf = (op: OutboxOp, code: string | undefined): DeadletterEntry => ({
++    opId: op.opId,
++    userId: op.userId,
++    entity: op.entity,
++    id: op.id,
++    code: code ?? 'unknown',
++    detail: { kind: op.kind, fieldNames: Object.keys(op.fields).sort() },
++    receivedAt: nowIso(),
++  });
++
++  // ---- 2. Époque ----
++
++  function depth(entity: string, guard = 0): number {
++    const parent = ruleOf(entity)?.parent;
++    return parent && guard < 16 ? 1 + depth(parent.entity, guard + 1) : 0;
++  }
++
++  /** a. restore_upsert des lignes J récentes, parents d'abord, jamais dans l'outbox. */
++  async function resendJournal(cycle: Cycle): Promise<void> {
++    const consent = await localHealthConsentActive(db);
++    const since = now() - EPOCH_RESEND_DAYS * DAY_MS;
++    const candidates: { entity: string; id: string; fields: Record<string, unknown>; seen: number | null }[] =
++      [];
++    for (const entity of mirrorStoreNames(db)) {
++      const rule = ruleOf(entity);
++      if (rule?.syncClass !== 'J' || entity === 'sync_rejection') continue;
++      if (!consent && rule.category === 'C2') continue;
++      for (const row of await db.mirror(entity).toArray()) {
++        if (row.ownerId !== cycle.userId || typeof row.updatedAt !== 'string') continue;
++        if (!(Date.parse(row.updatedAt) >= since)) continue;
++        let fields: Record<string, unknown> = {};
++        for (const column of rule.clientWritable) {
++          const key = snakeToCamel(column);
++          if (Object.hasOwn(row, key) && row[key] !== undefined) fields[key] = row[key];
++        }
++        if (!consent) fields = stripC2Fields(rule, fields).fields;
++        fields.deletedAt = row.deletedAt ?? null;
++        candidates.push({ entity, id: row.id, fields, seen: row.serverRevSeen ?? null });
++      }
++    }
++    candidates.sort(
++      (a, b) =>
++        depth(a.entity) - depth(b.entity) ||
++        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) ||
++        (a.entity < b.entity ? -1 : a.entity > b.entity ? 1 : 0),
++    );
++    const ops: OutboxOp[] = candidates.map((c) => ({
++      opId: newOpId(),
++      userId: cycle.userId,
++      entity: c.entity,
++      id: c.id,
++      kind: 'restore_upsert',
++      fields: c.fields,
++      clientTs: nowIso(),
++      protocol: SYNC_PROTOCOL,
++      attempts: 0,
++      serverRevSeen: c.seen,
++    }));
++    for (let i = 0; i < ops.length; i += SYNC_PUSH_MAX) {
++      await assertCurrent(cycle);
++      const batch = ops.slice(i, i + SYNC_PUSH_MAX);
++      const byId = new Map(batch.map((o) => [o.opId, o]));
++      const results = await sendPush(cycle, batch);
++      // Un renvoi rejeté va en deadletter : ce n'est pas un échec du cycle.
++      const dead = results.flatMap((r) => {
++        const op = byId.get(r.opId);
++        return op && effectiveStatus(r) === 'rejected' ? [deadletterOf(op, r.code)] : [];
++      });
++      if (dead.length > 0) await db.deadletter.bulkPut(dead);
++    }
++  }
++
++  /** b. R-SYN-28 : renvoi d'un retrait d'accord santé perdu par une restauration. */
++  async function replayWithdrawal(cycle: Cycle): Promise<void> {
++    if (!hasMirror('consent_event')) return;
++    const last = await db
++      .mirror('consent_event')
++      .where('[type+createdAt]')
++      .between(['health', Dexie.minKey], ['health', Dexie.maxKey])
++      .last();
++    if (last?.action !== 'withdraw' || typeof last.createdAt !== 'string') return;
++    const me = MeConsents.parse(await okJson(await request(cycle, 'GET', '/api/me')));
++    if (!me.consents.health.active) return;
++    const res = await request(cycle, 'POST', '/api/me/consents/health/replay-withdraw', {
++      withdrawnAt: last.createdAt,
++    });
++    if (res.ok) return;
++    const error = await httpError(res);
++    if (error.code !== 'conflict') throw error;
++  }
++
++  async function handleEpoch(cycle: Cycle): Promise<void> {
++    if (cycle.epoch === null) return;
++    const local = await getMeta(db, 'serverEpoch');
++    if (local === cycle.epoch) return;
++    if (local !== undefined) {
++      // Outbox en pause jusqu'à la fin du renvoi ; un échec ici laisse l'époque locale inchangée.
++      await resendJournal(cycle);
++      await replayWithdrawal(cycle);
++    }
++    await assertCurrent(cycle);
++    const epoch = cycle.epoch;
++    await db.transaction('rw', db.meta, async () => {
++      await setMeta(db, 'serverEpoch', epoch);
++      if (local !== undefined) await deleteMeta(db, 'watermark');
++    });
++  }
++
++  // ---- 3. Push ----
++
++  async function applyPushResults(batch: OutboxOp[], results: PushResult[]): Promise<void> {
++    const byId = new Map(batch.map((o) => [o.opId, o]));
++    const stores = [...new Set(batch.map((o) => o.entity))].filter(hasMirror).map((e) => db.mirror(e));
++    await db.transaction('rw', [db.outbox, db.deadletter, db.meta, ...stores], async () => {
++      const rejected: OutboxOp[] = [];
++      for (const r of results) {
++        const op = byId.get(r.opId);
++        if (!op) continue;
++        byId.delete(r.opId);
++        await db.outbox.delete(op.opId);
++        if (effectiveStatus(r) === 'rejected') {
++          await db.deadletter.put(deadletterOf(op, r.code));
++          rejected.push(op);
++          continue;
++        }
++        if (!hasMirror(op.entity)) continue;
++        const mirror = db.mirror(op.entity);
++        if (r.dropped) {
++          await mirror.delete(op.id);
++          continue;
++        }
++        const row = await mirror.get(op.id);
++        if (!row) continue;
++        const updated = { ...row };
++        if (r.rev !== undefined) updated.serverRevSeen = r.rev;
++        for (const field of r.droppedFields ?? []) updated[field] = null;
++        await mirror.put(updated);
++      }
++      let refetch = false;
++      for (const op of rejected) {
++        const row = hasMirror(op.entity) ? await db.mirror(op.entity).get(op.id) : undefined;
++        const others = await db.outbox.where('[entity+id]').equals([op.entity, op.id]).count();
++        if (row && row.serverRevSeen == null && others === 0) await db.mirror(op.entity).delete(op.id);
++        else refetch = true;
++      }
++      if (refetch) await deleteMeta(db, 'watermark');
++    });
++  }
++
++  async function push(cycle: Cycle): Promise<void> {
++    const opIds = (await db.outbox.where('userId').equals(cycle.userId).primaryKeys()).sort();
++    for (let i = 0; i < opIds.length; i += SYNC_PUSH_MAX) {
++      await assertCurrent(cycle);
++      const keys = opIds.slice(i, i + SYNC_PUSH_MAX);
++      const batch = await db.transaction('rw', db.outbox, async () => {
++        const ops = (await db.outbox.bulkGet(keys)).filter((o): o is OutboxOp => o !== undefined);
++        const bumped = ops.map((o) => ({ ...o, attempts: o.attempts + 1 }));
++        await db.outbox.bulkPut(bumped);
++        return bumped;
++      });
++      if (batch.length === 0) continue;
++      const results = await sendPush(
++        cycle,
++        batch.map((o) => convertOutboxOp(o)),
++      );
++      await applyPushResults(batch, results);
++    }
++  }
++
++  // ---- 4. Pull ----
++
++  async function dropUnreceived(received: Map<string, Set<string>>, watermark: string): Promise<void> {
++    const stores = mirrorStoreNames(db);
++    await db.transaction('rw', [db.outbox, db.meta, ...stores.map((s) => db.mirror(s))], async () => {
++      for (const store of stores) {
++        const got = received.get(store) ?? new Set<string>();
++        const stale: string[] = [];
++        for (const id of await db.mirror(store).toCollection().primaryKeys()) {
++          if (got.has(id)) continue;
++          if ((await db.outbox.where('[entity+id]').equals([store, id]).count()) === 0) stale.push(id);
++        }
++        await db.mirror(store).bulkDelete(stale);
++      }
++      await setMeta(db, 'watermark', watermark);
++    });
++  }
++
++  async function pull(cycle: Cycle): Promise<void> {
++    let since = (await getMeta(db, 'watermark')) ?? null;
++    let full = since === null;
++    let expiredHandled = false;
++    const received = new Map<string, Set<string>>();
++    for (;;) {
++      await assertCurrent(cycle);
++      const path = since === null ? '/api/sync/pull' : `/api/sync/pull?since=${encodeURIComponent(since)}`;
++      const res = await request(cycle, 'GET', path);
++      if (!res.ok) {
++        const error = await httpError(res);
++        if (error.code === 'watermark_expired' && since !== null && !expiredHandled) {
++          // Miroirs vidés, outbox intacte, un seul pull complet.
++          expiredHandled = true;
++          await clearMirrors(db);
++          await deleteMeta(db, 'watermark');
++          since = null;
++          full = true;
++          received.clear();
++          continue;
++        }
++        throw error;
++      }
++      const page = PullResponse.parse(await res.json());
++      await assertCurrent(cycle);
++      await applyPulledRows(db, page.rows);
++      if (full) {
++        for (const { entity, row } of page.rows) {
++          const ids = received.get(entity) ?? new Set<string>();
++          ids.add(String(row.id));
++          received.set(entity, ids);
++        }
++      } else {
++        await setMeta(db, 'watermark', page.nextWatermark);
++      }
++      if (page.catalogVersion !== null) await setMeta(db, 'serverCatalogVersion', page.catalogVersion);
++      const healthConsentPulled = page.rows.some(
++        (r) => r.entity === 'consent_event' && r.row.type === 'health',
++      );
++      if (healthConsentPulled && !(await localHealthConsentActive(db))) await purgeHealthData(db, rules);
++      since = page.nextWatermark;
++      if (!page.hasMore) break;
++    }
++    if (full && since !== null) await dropUnreceived(received, since);
++    await setMeta(db, 'lastPullOkAt', nowIso());
++  }
++
++  // ---- 5. Catalogue ----
++
++  async function syncCatalog(): Promise<void> {
++    const serverVersion = await getMeta(db, 'serverCatalogVersion');
++    if (serverVersion === undefined || serverVersion === (await getMeta(db, 'catalogVersion'))) return;
++    try {
++      await refreshCatalog(db, transport);
++    } catch {
++      // catalogue réessayé au prochain cycle
++    }
++  }
++
++  // ---- Cycle ----
++
++  function scheduleRetry(): void {
++    failures += 1;
++    if (!started || stopped) return;
++    clearTimeout(retryTimer);
++    retryTimer = setTimeout(() => {
++      retryTimer = undefined;
++      void enqueue('full');
++    }, retryDelayMs(failures));
++  }
++
++  async function handleFailure(error: unknown): Promise<void> {
++    if (error instanceof CycleEnd) return;
++    if (error instanceof OfflineError) {
++      setState({ connection: 'offline' });
++      scheduleRetry();
++      return;
++    }
++    if (error instanceof HttpError) {
++      switch (error.code) {
++        case 'unauthenticated':
++          setState({ connection: 'unauthenticated' });
++          return;
++        case 'password_change_required':
++          return;
++        case 'account_deleted':
++          await wipeUserData(db, { keepOutbox: false });
++          setState({ connection: 'account_deleted' });
++          deps.onAccountDeleted?.();
++          return;
++        case 'protocol_unsupported':
++          setState({ connection: 'protocol_unsupported' });
++          return;
++      }
++    }
++    scheduleRetry();
++  }
++
++  /** Un cycle ; 'epoch_changed' quand une réponse a porté une autre époque que celle du cycle. */
++  async function runCycle(kind: CycleKind, isRerun: boolean): Promise<'done' | 'epoch_changed'> {
++    const userId = await getMeta(db, 'userId');
++    if (!userId || stopped) return 'done';
++    if (userId !== lastUserId) {
++      lastUserId = userId;
++      failures = 0;
++      setState({ connection: 'unknown' });
++    }
++    const cycle: Cycle = { userId, epoch: null };
++    try {
++      const health = await request(cycle, 'GET', '/api/health');
++      const body = (await okJson(health)) as { epoch?: unknown } | null;
++      cycle.epoch = health.headers.get(EPOCH_HEADER) ?? (typeof body?.epoch === 'string' ? body.epoch : null);
++      failures = 0;
++      setState({ connection: 'online' });
++      await handleEpoch(cycle);
++      if (kind === 'full') await push(cycle);
++      await pull(cycle);
++      await syncCatalog();
++      return 'done';
++    } catch (error) {
++      if (error instanceof EpochChanged && !isRerun) return 'epoch_changed';
++      await handleFailure(error);
++      return 'done';
++    }
++  }
++
++  async function runSlot(kind: CycleKind): Promise<void> {
++    try {
++      // Au plus un cycle immédiat de plus quand l'époque a changé en cours de cycle.
++      if ((await runCycle(kind, false)) === 'epoch_changed') await runCycle(kind, true);
++    } finally {
++      await refreshState();
++    }
++  }
++
++  function launch(kind: CycleKind): Promise<void> {
++    if (stopped) {
++      setState({ syncing: false });
++      return Promise.resolve();
++    }
++    clearTimeout(retryTimer);
++    retryTimer = undefined;
++    setState({ syncing: true });
++    const promise = runSlot(kind)
++      .catch(() => {})
++      .finally(() => {
++        running = null;
++        if (!next) setState({ syncing: false });
++      });
++    running = promise;
++    return promise;
++  }
++
++  /** File unique : un cycle en vol, au plus un autre programmé (complet s'il est demandé une fois). */
++  function enqueue(kind: CycleKind): Promise<void> {
++    if (stopped) return Promise.resolve();
++    if (!running) return launch(kind);
++    if (next) {
++      if (kind === 'full') next.kind = 'full';
++      return next.promise;
++    }
++    const queued: { kind: CycleKind; promise: Promise<void> } = { kind, promise: Promise.resolve() };
++    queued.promise = running.then(() => {
++      next = null;
++      return launch(queued.kind);
++    });
++    next = queued;
++    return queued.promise;
++  }
++
++  function debounced(): Promise<void> {
++    if (stopped) return Promise.resolve();
++    clearTimeout(debounceTimer);
++    const done = new Promise<void>((resolve) => debounceWaiters.push(resolve));
++    debounceTimer = setTimeout(() => {
++      debounceTimer = undefined;
++      const waiters = debounceWaiters;
++      debounceWaiters = [];
++      void enqueue('full').then(() => {
++        for (const w of waiters) w();
++      });
++    }, SYNC_DEBOUNCE_MS);
++    return done;
++  }
++
++  const engine: SyncEngine = {
++    syncNow(trigger) {
++      return trigger === 'set_logged' ? debounced() : enqueue('full');
++    },
++    pullNow() {
++      return enqueue('pull');
++    },
++    async flushBefore(ms) {
++      let timer: ReturnType<typeof setTimeout> | undefined;
++      const delay = new Promise<void>((resolve) => {
++        timer = setTimeout(resolve, ms);
++      });
++      try {
++        await Promise.race([engine.syncNow('coach'), delay]);
++      } finally {
++        clearTimeout(timer);
++      }
++    },
++    getState() {
++      return state;
++    },
++    subscribe(fn) {
++      listeners.add(fn);
++      return () => {
++        listeners.delete(fn);
++      };
++    },
++    start() {
++      if (started) return;
++      started = true;
++      stopped = false;
++      uninstall = (deps.triggers ?? installSyncTriggers)(engine);
++      void engine.syncNow('launch');
++    },
++    stop() {
++      stopped = true;
++      started = false;
++      uninstall?.();
++      uninstall = null;
++      clearTimeout(retryTimer);
++      retryTimer = undefined;
++      clearTimeout(debounceTimer);
++      debounceTimer = undefined;
++      const waiters = debounceWaiters;
++      debounceWaiters = [];
++      for (const w of waiters) w();
++    },
++  };
++  return engine;
++}
+diff --git a/apps/web/src/sync/transport.ts b/apps/web/src/sync/transport.ts
+new file mode 100644
+index 0000000..fc3ea95
+--- /dev/null
++++ b/apps/web/src/sync/transport.ts
+@@ -0,0 +1,53 @@
++import { SYNC_TIMEOUT_MS } from '@appsport/contracts';
++
++/** Accès HTTP de la synchro : `fetch` du navigateur en production, faux serveur en test. */
++export interface SyncTransport {
++  fetch(path: string, init: RequestInit): Promise<Response>;
++}
++
++export function browserTransport(baseUrl = ''): SyncTransport {
++  return { fetch: (path, init) => fetch(`${baseUrl}${path}`, { credentials: 'same-origin', ...init }) };
++}
++
++/** Pas de réponse à temps, ou réseau injoignable : seule source de l'état « hors ligne ». */
++export class OfflineError extends Error {
++  constructor(message = 'offline') {
++    super(message);
++    this.name = 'OfflineError';
++  }
++}
++
++/**
++ * Requête abandonnée sans réponse après `timeoutMs` (OfflineError) ; une erreur réseau (TypeError)
++ * devient OfflineError ; toute réponse HTTP, même 5xx, est rendue telle quelle. Le délai couvre
++ * l'arrivée de la réponse, pas la lecture du corps.
++ */
++export async function fetchWithTimeout(
++  t: SyncTransport,
++  path: string,
++  init: RequestInit,
++  timeoutMs: number = SYNC_TIMEOUT_MS,
++): Promise<Response> {
++  const controller = new AbortController();
++  let timer: ReturnType<typeof setTimeout> | undefined;
++  const timeout = new Promise<never>((_, reject) => {
++    timer = setTimeout(() => {
++      controller.abort();
++      reject(new OfflineError('timeout'));
++    }, timeoutMs);
++  });
++  const request = t.fetch(path, { ...init, signal: controller.signal });
++  // Rejet tardif d'une requête déjà abandonnée : ignoré.
++  request.catch(() => {});
++  try {
++    return await Promise.race([request, timeout]);
++  } catch (error) {
++    if (error instanceof OfflineError) throw error;
++    if (error instanceof TypeError || (error instanceof Error && error.name === 'AbortError')) {
++      throw new OfflineError(error.message);
++    }
++    throw error;
++  } finally {
++    clearTimeout(timer);
++  }
++}
+diff --git a/apps/web/src/sync/triggers.ts b/apps/web/src/sync/triggers.ts
+new file mode 100644
+index 0000000..4663154
+--- /dev/null
++++ b/apps/web/src/sync/triggers.ts
+@@ -0,0 +1,32 @@
++import { SYNC_INTERVAL_MS } from '@appsport/contracts';
++import type { SyncEngine } from './engine';
++
++/**
++ * Déclencheurs de la synchro : retour au premier plan, événement `online` (simple indice, l'état
++ * vient des requêtes, jamais de `navigator.onLine`), et toutes les 60 s tant que l'outbox n'est
++ * pas vide et l'appli visible. Rend la fonction qui les retire.
++ */
++export function installSyncTriggers(
++  engine: SyncEngine,
++  env: { doc?: Document; win?: Window } = {},
++): () => void {
++  const doc = env.doc ?? document;
++  const win = env.win ?? window;
++  const visible = () => doc.visibilityState === 'visible';
++  const onVisibility = () => {
++    if (visible()) void engine.syncNow('foreground');
++  };
++  const onOnline = () => {
++    void engine.syncNow('online');
++  };
++  doc.addEventListener('visibilitychange', onVisibility);
++  win.addEventListener('online', onOnline);
++  const interval = setInterval(() => {
++    if (visible() && engine.getState().pending > 0) void engine.syncNow('interval');
++  }, SYNC_INTERVAL_MS);
++  return () => {
++    doc.removeEventListener('visibilitychange', onVisibility);
++    win.removeEventListener('online', onOnline);
++    clearInterval(interval);
++  };
++}
+diff --git a/apps/web/test/support/fake-sync-server.ts b/apps/web/test/support/fake-sync-server.ts
+new file mode 100644
+index 0000000..5054e93
+--- /dev/null
++++ b/apps/web/test/support/fake-sync-server.ts
+@@ -0,0 +1,121 @@
++import { EPOCH_HEADER, type PulledRow, type PushResult, type SyncOp } from '@appsport/contracts';
++import type { SyncTransport } from '../../src/sync/transport';
++
++export interface FakeRequest {
++  method: string;
++  path: string;
++  query: URLSearchParams;
++  // biome-ignore lint/suspicious/noExplicitAny: corps lu librement par les tests
++  body: any;
++  headers: Headers;
++}
++
++export type FakeHandler = (req: FakeRequest) => Response | Promise<Response>;
++
++export interface FakeSyncServer extends SyncTransport {
++  epoch: string;
++  /** Lignes servies par le pull par défaut (une seule page). */
++  rows: PulledRow[];
++  catalogVersion: string | null;
++  healthConsentActive: boolean;
++  /** Ops reçues par push, lot par lot. */
++  sent: SyncOp[][];
++  log: FakeRequest[];
++  /** 'METHOD /chemin' de chaque requête, sans la chaîne de requête. */
++  paths(): string[];
++  /** Remplace une route (clé 'METHOD /chemin') ; `undefined` rend la route par défaut. */
++  on(route: string, handler: FakeHandler | undefined): void;
++  /** Tout appel sans réponse (transport muet) ou rejeté (TypeError) ; `null` rétablit. */
++  fault: 'hang' | 'offline' | null;
++  inFlight: number;
++  maxInFlight: number;
++  json(status: number, body: unknown, epoch?: string): Response;
++}
++
++export function createFakeSyncServer(epoch = 'E1'): FakeSyncServer {
++  let rev = 100;
++  const handlers = new Map<string, FakeHandler>();
++  const server: FakeSyncServer = {
++    epoch,
++    rows: [],
++    catalogVersion: null,
++    healthConsentActive: true,
++    sent: [],
++    log: [],
++    fault: null,
++    inFlight: 0,
++    maxInFlight: 0,
++    paths: () => server.log.map((r) => `${r.method} ${r.path}`),
++    on(route, handler) {
++      if (handler) handlers.set(route, handler);
++      else handlers.delete(route);
++    },
++    json(status, body, e = server.epoch) {
++      return new Response(status === 304 ? null : JSON.stringify(body), {
++        status,
++        headers: { 'Content-Type': 'application/json', [EPOCH_HEADER]: e },
++      });
++    },
++    async fetch(url, init) {
++      const [path = '', qs = ''] = url.split('?');
++      const method = init.method ?? 'GET';
++      const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
++      const req: FakeRequest = {
++        method,
++        path,
++        query: new URLSearchParams(qs),
++        body,
++        headers: new Headers(init.headers),
++      };
++      server.log.push(req);
++      if (server.fault === 'hang') return new Promise<Response>(() => {});
++      if (server.fault === 'offline') throw new TypeError('Failed to fetch');
++      server.inFlight += 1;
++      server.maxInFlight = Math.max(server.maxInFlight, server.inFlight);
++      try {
++        const route = `${method} ${path}`;
++        const handler = handlers.get(route) ?? defaults[route];
++        if (!handler) return server.json(404, { error: 'not_found' });
++        return await handler(req);
++      } finally {
++        server.inFlight -= 1;
++      }
++    },
++  };
++
++  const defaults: Record<string, FakeHandler> = {
++    'GET /api/health': () =>
++      server.json(200, {
++        status: 'ok',
++        version: 'dev',
++        db: 'ok',
++        protocol: 1,
++        minProtocol: 1,
++        epoch: server.epoch,
++        swKill: false,
++      }),
++    'POST /api/sync/push': (req) => {
++      const ops = req.body.ops as SyncOp[];
++      server.sent.push(ops);
++      const results: PushResult[] = ops.map((o) => ({ opId: o.opId, status: 'applied', rev: ++rev }));
++      return server.json(200, { results });
++    },
++    'GET /api/sync/pull': () =>
++      server.json(200, {
++        rows: server.rows,
++        nextWatermark: `${server.epoch}:${rev}`,
++        hasMore: false,
++        catalogVersion: server.catalogVersion,
++      }),
++    'GET /api/me': () =>
++      server.json(200, {
++        consents: {
++          health: { active: server.healthConsentActive, textVersion: 'v1', at: null },
++          aiCoach: { active: false, textVersion: null, at: null },
++        },
++      }),
++    'POST /api/me/consents/health/replay-withdraw': () => server.json(200, {}),
++    'GET /api/catalog': () => server.json(304, null),
++  };
++  return server;
++}
+diff --git a/apps/web/test/support/wait.ts b/apps/web/test/support/wait.ts
+new file mode 100644
+index 0000000..b37dfba
+--- /dev/null
++++ b/apps/web/test/support/wait.ts
+@@ -0,0 +1,12 @@
++/**
++ * Attend une condition en laissant tourner la boucle réelle (setImmediate, que fake-indexeddb
++ * utilise et que les tests ne simulent pas), sans avancer l'horloge simulée — contrairement à
++ * `vi.waitFor`, qui l'avance sous `vi.useFakeTimers`.
++ */
++export async function until(cond: () => boolean, maxTurns = 5000): Promise<void> {
++  for (let i = 0; i < maxTurns; i++) {
++    if (cond()) return;
++    await new Promise<void>((resolve) => setImmediate(resolve));
++  }
++  throw new Error('until: condition jamais remplie');
++}
+diff --git a/apps/web/test/sync/apply-pull.test.ts b/apps/web/test/sync/apply-pull.test.ts
+new file mode 100644
+index 0000000..a1bae2a
+--- /dev/null
++++ b/apps/web/test/sync/apply-pull.test.ts
+@@ -0,0 +1,115 @@
++// @vitest-environment node
++import { makeOp } from '@appsport/server/testing';
++import { afterEach, beforeEach, describe, expect, it } from 'vitest';
++import type { AppDb } from '../../src/local-db/db';
++import { applyPulledRows } from '../../src/sync/apply-pull';
++import { createFixtureLocalDb } from '../support/local-db';
++
++const T = '2026-10-06T11:00:00.000Z';
++const serverNote = (extra: Record<string, unknown> = {}) => ({
++  id: 'n1',
++  ownerId: 'u1',
++  title: 'serveur',
++  body: 'b',
++  deletedAt: null,
++  rev: 9,
++  updatedAt: T,
++  ...extra,
++});
++const local = (extra: Record<string, unknown> = {}) => ({
++  id: 'n1',
++  ownerId: 'u1',
++  title: 'local',
++  body: 'local',
++  serverRevSeen: 3,
++  deletedAt: null,
++  updatedAt: '2026-10-06T10:00:00.000Z',
++  ...extra,
++});
++
++let db: AppDb;
++beforeEach(() => {
++  db = createFixtureLocalDb();
++});
++afterEach(async () => {
++  await db.delete();
++});
++
++describe('applyPulledRows', () => {
++  it('ligne écrite avec serverRevSeen = rev', async () => {
++    await applyPulledRows(db, [{ entity: 'fixture_note', rev: 9, row: serverNote() }]);
++    expect(await db.mirror('fixture_note').get('n1')).toEqual({ ...serverNote(), serverRevSeen: 9 });
++  });
++
++  it('rebase R-SYN-22 : patch local en attente rejoué sur la ligne serveur', async () => {
++    await db.mirror('fixture_note').put(local());
++    await db.outbox.add(
++      makeOp({ userId: 'u1', entity: 'fixture_note', id: 'n1', kind: 'patch', fields: { body: 'local' } }),
++    );
++    await applyPulledRows(db, [{ entity: 'fixture_note', rev: 9, row: serverNote() }]);
++    expect(await db.mirror('fixture_note').get('n1')).toMatchObject({
++      title: 'serveur',
++      body: 'local',
++      serverRevSeen: 9,
++    });
++  });
++
++  it('patchs rejoués dans l’ordre des opId', async () => {
++    await db.mirror('fixture_note').put(local());
++    const first = makeOp({
++      userId: 'u1',
++      entity: 'fixture_note',
++      id: 'n1',
++      kind: 'patch',
++      fields: { body: 'a' },
++    });
++    const second = makeOp({
++      userId: 'u1',
++      entity: 'fixture_note',
++      id: 'n1',
++      kind: 'patch',
++      fields: { body: 'z' },
++    });
++    await db.outbox.bulkAdd([second, first]);
++    await applyPulledRows(db, [{ entity: 'fixture_note', rev: 9, row: serverNote() }]);
++    expect((await db.mirror('fixture_note').get('n1'))?.body).toBe('z');
++  });
++
++  it('delete en attente → deletedAt gardé', async () => {
++    await db.mirror('fixture_note').put(local({ deletedAt: '2026-10-06T10:30:00.000Z' }));
++    const del = makeOp({ userId: 'u1', entity: 'fixture_note', id: 'n1', kind: 'delete' });
++    await db.outbox.add(del);
++    await applyPulledRows(db, [{ entity: 'fixture_note', rev: 9, row: serverNote() }]);
++    expect((await db.mirror('fixture_note').get('n1'))?.deletedAt).toBe(del.clientTs);
++  });
++
++  it('create en attente sur une ligne reçue → ignoré', async () => {
++    await db.mirror('fixture_note').put(local({ serverRevSeen: null }));
++    await db.outbox.add(
++      makeOp({ userId: 'u1', entity: 'fixture_note', id: 'n1', kind: 'create', fields: { title: 'local' } }),
++    );
++    await applyPulledRows(db, [{ entity: 'fixture_note', rev: 9, row: serverNote() }]);
++    expect(await db.mirror('fixture_note').get('n1')).toMatchObject({ title: 'serveur', serverRevSeen: 9 });
++  });
++
++  it('tombstone serveur sans contenu remplace la copie', async () => {
++    await db.mirror('fixture_c2_log').put({
++      id: 'c1',
++      ownerId: 'u1',
++      value: 7,
++      serverRevSeen: 2,
++      deletedAt: null,
++    });
++    const tomb = { id: 'c1', ownerId: 'u1', deletedAt: T, rev: 9, updatedAt: T };
++    await applyPulledRows(db, [{ entity: 'fixture_c2_log', rev: 9, row: tomb }]);
++    expect(await db.mirror('fixture_c2_log').get('c1')).toEqual({ ...tomb, serverRevSeen: 9 });
++  });
++
++  it('entité sans miroir ignorée', async () => {
++    await applyPulledRows(db, [
++      { entity: 'inconnue', rev: 4, row: { id: 'x' } },
++      { entity: 'fixture_note', rev: 9, row: serverNote() },
++    ]);
++    expect(await db.mirror('fixture_note').count()).toBe(1);
++  });
++});
+diff --git a/apps/web/test/sync/catalog.test.ts b/apps/web/test/sync/catalog.test.ts
+new file mode 100644
+index 0000000..e84537d
+--- /dev/null
++++ b/apps/web/test/sync/catalog.test.ts
+@@ -0,0 +1,128 @@
++// @vitest-environment node
++import { SYNC_FIXTURE_RULES } from '@appsport/server/testing';
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++import type { AppDb } from '../../src/local-db/db';
++import { getMeta, setMeta } from '../../src/local-db/meta';
++import { postToSw } from '../../src/sw/sw-client';
++import { refreshCatalog } from '../../src/sync/catalog';
++import { createSyncEngine } from '../../src/sync/engine';
++import { createFakeSyncServer, type FakeSyncServer } from '../support/fake-sync-server';
++import { createFixtureLocalDb } from '../support/local-db';
++
++const bundle = {
++  version: 'cat-2',
++  exercises: [{ id: 'squat', name: 'Squat' }],
++  illustrations: [{ id: 'squat', file: 'squat.0123abcd.svg' }],
++  programTemplates: [{ id: 'full-body' }],
++  adviceSheets: [{ id: 'echauffement' }],
++};
++
++let db: AppDb;
++let server: FakeSyncServer;
++
++beforeEach(async () => {
++  db = createFixtureLocalDb();
++  server = createFakeSyncServer('E1');
++});
++afterEach(async () => {
++  vi.unstubAllGlobals();
++  await db.delete();
++});
++
++describe('refreshCatalog', () => {
++  it('If-None-Match "<catalogVersion>" ; 304 → unchanged', async () => {
++    await setMeta(db, 'catalogVersion', 'cat-1');
++    expect(await refreshCatalog(db, server)).toBe('unchanged');
++    expect(server.log[0]?.path).toBe('/api/catalog');
++    expect(server.log[0]?.headers.get('If-None-Match')).toBe('"cat-1"');
++  });
++
++  it('sans version locale : pas d’If-None-Match', async () => {
++    await refreshCatalog(db, server);
++    expect(server.log[0]?.headers.has('If-None-Match')).toBe(false);
++  });
++
++  it('200 → 4 magasins remplacés, catalogVersion = serverCatalogVersion = version → updated', async () => {
++    await db.table('exercises').put({ id: 'ancien' });
++    await db.table('illustrations').put({ id: 'ancien', file: 'ancien.00000000.svg' });
++    server.on('GET /api/catalog', () => server.json(200, bundle));
++    expect(await refreshCatalog(db, server)).toBe('updated');
++    expect(await db.table('exercises').toArray()).toEqual(bundle.exercises);
++    expect(await db.table('illustrations').toArray()).toEqual(bundle.illustrations);
++    expect(await db.table('programTemplates').toArray()).toEqual(bundle.programTemplates);
++    expect(await db.table('adviceSheets').toArray()).toEqual(bundle.adviceSheets);
++    expect(await getMeta(db, 'catalogVersion')).toBe('cat-2');
++    expect(await getMeta(db, 'serverCatalogVersion')).toBe('cat-2');
++  });
++
++  it('SW contrôleur → postMessage SYNC_ILLUSTRATIONS', async () => {
++    const postMessage = vi.fn();
++    vi.stubGlobal('navigator', { serviceWorker: { controller: { postMessage } } });
++    server.on('GET /api/catalog', () => server.json(200, bundle));
++    await refreshCatalog(db, server);
++    expect(postMessage).toHaveBeenCalledWith({ type: 'SYNC_ILLUSTRATIONS', files: ['squat.0123abcd.svg'] });
++  });
++
++  it('élément sans id → rejet, rien remplacé', async () => {
++    await db.table('exercises').put({ id: 'ancien' });
++    server.on('GET /api/catalog', () => server.json(200, { ...bundle, exercises: [{ name: 'x' }] }));
++    await expect(refreshCatalog(db, server)).rejects.toThrow();
++    expect(await db.table('exercises').toArray()).toEqual([{ id: 'ancien' }]);
++    expect(await getMeta(db, 'catalogVersion')).toBeUndefined();
++  });
++
++  it('autre statut → Error(catalog_http_<status>)', async () => {
++    server.on('GET /api/catalog', () => server.json(500, { error: 'internal' }));
++    await expect(refreshCatalog(db, server)).rejects.toThrow('catalog_http_500');
++  });
++});
++
++describe('postToSw', () => {
++  it('sans contrôleur → false', () => {
++    vi.stubGlobal('navigator', { serviceWorker: { controller: null } });
++    expect(postToSw({ type: 'SKIP_WAITING' })).toBe(false);
++    vi.stubGlobal('navigator', {});
++    expect(postToSw({ type: 'GET_STATUS' })).toBe(false);
++  });
++
++  it('avec contrôleur → true', () => {
++    const postMessage = vi.fn();
++    vi.stubGlobal('navigator', { serviceWorker: { controller: { postMessage } } });
++    expect(postToSw({ type: 'SKIP_WAITING' })).toBe(true);
++    expect(postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
++  });
++});
++
++describe('moteur', () => {
++  const engineFor = () =>
++    createSyncEngine({ db, transport: server, rules: SYNC_FIXTURE_RULES, triggers: () => () => {} });
++
++  beforeEach(async () => {
++    await setMeta(db, 'userId', 'u1');
++    await setMeta(db, 'serverEpoch', 'E1');
++    await setMeta(db, 'catalogVersion', 'cat-1');
++  });
++
++  it('après un pull où serverCatalogVersion ≠ catalogVersion → GET /api/catalog', async () => {
++    server.catalogVersion = 'cat-2';
++    server.on('GET /api/catalog', () => server.json(200, bundle));
++    await engineFor().syncNow('manual');
++    expect(server.paths().at(-1)).toBe('GET /api/catalog');
++    expect(await getMeta(db, 'catalogVersion')).toBe('cat-2');
++  });
++
++  it('versions égales → pas de GET /api/catalog', async () => {
++    server.catalogVersion = 'cat-1';
++    await engineFor().syncNow('manual');
++    expect(server.paths()).not.toContain('GET /api/catalog');
++  });
++
++  it('erreur du catalogue avalée', async () => {
++    server.catalogVersion = 'cat-2';
++    server.on('GET /api/catalog', () => server.json(500, { error: 'internal' }));
++    const engine = engineFor();
++    await expect(engine.syncNow('manual')).resolves.toBeUndefined();
++    expect(engine.getState().connection).toBe('online');
++    expect(await getMeta(db, 'lastPullOkAt')).toBeDefined();
++  });
++});
+diff --git a/apps/web/test/sync/engine-epoch.test.ts b/apps/web/test/sync/engine-epoch.test.ts
+new file mode 100644
+index 0000000..5666f20
+--- /dev/null
++++ b/apps/web/test/sync/engine-epoch.test.ts
+@@ -0,0 +1,327 @@
++// @vitest-environment node
++import type { PulledRow, PushResult, SyncOp } from '@appsport/contracts';
++import { createMonotonicUuidV7 } from '@appsport/domain';
++import { makeOp, SYNC_FIXTURE_RULES } from '@appsport/server/testing';
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++import type { AppDb, MirrorRow } from '../../src/local-db/db';
++import { getMeta, setMeta } from '../../src/local-db/meta';
++import { createSyncEngine, type SyncEngine } from '../../src/sync/engine';
++import { createFakeSyncServer, type FakeSyncServer } from '../support/fake-sync-server';
++import { createFixtureLocalDb } from '../support/local-db';
++import { until } from '../support/wait';
++
++const DAY = 86_400_000;
++const NOW_MS = Date.parse('2026-10-06T12:00:00.000Z');
++const ago = (days: number) => new Date(NOW_MS - days * DAY).toISOString();
++const newId = createMonotonicUuidV7(
++  () => NOW_MS,
++  (n) => crypto.getRandomValues(new Uint8Array(n)),
++);
++
++let db: AppDb;
++let server: FakeSyncServer;
++let engine: SyncEngine;
++let ids: { n10: string; t5: string; i10: string; n70: string; rej: string };
++let patch: SyncOp;
++
++const mirrorRow = (id: string, updatedAt: string, extra: Record<string, unknown> = {}): MirrorRow => ({
++  id,
++  ownerId: 'u1',
++  serverRevSeen: 3,
++  deletedAt: null,
++  updatedAt,
++  ...extra,
++});
++
++function makeEngine(extra: Partial<Parameters<typeof createSyncEngine>[0]> = {}): SyncEngine {
++  engine = createSyncEngine({
++    db,
++    transport: server,
++    now: () => NOW_MS,
++    newOpId: newId,
++    rules: SYNC_FIXTURE_RULES,
++    triggers: () => () => {},
++    ...extra,
++  });
++  return engine;
++}
++
++const consentEvent = (action: 'grant' | 'withdraw', createdAt: string) =>
++  mirrorRow(newId(), createdAt, {
++    type: 'health',
++    action,
++    textVersion: 'v1',
++    createdAt,
++    rev: 2,
++    serverRevSeen: 2,
++  });
++
++/** Lignes renvoyées par le serveur après restore_upsert : celles reçues. */
++const pulled = (entity: string, id: string): PulledRow => ({
++  entity,
++  rev: 200,
++  row: { id, ownerId: 'u1', deletedAt: null, rev: 200, updatedAt: ago(0) },
++});
++
++const kinds = () => server.sent.map((batch) => [...new Set(batch.map((o) => o.kind))]);
++const restoreBatches = () => server.sent.filter((b) => b.every((o) => o.kind === 'restore_upsert'));
++const idle = () => until(() => !engine.getState().syncing);
++
++beforeEach(async () => {
++  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
++  db = createFixtureLocalDb();
++  server = createFakeSyncServer('E2');
++  await setMeta(db, 'userId', 'u1');
++  await setMeta(db, 'serverEpoch', 'E1');
++  await setMeta(db, 'watermark', 'E1:50');
++  ids = { n10: newId(), t5: newId(), i10: newId(), n70: newId(), rej: newId() };
++  await db
++    .mirror('fixture_note')
++    .bulkPut([
++      mirrorRow(ids.n10, ago(10), { title: 'dix', serverRevSeen: 5 }),
++      mirrorRow(ids.n70, ago(70), { title: 'soixante-dix' }),
++      mirrorRow(ids.t5, ago(5), { title: 'tombe', deletedAt: ago(5) }),
++    ]);
++  await db
++    .mirror('fixture_note_item')
++    .put(mirrorRow(ids.i10, ago(10), { noteId: ids.n10, label: 'item', painNote: 'genou', reason: 'pain' }));
++  await db.mirror('sync_rejection').put(
++    mirrorRow(ids.rej, ago(1), {
++      opId: newId(),
++      entity: 'fixture_note',
++      code: 'validation',
++      dismissedAt: null,
++    }),
++  );
++  await db.mirror('consent_event').put(consentEvent('grant', ago(30)));
++  patch = makeOp({
++    userId: 'u1',
++    entity: 'fixture_note',
++    id: ids.n10,
++    kind: 'patch',
++    fields: { title: 'p' },
++  });
++  await db.outbox.add(patch);
++  server.rows = [
++    pulled('fixture_note', ids.n10),
++    pulled('fixture_note', ids.t5),
++    pulled('fixture_note_item', ids.i10),
++  ];
++});
++afterEach(async () => {
++  engine?.stop();
++  vi.useRealTimers();
++  await db.delete();
++});
++
++describe('nouvelle époque (Review Focus 2)', () => {
++  it('restore_upsert parents d’abord, puis l’outbox, puis pull complet', async () => {
++    await makeEngine().syncNow('manual');
++
++    expect(server.paths()).toEqual([
++      'GET /api/health',
++      'POST /api/sync/push',
++      'POST /api/sync/push',
++      'GET /api/sync/pull',
++    ]);
++    const [restore, outbox] = server.sent;
++    expect(restore?.map((o) => o.id)).toEqual([ids.n10, ids.t5, ids.i10]);
++    expect(restore?.every((o) => o.kind === 'restore_upsert' && o.userId === 'u1')).toBe(true);
++    expect(restore?.[0]).toMatchObject({ serverRevSeen: 5, fields: { title: 'dix', deletedAt: null } });
++    expect(restore?.[0]?.fields).toEqual({ title: 'dix', deletedAt: null });
++    expect(restore?.[1]?.fields.deletedAt).toBe(ago(5));
++    expect(restore?.[2]?.fields).toEqual({
++      noteId: ids.n10,
++      label: 'item',
++      painNote: 'genou',
++      reason: 'pain',
++      deletedAt: null,
++    });
++    expect(outbox?.map((o) => o.kind)).toEqual(['patch']);
++    expect(server.log.at(-1)?.query.has('since')).toBe(false);
++
++    expect(await getMeta(db, 'serverEpoch')).toBe('E2');
++    expect(await db.mirror('fixture_note').get(ids.n70)).toBeUndefined();
++    expect(await db.mirror('sync_rejection').get(ids.rej)).toBeUndefined();
++    expect(await db.mirror('fixture_note').get(ids.n10)).toBeDefined();
++    expect(await db.outbox.count()).toBe(0);
++    expect(engine.getState().serverEpoch).toBe('E2');
++  });
++
++  it('health E1 puis 410 watermark_expired portant E2 → miroirs intacts, un seul cycle immédiat de plus', async () => {
++    server.epoch = 'E1';
++    let mirrorAtFullPull = -1;
++    server.on('GET /api/sync/pull', async (req) => {
++      if (req.query.has('since')) {
++        server.epoch = 'E2';
++        return server.json(410, { error: 'watermark_expired' });
++      }
++      mirrorAtFullPull = await db.mirror('fixture_note').count();
++      return server.json(200, {
++        rows: server.rows,
++        nextWatermark: 'E2:300',
++        hasMore: false,
++        catalogVersion: null,
++      });
++    });
++    await makeEngine().syncNow('manual');
++
++    expect(server.paths()).toEqual([
++      'GET /api/health',
++      'POST /api/sync/push',
++      'GET /api/sync/pull',
++      'GET /api/health',
++      'POST /api/sync/push',
++      'GET /api/sync/pull',
++    ]);
++    expect(kinds()).toEqual([['patch'], ['restore_upsert']]);
++    expect(mirrorAtFullPull).toBe(3);
++    expect(await getMeta(db, 'serverEpoch')).toBe('E2');
++    expect(await getMeta(db, 'watermark')).toBe('E2:300');
++  });
++
++  it('époque qui change encore pendant le cycle immédiat → pas de troisième cycle', async () => {
++    server.epoch = 'E1';
++    let n = 0;
++    server.on('GET /api/sync/pull', () => {
++      n += 1;
++      server.epoch = `E${n + 1}`;
++      return server.json(200, { rows: [], nextWatermark: 'x:1', hasMore: false, catalogVersion: null });
++    });
++    await makeEngine().syncNow('manual');
++    expect(server.paths().filter((p) => p === 'GET /api/health')).toHaveLength(2);
++  });
++
++  for (const fault of ['500', 'offline'] as const) {
++    it(`renvoi en ${fault} → époque locale E1, outbox intacte, reprise à +2 s, tout rejoué ensuite`, async () => {
++      let failed = false;
++      server.on('POST /api/sync/push', (req) => {
++        const ops = req.body.ops as SyncOp[];
++        server.sent.push(ops);
++        if (!failed) {
++          failed = true;
++          if (fault === 'offline') throw new TypeError('Failed to fetch');
++          return server.json(500, { error: 'internal' });
++        }
++        return server.json(200, { results: ops.map((o) => ({ opId: o.opId, status: 'applied', rev: 300 })) });
++      });
++      makeEngine().start();
++      await idle();
++      expect(await getMeta(db, 'serverEpoch')).toBe('E1');
++      expect(await getMeta(db, 'watermark')).toBe('E1:50');
++      expect(await db.outbox.count()).toBe(1);
++      expect(server.paths()).toEqual(['GET /api/health', 'POST /api/sync/push']);
++
++      await vi.advanceTimersByTimeAsync(1999);
++      expect(server.log).toHaveLength(2);
++      await vi.advanceTimersByTimeAsync(1);
++      await until(() => server.log.length > 2);
++      await idle();
++      expect(restoreBatches()).toHaveLength(2);
++      expect(restoreBatches()[1]?.map((o) => o.id)).toEqual([ids.n10, ids.t5, ids.i10]);
++      expect(kinds().at(-1)).toEqual(['patch']);
++      expect(await getMeta(db, 'serverEpoch')).toBe('E2');
++      expect(await db.outbox.count()).toBe(0);
++    });
++  }
++
++  it('renvoi rejected → deadletter, pas un échec ; époque E2 enregistrée', async () => {
++    server.on('POST /api/sync/push', (req) => {
++      const ops = req.body.ops as SyncOp[];
++      server.sent.push(ops);
++      const results: PushResult[] = ops.map((o) =>
++        o.id === ids.i10 && o.kind === 'restore_upsert'
++          ? { opId: o.opId, status: 'rejected', code: 'parent_rejected' }
++          : { opId: o.opId, status: 'applied', rev: 300 },
++      );
++      return server.json(200, { results });
++    });
++    await makeEngine().syncNow('manual');
++    const rejectedOp = server.sent[0]?.find((o) => o.id === ids.i10);
++    expect(await db.deadletter.toArray()).toEqual([
++      {
++        opId: rejectedOp?.opId,
++        userId: 'u1',
++        entity: 'fixture_note_item',
++        id: ids.i10,
++        code: 'parent_rejected',
++        detail: {
++          kind: 'restore_upsert',
++          fieldNames: ['deletedAt', 'label', 'noteId', 'painNote', 'reason'],
++        },
++        receivedAt: ago(0),
++      },
++    ]);
++    expect(await getMeta(db, 'serverEpoch')).toBe('E2');
++    expect(engine.getState().connection).toBe('online');
++  });
++
++  it('sans consentement local : tables C2 exclues, champs C2 retirés', async () => {
++    await db.mirror('consent_event').put(consentEvent('withdraw', ago(2)));
++    await db.mirror('fixture_c2_log').put(mirrorRow(newId(), ago(1), { value: 4 }));
++    server.healthConsentActive = false;
++    await makeEngine().syncNow('manual');
++    const restore = restoreBatches()[0] ?? [];
++    expect(restore.map((o) => o.entity)).not.toContain('fixture_c2_log');
++    expect(restore.find((o) => o.id === ids.i10)?.fields).toEqual({
++      noteId: ids.n10,
++      label: 'item',
++      deletedAt: null,
++    });
++  });
++
++  it('R-SYN-28 : dernier événement withdraw, /api/me health actif → un seul replay-withdraw avant le pull', async () => {
++    const W = ago(3);
++    await db.mirror('consent_event').put(consentEvent('withdraw', W));
++    await makeEngine().syncNow('manual');
++    const paths = server.paths();
++    const replays = server.log.filter((r) => r.path === '/api/me/consents/health/replay-withdraw');
++    expect(replays).toHaveLength(1);
++    expect(replays[0]?.body).toEqual({ withdrawnAt: W });
++    expect(replays[0]?.method).toBe('POST');
++    const replayAt = paths.indexOf('POST /api/me/consents/health/replay-withdraw');
++    expect(paths.indexOf('GET /api/me')).toBeLessThan(replayAt);
++    expect(replayAt).toBeLessThan(paths.indexOf('GET /api/sync/pull'));
++    expect(await getMeta(db, 'serverEpoch')).toBe('E2');
++  });
++
++  it('R-SYN-28 : 409 conflict → époque E2 enregistrée', async () => {
++    await db.mirror('consent_event').put(consentEvent('withdraw', ago(3)));
++    server.on('POST /api/me/consents/health/replay-withdraw', () => server.json(409, { error: 'conflict' }));
++    await makeEngine().syncNow('manual');
++    expect(await getMeta(db, 'serverEpoch')).toBe('E2');
++    expect(server.paths()).toContain('GET /api/sync/pull');
++  });
++
++  it('R-SYN-28 : échec du renvoi du retrait → époque inchangée, reprise', async () => {
++    await db.mirror('consent_event').put(consentEvent('withdraw', ago(3)));
++    server.on('POST /api/me/consents/health/replay-withdraw', () => server.json(500, { error: 'internal' }));
++    await makeEngine().syncNow('manual');
++    expect(await getMeta(db, 'serverEpoch')).toBe('E1');
++    expect(server.paths()).not.toContain('GET /api/sync/pull');
++  });
++
++  it('R-SYN-28 : /api/me health inactif → pas de renvoi', async () => {
++    await db.mirror('consent_event').put(consentEvent('withdraw', ago(3)));
++    server.healthConsentActive = false;
++    await makeEngine().syncNow('manual');
++    expect(server.paths()).toContain('GET /api/me');
++    expect(server.paths()).not.toContain('POST /api/me/consents/health/replay-withdraw');
++  });
++
++  it('R-SYN-28 : dernier événement grant → ni /api/me ni renvoi', async () => {
++    await db
++      .mirror('consent_event')
++      .bulkPut([consentEvent('withdraw', ago(20)), consentEvent('grant', ago(3))]);
++    await makeEngine().syncNow('manual');
++    expect(server.paths()).not.toContain('GET /api/me');
++    expect(server.paths()).not.toContain('POST /api/me/consents/health/replay-withdraw');
++  });
++
++  it('première prise de contact → époque enregistrée sans restore_upsert', async () => {
++    await db.meta.delete('serverEpoch');
++    await makeEngine().syncNow('manual');
++    expect(kinds()).toEqual([['patch']]);
++    expect(await getMeta(db, 'serverEpoch')).toBe('E2');
++  });
++});
+diff --git a/apps/web/test/sync/engine.test.ts b/apps/web/test/sync/engine.test.ts
+new file mode 100644
+index 0000000..6b0f5e4
+--- /dev/null
++++ b/apps/web/test/sync/engine.test.ts
+@@ -0,0 +1,582 @@
++// @vitest-environment node
++import { PROTOCOL_HEADER, type PushResult, type SyncOp } from '@appsport/contracts';
++import { createMonotonicUuidV7 } from '@appsport/domain';
++import { makeOp, SYNC_FIXTURE_RULES } from '@appsport/server/testing';
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++import { type AppDb, mirrorStoreNames } from '../../src/local-db/db';
++import { getMeta, setMeta } from '../../src/local-db/meta';
++import { createSyncEngine, retryDelayMs, type SyncEngine, type SyncState } from '../../src/sync/engine';
++import { type LocalChange, writeLocal } from '../../src/sync/outbox';
++import { createFakeSyncServer, type FakeSyncServer } from '../support/fake-sync-server';
++import { createFixtureLocalDb, dumpLocalDb } from '../support/local-db';
++import { until } from '../support/wait';
++
++const NOW_MS = Date.parse('2026-10-06T12:00:00.000Z');
++const NOW_ISO = new Date(NOW_MS).toISOString();
++const WITNESS = 'TEMOIN-C2-7f3a';
++const randomBytes = (n: number) => crypto.getRandomValues(new Uint8Array(n));
++const newId = createMonotonicUuidV7(() => NOW_MS, randomBytes);
++
++let db: AppDb;
++let server: FakeSyncServer;
++let engine: SyncEngine;
++
++function makeEngine(extra: Partial<Parameters<typeof createSyncEngine>[0]> = {}): SyncEngine {
++  engine = createSyncEngine({
++    db,
++    transport: server,
++    now: () => NOW_MS,
++    newOpId: newId,
++    rules: SYNC_FIXTURE_RULES,
++    triggers: () => () => {},
++    ...extra,
++  });
++  return engine;
++}
++
++async function write(change: LocalChange): Promise<SyncOp> {
++  const op = await writeLocal(db, change, {
++    userId: 'u1',
++    now: () => NOW_ISO,
++    newOpId: newId,
++    healthConsentActive: true,
++    rules: SYNC_FIXTURE_RULES,
++  });
++  if (!op) throw new Error('op non mise en file');
++  return op;
++}
++
++async function createNote(title = 't'): Promise<{ id: string; op: SyncOp }> {
++  const id = newId();
++  const op = await write({ entity: 'fixture_note', id, kind: 'create', fields: { title } });
++  return { id, op };
++}
++
++/** Ligne déjà acceptée par le serveur. */
++async function acceptedNote(rev = 5, extra: Record<string, unknown> = {}): Promise<string> {
++  const id = newId();
++  await db.mirror('fixture_note').put({
++    id,
++    ownerId: 'u1',
++    title: 'vu',
++    serverRevSeen: rev,
++    deletedAt: null,
++    updatedAt: NOW_ISO,
++    ...extra,
++  });
++  return id;
++}
++
++const pushWith = (fn: (ops: SyncOp[]) => PushResult[]) => {
++  server.on('POST /api/sync/push', (req) => {
++    const ops = req.body.ops as SyncOp[];
++    server.sent.push(ops);
++    return server.json(200, { results: fn(ops) });
++  });
++};
++
++const count = (path: string) => server.paths().filter((p) => p === path).length;
++const idle = () => until(() => !engine.getState().syncing);
++const pullSince = () =>
++  server.log.filter((r) => r.path === '/api/sync/pull').map((r) => r.query.get('since'));
++
++beforeEach(async () => {
++  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
++  db = createFixtureLocalDb();
++  server = createFakeSyncServer('E1');
++  await setMeta(db, 'userId', 'u1');
++  await setMeta(db, 'serverEpoch', 'E1');
++  // Pull incrémental par défaut ; les tests du pull complet retirent le watermark.
++  await setMeta(db, 'watermark', 'E1:1');
++});
++afterEach(async () => {
++  engine?.stop();
++  vi.useRealTimers();
++  await db.delete();
++});
++
++describe('push', () => {
++  it('450 ops : trois lots de 200, 200, 50 triés par opId, puis le pull', async () => {
++    const ops = Array.from({ length: 450 }, () =>
++      makeOp({ userId: 'u1', entity: 'fixture_note', id: newId(), kind: 'create', fields: { title: 'x' } }),
++    );
++    await db.outbox.bulkAdd([...ops].reverse());
++    await makeEngine().syncNow('manual');
++
++    expect(server.paths()).toEqual([
++      'GET /api/health',
++      'POST /api/sync/push',
++      'POST /api/sync/push',
++      'POST /api/sync/push',
++      'GET /api/sync/pull',
++    ]);
++    expect(server.sent.map((o) => o.length)).toEqual([200, 200, 50]);
++    const sentIds = server.sent.flat().map((o) => o.opId);
++    expect(sentIds).toEqual(ops.map((o) => o.opId).sort());
++    expect(server.sent.flat().every((o) => o.attempts === 1)).toBe(true);
++    const pushes = server.log.filter((r) => r.path === '/api/sync/push');
++    expect(pushes.every((r) => r.headers.get(PROTOCOL_HEADER) === '1')).toBe(true);
++    expect(await db.outbox.count()).toBe(0);
++    expect(engine.getState()).toMatchObject({ connection: 'online', pending: 0, syncing: false });
++  });
++
++  it('ops d’un autre userId jamais envoyées (P-AUT-6)', async () => {
++    const other = makeOp({ userId: 'u9', entity: 'fixture_note', id: newId(), kind: 'create' });
++    await db.outbox.add(other);
++    await createNote();
++    await makeEngine().syncNow('manual');
++    expect(server.sent.flat().map((o) => o.userId)).toEqual(['u1']);
++    expect(await db.outbox.get(other.opId)).toBeDefined();
++  });
++
++  it('meta.userId changé après le 1er lot → aucun autre lot', async () => {
++    const ops = Array.from({ length: 250 }, () =>
++      makeOp({ userId: 'u1', entity: 'fixture_note', id: newId(), kind: 'create' }),
++    );
++    await db.outbox.bulkAdd(ops);
++    server.on('POST /api/sync/push', async (req) => {
++      server.sent.push(req.body.ops);
++      await setMeta(db, 'userId', 'u2');
++      return server.json(200, { results: [] });
++    });
++    await makeEngine().syncNow('manual');
++    expect(server.paths()).toEqual(['GET /api/health', 'POST /api/sync/push']);
++  });
++
++  it('op retirée seulement après accusé, serverRevSeen = rev ; op sans résultat gardée', async () => {
++    const a = await createNote('a');
++    const b = await createNote('b');
++    pushWith((ops) => [{ opId: ops[0]?.opId ?? '', status: 'applied', rev: 42 }]);
++    await makeEngine().syncNow('manual');
++    expect(await db.outbox.get(a.op.opId)).toBeUndefined();
++    expect((await db.mirror('fixture_note').get(a.id))?.serverRevSeen).toBe(42);
++    expect(await db.outbox.get(b.op.opId)).toMatchObject({ attempts: 1 });
++    expect(engine.getState().pending).toBe(1);
++  });
++
++  it('duplicate sans rev → serverRevSeen inchangé, op retirée', async () => {
++    const id = await acceptedNote(5);
++    const op = await write({ entity: 'fixture_note', id, kind: 'patch', fields: { title: 'p' } });
++    pushWith(() => [{ opId: op.opId, status: 'duplicate', originalStatus: 'applied' }]);
++    server.rows = [];
++    await makeEngine().syncNow('manual');
++    expect(await db.outbox.count()).toBe(0);
++    expect((await db.mirror('fixture_note').get(id))?.serverRevSeen).toBe(5);
++  });
++
++  it('rejected → deadletter, retirée ; create rejeté → ligne locale absente', async () => {
++    const { id, op } = await createNote();
++    pushWith(() => [{ opId: op.opId, status: 'rejected', code: 'validation' }]);
++    await makeEngine().syncNow('manual');
++    expect(await db.deadletter.toArray()).toEqual([
++      {
++        opId: op.opId,
++        userId: 'u1',
++        entity: 'fixture_note',
++        id,
++        code: 'validation',
++        detail: { kind: 'create', fieldNames: ['title'] },
++        receivedAt: NOW_ISO,
++      },
++    ]);
++    expect(await db.outbox.count()).toBe(0);
++    expect(await db.mirror('fixture_note').get(id)).toBeUndefined();
++    expect(engine.getState().rejected).toBe(1);
++  });
++
++  it('duplicate d’un rejet → deadletter avec le code d’origine', async () => {
++    const { id, op } = await createNote();
++    pushWith(() => [{ opId: op.opId, status: 'duplicate', originalStatus: 'rejected', code: 'forbidden' }]);
++    await makeEngine().syncNow('manual');
++    expect(await db.deadletter.get(op.opId)).toMatchObject({ code: 'forbidden', id });
++    expect(await db.mirror('fixture_note').get(id)).toBeUndefined();
++  });
++
++  it('create rejeté avec une autre op en attente → copie gardée', async () => {
++    const { id, op } = await createNote();
++    await write({ entity: 'fixture_note', id, kind: 'patch', fields: { title: 'z' } });
++    pushWith((ops) =>
++      ops.filter((o) => o.opId === op.opId).map((o) => ({ opId: o.opId, status: 'rejected' })),
++    );
++    await makeEngine().syncNow('manual');
++    expect(await db.mirror('fixture_note').get(id)).toBeDefined();
++  });
++
++  it('patch rejeté d’une ligne acceptée → pull suivant sans since', async () => {
++    await setMeta(db, 'watermark', 'E1:10');
++    const id = await acceptedNote(5);
++    const op = await write({ entity: 'fixture_note', id, kind: 'patch', fields: { title: 'p' } });
++    pushWith(() => [{ opId: op.opId, status: 'rejected', code: 'stale_revision' }]);
++    server.rows = [
++      {
++        entity: 'fixture_note',
++        rev: 7,
++        row: { id, ownerId: 'u1', title: 'serveur', deletedAt: null, rev: 7, updatedAt: NOW_ISO },
++      },
++    ];
++    await makeEngine().syncNow('manual');
++    expect(pullSince()).toEqual([null]);
++    expect(await db.mirror('fixture_note').get(id)).toMatchObject({ title: 'serveur', serverRevSeen: 7 });
++  });
++
++  it('applied_partial : dropped → copie supprimée ; droppedFields → champ local null ; témoin effacé', async () => {
++    const note = await createNote();
++    const itemId = newId();
++    const item = await write({
++      entity: 'fixture_note_item',
++      id: itemId,
++      kind: 'create',
++      fields: { noteId: note.id, label: 'l', painNote: WITNESS },
++    });
++    const logId = newId();
++    const log = await write({ entity: 'fixture_c2_log', id: logId, kind: 'create', fields: { value: 3 } });
++    pushWith(() => [
++      { opId: note.op.opId, status: 'applied', rev: 11 },
++      { opId: item.opId, status: 'applied_partial', rev: 12, droppedFields: ['painNote'] },
++      { opId: log.opId, status: 'applied_partial', dropped: true },
++    ]);
++    await makeEngine().syncNow('manual');
++    expect(await db.mirror('fixture_note_item').get(itemId)).toMatchObject({
++      painNote: null,
++      serverRevSeen: 12,
++    });
++    expect(await db.mirror('fixture_c2_log').get(logId)).toBeUndefined();
++    expect(await dumpLocalDb(db)).not.toContain(WITNESS);
++  });
++
++  it('duplicate d’une op C2 écartée → copie supprimée', async () => {
++    const logId = newId();
++    const log = await write({ entity: 'fixture_c2_log', id: logId, kind: 'create', fields: { value: 3 } });
++    pushWith(() => [
++      { opId: log.opId, status: 'duplicate', originalStatus: 'applied_partial', dropped: true },
++    ]);
++    await makeEngine().syncNow('manual');
++    expect(await db.mirror('fixture_c2_log').get(logId)).toBeUndefined();
++  });
++});
++
++describe('erreurs', () => {
++  it('401 unauthenticated → unauthenticated, outbox intacte, aucune reprise', async () => {
++    await createNote();
++    server.on('GET /api/health', () => server.json(401, { error: 'unauthenticated' }));
++    makeEngine().start();
++    await idle();
++    expect(engine.getState().connection).toBe('unauthenticated');
++    await vi.advanceTimersByTimeAsync(600_000);
++    expect(count('GET /api/health')).toBe(1);
++    expect(await db.outbox.count()).toBe(1);
++  });
++
++  it('403 password_change_required → connection inchangée, aucune reprise', async () => {
++    await createNote();
++    server.on('POST /api/sync/push', () => server.json(403, { error: 'password_change_required' }));
++    makeEngine().start();
++    await idle();
++    expect(engine.getState().connection).toBe('online');
++    await vi.advanceTimersByTimeAsync(600_000);
++    expect(count('GET /api/health')).toBe(1);
++    expect(await db.outbox.count()).toBe(1);
++  });
++
++  it('400 validation au push → reprise à +2 s', async () => {
++    await createNote();
++    server.on('POST /api/sync/push', () => server.json(400, { error: 'validation' }));
++    makeEngine().start();
++    await idle();
++    await vi.advanceTimersByTimeAsync(1999);
++    expect(count('GET /api/health')).toBe(1);
++    await vi.advanceTimersByTimeAsync(1);
++    await until(() => count('GET /api/health') === 2);
++  });
++
++  it('410 account_deleted → tout effacé, onAccountDeleted une fois, puis reprise avec un autre compte', async () => {
++    await createNote();
++    await db.deadletter.add({
++      opId: newId(),
++      userId: 'u1',
++      entity: 'fixture_note',
++      id: 'x',
++      code: 'validation',
++      detail: null,
++      receivedAt: NOW_ISO,
++    });
++    server.on('GET /api/health', () => server.json(410, { error: 'account_deleted' }));
++    const onAccountDeleted = vi.fn();
++    makeEngine({ onAccountDeleted });
++    await engine.syncNow('manual');
++
++    expect(await db.outbox.count()).toBe(0);
++    expect(await db.deadletter.count()).toBe(0);
++    for (const s of mirrorStoreNames(db)) expect(await db.mirror(s).count()).toBe(0);
++    expect(await getMeta(db, 'userId')).toBeUndefined();
++    expect(onAccountDeleted).toHaveBeenCalledTimes(1);
++    expect(engine.getState().connection).toBe('account_deleted');
++
++    await engine.syncNow('manual');
++    expect(server.log).toHaveLength(1);
++
++    server.on('GET /api/health', undefined);
++    const seen: SyncState['connection'][] = [];
++    engine.subscribe((s) => seen.push(s.connection));
++    await setMeta(db, 'userId', 'u2');
++    await engine.syncNow('manual');
++    expect(server.paths()[1]).toBe('GET /api/health');
++    expect(seen).toContain('unknown');
++    expect(engine.getState().connection).toBe('online');
++    expect(onAccountDeleted).toHaveBeenCalledTimes(1);
++  });
++
++  it('410 watermark_expired → miroirs vidés, outbox gardée, second pull sans since', async () => {
++    await setMeta(db, 'watermark', 'E1:10');
++    const stale = await acceptedNote(5);
++    await db.outbox.add(makeOp({ userId: 'u1', entity: 'fixture_note', id: newId(), kind: 'create' }));
++    server.on('GET /api/sync/pull', (req) =>
++      req.query.has('since')
++        ? server.json(410, { error: 'watermark_expired' })
++        : server.json(200, { rows: [], nextWatermark: 'E1:99', hasMore: false, catalogVersion: null }),
++    );
++    await makeEngine().pullNow();
++    expect(pullSince()).toEqual(['E1:10', null]);
++    expect(await db.mirror('fixture_note').get(stale)).toBeUndefined();
++    expect(await db.outbox.count()).toBe(1);
++    expect(await getMeta(db, 'watermark')).toBe('E1:99');
++  });
++
++  it('410 { error: gone } → rien d’effacé', async () => {
++    await setMeta(db, 'watermark', 'E1:10');
++    const kept = await acceptedNote(5);
++    await createNote();
++    server.on('GET /api/sync/pull', () => server.json(410, { error: 'gone' }));
++    await makeEngine().syncNow('manual');
++    expect(await db.mirror('fixture_note').get(kept)).toBeDefined();
++    expect(await getMeta(db, 'watermark')).toBe('E1:10');
++    expect(await getMeta(db, 'userId')).toBe('u1');
++  });
++
++  it('426 → protocol_unsupported, outbox intacte', async () => {
++    await createNote();
++    const upgrade = () =>
++      server.json(426, { error: 'protocol_unsupported', serverProtocol: 2, minProtocol: 2 });
++    server.on('POST /api/sync/push', upgrade);
++    server.on('GET /api/sync/pull', upgrade);
++    await makeEngine().syncNow('manual');
++    expect(engine.getState().connection).toBe('protocol_unsupported');
++    expect(await db.outbox.count()).toBe(1);
++  });
++
++  it('délai 4 s → offline, syncNow ne rejette pas ; reprises à +2 s puis +4 s', async () => {
++    server.fault = 'hang';
++    makeEngine().start();
++    expect(engine.getState().syncing).toBe(true);
++    await until(() => count('GET /api/health') === 1);
++    await vi.advanceTimersByTimeAsync(4000);
++    await idle();
++    expect(engine.getState().connection).toBe('offline');
++
++    await vi.advanceTimersByTimeAsync(1999);
++    expect(count('GET /api/health')).toBe(1);
++    await vi.advanceTimersByTimeAsync(1);
++    await until(() => count('GET /api/health') === 2);
++    await vi.advanceTimersByTimeAsync(4000);
++    await idle();
++    await vi.advanceTimersByTimeAsync(3999);
++    expect(count('GET /api/health')).toBe(2);
++    await vi.advanceTimersByTimeAsync(1);
++    await until(() => count('GET /api/health') === 3);
++  });
++
++  it('TypeError → offline, syncNow résout', async () => {
++    server.fault = 'offline';
++    await expect(makeEngine().syncNow('manual')).resolves.toBeUndefined();
++    expect(engine.getState().connection).toBe('offline');
++  });
++
++  it('retryDelayMs : 2 s doublé, 5 min au plus', () => {
++    expect([1, 2, 3, 8, 9, 20].map(retryDelayMs)).toEqual([2000, 4000, 8000, 256000, 300000, 300000]);
++  });
++});
++
++describe('pull', () => {
++  it('watermark, lastPullOkAt, serverCatalogVersion ; hasMore enchaîne', async () => {
++    await setMeta(db, 'watermark', 'E1:10');
++    server.on('GET /api/sync/pull', (req) =>
++      req.query.get('since') === 'E1:10'
++        ? server.json(200, { rows: [], nextWatermark: 'E1:20', hasMore: true, catalogVersion: 'cat-2' })
++        : server.json(200, { rows: [], nextWatermark: 'E1:30', hasMore: false, catalogVersion: 'cat-2' }),
++    );
++    await makeEngine().syncNow('manual');
++    expect(pullSince()).toEqual(['E1:10', 'E1:20']);
++    expect(await getMeta(db, 'watermark')).toBe('E1:30');
++    expect(await getMeta(db, 'lastPullOkAt')).toBe(NOW_ISO);
++    expect(await getMeta(db, 'serverCatalogVersion')).toBe('cat-2');
++    expect(engine.getState().lastPullOkAt).toBe(NOW_ISO);
++  });
++
++  it('consent_event health/withdraw tiré → purgeHealthData', async () => {
++    await setMeta(db, 'watermark', 'E1:10');
++    const event = (id: string, action: string, createdAt: string) => ({
++      id,
++      ownerId: 'u1',
++      type: 'health',
++      action,
++      textVersion: 'v1',
++      createdAt,
++      updatedAt: createdAt,
++      rev: 3,
++      deletedAt: null,
++      serverRevSeen: 3,
++    });
++    await db.mirror('consent_event').put(event('g1', 'grant', '2026-10-01T10:00:00.000Z'));
++    await db
++      .mirror('fixture_c2_log')
++      .put({ id: 'c1', ownerId: 'u1', value: 4, serverRevSeen: 2, deletedAt: null });
++    server.rows = [
++      { entity: 'consent_event', rev: 30, row: event('w1', 'withdraw', '2026-10-06T09:00:00.000Z') },
++    ];
++    await makeEngine().syncNow('manual');
++    expect(await db.mirror('fixture_c2_log').count()).toBe(0);
++  });
++
++  it('pull complet : ligne non reçue sans op → supprimée, avec op → gardée', async () => {
++    await db.meta.delete('watermark');
++    const orphan = await acceptedNote(5);
++    const pendingId = await acceptedNote(6);
++    await db.outbox.add(makeOp({ userId: 'u1', entity: 'fixture_note', id: pendingId, kind: 'patch' }));
++    const received = newId();
++    server.rows = [
++      {
++        entity: 'fixture_note',
++        rev: 8,
++        row: { id: received, ownerId: 'u1', title: 'r', deletedAt: null, rev: 8, updatedAt: NOW_ISO },
++      },
++    ];
++    await makeEngine().pullNow();
++    expect(pullSince()).toEqual([null]);
++    expect(await db.mirror('fixture_note').get(orphan)).toBeUndefined();
++    expect(await db.mirror('fixture_note').get(pendingId)).toBeDefined();
++    expect(await db.mirror('fixture_note').get(received)).toBeDefined();
++    expect(await getMeta(db, 'watermark')).toBe('E1:100');
++  });
++
++  it('pull complet coupé en page 2 → watermark toujours absent, rien supprimé', async () => {
++    await db.meta.delete('watermark');
++    const orphan = await acceptedNote(5);
++    server.on('GET /api/sync/pull', (req) => {
++      if (req.query.has('since')) throw new TypeError('Failed to fetch');
++      return server.json(200, { rows: [], nextWatermark: 'E1:20', hasMore: true, catalogVersion: null });
++    });
++    await makeEngine().pullNow();
++    expect(pullSince()).toEqual([null, 'E1:20']);
++    expect(await getMeta(db, 'watermark')).toBeUndefined();
++    expect(await db.mirror('fixture_note').get(orphan)).toBeDefined();
++    expect(engine.getState().connection).toBe('offline');
++  });
++});
++
++describe('file unique et déclencheurs', () => {
++  it('start() → déclencheurs installés une fois puis cycle launch ; stop() → retirés, aucune reprise', async () => {
++    const uninstall = vi.fn();
++    const triggers = vi.fn(() => uninstall);
++    server.fault = 'offline';
++    makeEngine({ triggers });
++    engine.start();
++    engine.start();
++    expect(triggers).toHaveBeenCalledTimes(1);
++    expect(triggers).toHaveBeenCalledWith(engine);
++    await idle();
++    expect(server.paths()).toEqual(['GET /api/health']);
++    engine.stop();
++    expect(uninstall).toHaveBeenCalledTimes(1);
++    await vi.advanceTimersByTimeAsync(600_000);
++    expect(server.log).toHaveLength(1);
++    await engine.syncNow('manual');
++    expect(server.log).toHaveLength(1);
++  });
++
++  it('rien sans meta.userId', async () => {
++    await db.meta.delete('userId');
++    await makeEngine().syncNow('manual');
++    expect(server.log).toHaveLength(0);
++  });
++
++  it('trois syncNow(set_logged) en 1 s → un cycle, à +2000 ms', async () => {
++    makeEngine();
++    void engine.syncNow('set_logged');
++    await vi.advanceTimersByTimeAsync(500);
++    void engine.syncNow('set_logged');
++    await vi.advanceTimersByTimeAsync(500);
++    const last = engine.syncNow('set_logged');
++    await vi.advanceTimersByTimeAsync(1999);
++    expect(server.log).toHaveLength(0);
++    await vi.advanceTimersByTimeAsync(1);
++    await last;
++    expect(count('GET /api/health')).toBe(1);
++  });
++
++  it('flushBefore(4000) rend la main en 4 s au plus', async () => {
++    server.on('GET /api/health', () => new Promise<Response>(() => {}));
++    makeEngine({ timeoutMs: 60_000 });
++    let done = false;
++    const p = engine.flushBefore(4000).then(() => {
++      done = true;
++    });
++    await vi.advanceTimersByTimeAsync(3999);
++    expect(done).toBe(false);
++    await vi.advanceTimersByTimeAsync(1);
++    await p;
++    expect(done).toBe(true);
++  });
++
++  it('deux syncNow et un pullNow pendant un cycle → un seul cycle ensuite, jamais deux en vol', async () => {
++    const gates: (() => void)[] = [];
++    server.on('GET /api/health', async () => {
++      await new Promise<void>((r) => gates.push(r));
++      server.on('GET /api/health', undefined);
++      return server.json(200, { epoch: 'E1' });
++    });
++    makeEngine();
++    const p1 = engine.syncNow('manual');
++    const p2 = engine.syncNow('manual');
++    const p3 = engine.syncNow('mutation');
++    const p4 = engine.pullNow();
++    await until(() => gates.length === 1);
++    gates[0]?.();
++    await Promise.all([p1, p2, p3, p4]);
++    expect(count('GET /api/health')).toBe(2);
++    expect(server.maxInFlight).toBe(1);
++  });
++
++  it('pending et rejected à jour, subscribe notifié', async () => {
++    const a = await createNote('a');
++    await createNote('b');
++    const states: SyncState[] = [];
++    makeEngine();
++    const unsubscribe = engine.subscribe((s) => states.push(s));
++    pushWith(() => [{ opId: a.op.opId, status: 'rejected', code: 'validation' }]);
++    server.rows = [
++      {
++        entity: 'sync_rejection',
++        rev: 9,
++        row: { id: newId(), ownerId: 'u1', opId: a.op.opId, dismissedAt: null, deletedAt: null, rev: 9 },
++      },
++      {
++        entity: 'sync_rejection',
++        rev: 9,
++        row: { id: newId(), ownerId: 'u1', opId: newId(), dismissedAt: null, deletedAt: null, rev: 9 },
++      },
++      {
++        entity: 'sync_rejection',
++        rev: 9,
++        row: { id: newId(), ownerId: 'u1', opId: newId(), dismissedAt: NOW_ISO, deletedAt: null, rev: 9 },
++      },
++    ];
++    await engine.syncNow('manual');
++    expect(engine.getState()).toMatchObject({ pending: 1, rejected: 2, serverEpoch: 'E1', syncing: false });
++    expect(states.at(-1)).toEqual(engine.getState());
++    expect(states.some((s) => s.syncing)).toBe(true);
++    unsubscribe();
++    const n = states.length;
++    await engine.syncNow('manual');
++    expect(states).toHaveLength(n);
++  });
++});
+diff --git a/apps/web/test/sync/transport.test.ts b/apps/web/test/sync/transport.test.ts
+new file mode 100644
+index 0000000..d4e430e
+--- /dev/null
++++ b/apps/web/test/sync/transport.test.ts
+@@ -0,0 +1,56 @@
++// @vitest-environment node
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++import { fetchWithTimeout, OfflineError, type SyncTransport } from '../../src/sync/transport';
++
++beforeEach(() => {
++  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
++});
++afterEach(() => {
++  vi.useRealTimers();
++});
++
++describe('fetchWithTimeout', () => {
++  it('transport muet → OfflineError à 4000 ms', async () => {
++    const mute: SyncTransport = { fetch: () => new Promise<Response>(() => {}) };
++    let settled: unknown = null;
++    const p = fetchWithTimeout(mute, '/api/health', { method: 'GET' }).catch((e: unknown) => {
++      settled = e;
++    });
++    await vi.advanceTimersByTimeAsync(3999);
++    expect(settled).toBeNull();
++    await vi.advanceTimersByTimeAsync(1);
++    await p;
++    expect(settled).toBeInstanceOf(OfflineError);
++  });
++
++  it('abandonne la requête à l’échéance (signal)', async () => {
++    let signal: AbortSignal | undefined;
++    const mute: SyncTransport = {
++      fetch: (_p, init) => {
++        signal = init.signal ?? undefined;
++        return new Promise<Response>(() => {});
++      },
++    };
++    const p = fetchWithTimeout(mute, '/x', {}, 100).catch(() => {});
++    await vi.advanceTimersByTimeAsync(100);
++    await p;
++    expect(signal?.aborted).toBe(true);
++  });
++
++  it('TypeError → OfflineError', async () => {
++    const down: SyncTransport = { fetch: () => Promise.reject(new TypeError('Failed to fetch')) };
++    await expect(fetchWithTimeout(down, '/api/health', {})).rejects.toBeInstanceOf(OfflineError);
++  });
++
++  it('500 renvoyée telle quelle', async () => {
++    const t: SyncTransport = { fetch: async () => new Response('{"error":"internal"}', { status: 500 }) };
++    const res = await fetchWithTimeout(t, '/api/health', {});
++    expect(res.status).toBe(500);
++    expect(await res.json()).toEqual({ error: 'internal' });
++  });
++
++  it('autre erreur propagée', async () => {
++    const t: SyncTransport = { fetch: () => Promise.reject(new Error('boum')) };
++    await expect(fetchWithTimeout(t, '/x', {})).rejects.toThrow('boum');
++  });
++});
+diff --git a/apps/web/test/sync/triggers.test.ts b/apps/web/test/sync/triggers.test.ts
+new file mode 100644
+index 0000000..4a69398
+--- /dev/null
++++ b/apps/web/test/sync/triggers.test.ts
+@@ -0,0 +1,94 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++import type { SyncEngine, SyncState } from '../../src/sync/engine';
++import { installSyncTriggers } from '../../src/sync/triggers';
++
++let pending = 0;
++let visibility: DocumentVisibilityState = 'visible';
++let engine: SyncEngine & { syncNow: ReturnType<typeof vi.fn> };
++let onLine: ReturnType<typeof vi.spyOn>;
++
++beforeEach(() => {
++  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
++  pending = 0;
++  visibility = 'visible';
++  vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
++  onLine = vi.spyOn(navigator, 'onLine', 'get');
++  const state = (): SyncState => ({
++    connection: 'online',
++    pending,
++    rejected: 0,
++    lastPullOkAt: null,
++    syncing: false,
++    serverEpoch: null,
++  });
++  engine = {
++    syncNow: vi.fn(async () => {}),
++    pullNow: vi.fn(async () => {}),
++    flushBefore: vi.fn(async () => {}),
++    getState: state,
++    subscribe: () => () => {},
++    start: () => {},
++    stop: () => {},
++  };
++});
++afterEach(() => {
++  expect(onLine).not.toHaveBeenCalled();
++  vi.restoreAllMocks();
++  vi.useRealTimers();
++});
++
++describe('installSyncTriggers', () => {
++  it('retour au premier plan → syncNow(foreground) ; caché → rien', () => {
++    const uninstall = installSyncTriggers(engine);
++    visibility = 'hidden';
++    document.dispatchEvent(new Event('visibilitychange'));
++    expect(engine.syncNow).not.toHaveBeenCalled();
++    visibility = 'visible';
++    document.dispatchEvent(new Event('visibilitychange'));
++    expect(engine.syncNow).toHaveBeenCalledWith('foreground');
++    uninstall();
++  });
++
++  it("'online' → syncNow(online)", () => {
++    const uninstall = installSyncTriggers(engine);
++    window.dispatchEvent(new Event('online'));
++    expect(engine.syncNow).toHaveBeenCalledWith('online');
++    uninstall();
++  });
++
++  it('toutes les 60 s : interval si visible et pending > 0', async () => {
++    const uninstall = installSyncTriggers(engine);
++    await vi.advanceTimersByTimeAsync(60_000);
++    expect(engine.syncNow).not.toHaveBeenCalled();
++    pending = 3;
++    visibility = 'hidden';
++    await vi.advanceTimersByTimeAsync(60_000);
++    expect(engine.syncNow).not.toHaveBeenCalled();
++    visibility = 'visible';
++    await vi.advanceTimersByTimeAsync(59_999);
++    expect(engine.syncNow).not.toHaveBeenCalled();
++    await vi.advanceTimersByTimeAsync(1);
++    expect(engine.syncNow).toHaveBeenCalledExactlyOnceWith('interval');
++    uninstall();
++  });
++
++  it('la fonction rendue retire écouteurs et intervalle', async () => {
++    pending = 1;
++    installSyncTriggers(engine)();
++    document.dispatchEvent(new Event('visibilitychange'));
++    window.dispatchEvent(new Event('online'));
++    await vi.advanceTimersByTimeAsync(180_000);
++    expect(engine.syncNow).not.toHaveBeenCalled();
++  });
++
++  it('env injecté : doc et win', () => {
++    const doc = new EventTarget() as Document;
++    Object.defineProperty(doc, 'visibilityState', { get: () => 'visible' });
++    const win = new EventTarget() as Window;
++    const uninstall = installSyncTriggers(engine, { doc, win });
++    doc.dispatchEvent(new Event('visibilitychange'));
++    win.dispatchEvent(new Event('online'));
++    expect(engine.syncNow.mock.calls).toEqual([['foreground'], ['online']]);
++    uninstall();
++  });
++});

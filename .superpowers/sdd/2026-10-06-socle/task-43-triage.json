@@ -1,0 +1,389 @@
+{
+  "note": "T43 triage from run wf_5250e2c5-6b6 (2026-10-09). Refuted after verify: F7, F10. Deferred: F14, F18, F22. Round 1 (4919285..b3c2a45, diff .superpowers/sdd/2026-10-06-socle/review-4919285..b3c2a45.diff in appsport-ops) addressed F1-F6, F11-F13, F15, F16, F19, F21, F25, F27 but was never re-reviewed (weekly limit). Not addressed: F8, F9, F17, F20, F23, F24, F26 (written by fixer group 4 but never committed; uncommitted test-only diff on base 49feaa5 saved as task-43-g4-uncommitted.diff).",
+  "findings": [
+    {
+      "id": "T43-F1",
+      "severity": "Important",
+      "lenses": [
+        "correctness"
+      ],
+      "file": "infra/host/lib/common.sh",
+      "line": "95-105",
+      "title": "wait_health gives up after about 58 s, not 2 min, when the probe fails fast",
+      "problem": "tries = HEALTH_TIMEOUT_S / (2 x HEALTH_POLL_S) assumes each try costs HEALTH_POLL_S (curl max-time) plus HEALTH_POLL_S of sleep. When curl fails at once (connection refused, reset), each try costs only the 2 s sleep, so production gives 30 tries, about 58 s. Measured: HEALTH_TIMEOUT_S=12, POLL=2, CURL=false returned rc=1 after 4 s. A slow migration (60-120 s) is declared KO and rolled back; if v1.2.0 also needs over 58 s, rollback takes the restore branch (new epoch, phones resend 60 days) although the previous image was healthy, and a privacy event on a serving v1.2.0 may be lost. appsport-unlock also pings alive/fail after about 1 min.",
+      "fix": "Keep the try count but give each try the full 2 x HEALTH_POLL_S slot: record start=$SECONDS before health_json and sleep (2*HEALTH_POLL_S - (SECONDS-start)) when positive; or loop on a deadline. Add a test with a fast-failing curl and a real SLEEP checking the total budget.",
+      "specRef": "R-DEP-3.6, R-OPS-6.4, R-DEP-4, Review Focus 4",
+      "minorAction": "n/a"
+    },
+    {
+      "id": "T43-F2",
+      "severity": "Important",
+      "lenses": [
+        "correctness",
+        "ops"
+      ],
+      "file": "infra/host/appsport-update",
+      "line": "7, 111",
+      "title": "An interrupted deploy (Ctrl-C, SSH drop) is never recorded and --rollback then refuses to run",
+      "problem": "No trap on INT/TERM/HUP. An interrupt during wait_health or the rollback leaves deploy.env at v1.3.0 with no deploy.log line and no .deploy section; the last ok line still names v1.2.0, so --rollback dies with 'La version en place n'est pas v1.2.0' and update v1.2.0 is blocked by the health precheck. An interrupt between compose stop app and the final up -d leaves the app stopped on a half-restored base with nothing recorded. An interrupt during the restic backup leaves the repo on the v1.3.0 tag with deploy.env on v1.2.0. Also, log (printf to a hung-up tty) fails under set -e and aborts mid-rollback.",
+      "fix": "From write_deploy_env onward install trap 'trap - INT TERM HUP; finish rollback-failed; die \"Interrompu : suivez P4.\"' INT TERM HUP, or ignore HUP and let the auto rollback finish. Make log immune to a dead terminal (printf ... || true). Tell T45 docs to run the script inside tmux or systemd-run --scope. Add a bats test sending a signal during a slow up stub, asserting a final rollback-failed line and .deploy.ok false.",
+      "specRef": "R-DEP-3, R-DEP-4, 08 §8 steps 7-8, 08 §13.8",
+      "minorAction": "n/a"
+    },
+    {
+      "id": "T43-F3",
+      "severity": "Important",
+      "lenses": [
+        "ops"
+      ],
+      "file": "infra/host/lib/common.sh",
+      "line": "101 (also infra/host/appsport-update:92, infra/host/appsport-unlock:39)",
+      "title": "jq is an unchecked host dependency; without it a healthy app looks unhealthy and triggers a needless restore",
+      "problem": "wait_health decides health with jq -r '.status'. Without jq the test is false on every try, while the update precondition (health_json) does not use jq and lets the deploy proceed. A healthy v1.3.0 is declared KO, rolled back to a healthy v1.2.0 (KO again), then the restore branch runs (new epoch, writes dropped) and ends in rollback-failed. appsport-unlock always prints KO and pings alive/fail. jq is in neither 08 §3 nor the P1 outline.",
+      "fix": "Add require_cmds (jq flock git restic curl) to common.sh, dying with 'Commande X absente de l'hote. Rien n'a ete change.'. Call it in appsport-update after parse_args (before take_lock) and in appsport-unlock before cryptsetup. Add a bats test with jq hidden from PATH (code 1, no git calls). Flag jq to T45 P1 and to the 08 §3 package list.",
+      "specRef": "R-DEP-4, 08 §8 steps 6-7, 08 §3 R-OPS-6",
+      "minorAction": "n/a"
+    },
+    {
+      "id": "T43-F4",
+      "severity": "Important",
+      "lenses": [
+        "ops"
+      ],
+      "file": "infra/host/test/update.bats",
+      "line": "11 (same in infra/host/test/unlock.bats:8; package.json:15)",
+      "title": "Documented local bats commands fail on the Windows dev machine",
+      "problem": "From Git Bash, pnpm test:infra and pnpm exec bats infra/host/test/update.bats fail with 'Passed library load path is not an absolute path: C:/...' because bats' load rejects C:/ paths; all 24 tests are 'not ok' unless an absolute-path workaround is used. global-constraints names pnpm test:infra as the local command.",
+      "fix": "In both .bats files replace 'load helpers' with source \"$BATS_TEST_DIRNAME/helpers.bash\" (helpers.bash already uses BATS_TEST_DIRNAME). Verified: pnpm exec bats <relative path> then passes on Windows; Linux CI unchanged.",
+      "specRef": "global-constraints Commandes; brief Step 2/Step 4",
+      "minorAction": "n/a"
+    },
+    {
+      "id": "T43-F5",
+      "severity": "Important",
+      "lenses": [
+        "security"
+      ],
+      "file": "infra/host/appsport-update",
+      "line": "167 (also infra/host/appsport-unlock:36, infra/host/appsport-update:84-89)",
+      "title": "Nothing stops the app from starting while a privacy reapply is still pending after a restore",
+      "problem": "If restore succeeds and privacy:reapply fails, rollback-failed is recorded and the app stays stopped, but nothing marks the reapply as pending. After a reboot, appsport-unlock runs compose up -d unconditionally and serves the restored database with deleted accounts and revoked consents back, and old session tokens work again. appsport-update --rollback skips the health check and deploy.env already names the target, so the last ok line matches current_version and a rollback runs up -d on the same unreapplied database. No test covers restore OK + reapply failing.",
+      "fix": "Write a root-owned marker (for example $APPSPORT_ROOT/reapply-pending holding the list path) before restore and remove it only after privacy:reapply succeeds, next to the rm -f of the list (or treat any data/ops/privacy-*.json as pending). Add a shared guard in common.sh refusing compose up -d with 'Reapplication des suppressions en attente : suivez P4.', called in appsport-unlock and in both appsport-update modes before any up -d. Add a bats test: restore OK, reapply fails, then appsport-unlock exits 1 with no up -d.",
+      "specRef": "03 §8.1-8.3; 08 §12 P4 (a) 2; R-DEP-4; R-DEP-6",
+      "minorAction": "n/a"
+    },
+    {
+      "id": "T43-F6",
+      "severity": "Important",
+      "lenses": [
+        "security"
+      ],
+      "file": "infra/host/lib/common.sh",
+      "line": "136-155",
+      "title": "Root chowns, chmods and writes through data/ops, a directory the container user (uid 1000) controls, following symlinks",
+      "problem": "data/ops belongs to 1000:1000, the uid of the internet-facing container. ensure_ops_dir (chown, chmod) and status_merge (mktemp, jq redirect, chmod, chown, mv) run as root there. An attacker with code execution in the container can replace data/ops with a symlink to a host path, so root chowns/chmods that directory, or swap $tmp for a symlink between mktemp and the redirect to make root overwrite an arbitrary host file with JSON. The container boundary is crossed into root writes on the host. Partly plan-mandated (mktemp in data/ops).",
+      "fix": "Before touching data/ops check [ -d \"$d\" ] && [ ! -L \"$d\" ], return 1 otherwise, and use chown -h. Build the status.json temp file in a root-owned 0700 directory on the same volume (for example $APPSPORT_ROOT/.ops-tmp), chmod 0640 and chown 1000:1000 there, then mv into data/ops after the non-symlink check. Add a bats test where data/ops is a symlink: status_merge fails and nothing outside the volume is chowned.",
+      "specRef": "global constraints (status.json 0640, data/ops 0750, 1000:1000); 08 §4 container contract",
+      "minorAction": "n/a"
+    },
+    {
+      "id": "T43-F7",
+      "severity": "Important",
+      "lenses": [
+        "tests",
+        "spec"
+      ],
+      "file": "infra/host/test/update.bats",
+      "line": "188 (and 1378 in the review diff)",
+      "title": "The privacy:collect --since value is checked only for its ISO shape, never as snapshot mtime minus 300 s",
+      "problem": "The restore test only matches an ISO glob for --since. If the code regressed to now_iso, the raw mtime or mtime + 300, every test still passes, and privacy events recorded between the snapshot and the collect would be missed, so deleted data could come back after restore and reapply. The controller ruling requires --since = snapshot mtime - 300 s.",
+      "fix": "Pin the snapshot mtime with a rule, for example on docker '* snapshot --tag pre-v1.3.0' 0 'mkdir -p \"$APPSPORT_ROOT/data/snapshots\"; touch -d @1790000300 \"$APPSPORT_ROOT/data/snapshots/pre-v1.3.0.db\"', then assert_calls_in_order \"* privacy:collect --since $(date -u -d @1790000000 +%Y-%m-%dT%H:%M:%SZ) --out *\" (exact value).",
+      "specRef": "R-DEP-4 / Review Focus 4; 03 §7, §8 step 1; 08 P4 (a) step 1",
+      "minorAction": "n/a"
+    },
+    {
+      "id": "T43-F8",
+      "severity": "Important",
+      "lenses": [
+        "tests"
+      ],
+      "file": "infra/host/test/update.bats",
+      "line": "207-232",
+      "title": "Rollback failures after the image-only step are untested (manual mode, KO after restore, collect/stop failing)",
+      "problem": "Only two auto-mode failure paths are tested (checkout fails, restore fails); manual --rollback is tested only on success. Wrong implementations pass all 24 tests: finish() always using ok=true in manual mode or swapping the manual line order; the post-restore wait_health replaced by compose up -d || ko, so a still-KO v1.2.0 is logged rolled-back-restore instead of rollback-failed with no P4 message; the || ko after privacy:collect or compose stop app being lost.",
+      "fix": "Add three tests. (a) --rollback --yes with on git '* checkout --quiet v1.2.0' 1: status 1, 'suivez P4', last line '<ISO> v1.3.0 v1.2.0 rollback-failed', .deploy == {version:v1.2.0, previousVersion:v1.3.0, ok:false}. (b) set_healthy_versions none on the auto path: 'ne repond pas apres restauration : suivez P4', rollback-failed, .deploy.ok false. (c) on docker '* privacy:collect *' 1: rollback-failed, refute_call 'docker compose * stop app' and refute_call '* restore *'.",
+      "specRef": "R-DEP-4, 08 §13.8, Review Focus 4; named risk (a)",
+      "minorAction": "n/a"
+    },
+    {
+      "id": "T43-F9",
+      "severity": "Important",
+      "lenses": [
+        "tests"
+      ],
+      "file": "infra/host/test/update.bats",
+      "line": "144-153",
+      "title": "A failed pre-deploy snapshot and a failure of only the local restic repository are never tested",
+      "problem": "Only the offsite restic failure is tested. If appsport-update:106 ignored a failed snapshot --tag pre-$NEW, or restic_backup_all returned only the status of its last repository, every test would still pass; the update would migrate with no pre-vX.Y.Z.db and the restore fallback would end in 'Instantane introuvable'.",
+      "fix": "Add a case with on docker '* snapshot --tag pre-v1.3.0' 1 and a case with on restic \"-r $BACKUP_ROOT/restic backup *\" 1. For each assert status 1, backup-failed, no up, deploy.env still at v1.2.0, and (restic case) that the offsite backup was still attempted.",
+      "specRef": "R-DEP-4, 08 §8 step 5; brief restic_backup_all",
+      "minorAction": "n/a"
+    },
+    {
+      "id": "T43-F10",
+      "severity": "Important",
+      "lenses": [
+        "tests"
+      ],
+      "file": "infra/host/test/defaults.bash",
+      "line": "100-112",
+      "title": "The version and .status checks in wait_health are never exercised",
+      "problem": "default_curl always reports status ok and the image just started from deploy.env. If wait_health ignored $want or dropped the .status == ok test, or callers omitted the version, all tests would still pass. In production a stale container still serving v1.2.0 after up -d would be accepted as a successful v1.3.0 deploy.",
+      "fix": "Add a $STATE/health-version (and status) override in default_curl. Add a test where curl returns 200 with v1.2.0 after the v1.3.0 up and assert auto rollback and no line ending in ok; add one with status degraded.",
+      "specRef": "Brief wait_health; 08 §8 step 7",
+      "minorAction": "n/a"
+    },
+    {
+      "id": "T43-F11",
+      "severity": "Important",
+      "lenses": [
+        "tests"
+      ],
+      "file": "infra/host/test/helpers.bash",
+      "line": "28",
+      "title": "SLEEP=true is not recorded, so removing the pause between health tries goes undetected",
+      "problem": "The unlock test counts only --max-time 2 curls. Removing the sleep at common.sh:105, sleeping a fixed 1 s, or sleeping after the last try all pass. Without the pause, curl fails at once on a closed port and wait_health gives up in milliseconds, so every real deploy would roll back. Production defaults HEALTH_TIMEOUT_S=120 and HEALTH_POLL_S=2 are not asserted since setup_host overrides them.",
+      "fix": "Add sleep to STUBBED_COMMANDS and export SLEEP=\"$T/bin/sleep\". In the unlock health test assert count_calls 'sleep 2' is 2 (none after the last try). Pin the defaults by sourcing common.sh with the variables unset, as in update.bats:74.",
+      "specRef": "Brief wait_health; controller ruling wait_health",
+      "minorAction": "n/a"
+    },
+    {
+      "id": "T43-F12",
+      "severity": "Minor",
+      "lenses": [
+        "spec"
+      ],
+      "file": "infra/host/appsport-update",
+      "line": "501",
+      "title": "A deploy.env write failure leaves the repo on $NEW and writes no deploy.log result",
+      "problem": "write_deploy_env \"$NEW\" || die ... exits without checkout_back \"$prev\" and without log_deploy, after git checkout, pull, snapshot and backups. If the volume is full or read-only, the repo stays on v1.3.0 while deploy.env stays v1.2.0, deploy.log has no line, and the next appsport-unlock starts the v1.2.0 image with the v1.3.0 compose file. The pull-failed and backup-failed paths do go back and log.",
+      "fix": "Treat it as a step-5 failure: write_deploy_env \"$NEW\" || { log \"deploy.env non ecrit : retour arriere automatique.\"; rollback \"$prev\" \"$NEW\" auto; return 1; }. At minimum call checkout_back \"$prev\" before the die.",
+      "specRef": "R-DEP-3 steps 5 and 7; R-DEP-4; 08 §8 step 8",
+      "minorAction": "fix_now"
+    },
+    {
+      "id": "T43-F13",
+      "severity": "Minor",
+      "lenses": [
+        "spec"
+      ],
+      "file": "infra/host/appsport-unlock",
+      "line": "349-352",
+      "title": "KO is pinged before it is shown, so the admin waits for curl retries",
+      "problem": "ko() runs hc_ping alive fail before die 'KO : ...'. R-OPS-6 step 5 says show OK or KO, then ping alive. With Healthchecks unreachable, curl (-m 10 --retry 3) can block about 40 s before the KO message appears, and the admin may Ctrl-C.",
+      "fix": "ko() { printf 'KO : %s\\n' \"$1\" >&2; hc_ping alive fail \"$2\" || true; exit 1; } keeping the message text identical (T45 quotes it).",
+      "specRef": "R-OPS-6 step 5",
+      "minorAction": "fix_now"
+    },
+    {
+      "id": "T43-F14",
+      "severity": "Minor",
+      "lenses": [
+        "spec"
+      ],
+      "file": "infra/host/appsport-update",
+      "line": "491-500",
+      "title": "pull-failed and backup-failed reach deploy.log but not status.json .deploy (to arbitrate)",
+      "problem": "For pull-failed and backup-failed only deploy.log gets a line, so .deploy keeps the previous successful deploy; with an expired GHCR token the admin health page shows the last deploy as ok. The brief's main() has the same pattern and the spec may not require it.",
+      "fix": "Either keep the design and record the ruling, or add status_merge deploy \"$(deploy_json \"$NEW\" \"$prev\" false)\" || true next to the two log_deploy calls.",
+      "specRef": "08 §9; 08 §10",
+      "minorAction": "defer"
+    },
+    {
+      "id": "T43-F15",
+      "severity": "Minor",
+      "lenses": [
+        "correctness"
+      ],
+      "file": "infra/host/lib/common.sh",
+      "line": "143-155",
+      "title": "status_merge is an unserialized read-modify-write, so concurrent writers lose sections",
+      "problem": "status_merge reads status.json, builds a temp file and mv's it. Only update, backup and restore-test hold /run/appsport.lock; appsport-check (04:00 timer, T44) does not. A backup running past 04:00 can have its fresh backup section overwritten by check's older copy, and the same race exists between update's finish and check.",
+      "fix": "Serialize with its own lock: { flock 8; read, jq, chmod, chown, mv; } 8>\"$APPSPORT_ROOT/data/ops/.status.lock\" (or /run/appsport-status.lock). Do not reuse fd 9 or LOCK_FILE.",
+      "specRef": "08 §9; Interfaces §8 status_merge",
+      "minorAction": "fix_now"
+    },
+    {
+      "id": "T43-F16",
+      "severity": "Minor",
+      "lenses": [
+        "correctness"
+      ],
+      "file": "infra/host/lib/common.sh",
+      "line": "57-58",
+      "title": "take_lock reports any failure to open the lock file as 'another operation is running'",
+      "problem": "exec 9>\"$LOCK_FILE\" || return 1 and a busy flock both return 1, so running without sudo (Permission denied on /run) or with /run full prints 'Une autre operation appsport est en cours', sending the admin after a phantom operation.",
+      "fix": "Return a distinct code (2) when the open fails and have callers print 'Impossible d'ouvrir $LOCK_FILE : lancez avec sudo.'; keep 1 for a busy lock.",
+      "specRef": "Interfaces §8 take_lock",
+      "minorAction": "fix_now"
+    },
+    {
+      "id": "T43-F17",
+      "severity": "Minor",
+      "lenses": [
+        "correctness",
+        "ops",
+        "tests",
+        "security"
+      ],
+      "file": "infra/host/test/update.bats",
+      "line": "34-63, 188",
+      "title": "Modes of data/ops (0750) and status.json (0640) are never asserted",
+      "problem": "chmod runs for real (only chown is stubbed), but no test asserts the modes. Removing chmod 0750 in ensure_ops_dir leaves data/ops at 0755, making privacy-*.json readable by all host accounts, and all tests stay green. Named risk (f) is only half covered.",
+      "fix": "After the nominal and restore tests, on Linux (skip under msys/cygwin) assert [ \"$(stat -c %a \"$STATUS_FILE\")\" = 640 ] and [ \"$(stat -c %a \"$APPSPORT_ROOT/data/ops\")\" = 750 ].",
+      "specRef": "Review Focus 4, 03 §7, Interfaces §8 (0640/0750), named risk (f)",
+      "minorAction": "fix_now"
+    },
+    {
+      "id": "T43-F18",
+      "severity": "Minor",
+      "lenses": [
+        "ops"
+      ],
+      "file": "infra/host/appsport-unlock",
+      "line": "37",
+      "title": "appsport-unlock runs compose up -d without the operations lock",
+      "problem": "unlock never calls take_lock. Run from a second SSH session while appsport-update is in its restore branch (after compose stop app), its compose up -d starts v1.2.0 while the database is being replaced, so phones can sync against a database whose privacy reapply has not run, or the restore races the live process.",
+      "fix": "After the sentinel check call take_lock || ko \"une autre operation appsport est en cours.\" \"operation en cours\" before systemctl start docker and compose up -d; release with exec 9>&- before systemctl start --no-block appsport-backup.service. Add a bats case on flock '*' 1 asserting no up -d.",
+      "specRef": "R-OPS-6; brief take_lock",
+      "minorAction": "defer"
+    },
+    {
+      "id": "T43-F19",
+      "severity": "Minor",
+      "lenses": [
+        "ops"
+      ],
+      "file": "infra/host/appsport-update",
+      "line": "103, 113, 170",
+      "title": "Some failure-path writes rely on set -e and skip the message or the deploy record",
+      "problem": "log_deploy pull-failed and backup-failed run inside if ! bodies; if deploy.log is unwritable (disk full) the script exits before die and the 'Rien n'a ete change' message. log_deploy ... ok at line 113 failing exits 1 before status_merge, so .deploy shows the old version. rm -f of the privacy list (line 170) or the date in rollback failing exits without finish, leaving no rollback-failed record and the service stopped.",
+      "fix": "Use the finish pattern: log_deploy ... || log \"Avertissement : deploy.log non ecrit.\" at each call in main, and rm -f \"$APPSPORT_ROOT/data/$list\" || log \"Avertissement : liste $list non supprimee.\". Alternatively trap 'finish rollback-failed' ERR during rollback.",
+      "specRef": "08 §8 step 8, 08 §13.8, Review Focus 4",
+      "minorAction": "fix_now"
+    },
+    {
+      "id": "T43-F20",
+      "severity": "Minor",
+      "lenses": [
+        "ops",
+        "tests"
+      ],
+      "file": "infra/host/test/update.bats",
+      "line": "195, 155, 172",
+      "title": "No test that the service stays stopped after a failed restore or reapply",
+      "problem": "The 'restauration impossible' test checks P4 and the kept list, but nothing covers a reapply failure and nothing asserts that no third up -d follows the failure. A regression restarting v1.2.0 on a restored database whose reapply has not run would pass.",
+      "fix": "In the restore-failure test assert [ \"$(count_calls 'docker compose * up -d')\" -eq 2 ]. Add a case on docker '* privacy:reapply *' 1 asserting P4, rollback-failed, list kept and no third up -d.",
+      "specRef": "03 §7, 08 §13.8",
+      "minorAction": "fix_now"
+    },
+    {
+      "id": "T43-F21",
+      "severity": "Minor",
+      "lenses": [
+        "security"
+      ],
+      "file": "infra/host/appsport-update",
+      "line": "86, 93, 149-150, 158",
+      "title": "Versions read back from deploy.log and deploy.env are used as git refs and file paths without validation",
+      "problem": "Command-line versions are regex-checked but prev and cur from deploy.log (read -r _ prev cur _) or current_version are not. They reach git checkout (a leading '-' becomes an option), data/snapshots/pre-$2.db and ops/privacy-$2-*.json ('../' escapes the directory) and deploy.env. deploy.log is root-written but restored from restic and hand-edited during P4, so a tampered line turns a root rollback into option injection or path traversal.",
+      "fix": "Add a valid_version helper in common.sh with the same regex, apply it to prev and cur in both modes and die '... illisible. Rien n'a ete change.' on failure. Add -- before refs where git allows.",
+      "specRef": "",
+      "minorAction": "fix_now"
+    },
+    {
+      "id": "T43-F22",
+      "severity": "Minor",
+      "lenses": [
+        "security"
+      ],
+      "file": "infra/host/lib/common.sh",
+      "line": "42-45",
+      "title": "HC_ENV is sourced as root with no check on owner or mode",
+      "problem": "/etc/appsport/healthchecks.env is sourced as shell code in every root ops script. If it or /etc/appsport is group/world-writable, a writer gets root code execution and can override APPSPORT_ROOT, DOCKER and other variables. The ping URLs are bearer-like secrets and should not be world-readable.",
+      "fix": "Source only if owned by root and not group/world-writable (stat -c '%u %a'), else warn and skip; better, parse only the five known KEY=VALUE names with a while IFS== read loop.",
+      "specRef": "08 §9, §10",
+      "minorAction": "defer"
+    },
+    {
+      "id": "T43-F23",
+      "severity": "Minor",
+      "lenses": [
+        "security"
+      ],
+      "file": "infra/host/test/update.bats",
+      "line": "182-185",
+      "title": "The test does not prove privacy:reapply runs before the service accepts requests",
+      "problem": "assert_calls_in_order matches a subsequence, so a compose up -d or start app between stop app and privacy:reapply would still pass, leaving the 03 §8.3 property (reapply before any request) unprotected.",
+      "fix": "After the order assertion, check that no 'docker compose * up *' or '* start *' line appears between the stop app and privacy:reapply lines (slice $CALLS by line numbers and refute, or add an assert_no_call_between helper).",
+      "specRef": "03 §8.3; Review Focus 4",
+      "minorAction": "fix_now"
+    },
+    {
+      "id": "T43-F24",
+      "severity": "Minor",
+      "lenses": [
+        "tests"
+      ],
+      "file": "infra/host/test/update.bats",
+      "line": "84-100",
+      "title": "The default No of [o/N] is never tested",
+      "problem": "Only n and o are tested. If confirm (appsport-update:46) aborted only on n/N/non and accepted anything else, both tests would pass, and Enter would deploy even with an active session shown.",
+      "fix": "Run the abort test also with an empty answer (<<<\"\") and with y, asserting 'Abandon : rien n'a ete change.' and assert_nothing_changed each time.",
+      "specRef": "R-DEP-3; brief confirm [o/N]",
+      "minorAction": "fix_now"
+    },
+    {
+      "id": "T43-F25",
+      "severity": "Minor",
+      "lenses": [
+        "tests"
+      ],
+      "file": "infra/host/test/defaults.bash",
+      "line": "61-65",
+      "title": "The stubbed compose up ignores APPSPORT_VERSION, so the env-leak check rests on one test",
+      "problem": "Real compose gives a shell variable priority over --env-file, but the stub's up always reads deploy.env. A leaked APPSPORT_VERSION affecting only a rollback up -d would pass every test; the leak is caught only by the up-env check at update.bats:58 on the nominal path.",
+      "fix": "In the stub's up use ${APPSPORT_VERSION:-<deploy.env value>} as the image, as compose does. Also assert up-env is unset in the rollback tests (:155, :172).",
+      "specRef": "Named risk (c)",
+      "minorAction": "fix_now"
+    },
+    {
+      "id": "T43-F26",
+      "severity": "Minor",
+      "lenses": [
+        "tests"
+      ],
+      "file": "infra/host/test/update.bats",
+      "line": "65-72",
+      "title": "The flock stub never checks that fd 9 is opened on LOCK_FILE",
+      "problem": "default_flock accepts flock -n 9 even when fd 9 is not open. If exec 9>\"$LOCK_FILE\" were dropped from take_lock (common.sh:57) all tests pass, while real flock would fail every update. Holding the lock until the end is not checked either.",
+      "fix": "Make default_flock check that fd 9 is writable ({ : >&9; } 2>/dev/null) and, on Linux, that readlink /proc/$$/fd/9 equals $LOCK_FILE.",
+      "specRef": "Brief take_lock; named risk (d)",
+      "minorAction": "fix_now"
+    },
+    {
+      "id": "T43-F27",
+      "severity": "Minor",
+      "lenses": [
+        "tests"
+      ],
+      "file": "apps/server/test/ops/active-sessions.test.ts",
+      "line": "61, 118",
+      "title": "The sessions:active boundary, the abandoned status and the --hours flag are only loosely pinned",
+      "problem": "The excluded session starts at 16:59:59, one second before the 3 h boundary, so changing > to >= passes. No abandoned row exists, so status != 'completed' passes. The CLI is only called with --hours 3 and a session started 1 h ago, so ignoring the flag, or an invalid --hours not giving exit 1, passes.",
+      "fix": "Add a session at exactly 17:00:00.000Z (excluded) and an abandoned session. In the CLI test call --hours 1 against a session started 2 h ago (no line expected) and --hours 0 (exit 1).",
+      "specRef": "Interfaces §8 listActiveWorkoutSessions / sessions:active",
+      "minorAction": "fix_now"
+    }
+  ]
+}

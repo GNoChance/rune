@@ -1,0 +1,820 @@
+# Review package: f408800..HEAD
+
+## Commits
+245c1ef docs(exploitation): « de rune-update », sans élision
+96d16f7 refactor(server): un seul nom pour la base et la sentinelle
+97085d2 docs(exploitation): repli si le nom de bucket rune-backups est déjà pris
+38aab0e test(web): le message R-MDP-3 est vérifié mot pour mot
+c4b09ab test(web): listes de caches attendues triées, comme les listes lues
+e98bef5 test(server): P1 vérifie APP_ORIGIN, RUNE_URL et chaque machine du tailnet
+0fea11b test(web): les textes visibles « Rune » gardent leur majuscule
+
+## Files changed
+ apps/server/src/cli.ts                   |  4 ++--
+ apps/server/src/config.ts                | 11 +++++++++--
+ apps/server/src/ops/restore.ts           |  2 +-
+ apps/server/test/config.test.ts          | 11 ++++++++++-
+ apps/server/test/infra/docs.test.ts      | 22 ++++++++++++++++++++++
+ apps/server/test/infra/name.test.ts      | 27 +++++++++++++++++++++++----
+ apps/server/test/ops/cli-ops.test.ts     | 24 ++++++++++++++++++++++++
+ apps/web/test/auth/invite.test.tsx       |  3 ++-
+ apps/web/test/auth/messages.test.ts      |  1 +
+ apps/web/test/privacy/withdraw.test.tsx  |  3 ++-
+ apps/web/test/pwa/manifest.test.ts       |  3 ++-
+ apps/web/test/sw/register.test.ts        |  3 ++-
+ apps/web/test/sw/sw-handlers.test.ts     | 22 +++++++++-------------
+ docs/exploitation/P1-installation.md     |  2 +-
+ docs/exploitation/P4-restaurer.md        |  8 ++++----
+ docs/exploitation/P5-rotation-secrets.md |  2 ++
+ docs/exploitation/P8-incident.md         |  2 +-
+ infra/RUNBOOK-reconstruction.md          |  2 +-
+ 18 files changed, 118 insertions(+), 34 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/cli.ts b/apps/server/src/cli.ts
+index 3d5cfd0..24403fe 100644
+--- a/apps/server/src/cli.ts
++++ b/apps/server/src/cli.ts
+@@ -1,20 +1,20 @@
+ import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+ import { join, resolve } from 'node:path';
+ import { DatabaseSync } from 'node:sqlite';
+ import { CivilDate } from '@rune/contracts';
+ import { usernameKey } from '@rune/domain';
+ import { CamelCasePlugin, Kysely } from 'kysely';
+ import { z } from 'zod';
+ import { bootstrapAdminInvitation } from './auth/bootstrap';
+ import { createPasswordReset } from './auth/password-reset';
+-import { type AppConfig, dataDirFrom, loadConfig } from './config';
++import { type AppConfig, DB_FILE, dataDirFrom, loadConfig } from './config';
+ import { migrate } from './db/migrate';
+ import { MIGRATIONS, type Migration } from './db/migrations/index';
+ import { openDatabase } from './db/open';
+ import type { Database } from './db/schema';
+ import { initServerMeta } from './db/server-meta';
+ import { NodeSqliteDialect } from './db/sqlite-dialect';
+ import { type AppDeps, createAppDeps, cryptoIds, systemClock } from './deps';
+ import { HttpError } from './http/errors';
+ import { createLogger } from './logger';
+ import { listActiveWorkoutSessions } from './ops/active-sessions';
+@@ -304,21 +304,21 @@ async function runSessionsActive(args: string[], ctx: CliContext): Promise<numbe
+   }
+   return 0;
+ }
+ 
+ /**
+  * Une ligne JSON (DbStats), code 0 même si l'intégrité est KO. Lu par rune-restore-test sur la copie
+  * restaurée (docker run sans env_file : ni APP_ORIGIN ni loadConfig) et sur la base réelle (service en marche) :
+  * lecture seule, sans garde, withAppDeps ni migration ; une migration cassante inconnue ne gêne pas.
+  */
+ async function runDbStats(_args: string[], ctx: CliContext): Promise<number> {
+-  const dbPath = join(dataDirFrom(ctx.env), 'rune.db');
++  const dbPath = join(dataDirFrom(ctx.env), DB_FILE);
+   if (!existsSync(dbPath)) {
+     ctx.err(`Base introuvable : ${dbPath}.`);
+     return 1;
+   }
+   const sqlite = new DatabaseSync(dbPath, { readOnly: true });
+   try {
+     ctx.out(JSON.stringify(dbStats(sqlite)));
+   } finally {
+     sqlite.close();
+   }
+diff --git a/apps/server/src/config.ts b/apps/server/src/config.ts
+index 580ce0b..d121b34 100644
+--- a/apps/server/src/config.ts
++++ b/apps/server/src/config.ts
+@@ -52,32 +52,39 @@ function parsePort(raw: string | undefined): number {
+   return Number(raw);
+ }
+ 
+ const orDefault = (value: string | undefined, fallback: string): string =>
+   value === undefined || value === '' ? fallback : value;
+ 
+ /** Dossier des données (`RUNE_DATA_DIR`, `/data` par défaut), lisible sans le reste de la configuration. */
+ export const dataDirFrom = (env: Record<string, string | undefined>): string =>
+   orDefault(env.RUNE_DATA_DIR, '/data');
+ 
++/**
++ * Noms de la base et de la sentinelle dans le dossier des données : seule source côté serveur (configuration,
++ * `db:stats`, restauration), pour qu'une restauration écrive la base que le service rouvre.
++ */
++export const DB_FILE = 'rune.db';
++export const SENTINEL_FILE = '.rune-volume';
++
+ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
+   const origin = parseOrigin(env.APP_ORIGIN);
+   const secure = origin.protocol === 'https:';
+   const dataDir = dataDirFrom(env);
+   return {
+     appOrigin: origin.origin,
+     version: orDefault(env.APP_VERSION, 'dev'),
+     port: parsePort(env.PORT),
+     host: orDefault(env.HOST, '0.0.0.0'),
+     dataDir,
+-    dbPath: join(dataDir, 'rune.db'),
+-    sentinelPath: join(dataDir, '.rune-volume'),
++    dbPath: join(dataDir, DB_FILE),
++    sentinelPath: join(dataDir, SENTINEL_FILE),
+     publicDir: orDefault(env.RUNE_PUBLIC_DIR, '/app/public'),
+     contentDir: orDefault(env.RUNE_CONTENT_DIR, '/app/data'),
+     swKillSwitch: env.SW_KILL_SWITCH === '1',
+     coachModel: orDefault(env.COACH_MODEL, 'claude-opus-5-5'),
+     anthropicApiKey: env.ANTHROPIC_API_KEY ? env.ANTHROPIC_API_KEY : null,
+     argon2: { ...ARGON2_PARAMS },
+     sessionCookieName: secure ? '__Host-session' : 'dev-session',
+     secureCookie: secure,
+   };
+ }
+diff --git a/apps/server/src/ops/restore.ts b/apps/server/src/ops/restore.ts
+index 39ce9c1..27d88e5 100644
+--- a/apps/server/src/ops/restore.ts
++++ b/apps/server/src/ops/restore.ts
+@@ -1,19 +1,19 @@
+ import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
+ import { join } from 'node:path';
+ import { backup, DatabaseSync } from 'node:sqlite';
++import { DB_FILE } from '../config';
+ import { openDatabase } from '../db/open';
+ import type { Clock, IdGen } from '../deps';
+ import { rotateServerEpoch } from '../sync/epoch';
+ import { snapshotsDir } from './snapshot';
+ 
+-const DB_FILE = 'rune.db';
+ /** La base et ses fichiers annexes : un -wal laissé à côté serait rejoué sur la base restaurée. */
+ const DB_SUFFIXES = ['', '-wal', '-shm'] as const;
+ 
+ export class RestoreError extends Error {
+   readonly code: 'snapshot_missing' | 'integrity_failed';
+ 
+   constructor(code: RestoreError['code'], message: string) {
+     super(message);
+     this.name = 'RestoreError';
+     this.code = code;
+diff --git a/apps/server/test/config.test.ts b/apps/server/test/config.test.ts
+index 6f97605..d10d978 100644
+--- a/apps/server/test/config.test.ts
++++ b/apps/server/test/config.test.ts
+@@ -1,13 +1,13 @@
+ import { join } from 'node:path';
+ import { describe, expect, it } from 'vitest';
+-import { ConfigError, loadConfig } from '../src/config';
++import { ConfigError, DB_FILE, dataDirFrom, loadConfig, SENTINEL_FILE } from '../src/config';
+ 
+ describe('loadConfig', () => {
+   it('exige APP_ORIGIN', () => {
+     expect(() => loadConfig({})).toThrow(ConfigError);
+   });
+ 
+   it('refuse une origine avec chemin, ou http hors localhost', () => {
+     expect(() => loadConfig({ APP_ORIGIN: 'https://rune.x.ts.net/chemin' })).toThrow(ConfigError);
+     expect(() => loadConfig({ APP_ORIGIN: 'http://rune.x.ts.net' })).toThrow(ConfigError);
+   });
+@@ -26,20 +26,29 @@ describe('loadConfig', () => {
+       coachModel: 'claude-opus-5-5',
+       anthropicApiKey: null,
+       argon2: { memoryKiB: 19456, passes: 2, parallelism: 1, tagLength: 32, saltLength: 16 },
+       sessionCookieName: '__Host-session',
+       secureCookie: true,
+     });
+     expect(cfg.dbPath).toBe(join('/data', 'rune.db'));
+     expect(cfg.sentinelPath).toBe(join('/data', '.rune-volume'));
+   });
+ 
++  it('dbPath et sentinelPath : DB_FILE et SENTINEL_FILE, seuls noms du serveur, sous dataDirFrom(env)', () => {
++    expect(DB_FILE).toBe('rune.db');
++    expect(SENTINEL_FILE).toBe('.rune-volume');
++    const env = { APP_ORIGIN: 'https://a.ts.net', RUNE_DATA_DIR: '/srv/ailleurs' };
++    const cfg = loadConfig(env);
++    expect(cfg.dbPath).toBe(join(dataDirFrom(env), DB_FILE));
++    expect(cfg.sentinelPath).toBe(join(dataDirFrom(env), SENTINEL_FILE));
++  });
++
+   it('autorise http sur localhost et 127.0.0.1 avec le cookie de développement', () => {
+     expect(loadConfig({ APP_ORIGIN: 'http://localhost:5173' })).toMatchObject({
+       sessionCookieName: 'dev-session',
+       secureCookie: false,
+     });
+     expect(loadConfig({ APP_ORIGIN: 'http://127.0.0.1:5173' })).toMatchObject({
+       sessionCookieName: 'dev-session',
+     });
+   });
+ 
+diff --git a/apps/server/test/infra/docs.test.ts b/apps/server/test/infra/docs.test.ts
+index 7a9c01d..c0267e6 100644
+--- a/apps/server/test/infra/docs.test.ts
++++ b/apps/server/test/infra/docs.test.ts
+@@ -462,20 +462,42 @@ describe('P1 Installation initiale', () => {
+   it('Volume chiffré : message réel de cryptsetup pour une phrase refusée', () => {
+     const body = stepWith('Volume chiffré', 'cryptsetup open').body;
+     expect(body).toContain('No key available with this passphrase.');
+     expect(body).not.toContain('Phrase refusée');
+   });
+ 
+   it('Docker activé au démarrage : son drop-in tirerait le volume et demanderait la phrase LUKS', () => {
+     expect(stepWith('Docker', 'systemctl disable docker.service').body).toContain('phrase LUKS');
+   });
+ 
++  it('Dépôts restic : nom rune-backups déjà pris chez Backblaze, nom suffixé noté et repris par P5 et le runbook', () => {
++    const bucket = steps(section(p1, 'Dépôts restic')).find(
++      (s) => s.head === 'Créer le bucket Backblaze B2.',
++    );
++    const sinon = /^\s*Sinon :.*$/m.exec(bucket?.body ?? '')?.[0] ?? '';
++    for (const needle of [
++      '`rune-backups` parce qu',
++      'déjà pris',
++      '`rune-backups-<suffixe>`',
++      'gestionnaire',
++      'feuille des secrets',
++      'P5',
++      'runbook de reconstruction',
++    ]) {
++      expect(sinon, needle).toContain(needle);
++    }
++    expect(section(p[5] as string, 'Clé B2')).toMatch(/`rune-backups`[^\n]*nom noté dans le gestionnaire/);
++    expect(runbook).toMatch(
++      /\*\*Écrire les accès B2 depuis le gestionnaire\.\*\*[^\n]*`rune-backups`[^\n]*nom noté dans le gestionnaire/,
++    );
++  });
++
+   it('Tailscale SSH : ssh rune ouvre le compte <compte>, quel que soit le nom de session du PC', () => {
+     expect(stepWith('Tailscale', 'ssh rune').body).toContain('User <compte>');
+   });
+ 
+   it('Healthchecks : SMART_DEVICES entre guillemets (fichier lu par bash), ligne mal formée reconnue', () => {
+     const values = [...opsText().matchAll(/SMART_DEVICES=(\S)/g)].map((m) => m[1]);
+     expect(values.length).toBeGreaterThan(0);
+     for (const first of values) expect(first).toBe('"');
+     expect(stepWith('Healthchecks', 'sudo rune-check').body).toMatch(
+       /healthchecks\.env: line N: [^\n]*No such file or directory/,
+diff --git a/apps/server/test/infra/name.test.ts b/apps/server/test/infra/name.test.ts
+index 4508de4..887eee5 100644
+--- a/apps/server/test/infra/name.test.ts
++++ b/apps/server/test/infra/name.test.ts
+@@ -42,21 +42,40 @@ describe("tout s'appelle Rune", () => {
+   });
+ 
+   it("aucun fichier texte suivi ne contient l'ancien nom de code", () => {
+     const hits = trackedFiles().filter((rel) => {
+       const bytes = readFileSync(join(ROOT, rel));
+       return !bytes.includes(0) && mentionsOldName(bytes.toString('utf8'));
+     });
+     expect(hits).toEqual([]);
+   });
+ 
+-  it("les procédures donnent l'adresse définitive rune.<tailnet>.ts.net", () => {
+-    expect(readFileSync(join(ROOT, 'docs/exploitation/P1-installation.md'), 'utf8')).toContain(
+-      'rune.<tailnet>.ts.net',
+-    );
++  it("le nom ne s'élide jamais : « de `rune-update` », « que Rune », « le volume rune »", () => {
++    // « rune » commence par une consonne : une lettre et une apostrophe juste devant sont un reste du renommage.
++    const elided = /\p{L}['’]`?rune/iu;
++    const hits = trackedFiles().flatMap((rel) => {
++      const bytes = readFileSync(join(ROOT, rel));
++      if (bytes.includes(0)) return [];
++      return bytes
++        .toString('utf8')
++        .split('\n')
++        .flatMap((line, i) => (elided.test(line) ? [`${rel}:${i + 1}`] : []));
++    });
++    expect(hits).toEqual([]);
++  });
++
++  it("P1 donne l'adresse définitive https://rune.<tailnet>.ts.net, à APP_ORIGIN et RUNE_URL compris", () => {
++    const p1 = readFileSync(join(ROOT, 'docs/exploitation/P1-installation.md'), 'utf8');
++    // Les deux lignes qui pilotent l'hôte : l'origine que vérifie le serveur, l'adresse que sonde rune-alive.
++    expect(p1).toMatch(/^\s*APP_ORIGIN=https:\/\/rune\.<tailnet>\.ts\.net$/m);
++    expect(p1).toMatch(/^\s*RUNE_URL=https:\/\/rune\.<tailnet>\.ts\.net$/m);
++    // Toute machine du tailnet que nomme la procédure est `rune` : ni « prune », ni « runes ».
++    const hosts = [...p1.matchAll(/(?<![\w.-])([\w.-]+)\.<tailnet>\.ts\.net/g)].map((m) => m[1]);
++    expect(hosts.length).toBeGreaterThan(0);
++    expect(new Set(hosts)).toEqual(new Set(['rune']));
+   });
+ 
+   it('R-MDP-3 refuse un mot de passe qui contient « rune », sans tenir compte de la casse', () => {
+     const ctx = { username: 'lea', role: 'member' as const, commonPasswords: new Set<string>() };
+     expect(validatePassword('MaRune2026!!', ctx)).toEqual({ ok: false, reason: 'contains_app_name' });
+   });
+ });
+diff --git a/apps/server/test/ops/cli-ops.test.ts b/apps/server/test/ops/cli-ops.test.ts
+index 5e24457..e8ab128 100644
+--- a/apps/server/test/ops/cli-ops.test.ts
++++ b/apps/server/test/ops/cli-ops.test.ts
+@@ -6,20 +6,21 @@ import {
+   readdirSync,
+   rmSync,
+   utimesSync,
+   writeFileSync,
+ } from 'node:fs';
+ import { tmpdir } from 'node:os';
+ import { join, resolve } from 'node:path';
+ import { parisDate } from '@rune/domain';
+ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+ import { runCli } from '../../src/cli';
++import { loadConfig } from '../../src/config';
+ import { readOnly, sha256 } from './helpers';
+ 
+ const BAD_TAG = (tag: string) => `Étiquette invalide « ${tag} » : attendu daily ou pre-vX.Y.Z.`;
+ const SNAPSHOT_LINE = /^Instantané écrit : (.*[\\/]snapshots[\\/]daily-\d{8}\.db)$/;
+ 
+ let dir: string;
+ let dbPath: string;
+ let sentinelPath: string;
+ let env: Record<string, string>;
+ let lines: string[];
+@@ -197,19 +198,42 @@ describe('restore', () => {
+     const snapshot = await snapshotDaily();
+     rmSync(dbPath);
+     lines = [];
+     expect(await cli('restore', snapshot)).toBe(0);
+     expect(lines).toHaveLength(2);
+     expect(lines.at(-1)).toBe('Lancez maintenant privacy:reapply, avant de redémarrer le service.');
+     expect(listSnapshots().filter((name) => name.startsWith('replaced-'))).toEqual([]);
+     expect(existsSync(dbPath)).toBe(true);
+   });
+ 
++  it('restore écrit la base que loadConfig ouvre et que db:stats lit (aucun nom de fichier propre à chacun)', async () => {
++    const snapshot = await snapshotDaily();
++    const configured = loadConfig(env).dbPath;
++    rmSync(configured);
++    lines = [];
++    expect(await cli('restore', snapshot)).toBe(0);
++    const [, epoch] = /: ([0-9a-f-]{36}) \(epoch_base_rev \d+\)/.exec(lines.at(-2) ?? '') ?? [];
++    expect(readOnly(configured, (s) => s.prepare('SELECT server_epoch FROM server_meta').get())).toEqual({
++      server_epoch: epoch,
++    });
++    // db:stats tel que rune-restore-test le lance : seul RUNE_DATA_DIR.
++    const stats: string[] = [];
++    const statsCode = await runCli(
++      ['db:stats'],
++      { RUNE_DATA_DIR: dir },
++      (line) => stats.push(line),
++      (line) => errors.push(line),
++    );
++    expect(errors).toEqual([]);
++    expect(statsCode).toBe(0);
++    expect(JSON.parse(stats[0] as string)).toMatchObject({ integrity: 'ok' });
++  });
++
+   it('sans sentinelle → 1, base inchangée', async () => {
+     const snapshot = await snapshotDaily();
+     rmSync(sentinelPath);
+     const hash = sha256(dbPath);
+     expect(await cli('restore', snapshot)).toBe(1);
+     expect(errors.at(-1)).toBe(`Volume de données absent : sentinelle ${sentinelPath} introuvable.`);
+     expect(sha256(dbPath)).toBe(hash);
+   });
+ });
+diff --git a/apps/web/test/auth/invite.test.tsx b/apps/web/test/auth/invite.test.tsx
+index 0101c79..0177022 100644
+--- a/apps/web/test/auth/invite.test.tsx
++++ b/apps/web/test/auth/invite.test.tsx
+@@ -62,22 +62,23 @@ async function renderForm(role: 'member' | 'admin' = 'member') {
+ }
+ 
+ const submitWith = (username: string, password: string, confirm = password) => {
+   fill('Pseudo', username);
+   fill('Mot de passe', password);
+   fill('Confirmation', confirm);
+   click('Créer mon compte');
+ };
+ 
+ describe('accueil (03 §13.1, R-ARR-1)', () => {
+-  it('porteur, rappel « pas un service médical », lien vers Confidentialité', async () => {
++  it('titre « Bienvenue sur Rune », porteur, rappel « pas un service médical », lien vers Confidentialité', async () => {
+     await renderInvite();
++    expect(screen.getByRole('heading', { level: 1, name: 'Bienvenue sur Rune' })).toBeTruthy();
+     expect(document.body.textContent).toContain(WELCOME);
+     expect(screen.getByRole('link', { name: 'Confidentialité et règles' }).getAttribute('href')).toBe(
+       '/privacy',
+     );
+   });
+ 
+   it("« Crée ton compte » ouvert d'emblée par un lien : le rappel reste affiché, avec un lien vers Confidentialité", async () => {
+     await renderInvite({ url: LINK });
+     await screen.findByLabelText('Date de naissance');
+     expect(document.body.textContent).toContain(WELCOME);
+diff --git a/apps/web/test/auth/messages.test.ts b/apps/web/test/auth/messages.test.ts
+index 41f5ec6..8d255f6 100644
+--- a/apps/web/test/auth/messages.test.ts
++++ b/apps/web/test/auth/messages.test.ts
+@@ -70,20 +70,21 @@ describe('mots de passe (R-MDP-1, R-MDP-3)', () => {
+   it('un message par motif de rejet', () => {
+     expect(Object.keys(PASSWORD_MESSAGES).sort()).toEqual([
+       'common',
+       'contains_app_name',
+       'contains_username',
+       'single_char',
+       'too_long',
+       'too_short',
+     ]);
+     for (const text of Object.values(PASSWORD_MESSAGES)) expect(text).not.toBe('');
++    expect(PASSWORD_MESSAGES.contains_app_name).toBe('Le mot de passe ne doit pas contenir « rune ».');
+   });
+ 
+   const base = {
+     password: 'cheval agrafe batterie correcte',
+     confirm: '',
+     username: 'lea',
+     role: 'member',
+   } as const;
+ 
+   it('checkNewPassword : un seul caractère répété', () => {
+diff --git a/apps/web/test/privacy/withdraw.test.tsx b/apps/web/test/privacy/withdraw.test.tsx
+index 9657376..a549c82 100644
+--- a/apps/web/test/privacy/withdraw.test.tsx
++++ b/apps/web/test/privacy/withdraw.test.tsx
+@@ -94,28 +94,29 @@ const button = (name: string) => screen.getByRole('button', { name }) as HTMLBut
+ /** Valeur d'une ligne de la liste des accords (`dt` → `dd`). */
+ const consentValue = (label: string) =>
+   screen.getByText(label, { selector: 'dt' }).nextElementSibling?.textContent;
+ 
+ async function openWithdraw() {
+   fireEvent.click(button('Retirer mon accord santé'));
+   return within(await screen.findByRole('dialog'));
+ }
+ 
+ describe('PrivacySettingsPage (02 §11, R-CST-5, 03 §13)', () => {
+-  it('version en vigueur, lien vers la page, accords santé et coach', async () => {
++  it('version en vigueur, lien vers la page, accords santé et coach, export de « tout ce que Rune garde »', async () => {
+     await renderPrivacy();
+     expect(screen.getByText('Version en vigueur : 1.0')).toBeTruthy();
+     expect(
+       screen.getByRole('link', { name: 'Lire la page Confidentialité et règles' }).getAttribute('href'),
+     ).toBe('/privacy');
+     expect(consentValue('Accord santé')).toBe('Donné le 01/10/2026');
+     expect(consentValue('Accord coach')).toBe('Non donné');
++    expect(screen.getByText('Un fichier JSON avec tout ce que Rune garde sur ton compte.')).toBeTruthy();
+     expect(button('Télécharger mes données')).toBeTruthy();
+     expect(button('Supprimer mon compte')).toBeTruthy();
+   });
+ 
+   it('sans accord santé : « Non donné », pas de retrait, lien vers Santé', async () => {
+     await renderPrivacy({ me: makeMe() });
+     expect(consentValue('Accord santé')).toBe('Non donné');
+     expect(screen.queryByRole('button', { name: 'Retirer mon accord santé' })).toBeNull();
+     expect(screen.getByRole('link', { name: 'Donner mon accord santé' }).getAttribute('href')).toBe(
+       '/profile/health',
+diff --git a/apps/web/test/pwa/manifest.test.ts b/apps/web/test/pwa/manifest.test.ts
+index f5262d4..2034536 100644
+--- a/apps/web/test/pwa/manifest.test.ts
++++ b/apps/web/test/pwa/manifest.test.ts
+@@ -106,19 +106,20 @@ describe('manifeste PWA', () => {
+         if (p === WHITE.join()) {
+           count.white++;
+           if (Math.hypot(x + 0.5 - center, y + 0.5 - center) > radius) count.whiteOutsideSafeZone++;
+         } else if (p !== TEAL.join()) count.otherColor++;
+       }
+     }
+     expect(count.white).toBeGreaterThan(0);
+     expect(count).toMatchObject({ otherColor: 0, whiteOutsideSafeZone: 0 });
+   });
+ 
+-  it('index.html relie le manifeste, l’icône de l’onglet, l’icône Apple et la couleur du thème', () => {
++  it('index.html : titre « Rune », manifeste, icône de l’onglet, icône Apple et couleur du thème', () => {
+     const html = readFileSync(join(WEB, 'index.html'), 'utf8');
++    expect(html).toContain('<title>Rune</title>');
+     expect(html).toContain('<link rel="manifest" href="/manifest.webmanifest">');
+     // Icône déjà en précache : pas de requête /favicon.ico (404 journalisé), même hors ligne.
+     expect(html).toContain('<link rel="icon" type="image/png" href="/icons/icon-192.png">');
+     expect(html).toContain('<link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png">');
+     expect(html).toContain('<meta name="theme-color" content="#0f766e">');
+   });
+ });
+diff --git a/apps/web/test/sw/register.test.ts b/apps/web/test/sw/register.test.ts
+index 0d2b228..be9b172 100644
+--- a/apps/web/test/sw/register.test.ts
++++ b/apps/web/test/sw/register.test.ts
+@@ -601,21 +601,22 @@ describe('bootServiceWorker', () => {
+     const f = createFakeSwContainer({ registrations: 0 });
+     const registerSpy = vi.spyOn(f.container, 'register');
+     const caches = createFakeCacheStorage();
+     await caches.open(LOCAL_DB_MARKER_CACHE);
+     await caches.open('autre');
+     await boot(f, health(true), caches);
+     await settled();
+     expect(registerSpy).not.toHaveBeenCalled();
+     expect(swControllerStore.get()).toBeNull();
+     expect(f.unregisterCalls).toBe(0);
+-    expect((await caches.keys()).sort()).toEqual(['autre', LOCAL_DB_MARKER_CACHE]);
++    // Triées des deux côtés : on vérifie quels caches restent, pas l'ordre de leurs noms.
++    expect((await caches.keys()).sort()).toEqual(['autre', LOCAL_DB_MARKER_CACHE].sort());
+     expect(reload).not.toHaveBeenCalled();
+     expect(f.controllerMessages).toEqual([]);
+   });
+ 
+   it('426 déjà reçu par la synchro au démarrage (avant la fin de la sonde) → contrôleur publié forced', async () => {
+     sync = createFakeSyncEngine({ connection: 'protocol_unsupported' });
+     const f = createFakeSwContainer({ controller: true });
+     await boot(f, health(false));
+     expect(swControllerStore.get()?.getState()).toEqual({ available: false, forced: true, dismissed: false });
+     await until(() => f.registration.updateCalls === 2);
+diff --git a/apps/web/test/sw/sw-handlers.test.ts b/apps/web/test/sw/sw-handlers.test.ts
+index f18f4b4..3cb02df 100644
+--- a/apps/web/test/sw/sw-handlers.test.ts
++++ b/apps/web/test/sw/sw-handlers.test.ts
+@@ -72,20 +72,21 @@ const health =
+ /** Laisse filer les tâches en cours (réseau factice, Cache Storage, files de promesses). */
+ async function flush(): Promise<void> {
+   for (let i = 0; i < 20; i++) await new Promise<void>((resolve) => setImmediate(resolve));
+ }
+ 
+ async function bodyOf(response: Promise<Response> | null): Promise<string> {
+   if (response === null) throw new Error('requête non interceptée');
+   return (await response).text();
+ }
+ 
++/** Noms triés, comparés à une liste attendue triée elle aussi : on vérifie quels caches restent, pas leur ordre. */
+ const cacheNames = async (s: FakeSwScope) => (await s.caches.keys()).sort();
+ const cachedText = async (s: FakeSwScope, cacheName: string, path: string) =>
+   (await s.caches.match(path, { cacheName }))?.text();
+ 
+ async function illustrationPaths(s: FakeSwScope): Promise<string[]> {
+   const cache = await s.caches.open(ILLUSTRATIONS_CACHE);
+   return (await cache.keys())
+     .map((r) => new URL(r.url).pathname)
+     .filter((p) => p.startsWith('/illustrations/'))
+     .sort();
+@@ -215,21 +216,21 @@ describe('install', () => {
+ 
+ describe('activate', () => {
+   it('purge les anciens shell-*, ouvre illustrations-v1, clients.claim ; base rune intacte (R-PWA-4)', async () => {
+     const local = await seedLocalDb();
+     const s = createFakeSwScope();
+     s.setNetwork(staticNetwork(A_FILES));
+     await (await s.caches.open('shell-old000000000')).put('/index.html', new Response('vieux'));
+     const h = createSwHandlers(s, A);
+     await h.install();
+     await h.activate();
+-    expect(await cacheNames(s)).toEqual([ILLUSTRATIONS_CACHE, LOCAL_DB_MARKER_CACHE, SHELL_A]);
++    expect(await cacheNames(s)).toEqual([ILLUSTRATIONS_CACHE, LOCAL_DB_MARKER_CACHE, SHELL_A].sort());
+     expect(s.claimCalls).toBe(1);
+     expect(s.skipWaitingCalls).toBe(0);
+     expect(await getMeta(local, 'userId')).toBe('u1');
+   });
+ 
+   /** A installé sur un stockage qui contient déjà un vieux shell-* ; `activate` à lancer par le test. */
+   async function installedOverOld(caches: CacheStorage) {
+     const s = createFakeSwScope({ caches });
+     s.setNetwork(staticNetwork(A_FILES));
+     await (await s.caches.open('shell-old000000000')).put('/index.html', new Response('vieux'));
+@@ -333,51 +334,46 @@ describe('handleFetch', () => {
+     sB.setNetwork(staticNetwork(B_FILES));
+     const hB = createSwHandlers(sB, B);
+     await hB.install(); // B en attente : pas d'activate
+     for (const network of [staticNetwork(B_FILES), offline]) {
+       sA.setNetwork(network);
+       sA.fetchLog.length = 0;
+       expect(await bodyOf(hA.handleFetch(nav('/')))).toBe('A-index');
+       expect(await bodyOf(hA.handleFetch(get('/assets/app-1.js')))).toBe('A-app');
+       expect(sA.fetchLog).toEqual([]);
+     }
+-    expect((await caches.keys()).sort()).toEqual([
+-      ILLUSTRATIONS_CACHE,
+-      LOCAL_DB_MARKER_CACHE,
+-      SHELL_A,
+-      'shell-bbbbbbbbbbbb',
+-    ]);
++    expect((await caches.keys()).sort()).toEqual(
++      [ILLUSTRATIONS_CACHE, LOCAL_DB_MARKER_CACHE, SHELL_A, 'shell-bbbbbbbbbbbb'].sort(),
++    );
+     expect(sA.skipWaitingCalls + sB.skipWaitingCalls).toBe(0);
+ 
+     // index.html perdu par A pendant que B attend : A ne lit que shell-aaaaaaaaaaaa, jamais l'index de B
+     // (R-PWA-8), et passe par le réseau.
+     await (await caches.open(SHELL_A)).delete('/index.html');
+     sA.setNetwork(offline);
+     await expect(hA.handleFetch(nav('/'))).rejects.toThrow(/Failed to fetch/);
+     expect((await hA.status()).shellCached).toBe(false);
+     sA.setNetwork(staticNetwork({ '/': 'net-index' }));
+     sA.fetchLog.length = 0;
+     expect(await bodyOf(hA.handleFetch(nav('/')))).toBe('net-index');
+     expect(sA.fetchLog).toEqual([`${ORIGIN}/`]);
+ 
+     // « Mettre à jour » : B activé sert sa propre coquille sans réseau, celle de A est purgée (R-PWA-4).
+     sB.setNetwork(offline);
+     sB.fetchLog.length = 0;
+     await hB.activate();
+     expect(await bodyOf(hB.handleFetch(nav('/')))).toBe('B-index');
+     expect(await bodyOf(hB.handleFetch(get('/assets/app-2.js')))).toBe('B-app');
+     expect(sB.fetchLog).toEqual([]);
+-    expect((await caches.keys()).sort()).toEqual([
+-      ILLUSTRATIONS_CACHE,
+-      LOCAL_DB_MARKER_CACHE,
+-      'shell-bbbbbbbbbbbb',
+-    ]);
++    expect((await caches.keys()).sort()).toEqual(
++      [ILLUSTRATIONS_CACHE, LOCAL_DB_MARKER_CACHE, 'shell-bbbbbbbbbbbb'].sort(),
++    );
+   });
+ 
+   it('fichier du manifeste : servi du cache sans réseau ; absent du cache → réseau', async () => {
+     const { s, h } = await activeA();
+     s.setNetwork(offline);
+     expect(await bodyOf(h.handleFetch(get('/assets/app-1.js')))).toBe('A-app');
+     expect(s.fetchLog).toEqual([]);
+     await (await s.caches.open(SHELL_A)).delete('/assets/app-1.js');
+     s.setNetwork(staticNetwork({ '/assets/app-1.js': 'net-app' }));
+     expect(await bodyOf(h.handleFetch(get('/assets/app-1.js')))).toBe('net-app');
+@@ -739,21 +735,21 @@ describe('checkKillSwitch (R-PWA-6, étapes 1 à 3 côté SW)', () => {
+     await (await s.caches.open('shell-bbbbbbbbbbbb')).put('/index.html', new Response('B-index'));
+     await (await s.caches.open('illustrations-v0')).put(ILL(IA), new Response('a0'));
+     const inits: (RequestInit | undefined)[] = [];
+     s.setNetwork((url, init) => {
+       inits.push(init);
+       return health({ status: 'ok', swKill: true })(url);
+     });
+     expect(await h.checkKillSwitch()).toBe(true);
+     expect(s.unregistered).toBe(true);
+     // Le marqueur de base locale reste, comme la base qu'il décrit (ADR 0001 décision 5).
+-    expect(await cacheNames(s)).toEqual(['autre', LOCAL_DB_MARKER_CACHE]);
++    expect(await cacheNames(s)).toEqual(['autre', LOCAL_DB_MARKER_CACHE].sort());
+     expect(s.navigations).toEqual([`${ORIGIN}/profile`]);
+     // R-PWA-6 dans l'ordre : désenregistré, caches vidés, puis seulement rechargé (depuis le réseau).
+     const doomed = ['illustrations-v0', ILLUSTRATIONS_CACHE, SHELL_A, 'shell-bbbbbbbbbbbb'];
+     const at = (event: string) => s.events.indexOf(event);
+     expect(s.events.filter((e) => e.startsWith('cache-deleted:')).sort()).toEqual(
+       doomed.map((name) => `cache-deleted:${name}`),
+     );
+     for (const name of doomed) {
+       expect(at('unregister'), name).toBeLessThan(at(`cache-delete:${name}`));
+       expect(at(`cache-deleted:${name}`), name).toBeLessThan(at(`navigate:${ORIGIN}/profile`));
+diff --git a/docs/exploitation/P1-installation.md b/docs/exploitation/P1-installation.md
+index cac14f2..b60ac7f 100644
+--- a/docs/exploitation/P1-installation.md
++++ b/docs/exploitation/P1-installation.md
+@@ -485,21 +485,21 @@ Un secret ne va jamais dans un fichier du dépôt, un ticket ou un message : seu
+    ```
+ 
+    Résultat attendu : `/srv/backup` est monté sur le disque de sauvegarde.
+ 
+    Sinon : vérifier le périphérique choisi avec `lsblk` (jamais le disque système), puis recommencer.
+ 
+ 2. **Créer le bucket Backblaze B2.** Créer le compte Backblaze en région **EU Central** (choisie à la création du compte, impossible à changer ensuite), avec double authentification. Créer le bucket privé `rune-backups`, sans Object Lock. Créer une clé applicative **limitée au bucket** `rune-backups`, en lecture et écriture. Noter dans le gestionnaire le `keyID`, l'`applicationKey` (affichée une seule fois) et l'« Endpoint » S3 du bucket (par exemple `s3.eu-central-003.backblazeb2.com`).
+ 
+    Résultat attendu : le bucket apparaît en région EU Central, et la clé ne donne accès qu'à `rune-backups`.
+ 
+-   Sinon : un compte créé dans une autre région se remplace par un nouveau compte en EU Central ; une clé non limitée se supprime et se recrée.
++   Sinon : un compte créé dans une autre région se remplace par un nouveau compte en EU Central ; une clé non limitée se supprime et se recrée. Si Backblaze refuse le nom `rune-backups` parce qu'il est déjà pris (un nom de bucket est unique chez tous ses clients), créer `rune-backups-<suffixe>` (quelques lettres au hasard), noter ce nom exact dans le gestionnaire et, plus tard, sur la feuille des secrets (« Enveloppe de secours », étape 2), puis l'utiliser partout où P1, P5 et le runbook de reconstruction écrivent `rune-backups`.
+ 
+ 3. **Écrire `b2.env`.** Les clés B2 ne sont lues que par le dépôt hors site (R-OPS-9).
+ 
+    ```
+    sudo install -m 600 /dev/null /srv/rune/secrets/b2.env
+    sudo nano /srv/rune/secrets/b2.env
+    ```
+ 
+    Contenu :
+ 
+diff --git a/docs/exploitation/P4-restaurer.md b/docs/exploitation/P4-restaurer.md
+index 288f19e..048ed99 100644
+--- a/docs/exploitation/P4-restaurer.md
++++ b/docs/exploitation/P4-restaurer.md
+@@ -1,40 +1,40 @@
+ # P4 Restaurer
+ 
+-Quand : « Sur place » après une erreur humaine, une migration ratée, une base corrompue ou un message d'`rune-update` qui finit par « suivez P4. » (dans ce dernier cas, d'abord P3, étape 11 : elle remet la version à garder et dit s'il faut restaurer, et quel instantané) ; « Nouvelle machine » après une panne ou un vol du serveur (après un vol, P8 « Vol, cambriolage ou fuite », étape 1, d'abord).
++Quand : « Sur place » après une erreur humaine, une migration ratée, une base corrompue ou un message de `rune-update` qui finit par « suivez P4. » (dans ce dernier cas, d'abord P3, étape 11 : elle remet la version à garder et dit s'il faut restaurer, et quel instantané) ; « Nouvelle machine » après une panne ou un vol du serveur (après un vol, P8 « Vol, cambriolage ou fuite », étape 1, d'abord).
+ 
+ Durée : 30 minutes sur place ; une demi-journée sur une nouvelle machine (objectif de reprise : 4 h matériel intact, 2 jours s'il faut le remplacer).
+ 
+ Une restauration ne doit jamais faire revenir une donnée supprimée : les suppressions de compte et les retraits d'accord postérieurs à l'instantané sont collectés avant la restauration, puis réappliqués **avant** que le service n'accepte des requêtes (03 §8). La restauration ouvre une nouvelle époque : les téléphones renvoient ensuite leurs 60 derniers jours (R-SYN-26).
+ 
+ Toutes les commandes se lancent sur le serveur (`ssh rune`), volume déverrouillé (P2). Gabarits : `AAAAMMJJ` (date de l'instantané), `<date ISO>` (instant de l'instantané, en UTC), `v<précédente>` (version en service avant vX.Y.Z).
+ 
+ ## Sur place
+ 
+-1. **Vérifier qu'aucune réapplication n'est déjà en attente.** Ce marqueur nomme la liste à réappliquer ; tant qu'il existe, `rune-unlock` et `rune-update` refusent de relancer l'appli. Il est posé **avant** la restauration (par le retour arrière d'`rune-update` ou par l'étape 5 ci-dessous) : un retour arrière en échec ou interrompu, ou un P4 interrompu, le laisse sans prouver que la base a été restaurée.
++1. **Vérifier qu'aucune réapplication n'est déjà en attente.** Ce marqueur nomme la liste à réappliquer ; tant qu'il existe, `rune-unlock` et `rune-update` refusent de relancer l'appli. Il est posé **avant** la restauration (par le retour arrière de `rune-update` ou par l'étape 5 ci-dessous) : un retour arrière en échec ou interrompu, ou un P4 interrompu, le laisse sans prouver que la base a été restaurée.
+ 
+    ```
+    sudo cat /srv/rune/reapply-pending
+    ```
+ 
+    Résultat attendu : `No such file or directory`.
+ 
+    Sinon : le fichier affiche une liste `/data/ops/privacy-….json`. Établir l'état avant toute autre commande :
+ 
+    ```
+    sudo ls -l /srv/rune/data/ops/ /srv/rune/data/rune.db
+    sudo find /srv/rune/data/snapshots -maxdepth 1 -name 'replaced-*' -newer /srv/rune/reapply-pending
+    ```
+ 
+    - La liste n'existe plus : la réapplication a eu lieu (la liste n'est supprimée qu'après elle ; cas « Marqueur … non supprimé ») : supprimer seulement le marqueur (`sudo rm /srv/rune/reapply-pending`), puis l'étape 10.
+    - La liste existe, `rune.db` existe, et `find` affiche un dossier `replaced-…` (plus récent que le marqueur) : la restauration a eu lieu ; faire l'étape 6 (arrêt vérifié), puis passer à l'étape 8 avec cette liste. Sur une nouvelle machine, il n'y avait pas de base avant : `rune.db` présente suffit.
+-   - Sinon (`find` n'affiche rien, ou `rune.db` absente) : la restauration n'a pas eu lieu ou n'a pas abouti ; ne rien réappliquer sur cette base. Reprendre à l'étape 6 puis suivre la suite (après l'étape 3 si `cat /srv/rune/deploy.env` nomme encore la version abandonnée), avec l'instantané de la liste : `privacy-vX.Y.Z-….json` (retour arrière d'`rune-update`) → `pre-vX.Y.Z.db` ; `privacy-AAAAMMJJ.json` (P4) → l'instantané dont l'instant (étape 2) est le `"since"` de la liste (`sudo grep '"since"' /srv/rune/data/ops/privacy-AAAAMMJJ.json`). La liste et le marqueur existent déjà : ne pas refaire les étapes 4 et 5.
++   - Sinon (`find` n'affiche rien, ou `rune.db` absente) : la restauration n'a pas eu lieu ou n'a pas abouti ; ne rien réappliquer sur cette base. Reprendre à l'étape 6 puis suivre la suite (après l'étape 3 si `cat /srv/rune/deploy.env` nomme encore la version abandonnée), avec l'instantané de la liste : `privacy-vX.Y.Z-….json` (retour arrière de `rune-update`) → `pre-vX.Y.Z.db` ; `privacy-AAAAMMJJ.json` (P4) → l'instantané dont l'instant (étape 2) est le `"since"` de la liste (`sudo grep '"since"' /srv/rune/data/ops/privacy-AAAAMMJJ.json`). La liste et le marqueur existent déjà : ne pas refaire les étapes 4 et 5.
+ 
+ 2. **Choisir l'instantané et son instant.** Les instantanés locaux (3 quotidiens, 3 de pré-déploiement, 30 jours au plus) sont dans `snapshots/`. L'instant de collecte part de 5 minutes avant l'instantané, lu sur la date du fichier, comme le fait `rune-update`.
+ 
+    ```
+    sudo ls -l /srv/rune/data/snapshots/
+    date -u -d "@$(( $(sudo stat -c %Y /srv/rune/data/snapshots/daily-AAAAMMJJ.db) - 300 ))" +%Y-%m-%dT%H:%M:%SZ
+    ```
+ 
+    Résultat attendu : le fichier choisi (`daily-AAAAMMJJ.db` ou `pre-vX.Y.Z.db`), et son instant `<date ISO>`, par exemple `2026-10-12T01:25:01Z` : le jour du nom de l'instantané (vers 03:25, heure de Paris, pour un `daily` de la nuit ; 5 minutes avant le déploiement pour un `pre-vX.Y.Z`), jamais l'heure actuelle. Un instant trop récent ferait manquer à la collecte les suppressions faites depuis l'instantané, qui reviendraient avec lui.
+ 
+@@ -43,21 +43,21 @@ Toutes les commandes se lancent sur le serveur (`ssh rune`), volume déverrouill
+    ```
+    sudo restic -r /srv/backup/restic --password-file /srv/rune/secrets/restic.pass snapshots
+    sudo restic -r /srv/backup/restic --password-file /srv/rune/secrets/restic.pass restore <id> --target /srv/rune/tmp/p4 --include /srv/rune/data/snapshots
+    sudo install -p -o 1000 -g 1000 -m 640 /srv/rune/tmp/p4/srv/rune/data/snapshots/daily-AAAAMMJJ.db /srv/rune/data/snapshots/
+    sudo rm -rf /srv/rune/tmp/p4
+    date -u -d "@$(( $(sudo stat -c %Y /srv/rune/data/snapshots/daily-AAAAMMJJ.db) - 300 ))" +%Y-%m-%dT%H:%M:%SZ
+    ```
+ 
+    L'instant doit tomber 5 minutes avant l'heure de cet instantané dans `restic snapshots` (colonne Time, heure locale) ; l'heure actuelle signale une copie sans `-p` : la refaire.
+ 
+-3. **Remettre la version d'avant, quand la restauration défait vX.Y.Z.** Cas d'une migration ratée, ou d'un message « suivez P4. » et d'un résultat `rollback-failed` d'`rune-update` : l'instantané est `pre-vX.Y.Z.db` (ou un `daily` antérieur à vX.Y.Z). Or `deploy.env` et `/opt/rune` peuvent encore nommer vX.Y.Z : son image referait sa migration sur la base restaurée dès la réapplication, puis au redémarrage. La version précédente est l'ancienne de la ligne de vX.Y.Z dans `deploy.log` (`date ancienne nouvelle résultat`). Erreur humaine ou base corrompue : rien à changer, la version en place migre au démarrage un schéma plus ancien (R-VER-7) ; passer à l'étape 4. Simple retour à la version précédente après un déploiement réussi, sans restauration : P3, étape 9 (`sudo rune-update --rollback`), pas P4.
++3. **Remettre la version d'avant, quand la restauration défait vX.Y.Z.** Cas d'une migration ratée, ou d'un message « suivez P4. » et d'un résultat `rollback-failed` de `rune-update` : l'instantané est `pre-vX.Y.Z.db` (ou un `daily` antérieur à vX.Y.Z). Or `deploy.env` et `/opt/rune` peuvent encore nommer vX.Y.Z : son image referait sa migration sur la base restaurée dès la réapplication, puis au redémarrage. La version précédente est l'ancienne de la ligne de vX.Y.Z dans `deploy.log` (`date ancienne nouvelle résultat`). Erreur humaine ou base corrompue : rien à changer, la version en place migre au démarrage un schéma plus ancien (R-VER-7) ; passer à l'étape 4. Simple retour à la version précédente après un déploiement réussi, sans restauration : P3, étape 9 (`sudo rune-update --rollback`), pas P4.
+ 
+    ```
+    sudo tail -n 3 /srv/rune/deploy.log
+    echo RUNE_VERSION=v<précédente> | sudo tee /srv/rune/deploy.env
+    sudo git -C /opt/rune checkout v<précédente>
+    cat /srv/rune/deploy.env
+    ```
+ 
+    Résultat attendu : `RUNE_VERSION=v<précédente>` et `HEAD is now at …` : la base restaurée et l'image redémarrée seront de la même version.
+ 
+diff --git a/docs/exploitation/P5-rotation-secrets.md b/docs/exploitation/P5-rotation-secrets.md
+index a1c4e40..63b3fa5 100644
+--- a/docs/exploitation/P5-rotation-secrets.md
++++ b/docs/exploitation/P5-rotation-secrets.md
+@@ -154,20 +154,22 @@ L'ancienne clé reste en place, sur le serveur et sur GitHub, tant que la nouvel
+    Sinon : `sudo stat -c '%a %U' /srv/rune/secrets/deploy_key` doit afficher `600 root`.
+ 
+ 4. **Supprimer l'ancienne clé sur GitHub.** Dépôt → Settings → Deploy keys : supprimer la clé la plus ancienne (date d'ajout).
+ 
+    Résultat attendu : GitHub ne liste que la nouvelle clé, en « Read-only » ; un `git fetch` de l'étape 3 réussit encore.
+ 
+    Sinon : `Permission denied (publickey)` après la suppression : la mauvaise clé a été supprimée ; ajouter de nouveau `deploy_key.pub` (étape 2).
+ 
+ ## Clé B2
+ 
++Le bucket s'appelle `rune-backups`, sauf si ce nom était déjà pris à l'installation : prendre alors le nom noté dans le gestionnaire (P1, « Dépôts restic », étape 2).
++
+ 1. **Créer la nouvelle clé limitée au bucket.** Console Backblaze : clé applicative limitée à `rune-backups`, lecture et écriture ; noter `keyID` et `applicationKey` dans le gestionnaire.
+ 
+    Résultat attendu : la nouvelle clé n'a accès qu'à `rune-backups`.
+ 
+    Sinon : la supprimer et la recréer avec la bonne limite.
+ 
+ 2. **La mettre dans `b2.env` et l'essayer.**
+ 
+    ```
+    sudo nano /srv/rune/secrets/b2.env
+diff --git a/docs/exploitation/P8-incident.md b/docs/exploitation/P8-incident.md
+index c01a379..fd8b716 100644
+--- a/docs/exploitation/P8-incident.md
++++ b/docs/exploitation/P8-incident.md
+@@ -61,21 +61,21 @@ Le motif est joint à l'alerte : `rune-alive` (toutes les 5 minutes) et `rune-un
+    | `api/health ne repond pas 200` (`rune-unlock`) | étapes 2 à 4 |
+ 
+    ```
+    sudo grep -c '^RUNE_URL=' /etc/rune/healthchecks.env
+    ```
+ 
+    Résultat attendu : `1`, et le motif mène à P2 ou aux étapes suivantes.
+ 
+    Sinon : `0` : ajouter la ligne `RUNE_URL`.
+ 
+-2. **Vérifier qu'aucune réapplication n'attend, puis regarder l'état du conteneur et ses journaux.** Une restauration en échec ou interrompue (P4, ou retour arrière d'`rune-update`) laisse l'appli arrêtée et ce marqueur ; `rune-alive` signale alors `appli KO : api/health injoignable`, sans le nommer.
++2. **Vérifier qu'aucune réapplication n'attend, puis regarder l'état du conteneur et ses journaux.** Une restauration en échec ou interrompue (P4, ou retour arrière de `rune-update`) laisse l'appli arrêtée et ce marqueur ; `rune-alive` signale alors `appli KO : api/health injoignable`, sans le nommer.
+ 
+    ```
+    sudo cat /srv/rune/reapply-pending
+    sudo docker compose --project-name rune -f /opt/rune/infra/compose.yaml --env-file /srv/rune/deploy.env ps
+    sudo docker compose --project-name rune -f /opt/rune/infra/compose.yaml --env-file /srv/rune/deploy.env logs --tail 100 app
+    curl -fsS http://127.0.0.1:3000/api/health
+    tailscale serve status
+    ```
+ 
+    Résultat attendu : `No such file or directory` pour le marqueur, puis la cause apparaît : conteneur arrêté ou en redémarrage, erreur de base, ou `serve` absent alors que `127.0.0.1:3000` répond.
+diff --git a/infra/RUNBOOK-reconstruction.md b/infra/RUNBOOK-reconstruction.md
+index fc02f58..1fac5ea 100644
+--- a/infra/RUNBOOK-reconstruction.md
++++ b/infra/RUNBOOK-reconstruction.md
+@@ -32,21 +32,21 @@ La copie restaurée contient des données personnelles en clair : elle reste dan
+ 
+    ```
+    restic version
+    docker version --format '{{.Server.Version}}'
+    ```
+ 
+    Résultat attendu : une version de restic (0.16 ou plus) et une version de Docker Engine.
+ 
+    Sinon : installer `restic` (`sudo apt install restic`) ou Docker ; noter le temps perdu dans les écarts.
+ 
+-4. **Écrire les accès B2 depuis le gestionnaire.** Mêmes valeurs que `b2.env` et `restic.pass` sur le serveur (P1, « Dépôts restic »).
++4. **Écrire les accès B2 depuis le gestionnaire.** Mêmes valeurs que `b2.env` et `restic.pass` sur le serveur (P1, « Dépôts restic »). Le bucket s'appelle `rune-backups`, sauf si ce nom était déjà pris à l'installation : prendre alors le nom noté dans le gestionnaire.
+ 
+    ```
+    install -m 600 /dev/null b2.env && nano b2.env
+    install -m 600 /dev/null restic.pass && nano restic.pass
+    ```
+ 
+    Contenu de `b2.env` :
+ 
+    ```
+    RESTIC_OFFSITE_REPOSITORY=s3:https://<endpoint S3 du bucket>/rune-backups

@@ -1,0 +1,1217 @@
+# Review package: b1da823..HEAD
+
+## Commits
+ef8298d test(web): thème au démarrage et polices du build vérifiés en navigateur, stockage et matchMedia absents couverts
+0ea5075 fix(web): thèmes clairs forcés sans assombrissement, contrôles à 14 px, pont --color-* vérifié
+f8258ef test(web): contrastes du Clair forcé, color-scheme de chaque thème, thèmes tirés de THEME_CHOICES
+881126c fix(web): décors du Carnet et de la Salle de nuit, voile et contrôles natifs aux jetons
+837d464 fix(web): le thème suit les autres onglets ; un aperçu ne touche qu'à sa racine
+
+## Files changed
+ apps/web/e2e/theme.spec.ts           | 118 +++++++++++++++++
+ apps/web/src/ui/theme/theme.ts       |  30 ++++-
+ apps/web/src/ui/theme/tokens.css     |  38 +++++-
+ apps/web/src/ui/ui.module.css        |   9 +-
+ apps/web/test/ui/base-styles.test.ts |  89 +++++++++++++
+ apps/web/test/ui/contrast.test.ts    | 190 +++++++++++++++++++++++-----
+ apps/web/test/ui/theme.test.ts       | 239 +++++++++++++++++++++++++++++++----
+ 7 files changed, 639 insertions(+), 74 deletions(-)
+
+## Diff
+diff --git a/apps/web/e2e/theme.spec.ts b/apps/web/e2e/theme.spec.ts
+new file mode 100644
+index 0000000..1dbc355
+--- /dev/null
++++ b/apps/web/e2e/theme.spec.ts
+@@ -0,0 +1,118 @@
++import { readdir, readFile } from 'node:fs/promises';
++import { join } from 'node:path';
++import { PRECACHE_GLOBAL, type PrecacheManifest } from '../src/sw/precache-manifest';
++import { expect, test } from './support/fixtures';
++
++// Spec refonte §4 : apparence gardée sur l'appareil (clé rune.theme), posée par main.tsx avant le premier
++// rendu ; polices embarquées : sous-ensemble latin en woff2 seulement, servi par notre serveur et précaché.
++
++const KEY = 'rune.theme';
++
++/** Fond de la page et theme-color : le --bg de chaque thème (tokens.css). */
++const CLAIR = { background: 'rgb(241, 243, 247)', themeColor: '#F1F3F7' };
++const SOMBRE = { background: 'rgb(7, 10, 18)', themeColor: '#070A12' };
++const CARNET = { background: 'rgb(242, 236, 223)', themeColor: '#F2ECDF' };
++const NUIT = { background: 'rgb(5, 7, 13)', themeColor: '#05070D' };
++
++/** Les six faces de ui/theme/fonts.css et leur fichier Fontsource (nom émis par Vite, sans l'empreinte). */
++const FACES = [
++  { family: 'Chakra Petch', weight: '600', file: 'chakra-petch-latin-600-normal' },
++  { family: 'Chakra Petch', weight: '700', file: 'chakra-petch-latin-700-normal' },
++  { family: 'Barlow', weight: '400', file: 'barlow-latin-400-normal' },
++  { family: 'Barlow', weight: '500', file: 'barlow-latin-500-normal' },
++  { family: 'Barlow', weight: '600', file: 'barlow-latin-600-normal' },
++  { family: 'Newsreader', weight: '600', file: 'newsreader-latin-600-normal' },
++];
++const FONT_FILE = /\.(woff2?|ttf|otf|eot)$/i;
++const sorted = (list: string[]) => [...list].sort();
++
++test('apparence : un thème forcé l’emporte sur le téléphone, Auto suit sa media query', async ({
++  server,
++  page,
++}) => {
++  /** Thème posé sur <html>, fond de la page et theme-color, lus dans la page. */
++  const look = () =>
++    page.evaluate(() => ({
++      theme: document.documentElement.getAttribute('data-theme'),
++      background: getComputedStyle(document.body).backgroundColor,
++      themeColor: document.querySelector('meta[name="theme-color"]')?.getAttribute('content') ?? null,
++    }));
++  /** Choix gardé (null : aucun, donc Auto), puis rechargement : main.tsx l'applique au démarrage. */
++  const reopenWith = async (choice: string | null) => {
++    await page.evaluate(
++      ([key, value]) => {
++        if (value === null) localStorage.removeItem(key);
++        else localStorage.setItem(key, value);
++      },
++      [KEY, choice] as const,
++    );
++    await page.reload();
++  };
++
++  await page.emulateMedia({ colorScheme: 'dark' });
++  await page.goto(`${server.url}/login`);
++
++  await test.step('téléphone sombre, Clair forcé : la page est claire', async () => {
++    await reopenWith('clair');
++    await expect.poll(look).toEqual({ theme: 'clair', ...CLAIR });
++  });
++
++  await test.step('téléphone sombre, Auto : la page est sombre', async () => {
++    await reopenWith(null);
++    await expect.poll(look).toEqual({ theme: null, ...SOMBRE });
++  });
++
++  await test.step('Auto : le téléphone passe en clair, la page suit sans rechargement', async () => {
++    await page.emulateMedia({ colorScheme: 'light' });
++    await expect.poll(look).toEqual({ theme: null, ...CLAIR });
++  });
++
++  await test.step('téléphone clair, Sombre forcé : la page est sombre', async () => {
++    await reopenWith('sombre');
++    await expect.poll(look).toEqual({ theme: 'sombre', ...SOMBRE });
++  });
++
++  await test.step('Carnet puis Nuit', async () => {
++    await reopenWith('carnet');
++    await expect.poll(look).toEqual({ theme: 'carnet', ...CARNET });
++    await reopenWith('nuit');
++    await expect.poll(look).toEqual({ theme: 'nuit', ...NUIT });
++  });
++});
++
++test('polices : les six woff2 latins seuls, émis, précachés et chargés depuis notre serveur', async ({
++  server,
++  page,
++}) => {
++  await test.step('build : aucun autre fichier de police, chacun dans le manifeste de précache', async () => {
++    const files = (await readdir(server.publicDir, { recursive: true })).map((f) => f.replaceAll('\\', '/'));
++    const fonts = sorted(files.filter((f) => FONT_FILE.test(f)));
++    expect(fonts, 'fichiers de police du build').toHaveLength(FACES.length);
++    for (const { file } of FACES) {
++      const emitted = fonts.filter((f) => f.startsWith(`assets/${file}-`) && f.endsWith('.woff2'));
++      expect(emitted, file).toHaveLength(1);
++    }
++    const firstLine = (await readFile(join(server.publicDir, 'sw.js'), 'utf8')).split('\n', 1)[0] ?? '';
++    const prefix = `self.${PRECACHE_GLOBAL} = `;
++    expect(firstLine.startsWith(prefix), 'ligne du manifeste de précache').toBe(true);
++    const manifest = JSON.parse(firstLine.slice(prefix.length, -1)) as PrecacheManifest;
++    const precached = sorted(manifest.files.filter((f) => FONT_FILE.test(f)));
++    expect(precached).toEqual(fonts.map((f) => `/${f}`));
++  });
++
++  await test.step('navigateur : chaque face se charge, aucune autre n’est déclarée', async () => {
++    await page.goto(`${server.url}/login`);
++    const faces = await page.evaluate(
++      async (wanted) => {
++        await Promise.all(wanted.map((font) => document.fonts.load(font)));
++        return [...document.fonts].map(
++          (f) => `${f.family.replace(/^["']|["']$/g, '')} ${f.weight} ${f.style} ${f.display} ${f.status}`,
++        );
++      },
++      FACES.map(({ family, weight }) => `${weight} 16px "${family}"`),
++    );
++    expect(sorted(faces)).toEqual(
++      sorted(FACES.map(({ family, weight }) => `${family} ${weight} normal swap loaded`)),
++    );
++  });
++});
+diff --git a/apps/web/src/ui/theme/theme.ts b/apps/web/src/ui/theme/theme.ts
+index 238144f..7caf18e 100644
+--- a/apps/web/src/ui/theme/theme.ts
++++ b/apps/web/src/ui/theme/theme.ts
+@@ -39,53 +39,73 @@ export function writeThemeChoice(choice: ThemeChoice): void {
+     localStorage.setItem(STORAGE_KEY, choice);
+   } catch {
+     // Stockage plein ou bloqué : rien à faire, le thème reste appliqué jusqu'au rechargement.
+   }
+ }
+ 
+ /** Composants abonnés au thème appliqué (useThemeChoice). */
+ const subscribers = new Set<() => void>();
+ /** Écoute du réglage du téléphone, active seulement en Auto. */
+ let stopFollowingPhone: (() => void) | null = null;
++/** Écoute des autres onglets, posée une fois par page au premier thème appliqué. */
++let followingOtherTabs = false;
++
++/**
++ * Un autre onglet ouvert change le choix ou vide le stockage : cette page l'applique aussi, sans attendre un
++ * rechargement. L'événement `storage` n'arrive qu'aux autres pages de la même origine, jamais à l'auteur.
++ */
++function followOtherTabs(doc: Document): void {
++  const win = doc.defaultView;
++  if (followingOtherTabs || !win) return;
++  followingOtherTabs = true;
++  win.addEventListener('storage', (event) => {
++    if (event.key === STORAGE_KEY || event.key === null) applyTheme(readThemeChoice(), doc.documentElement);
++  });
++}
+ 
+ function setThemeColor(doc: Document, color: string): void {
+   const metas = [...doc.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')];
+   if (metas.length === 0) {
+     const meta = doc.createElement('meta');
+     meta.name = 'theme-color';
+     doc.head.append(meta);
+     metas.push(meta);
+   }
+   for (const meta of metas) meta.content = color;
+ }
+ 
+ /**
+  * Applique le choix à `root` : `data-theme` pour un thème forcé, aucun attribut pour Auto (les couleurs
+- * suivent alors la media query CSS). Met à jour `theme-color` ; en Auto, il suit le téléphone à l'appel
+- * puis à chaque changement de son réglage.
++ * suivent alors la media query CSS). Pour la page (racine du document, par défaut), met aussi à jour
++ * `theme-color` ; en Auto, il suit le téléphone à l'appel puis à chaque changement de son réglage. La page
++ * suit ensuite le choix fait dans un autre onglet.
++ * Une autre racine (un aperçu) ne reçoit que l'attribut : tokens.css ne vise que `:root[data-theme]`, et la
++ * barre, l'écoute du téléphone et les composants abonnés restent ceux de la page.
+  */
+ export function applyTheme(choice: ThemeChoice, root: HTMLElement = document.documentElement): void {
++  if (choice === 'auto') root.removeAttribute('data-theme');
++  else root.setAttribute('data-theme', choice);
++  const doc = root.ownerDocument;
++  if (root !== doc.documentElement) return;
++  followOtherTabs(doc);
+   stopFollowingPhone?.();
+   stopFollowingPhone = null;
+-  const doc = root.ownerDocument;
+   if (choice === 'auto') {
+-    root.removeAttribute('data-theme');
+     const query = typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia(DARK_QUERY) : null;
+     const follow = () => setThemeColor(doc, query?.matches ? THEME_COLORS.sombre : THEME_COLORS.clair);
+     follow();
+     // Appelé avant le premier rendu : un navigateur sans écoute de media query garde la couleur du démarrage.
+     if (typeof query?.addEventListener === 'function') {
+       query.addEventListener('change', follow);
+       stopFollowingPhone = () => query.removeEventListener('change', follow);
+     }
+   } else {
+-    root.setAttribute('data-theme', choice);
+     setThemeColor(doc, THEME_COLORS[choice]);
+   }
+   for (const notify of subscribers) notify();
+ }
+ 
+ const subscribe = (onChange: () => void) => {
+   subscribers.add(onChange);
+   return () => {
+     subscribers.delete(onChange);
+   };
+diff --git a/apps/web/src/ui/theme/tokens.css b/apps/web/src/ui/theme/tokens.css
+index 4496dc9..82ff2dd 100644
+--- a/apps/web/src/ui/theme/tokens.css
++++ b/apps/web/src/ui/theme/tokens.css
+@@ -26,20 +26,26 @@
+   --field-bg: #ffffff;
+   --field-border: #ced6e0;
+   --focus: #1c6fb5;
+ 
+   --radius-card: 18px;
+   --radius-control: 14px;
+   --font-display: "Chakra Petch", system-ui, sans-serif;
+   --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+   --font-title: var(--font-display);
+ 
++  /* Voile sous un dialogue ou une feuille du bas (GUIDE, Bottom sheet). */
++  --backdrop: rgb(0 0 0 / 0.55);
++  /* Décor de la page sous le contenu, et retrait du texte depuis le bord de début (la marge du Carnet). */
++  --page-decor: none;
++  --page-inset-start: var(--space-4);
++
+   --space-1: 4px;
+   --space-2: 8px;
+   --space-3: 12px;
+   --space-4: 16px;
+   --space-6: 24px;
+   --content-width: 40rem;
+ }
+ 
+ @media (prefers-color-scheme: dark) {
+   :root:not([data-theme]) {
+@@ -56,23 +62,26 @@
+     --danger: #ff8a95;
+     --success: #3ddc97;
+     --warning-text: #f5c46b;
+     --warning-bg: #2a2112;
+     --field-bg: #0e1424;
+     --field-border: rgb(255 255 255 / 0.12);
+     --focus: #5ed8ff;
+   }
+ }
+ 
+-/* Clair forcé : les valeurs de :root, sans la bascule du téléphone. */
++/*
++ * Clair forcé : les valeurs de :root, sans la bascule du téléphone. « only light » interdit aussi au
++ * navigateur d'assombrir la page de lui-même (assombrissement automatique de Chrome Android, Samsung Internet).
++ */
+ :root[data-theme="clair"] {
+-  color-scheme: light;
++  color-scheme: only light;
+ }
+ 
+ /* Sombre forcé : mêmes couleurs que Auto en sombre (vérifié par test). */
+ :root[data-theme="sombre"] {
+   color-scheme: dark;
+   --bg: #070a12;
+   --surface: #0e1424;
+   --surface-strong: #0f1a30;
+   --border: rgb(255 255 255 / 0.06);
+   --text: #eef6fb;
+@@ -82,70 +91,85 @@
+   --accent-2: #8c6bff;
+   --danger: #ff8a95;
+   --success: #3ddc97;
+   --warning-text: #f5c46b;
+   --warning-bg: #2a2112;
+   --field-bg: #0e1424;
+   --field-border: rgb(255 255 255 / 0.12);
+   --focus: #5ed8ff;
+ }
+ 
+-/* Carnet : papier crème, encre, bleu de stylo, marge rouge (accent 2) ; titres en Newsreader. */
++/*
++ * Carnet : papier crème, encre, bleu de stylo, marge rouge (accent 2) ; titres en Newsreader. Cartes à 4 px ;
++ * champs et boutons gardent les 14 px du guide. « only light » : comme Clair forcé.
++ */
+ :root[data-theme="carnet"] {
+-  color-scheme: light;
++  color-scheme: only light;
+   --bg: #f2ecdf;
+   --surface: #fbf8f1;
+   --surface-strong: #fbf8f1;
+   --border: #d3c5ad;
+   --text: #211b16;
+   --text-muted: #5c5044;
+   --accent: #1f5f8b;
+   --accent-text: #fbf8f1;
+   --accent-2: #c45c48;
+   --danger: #a8322a;
+   --success: #2f6b3a;
+   --warning-text: #7a4e00;
+   --warning-bg: #f6e3a8;
+   --field-bg: #fbf8f1;
+   --field-border: #cdbfa6;
+   --focus: #1f5f8b;
+   --radius-card: 4px;
+-  --radius-control: 4px;
+   --font-title: "Newsreader", Georgia, serif;
++  /* Marge rouge à 33 px et lignes de cahier toutes les 32 px ; le texte part à 46 px, après la marge. */
++  --page-decor:
++    linear-gradient(
++      to right,
++      transparent 33px,
++      rgb(196 92 72 / 0.35) 33px,
++      rgb(196 92 72 / 0.35) 34px,
++      transparent 34px
++    ),
++    repeating-linear-gradient(to bottom, transparent 0, transparent 31px, #e4dac6 31px, #e4dac6 32px);
++  --page-inset-start: 46px;
+ }
+ 
+-/* Salle de nuit : néon pur sur le fond nuit du logo, cadres plus vifs. */
++/* Salle de nuit : néon pur sur le fond nuit du logo, cadres plus vifs ; cartes à 12 px, contrôles à 14 px. */
+ :root[data-theme="nuit"] {
+   color-scheme: dark;
+   --bg: #05070d;
+   --surface: #0b1222;
+   --surface-strong: #08101f;
+   --border: #18243b;
+   --text: #f2fdff;
+   --text-muted: #9fb0c6;
+   --accent: #5ed8ff;
+   --accent-text: #05070d;
+   --accent-2: #8c6bff;
+   --danger: #ff8a95;
+   --success: #3ddc97;
+   --warning-text: #f5c46b;
+   --warning-bg: #2a2112;
+   --field-bg: #0b1222;
+   --field-border: #1c2a44;
+   --focus: #5ed8ff;
+   --radius-card: 12px;
+-  --radius-control: 8px;
++  /* Halo néon en haut de page, qui s'éteint dans le fond nuit. */
++  --page-decor: radial-gradient(420px 260px at 50% 230px, rgb(94 216 255 / 0.1), rgb(5 7 13 / 0) 70%);
+ }
+ 
+ /*
+  * Pont vers les variables du socle encore lues par les écrans pas encore refaits (features/, sw/) :
+  * chacune pointe vers un jeton, donc suit le thème. Une ligne disparaît quand plus aucun module ne la lit.
++ * Correspondances vérifiées par test/ui/theme.test.ts, contrastes à travers le pont par test/ui/contrast.test.ts.
+  */
+ :root {
+   --color-bg: var(--bg);
+   --color-surface: var(--surface);
+   --color-text: var(--text);
+   --color-muted: var(--text-muted);
+   --color-border: var(--border);
+   --color-primary: var(--accent);
+   --color-primary-text: var(--accent-text);
+   --color-danger: var(--danger);
+diff --git a/apps/web/src/ui/ui.module.css b/apps/web/src/ui/ui.module.css
+index c19b11b..798ea65 100644
+--- a/apps/web/src/ui/ui.module.css
++++ b/apps/web/src/ui/ui.module.css
+@@ -1,20 +1,23 @@
+ /* Base et composants. Jetons (couleurs, rayons, polices) : theme/tokens.css, seule source. */
+ :global(*),
+ :global(*::before),
+ :global(*::after) {
+   box-sizing: border-box;
+ }
+ 
++/* Fond du thème et son décor (lignes et marge du Carnet, halo de la Salle de nuit) ; contrôles natifs à l'accent. */
+ :global(body) {
+   margin: 0;
+-  background: var(--bg);
++  background-color: var(--bg);
++  background-image: var(--page-decor);
++  accent-color: var(--accent);
+   color: var(--text);
+   font-family: var(--font-body);
+   font-size: 1rem;
+   line-height: 1.5;
+ }
+ 
+ :global(h1),
+ :global(h2),
+ :global(h3) {
+   font-family: var(--font-title);
+@@ -67,28 +70,30 @@
+   font-size: 0.875rem;
+   color: var(--text-muted);
+ }
+ 
+ .main {
+   flex: 1;
+   width: 100%;
+   max-width: var(--content-width);
+   margin: 0 auto;
+   padding: var(--space-4);
++  padding-inline-start: var(--page-inset-start);
+ }
+ 
+ .footer {
+   display: flex;
+   flex-wrap: wrap;
+   justify-content: center;
+   gap: var(--space-4);
+   padding: var(--space-4);
++  padding-inline-start: var(--page-inset-start);
+   font-size: 0.875rem;
+   color: var(--text-muted);
+ }
+ 
+ .page {
+   display: flex;
+   flex-direction: column;
+   gap: var(--space-4);
+ }
+ 
+@@ -188,21 +193,21 @@
+   border-color: var(--danger);
+ }
+ 
+ .backdrop {
+   position: fixed;
+   inset: 0;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   padding: var(--space-4);
+-  background: rgb(0 0 0 / 0.45);
++  background: var(--backdrop);
+ }
+ 
+ /*
+  * Jamais plus haut que l'écran (téléphone en paysage, texte agrandi, clavier ouvert) : le titre et
+  * les actions restent visibles, le contenu défile entre les deux.
+  */
+ .dialog {
+   width: 100%;
+   max-width: 28rem;
+   max-height: 100%;
+diff --git a/apps/web/test/ui/base-styles.test.ts b/apps/web/test/ui/base-styles.test.ts
+new file mode 100644
+index 0000000..de53e47
+--- /dev/null
++++ b/apps/web/test/ui/base-styles.test.ts
+@@ -0,0 +1,89 @@
++// @vitest-environment node
++import { readFileSync } from 'node:fs';
++import { resolve } from 'node:path';
++import { describe, expect, it } from 'vitest';
++import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
++
++const UI = resolve(import.meta.dirname, '../../src/ui');
++const read = (path: string) => readFileSync(resolve(UI, path), 'utf8');
++const tokens = () => parseCssBlocks(read('theme/tokens.css'));
++const base = () => parseCssBlocks(read('ui.module.css'));
++const rootTokens = () => declarationsOf(tokens(), ':root');
++const themeTokens = (choice: string) => declarationsOf(tokens(), `:root[data-theme="${choice}"]`);
++const rule = (selector: string) => declarationsOf(base(), selector);
++const px = (value: string | undefined) => Number.parseFloat(value ?? '');
++/** Valeur sur une ligne, telle que l'écrit la maquette, quel que soit le découpage du formateur. */
++const flat = (value: string | undefined) =>
++  (value ?? '').replace(/\s+/g, ' ').replace(/\( /g, '(').replace(/ \)/g, ')');
++
++describe('feuille de base (ui.module.css) : rien que des jetons', () => {
++  it('aucune couleur écrite en dur : chaque couleur vient de tokens.css', () => {
++    const css = read('ui.module.css').replace(/\/\*[\s\S]*?\*\//g, '');
++    const literals = css.match(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(/gi) ?? [];
++    expect(literals).toEqual([]);
++  });
++
++  it('voile derrière un dialogue : le jeton --backdrop, noir à 55 % (GUIDE, feuille du bas)', () => {
++    expect(rule('.backdrop')?.get('background')).toBe('var(--backdrop)');
++    expect(rootTokens()?.get('--backdrop')).toBe('rgb(0 0 0 / 0.55)');
++  });
++
++  it('cases à cocher et boutons radio natifs prennent l’accent du thème', () => {
++    expect(rule(':global(body)')?.get('accent-color')).toBe('var(--accent)');
++  });
++});
++
++describe('décor de page (spec refonte §4 : lignes et marge du Carnet, fond nuit du logo)', () => {
++  it('la page pose le fond du thème puis son décor, sans raccourci qui effacerait l’un des deux', () => {
++    const body = rule(':global(body)');
++    expect(body?.get('background')).toBeUndefined();
++    expect(body?.get('background-color')).toBe('var(--bg)');
++    expect(body?.get('background-image')).toBe('var(--page-decor)');
++  });
++
++  it('le contenu et le pied de page commencent après le retrait du thème', () => {
++    expect(rule('.main')?.get('padding-inline-start')).toBe('var(--page-inset-start)');
++    expect(rule('.footer')?.get('padding-inline-start')).toBe('var(--page-inset-start)');
++  });
++
++  it('par défaut (clair, sombre, Auto) : aucun décor, retrait habituel de 16 px', () => {
++    expect(rootTokens()?.get('--page-decor')).toBe('none');
++    expect(rootTokens()?.get('--page-inset-start')).toBe('var(--space-4)');
++    expect(rootTokens()?.get('--space-4')).toBe('16px');
++    const dark = declarationsOf(tokens(), ':root:not([data-theme])', '(prefers-color-scheme: dark)');
++    for (const [name, block] of [
++      ['auto en sombre', dark],
++      ['clair', themeTokens('clair')],
++      ['sombre', themeTokens('sombre')],
++    ] as const) {
++      expect(block, name).not.toBeNull();
++      expect(block?.has('--page-decor'), name).toBe(false);
++      expect(block?.has('--page-inset-start'), name).toBe(false);
++    }
++  });
++
++  it('Carnet : marge rouge entre 33 et 34 px et lignes de cahier toutes les 32 px (maquette Carnet)', () => {
++    const decor = flat(themeTokens('carnet')?.get('--page-decor'));
++    expect(decor).toContain(
++      'linear-gradient(to right, transparent 33px, rgb(196 92 72 / 0.35) 33px, rgb(196 92 72 / 0.35) 34px, transparent 34px)',
++    );
++    expect(decor).toContain(
++      'repeating-linear-gradient(to bottom, transparent 0, transparent 31px, #e4dac6 31px, #e4dac6 32px)',
++    );
++  });
++
++  it('Carnet : le texte commence à 46 px, après la marge, qui ne le traverse jamais', () => {
++    const inset = themeTokens('carnet')?.get('--page-inset-start');
++    expect(inset).toBe('46px');
++    expect(px(inset)).toBeGreaterThan(34);
++  });
++
++  it('Salle de nuit : halo néon en haut de page sur le fond nuit (maquette Main), retrait habituel', () => {
++    const nuit = themeTokens('nuit');
++    expect(flat(nuit?.get('--page-decor'))).toBe(
++      'radial-gradient(420px 260px at 50% 230px, rgb(94 216 255 / 0.1), rgb(5 7 13 / 0) 70%)',
++    );
++    expect(nuit?.get('--bg')).toBe('#05070d');
++    expect(nuit?.has('--page-inset-start')).toBe(false);
++  });
++});
+diff --git a/apps/web/test/ui/contrast.test.ts b/apps/web/test/ui/contrast.test.ts
+index 3aab639..ece1cee 100644
+--- a/apps/web/test/ui/contrast.test.ts
++++ b/apps/web/test/ui/contrast.test.ts
+@@ -1,24 +1,31 @@
+ // @vitest-environment node
+ import { readFileSync } from 'node:fs';
+ import { resolve } from 'node:path';
+ import { describe, expect, it } from 'vitest';
++import { THEME_CHOICES, type ThemeChoice } from '../../src/ui/theme/theme';
+ import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
+ 
+ const TOKENS_CSS = resolve(import.meta.dirname, '../../src/ui/theme/tokens.css');
++const DARK = '(prefers-color-scheme: dark)';
+ 
+-/** Luminance relative WCAG 2.x d'une couleur `#rgb` ou `#rrggbb`. */
+-function luminance(hex: string): number {
++/** `#rgb` ou `#rrggbb` → [r, g, b] de 0 à 255. */
++function hexToRgb(hex: string): number[] {
+   const h = hex.slice(1);
+   const full = h.length === 3 ? [...h].map((c) => c + c).join('') : h;
+-  const [r, g, b] = [0, 2, 4].map((i) => {
+-    const s = Number.parseInt(full.slice(i, i + 2), 16) / 255;
++  return [0, 2, 4].map((i) => Number.parseInt(full.slice(i, i + 2), 16));
++}
++
++/** Luminance relative WCAG 2.x d'une couleur `#rgb` ou `#rrggbb`. */
++function luminance(hex: string): number {
++  const [r, g, b] = hexToRgb(hex).map((c) => {
++    const s = c / 255;
+     return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+   }) as [number, number, number];
+   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+ }
+ 
+ /** Rapport de contraste WCAG 2.x, de 1 à 21, quel que soit l'ordre des couleurs. */
+ function contrastRatio(hexA: string, hexB: string): number {
+   const [hi, lo] = [luminance(hexA), luminance(hexB)].sort((x, y) => y - x) as [number, number];
+   return (hi + 0.05) / (lo + 0.05);
+ }
+@@ -49,63 +56,178 @@ const PAIRS: readonly (readonly [string, string, number])[] = [
+   ['--danger', '--surface', TEXT],
+   ['--success', '--bg', UI],
+   ['--success', '--surface', UI],
+   ['--warning-text', '--warning-bg', TEXT],
+   ['--focus', '--bg', UI],
+   ['--focus', '--surface', UI],
+ ];
+ 
+ const CHECKED_TOKENS = [...new Set([...PAIRS.map(([fg]) => fg), ...PAIRS.map(([, bg]) => bg)])];
+ 
+-/** Les 5 jeux de couleurs : clair (`:root`), Auto en sombre, puis chaque thème forcé. */
+-const PALETTES: readonly { name: string; selector: string; media: string | null }[] = [
+-  { name: 'clair', selector: ':root', media: null },
+-  { name: 'auto en sombre', selector: ':root:not([data-theme])', media: '(prefers-color-scheme: dark)' },
+-  { name: 'sombre', selector: ':root[data-theme="sombre"]', media: null },
+-  { name: 'carnet', selector: ':root[data-theme="carnet"]', media: null },
+-  { name: 'nuit', selector: ':root[data-theme="nuit"]', media: null },
++/**
++ * Paires que lisent les écrans pas encore refaits, à travers le pont `--color-*` de tokens.css : le texte
++ * courant se pose sur les fonds du pont (bandeaux de mise à jour, pastille « mineur » des membres), le
++ * primaire sert de contour du focus, de point « prêt » et de cadre.
++ */
++const BRIDGE_PAIRS: readonly (readonly [string, string, number])[] = [
++  ['--color-text', '--color-bg', TEXT],
++  ['--color-text', '--color-surface', TEXT],
++  ['--color-text', '--color-info-bg', TEXT],
++  ['--color-text', '--color-warning-bg', TEXT],
++  ['--color-muted', '--color-bg', TEXT],
++  ['--color-muted', '--color-surface', TEXT],
++  ['--color-primary-text', '--color-primary', TEXT],
++  ['--color-danger', '--color-bg', TEXT],
++  ['--color-danger', '--color-surface', TEXT],
++  ['--color-primary', '--color-bg', UI],
++  ['--color-primary', '--color-surface', UI],
++];
++
++const rgbToHex = (rgb: number[]) =>
++  `#${rgb.map((c) => Math.round(c).toString(16).padStart(2, '0')).join('')}`;
++
++/**
++ * Couleur calculée d'une variable comme le navigateur la lit : suit les `var(--x)` et calcule
++ * `color-mix(in srgb, var(--a) N%, var(--b))` ; null si la valeur n'aboutit pas à un hexadécimal.
++ */
++function resolveColor(name: string, vars: ReadonlyMap<string, string>, depth = 0): string | null {
++  const value = vars.get(name);
++  if (value === undefined || depth > 8) return null;
++  if (HEX.test(value)) return value;
++  const ref = /^var\(\s*(--[\w-]+)\s*\)$/.exec(value);
++  if (ref) return resolveColor(ref[1] as string, vars, depth + 1);
++  const mix = /^color-mix\(in srgb,\s*var\((--[\w-]+)\)\s+(\d+(?:\.\d+)?)%,\s*var\((--[\w-]+)\)\s*\)$/.exec(
++    value,
++  );
++  if (!mix) return null;
++  const a = resolveColor(mix[1] as string, vars, depth + 1);
++  const b = resolveColor(mix[3] as string, vars, depth + 1);
++  if (!a || !b) return null;
++  const p = Number(mix[2]) / 100;
++  const [ra, rb] = [hexToRgb(a), hexToRgb(b)];
++  return rgbToHex(ra.map((c, i) => c * p + (rb[i] as number) * (1 - p)));
++}
++
++type ForcedTheme = Exclude<ThemeChoice, 'auto'>;
++type Scheme = 'light' | 'only light' | 'dark';
++
++/** Thèmes forcés, tirés de THEME_CHOICES : un thème ajouté au choix doit avoir son bloc et ses contrastes. */
++const FORCED = THEME_CHOICES.filter((c): c is ForcedTheme => c !== 'auto');
++
++/**
++ * `color-scheme` attendu : les contrôles natifs (champs, cases, barres de défilement) suivent le fond ; un
++ * thème clair forcé dit « only light » pour que le navigateur ne l'assombrisse pas de lui-même.
++ */
++const SCHEMES: Record<ForcedTheme, Scheme> = {
++  clair: 'only light',
++  sombre: 'dark',
++  carnet: 'only light',
++  nuit: 'dark',
++};
++
++interface Palette {
++  name: string;
++  selector: string;
++  media: string | null;
++  scheme: Scheme;
++  /** Couleurs reprises de `:root` (le clair) ; sinon le bloc les déclare toutes, sans rien hériter du clair. */
++  fromRoot: boolean;
++}
++
++/** Chaque rendu possible : Auto sur un téléphone clair puis sombre, puis chaque thème forcé. */
++const PALETTES: readonly Palette[] = [
++  { name: 'Auto, téléphone clair', selector: ':root', media: null, scheme: 'light', fromRoot: true },
++  {
++    name: 'Auto, téléphone sombre',
++    selector: ':root:not([data-theme])',
++    media: DARK,
++    scheme: 'dark',
++    fromRoot: false,
++  },
++  ...FORCED.map((c) => ({
++    name: `${c} forcé`,
++    selector: `:root[data-theme="${c}"]`,
++    media: null,
++    scheme: SCHEMES[c],
++    fromRoot: c === 'clair',
++  })),
+ ];
+ 
+ describe('contrastRatio (WCAG 2.x)', () => {
+   it('noir sur blanc vaut 21, une couleur sur elle-même vaut 1, dans les deux sens', () => {
+     expect(contrastRatio('#000000', '#FFFFFF')).toBeCloseTo(21, 5);
+     expect(contrastRatio('#FFFFFF', '#000')).toBeCloseTo(21, 5);
+     expect(contrastRatio('#1C6FB5', '#1C6FB5')).toBe(1);
+   });
+ 
+   it('#777777 sur blanc reste sous 4,5:1 (4,48), #767676 passe (4,54)', () => {
+     expect(contrastRatio('#777777', '#FFFFFF')).toBeCloseTo(4.48, 2);
+     expect(contrastRatio('#767676', '#FFFFFF')).toBeCloseTo(4.54, 2);
+   });
+ });
+ 
+ describe('contrastes des jetons, pour chaque thème', () => {
+   const blocks = parseCssBlocks(readFileSync(TOKENS_CSS, 'utf8'));
++  const root = declarationsOf(blocks, ':root');
++  const own = (p: Palette) => declarationsOf(blocks, p.selector, p.media);
++  /** Ce que voit la page dans ce rendu : `:root`, puis le bloc du thème par-dessus (la cascade). */
++  const seen = (p: Palette) => {
++    const block = own(p);
++    return root && block ? new Map([...root, ...block]) : null;
++  };
+ 
+-  it('les 5 jeux de couleurs sont présents et chacun déclare tous les jetons vérifiés en hexadécimal', () => {
+-    expect(PALETTES).toHaveLength(5);
+-    for (const { name, selector, media } of PALETTES) {
+-      const tokens = declarationsOf(blocks, selector, media);
+-      expect(tokens, `bloc ${name} absent de tokens.css`).not.toBeNull();
+-      for (const token of CHECKED_TOKENS) {
+-        expect(tokens?.get(token), `${token} dans le thème ${name}`).toMatch(HEX);
+-      }
+-    }
++  it('un bloc :root[data-theme] pour chaque thème forcé de THEME_CHOICES, et aucun autre', () => {
++    const themed = blocks
++      .filter((b) => b.media === null)
++      .flatMap((b) => /^:root\[data-theme="([^"]+)"\]$/.exec(b.selector)?.[1] ?? []);
++    expect([...new Set(themed)].sort()).toEqual([...FORCED].sort());
+   });
+ 
+-  for (const { name, selector, media } of PALETTES) {
+-    it(`thème ${name} : chaque paire déclarée atteint son minimum`, () => {
+-      const tokens = declarationsOf(blocks, selector, media);
+-      expect(tokens, `bloc ${name} absent de tokens.css`).not.toBeNull();
+-      for (const [fg, bg, min] of PAIRS) {
+-        const a = tokens?.get(fg);
+-        const b = tokens?.get(bg);
+-        expect(a, `${fg} (${name})`).toMatch(HEX);
+-        expect(b, `${bg} (${name})`).toMatch(HEX);
+-        const ratio = contrastRatio(a as string, b as string);
+-        expect(ratio, `${fg} ${a} sur ${bg} ${b} (${name}) : ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+-          min,
+-        );
+-      }
++  for (const p of PALETTES) {
++    describe(`rendu ${p.name}`, () => {
++      it('son bloc existe et chaque jeton vérifié y vaut un hexadécimal', () => {
++        expect(own(p), `bloc ${p.selector} absent de tokens.css`).not.toBeNull();
++        const tokens = p.fromRoot ? seen(p) : own(p);
++        for (const token of CHECKED_TOKENS) {
++          expect(tokens?.get(token), `${token} (${p.name})`).toMatch(HEX);
++        }
++      });
++
++      it(`color-scheme: ${p.scheme}`, () => {
++        expect(seen(p)?.get('color-scheme')).toBe(p.scheme);
++      });
++
++      it('chaque paire déclarée atteint son minimum', () => {
++        const tokens = seen(p);
++        expect(tokens, `bloc ${p.selector} absent de tokens.css`).not.toBeNull();
++        for (const [fg, bg, min] of PAIRS) {
++          const a = tokens?.get(fg);
++          const b = tokens?.get(bg);
++          expect(a, `${fg} (${p.name})`).toMatch(HEX);
++          expect(b, `${bg} (${p.name})`).toMatch(HEX);
++          const ratio = contrastRatio(a as string, b as string);
++          expect(
++            ratio,
++            `${fg} ${a} sur ${bg} ${b} (${p.name}) : ${ratio.toFixed(2)}:1`,
++          ).toBeGreaterThanOrEqual(min);
++        }
++      });
++
++      // Le pont est déclaré sur :root ; le bloc du thème, plus spécifique, l'emporte pour les jetons.
++      it('à travers le pont --color-* : chaque paire lue par les écrans atteint son minimum', () => {
++        const vars = seen(p);
++        expect(vars, `bloc ${p.selector} absent de tokens.css`).not.toBeNull();
++        for (const [fg, bg, min] of BRIDGE_PAIRS) {
++          const a = resolveColor(fg, vars ?? new Map());
++          const b = resolveColor(bg, vars ?? new Map());
++          expect(a, `${fg} → ${vars?.get(fg)} (${p.name})`).toMatch(HEX);
++          expect(b, `${bg} → ${vars?.get(bg)} (${p.name})`).toMatch(HEX);
++          const ratio = contrastRatio(a as string, b as string);
++          expect(
++            ratio,
++            `${fg} ${a} sur ${bg} ${b} (${p.name}) : ${ratio.toFixed(2)}:1`,
++          ).toBeGreaterThanOrEqual(min);
++        }
++      });
+     });
+   }
+ });
+diff --git a/apps/web/test/ui/theme.test.ts b/apps/web/test/ui/theme.test.ts
+index 27c6758..eacccc8 100644
+--- a/apps/web/test/ui/theme.test.ts
++++ b/apps/web/test/ui/theme.test.ts
+@@ -1,31 +1,42 @@
+-import { readdirSync, readFileSync } from 'node:fs';
++import { existsSync, readdirSync, readFileSync } from 'node:fs';
+ import { createRequire } from 'node:module';
+ import { join, relative, resolve } from 'node:path';
+ import { act, renderHook } from '@testing-library/react';
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+ import {
+   applyTheme,
+   readThemeChoice,
+   THEME_CHOICES,
+   type ThemeChoice,
+   useThemeChoice,
+   writeThemeChoice,
+ } from '../../src/ui/theme/theme';
+ import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
+ 
+ const WEB = resolve(import.meta.dirname, '../..');
+ const SRC = join(WEB, 'src');
+ const THEME_DIR = join(SRC, 'ui/theme');
+ const read = (path: string) => readFileSync(path, 'utf8');
+ const tokensBlocks = () => parseCssBlocks(read(join(THEME_DIR, 'tokens.css')));
+ 
++function* walk(dir: string): Generator<string> {
++  for (const entry of readdirSync(dir, { withFileTypes: true })) {
++    const full = join(dir, entry.name);
++    if (entry.isDirectory()) yield* walk(full);
++    else if (entry.isFile()) yield full;
++  }
++}
++const srcFiles = () => [...walk(SRC)];
++/** Chemin depuis src/, en barres obliques. */
++const rel = (f: string) => relative(SRC, f).replaceAll('\\', '/');
++
+ const KEY = 'rune.theme';
+ const DARK = '(prefers-color-scheme: dark)';
+ const html = () => document.documentElement;
+ const themeColors = () =>
+   [...document.querySelectorAll('meta[name="theme-color"]')].map((m) => m.getAttribute('content'));
+ 
+ /** `prefers-color-scheme` du téléphone, réglable pendant le test. */
+ function stubColorScheme(dark: boolean) {
+   const listeners = new Set<(e: { matches: boolean }) => void>();
+   const query = {
+@@ -103,37 +114,79 @@ describe('choix de l’apparence, gardé sur l’appareil', () => {
+ 
+   it('writeThemeChoice ne lève pas quand le stockage refuse l’écriture', () => {
+     vi.stubGlobal('localStorage', {
+       getItem: () => null,
+       setItem: () => {
+         throw new DOMException('Quota dépassé', 'QuotaExceededError');
+       },
+     });
+     expect(() => writeThemeChoice('carnet')).not.toThrow();
+   });
++
++  it('stockage bloqué dès l’accès à localStorage (SecurityError) : « auto », aucune levée, le réglage applique', () => {
++    // Navigateur réel (cookies bloqués) : c'est la lecture de `localStorage` elle-même qui lève.
++    const own = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
++    if (!own) throw new Error('localStorage absent de globalThis');
++    Object.defineProperty(globalThis, 'localStorage', {
++      configurable: true,
++      get() {
++        throw new DOMException('Accès refusé', 'SecurityError');
++      },
++    });
++    try {
++      expect(() => globalThis.localStorage).toThrow(DOMException);
++      expect(readThemeChoice()).toBe('auto');
++      expect(() => writeThemeChoice('nuit')).not.toThrow();
++      const { result } = renderHook(() => useThemeChoice());
++      act(() => result.current[1]('nuit'));
++      expect(html().getAttribute('data-theme')).toBe('nuit');
++      expect(themeColors()).toEqual(['#05070D']);
++      expect(result.current[0]).toBe('nuit');
++    } finally {
++      Object.defineProperty(globalThis, 'localStorage', own);
++    }
++  });
+ });
+ 
+ describe('applyTheme', () => {
+   it('pose data-theme pour un thème forcé, le retire pour Auto', () => {
+     applyTheme('clair');
+     expect(html().getAttribute('data-theme')).toBe('clair');
+     applyTheme('nuit');
+     expect(html().getAttribute('data-theme')).toBe('nuit');
+     applyTheme('auto');
+     expect(html().hasAttribute('data-theme')).toBe(false);
+   });
+ 
+-  it('agit sur la racine donnée', () => {
+-    const root = document.createElement('div');
+-    applyTheme('carnet', root);
+-    expect(root.getAttribute('data-theme')).toBe('carnet');
++  it('une autre racine (aperçu) ne reçoit que l’attribut : la page garde sa barre et suit encore le téléphone', () => {
++    const scheme = stubColorScheme(true);
++    applyTheme('auto');
++    const preview = document.createElement('div');
++    applyTheme('carnet', preview);
++    expect(preview.getAttribute('data-theme')).toBe('carnet');
+     expect(html().hasAttribute('data-theme')).toBe(false);
++    expect(themeColors()).toEqual(['#070A12']);
++    expect(scheme.listeners()).toBe(1);
++    applyTheme('auto', preview);
++    expect(preview.hasAttribute('data-theme')).toBe(false);
++    expect(scheme.listeners()).toBe(1);
++    scheme.set(false);
++    expect(themeColors()).toEqual(['#F1F3F7']);
++  });
++
++  it('une autre racine n’ajoute ni écoute du téléphone ni changement de barre, même en partant d’un thème forcé', () => {
++    const scheme = stubColorScheme(true);
++    applyTheme('nuit');
++    applyTheme('auto', document.createElement('div'));
++    expect(scheme.listeners()).toBe(0);
++    expect(themeColors()).toEqual(['#05070D']);
++    expect(html().getAttribute('data-theme')).toBe('nuit');
+   });
+ 
+   it('theme-color : #F1F3F7 en clair, #070A12 en sombre', () => {
+     applyTheme('clair');
+     expect(themeColors()).toEqual(['#F1F3F7']);
+     applyTheme('sombre');
+     expect(themeColors()).toEqual(['#070A12']);
+   });
+ 
+   it('theme-color de chaque thème forcé = son --bg dans tokens.css', () => {
+@@ -174,20 +227,47 @@ describe('applyTheme', () => {
+     const scheme = stubColorScheme(false);
+     applyTheme('auto');
+     applyTheme('auto');
+     expect(scheme.listeners()).toBe(1);
+     applyTheme('carnet');
+     expect(scheme.listeners()).toBe(0);
+     scheme.set(true);
+     expect(themeColors()).toEqual(['#F2ECDF']);
+     expect(html().getAttribute('data-theme')).toBe('carnet');
+   });
++
++  it('Auto sans matchMedia : couleur du thème clair, aucune levée', () => {
++    vi.stubGlobal('matchMedia', undefined);
++    expect(() => applyTheme('auto')).not.toThrow();
++    expect(html().hasAttribute('data-theme')).toBe(false);
++    expect(themeColors()).toEqual(['#F1F3F7']);
++    expect(() => applyTheme('sombre')).not.toThrow();
++    expect(themeColors()).toEqual(['#070A12']);
++  });
++
++  it('Auto avec une media query sans addEventListener (ancien Safari) : réglage lu à l’appel, aucune levée', () => {
++    for (const [dark, color] of [
++      [false, '#F1F3F7'],
++      [true, '#070A12'],
++    ] as const) {
++      vi.stubGlobal('matchMedia', (q: string) => ({
++        matches: q === DARK && dark,
++        media: q,
++        addListener() {},
++        removeListener() {},
++      }));
++      expect(() => applyTheme('auto'), `téléphone sombre : ${dark}`).not.toThrow();
++      expect(themeColors(), `téléphone sombre : ${dark}`).toEqual([color]);
++      expect(() => applyTheme('carnet')).not.toThrow();
++      expect(themeColors()).toEqual(['#F2ECDF']);
++    }
++  });
+ });
+ 
+ describe('useThemeChoice', () => {
+   it('rend le thème appliqué, « auto » par défaut', () => {
+     const { result } = renderHook(() => useThemeChoice());
+     expect(result.current[0]).toBe('auto');
+   });
+ 
+   it('le réglage garde le choix, l’applique et met à jour chaque composant abonné', () => {
+     const first = renderHook(() => useThemeChoice());
+@@ -204,20 +284,62 @@ describe('useThemeChoice', () => {
+   });
+ 
+   it('suit un thème appliqué au démarrage (main.tsx), même sans appel au réglage', () => {
+     localStorage.setItem(KEY, 'nuit');
+     applyTheme(readThemeChoice());
+     const { result } = renderHook(() => useThemeChoice());
+     expect(result.current[0]).toBe('nuit');
+   });
+ });
+ 
++describe('autres onglets ouverts', () => {
++  /** Ce que reçoit cette page quand un autre onglet de Rune écrit dans le stockage. */
++  const fromOtherTab = (key: string | null) =>
++    act(() => {
++      window.dispatchEvent(new StorageEvent('storage', { key }));
++    });
++
++  it('un autre onglet choisit un thème : cette page l’applique aussi, et ses composants suivent', () => {
++    applyTheme(readThemeChoice()); // démarrage, comme main.tsx
++    const { result } = renderHook(() => useThemeChoice());
++    localStorage.setItem(KEY, 'nuit');
++    fromOtherTab(KEY);
++    expect(html().getAttribute('data-theme')).toBe('nuit');
++    expect(themeColors()).toEqual(['#05070D']);
++    expect(result.current[0]).toBe('nuit');
++  });
++
++  it('un autre onglet vide le stockage : retour à Auto', () => {
++    localStorage.setItem(KEY, 'carnet');
++    applyTheme(readThemeChoice());
++    const { result } = renderHook(() => useThemeChoice());
++    localStorage.clear();
++    fromOtherTab(null);
++    expect(html().hasAttribute('data-theme')).toBe(false);
++    expect(result.current[0]).toBe('auto');
++  });
++
++  it('une autre clé ne touche pas au thème ; une seule écoute malgré plusieurs applyTheme', () => {
++    applyTheme('carnet');
++    applyTheme('auto');
++    applyTheme('carnet');
++    const getItem = vi.fn((key: string) => (key === KEY ? 'nuit' : null));
++    vi.stubGlobal('localStorage', { getItem, setItem: vi.fn(), removeItem: vi.fn() });
++    fromOtherTab('rune.autre');
++    expect(getItem).not.toHaveBeenCalled();
++    expect(html().getAttribute('data-theme')).toBe('carnet');
++    fromOtherTab(KEY);
++    expect(getItem).toHaveBeenCalledTimes(1);
++    expect(html().getAttribute('data-theme')).toBe('nuit');
++  });
++});
++
+ describe('tokens.css', () => {
+   const COLOR_TOKENS = [
+     '--bg',
+     '--surface',
+     '--surface-strong',
+     '--border',
+     '--text',
+     '--text-muted',
+     '--accent',
+     '--accent-text',
+@@ -268,59 +390,113 @@ describe('tokens.css', () => {
+   it('carnet et nuit redéfinissent toutes les couleurs ; titres du Carnet en Newsreader', () => {
+     const blocks = tokensBlocks();
+     for (const choice of ['carnet', 'nuit']) {
+       const theme = declarationsOf(blocks, `:root[data-theme="${choice}"]`);
+       for (const token of COLOR_TOKENS) expect(theme?.get(token), `${token} (${choice})`).toBeTruthy();
+     }
+     expect(declarationsOf(blocks, ':root[data-theme="carnet"]')?.get('--font-title')).toMatch(
+       /^"Newsreader",/,
+     );
+   });
++
++  it('un thème clair forcé refuse l’assombrissement automatique du navigateur ; Auto reste « light »', () => {
++    const blocks = tokensBlocks();
++    expect(declarationsOf(blocks, ':root')?.get('color-scheme')).toBe('light');
++    for (const choice of ['clair', 'carnet']) {
++      const theme = declarationsOf(blocks, `:root[data-theme="${choice}"]`);
++      expect(theme?.get('color-scheme'), choice).toBe('only light');
++    }
++  });
++
++  it('champs et boutons gardent 14 px dans chaque thème ; seules les cartes changent en Carnet et Salle de nuit', () => {
++    const blocks = tokensBlocks();
++    const root = declarationsOf(blocks, ':root');
++    const themes: [string, string | null][] = [
++      ...['clair', 'sombre', 'carnet', 'nuit'].map((c): [string, null] => [`:root[data-theme="${c}"]`, null]),
++      [':root:not([data-theme])', DARK],
++    ];
++    for (const [selector, media] of themes) {
++      const effective = new Map([...(root ?? []), ...(declarationsOf(blocks, selector, media) ?? [])]);
++      expect(effective.get('--radius-control'), selector).toBe('14px');
++    }
++    expect(declarationsOf(blocks, ':root[data-theme="carnet"]')?.get('--radius-card')).toBe('4px');
++    expect(declarationsOf(blocks, ':root[data-theme="nuit"]')?.get('--radius-card')).toBe('12px');
++  });
++
++  it('pont --color-* : chaque variable du socle pointe vers son jeton, sur :root seulement', () => {
++    // Retirer la ligne ici aussi quand un écran refait ne la lit plus et qu'elle disparaît de tokens.css.
++    const BRIDGE = {
++      '--color-bg': 'var(--bg)',
++      '--color-surface': 'var(--surface)',
++      '--color-text': 'var(--text)',
++      '--color-muted': 'var(--text-muted)',
++      '--color-border': 'var(--border)',
++      '--color-primary': 'var(--accent)',
++      '--color-primary-text': 'var(--accent-text)',
++      '--color-danger': 'var(--danger)',
++      '--color-info-bg': 'color-mix(in srgb, var(--accent) 10%, var(--surface))',
++      '--color-warning-bg': 'var(--warning-bg)',
++      '--radius': 'var(--radius-control)',
++    };
++    const isBridge = (name: string) => name.startsWith('--color-') || name === '--radius';
++    const blocks = tokensBlocks();
++    const root = [...(declarationsOf(blocks, ':root') ?? [])];
++    expect(Object.fromEntries(root.filter(([name]) => isBridge(name)))).toEqual(BRIDGE);
++    // Redéfini dans un thème, le pont ne suivrait plus ses jetons.
++    for (const block of blocks.filter((b) => b.selector !== ':root' || b.media !== null)) {
++      const names = [...block.declarations.keys()].filter(isBridge);
++      expect(names, `${block.selector} ${block.media ?? ''}`).toEqual([]);
++    }
++  });
+ });
+ 
+ describe('feuilles de style de src/', () => {
+-  function* walk(dir: string): Generator<string> {
+-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+-      const full = join(dir, entry.name);
+-      if (entry.isDirectory()) yield* walk(full);
+-      else if (entry.isFile()) yield full;
+-    }
+-  }
+-  const files = [...walk(SRC)];
++  const files = srcFiles();
+   const cssFiles = files.filter((f) => f.endsWith('.css'));
+-  const rel = (f: string) => relative(SRC, f).replaceAll('\\', '/');
+   const declared = (css: string) => new Set([...css.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
+-
+-  it('chaque var(--…) lue a une définition : jetons, même fichier ou propriété posée par un composant', () => {
++  /** Seules feuilles qui déclarent des variables sur :root : jetons de thème, puis mouvement (Task 4). */
++  const TOKENS = 'ui/theme/tokens.css';
++  const MOTION = 'ui/motion.css';
++  const rootVars = (file: string) =>
++    parseCssBlocks(read(file))
++      .filter((b) => /:root/.test(b.selector))
++      .flatMap((b) => [...b.declarations.keys()].filter((k) => k.startsWith('--')));
++
++  it('chaque var(--…) lue a une définition : jetons, mouvement, même fichier ou propriété posée par un composant', () => {
+     expect(cssFiles.length).toBeGreaterThan(5);
+-    const tokens = declared(read(join(THEME_DIR, 'tokens.css')));
++    // tokens.css toujours ; motion.css dès que Task 4 le crée.
++    const sources = [TOKENS, ...(existsSync(join(SRC, MOTION)) ? [MOTION] : [])];
++    const tokens = new Set(sources.flatMap((source) => [...declared(read(join(SRC, source)))]));
+     const fromComponents = new Set(
+       files
+         .filter((f) => /\.tsx?$/.test(f))
+         .flatMap((f) => [...read(f).matchAll(/['"](--[\w-]+)['"]/g)].map((m) => m[1])),
+     );
+     for (const file of cssFiles) {
+       const css = read(file);
+       const local = declared(css);
+       // Une variable avec repli (`var(--x, 0)`) n'est jamais indéfinie.
+       for (const [, name] of css.matchAll(/var\(\s*(--[\w-]+)\s*\)/g)) {
+         const known = tokens.has(name) || local.has(name) || fromComponents.has(name);
+         expect(known, `${rel(file)} lit ${name}, défini nulle part`).toBe(true);
+       }
+     }
+   });
+ 
+-  it('les jetons n’ont qu’une source : aucune autre feuille ne déclare de variable sur :root', () => {
+-    for (const file of cssFiles.filter((f) => rel(f) !== 'ui/theme/tokens.css')) {
+-      const rootBlocks = parseCssBlocks(read(file)).filter((b) => /:root/.test(b.selector));
+-      const vars = rootBlocks.flatMap((b) => [...b.declarations.keys()].filter((k) => k.startsWith('--')));
+-      expect(vars, rel(file)).toEqual([]);
++  it('les jetons n’ont qu’une source : hors tokens.css, seul motion.css déclare sur :root, sans jeton de thème', () => {
++    const themeTokens = declared(read(join(SRC, TOKENS)));
++    expect(themeTokens.has('--bg')).toBe(true);
++    for (const file of cssFiles.filter((f) => rel(f) !== TOKENS)) {
++      const vars = rootVars(file);
++      // motion.css garde ses propres variables (--ease, --dur-*), jamais un jeton de thème.
++      const forbidden = rel(file) === MOTION ? vars.filter((v) => themeTokens.has(v)) : vars;
++      expect(forbidden, rel(file)).toEqual([]);
+     }
+   });
+ });
+ 
+ describe('polices embarquées', () => {
+   const faces = () =>
+     parseCssBlocks(read(join(THEME_DIR, 'fonts.css')))
+       .filter((b) => b.selector === '@font-face')
+       .map((b) => b.declarations);
+ 
+@@ -344,22 +520,33 @@ describe('polices embarquées', () => {
+       const src = face.get('src') ?? '';
+       const match =
+         /^url\("(@fontsource\/([\w-]+)\/files\/\2-latin-(\d{3})-normal\.woff2)"\) format\("woff2"\)$/.exec(
+           src,
+         );
+       expect(match, src).not.toBeNull();
+       expect(match?.[3]).toBe(face.get('font-weight'));
+       expect(() => require.resolve(match?.[1] ?? ''), src).not.toThrow();
+     }
+   });
++
++  it('seul ui/theme/fonts.css cite @fontsource (une feuille Fontsource ajouterait sous-ensembles et .woff)', () => {
++    // Le build (6 woff2 latins émis et précachés, rien d'autre) est vérifié par e2e/theme.spec.ts.
++    const citing = [...srcFiles(), join(WEB, 'index.html')]
++      .filter((f) => read(f).includes('@fontsource'))
++      .map(rel);
++    expect(citing).toEqual(['ui/theme/fonts.css']);
++  });
+ });
+ 
+ describe('main.tsx', () => {
+-  it('charge jetons et polices et applique le thème gardé avant createRoot', () => {
++  it('charge jetons et polices et applique le thème gardé avant createRoot, au premier niveau', () => {
+     const main = read(join(SRC, 'main.tsx'));
+     expect(main).toMatch(/^import '\.\/ui\/theme\/tokens\.css';$/m);
+     expect(main).toMatch(/^import '\.\/ui\/theme\/fonts\.css';$/m);
+-    const apply = main.indexOf('applyTheme(readThemeChoice());');
+-    expect(apply).toBeGreaterThan(-1);
+-    expect(apply).toBeLessThan(main.indexOf('createRoot('));
++    // Ligne entière, sans retrait : ni commentée, ni dans une fonction appelée plus tard.
++    const apply = /^applyTheme\(readThemeChoice\(\)\);$/m.exec(main);
++    const render = /^createRoot\(/m.exec(main);
++    expect(apply, 'appel de premier niveau').not.toBeNull();
++    expect(render, 'rendu de premier niveau').not.toBeNull();
++    expect(apply?.index).toBeLessThan(render?.index ?? -1);
+   });
+ });

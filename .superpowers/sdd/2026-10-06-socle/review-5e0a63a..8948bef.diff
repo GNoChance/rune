@@ -1,0 +1,651 @@
+# Review package: 5e0a63a..HEAD
+
+## Commits
+8948bef fix(synchro): auteurs des salles masqués au pull, watermark futur expiré
+
+## Files changed
+ apps/server/src/db/rev.ts                    |  8 +++-
+ apps/server/src/places/gyms.ts               | 10 ++++-
+ apps/server/src/sync/pull.ts                 | 26 ++++++++---
+ apps/server/test/places/gyms.test.ts         | 17 ++++++++
+ apps/server/test/sync/pull-leak.test.ts      | 23 +++++++++-
+ apps/server/test/sync/pull.test.ts           | 65 ++++++++++++++++++++++++++--
+ packages/contracts/src/entity-rules.ts       |  6 ++-
+ packages/contracts/test/entity-rules.test.ts | 11 +++++
+ 8 files changed, 150 insertions(+), 16 deletions(-)
+
+## Diff
+diff --git a/apps/server/src/db/rev.ts b/apps/server/src/db/rev.ts
+index 6dfe982..2a91e22 100644
+--- a/apps/server/src/db/rev.ts
++++ b/apps/server/src/db/rev.ts
+@@ -1,14 +1,20 @@
+ import type { Clock } from '../deps';
+ import type { DbExecutor } from './schema';
+ 
+-/** Prochaine révision globale ; à appeler dans la transaction qui écrit. */
++/**
++ * Prochaine révision globale ; à appeler dans la transaction qui écrit.
++ * Invariant dont dépend la pagination du pull : chaque écriture d'une ligne synchronisée prend son
++ * propre rev neuf (une ligne, un rev), strictement croissant et jamais réutilisé ; les écritures étant
++ * sérialisées par SQLite, toute ligne modifiée après un pull porte un rev supérieur au watermark rendu.
++ * Le pull tolère des lignes partageant un rev (groupe gardé entier), mais ce n'est pas l'usage normal.
++ */
+ export async function nextRev(trx: DbExecutor): Promise<number> {
+   const row = await trx
+     .updateTable('serverMeta')
+     .set((eb) => ({ syncCounter: eb('syncCounter', '+', 1) }))
+     .where('id', '=', 1)
+     .returning('syncCounter')
+     .executeTakeFirst();
+   if (!row) throw new Error("server_meta absent : la base n'est pas initialisée.");
+   return row.syncCounter;
+ }
+diff --git a/apps/server/src/places/gyms.ts b/apps/server/src/places/gyms.ts
+index bdfb167..9f746ba 100644
+--- a/apps/server/src/places/gyms.ts
++++ b/apps/server/src/places/gyms.ts
+@@ -166,20 +166,27 @@ async function canEditGym(db: DbExecutor, user: SessionUser, gymId: string): Pro
+   return place !== undefined;
+ }
+ 
+ /** Charge la salle active et exige le droit d'écriture (404 puis 403). */
+ export async function loadEditableGym(db: DbExecutor, user: SessionUser, gymId: string) {
+   const gym = await loadActiveGym(db, gymId);
+   if (!(await canEditGym(db, user, gymId))) throw httpError('forbidden');
+   return gym;
+ }
+ 
++/** '2026-10-06T10:17:42.123Z' → '2026-10-06T10:17:00.000Z'. */
++function toMinute(iso: string): string {
++  const d = new Date(iso);
++  d.setUTCSeconds(0, 0);
++  return d.toISOString();
++}
++
+ export async function gymDetail(db: DbExecutor, user: SessionUser, gymId: string): Promise<GymDetail> {
+   const gym = await loadGym(db, gymId);
+   if (!gym) throw httpError('not_found');
+   const active = new Set(
+     (
+       await db
+         .selectFrom('gymEquipment')
+         .select('equipmentCode')
+         .where('gymId', '=', gymId)
+         .where('deletedAt', 'is', null)
+@@ -207,21 +214,22 @@ export async function gymDetail(db: DbExecutor, user: SessionUser, gymId: string
+   return {
+     id: gym.id,
+     name: gym.name,
+     city: gym.city,
+     loadSettings: JSON.parse(gym.loadSettings) as LoadSettings,
+     deletedAt: gym.deletedAt,
+     equipment: EQUIPMENT.filter((code) => active.has(code)),
+     canEdit: gym.deletedAt === null && (await canEditGym(db, user, gymId)),
+     visibleMembers: members.map((m) => m.username),
+     history: history.map((h) => ({
+-      at: h.at,
++      // À la minute : l'instant exact permettrait d'apparier l'entrée aux lignes gym/gym_equipment synchronisées.
++      at: toMinute(h.at),
+       action: h.action,
+       // Le pseudo n'est rendu que pour un admin ou un membre visible à cette salle.
+       authorUsername:
+         h.authorId !== null && (h.authorRole === 'admin' || visibleIds.has(h.authorId))
+           ? h.authorUsername
+           : null,
+       detail: JSON.parse(h.detail) as unknown,
+     })),
+   };
+ }
+diff --git a/apps/server/src/sync/pull.ts b/apps/server/src/sync/pull.ts
+index 53ad673..2ac311a 100644
+--- a/apps/server/src/sync/pull.ts
++++ b/apps/server/src/sync/pull.ts
+@@ -15,51 +15,58 @@ import { getServerMeta } from '../db/server-meta';
+ import type { AppDeps } from '../deps';
+ import { httpError } from '../http/errors';
+ 
+ type Raw = Record<string, unknown>;
+ 
+ interface Source {
+   entity: string;
+   rule: EntityRule;
+   columns: readonly string[];
+   scope: RawBuilder<unknown>;
++  /** Utilisateur de la session : seule valeur gardée dans les colonnes `pullRedact`. */
++  userId: string;
+ }
+ 
+ const MIRRORED = new Set(['J', 'D', 'E']);
+ 
+ /** Tables du périmètre de l'utilisateur (R-SYN-21) : ses lignes J/D/E, et les tables C0 partagées. */
+ function sourcesFor(deps: AppDeps, userId: string): Source[] {
+   const sources: Source[] = [];
+   for (const [entity, rule] of Object.entries(deps.entityRules)) {
+     if (!MIRRORED.has(rule.syncClass)) continue;
+     let scope: RawBuilder<unknown>;
+     if (rule.ownerColumn !== null) scope = sql`${sql.ref(rule.ownerColumn)} = ${userId}`;
+     else if (rule.category === 'C0') scope = sql`1 = 1`;
+     else continue;
+     const columns = rule.columns.filter((c) => !rule.secretColumns.includes(c));
+-    sources.push({ entity, rule, columns, scope });
++    sources.push({ entity, rule, columns, scope, userId });
+   }
+   return sources;
+ }
+ 
+ function decode(codec: ColumnCodec | undefined, value: unknown): unknown {
+   if (value === null || value === undefined || codec === undefined) return value ?? null;
+   return codec === 'boolean' ? value === 1 : JSON.parse(String(value));
+ }
+ 
+-/** Ligne SQL → ligne de pull : camelCase, sans secret, codecs appliqués, `deletedAt` toujours présent. */
++/**
++ * Ligne SQL → ligne de pull : camelCase, sans secret, codecs appliqués, `deletedAt` toujours présent ;
++ * les colonnes `pullRedact` (auteurs d'une ligne partagée) ne gardent que l'id de l'utilisateur de la session.
++ */
+ function toPulled(source: Source, raw: Raw): PulledRow {
+   const codecs = COLUMN_CODECS[source.entity] ?? {};
++  const redact = source.rule.pullRedact ?? [];
+   const row: Raw = { deletedAt: null };
+   for (const column of source.columns) {
+     const key = snakeToCamel(column);
+-    row[key] = decode(codecs[column], raw[key]);
++    const value = redact.includes(column) && raw[key] !== source.userId ? null : raw[key];
++    row[key] = decode(codecs[column], value);
+   }
+   return { entity: source.entity, rev: Number(row.rev), row };
+ }
+ 
+ async function selectRows(
+   trx: Transaction<Database>,
+   source: Source,
+   revFilter: RawBuilder<unknown>,
+   limit?: number,
+ ): Promise<PulledRow[]> {
+@@ -72,62 +79,67 @@ async function selectRows(
+ 
+ async function hasRowsAfter(trx: Transaction<Database>, sources: Source[], rev: number): Promise<boolean> {
+   for (const s of sources) {
+     const more =
+       await sql`select 1 from ${sql.table(s.entity)} where ${s.scope} and rev > ${rev} limit 1`.execute(trx);
+     if (more.rows.length > 0) return true;
+   }
+   return false;
+ }
+ 
++const compare = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
+ const byRev = (a: PulledRow, b: PulledRow) =>
+-  a.rev - b.rev || a.entity.localeCompare(b.entity) || String(a.row.id).localeCompare(String(b.row.id));
++  a.rev - b.rev || compare(a.entity, b.entity) || compare(String(a.row.id), String(b.row.id));
+ 
+ /**
+  * Page de pull (R-SYN-20, R-SYN-21, R-SYN-23) lue dans une seule transaction : lignes de rev > since,
+- * triées, `limit` au plus, sans jamais couper un groupe de même rev.
++ * triées, `limit` au plus, sans jamais couper un groupe de même rev. Watermark d'une autre époque,
++ * antérieur à la dernière purge ou au-delà du compteur courant → 410 `watermark_expired` (pull complet).
+  */
+ export async function buildPull(
+   deps: AppDeps,
+   user: SessionUser,
+   since: string | null,
+   limit: number,
+ ): Promise<PullResponse> {
+   let sinceWatermark: { epoch: string; rev: number } | null = null;
+   if (since !== null) {
+     sinceWatermark = decodeWatermark(since);
+     if (!sinceWatermark) throw httpError('validation');
+   }
+   return deps.db.transaction().execute(async (trx) => {
+     const meta = await getServerMeta(trx);
+     if (
+       sinceWatermark &&
+-      (sinceWatermark.epoch !== meta.serverEpoch || sinceWatermark.rev < meta.tombstonePurgeRev)
++      (sinceWatermark.epoch !== meta.serverEpoch ||
++        sinceWatermark.rev < meta.tombstonePurgeRev ||
++        sinceWatermark.rev > meta.syncCounter)
+     ) {
+       throw httpError('watermark_expired');
+     }
+     const sinceRev = sinceWatermark?.rev ?? 0;
+     const sources = sourcesFor(deps, user.id);
+ 
+     const candidates: PulledRow[] = [];
+     for (const s of sources)
+       candidates.push(...(await selectRows(trx, s, sql`rev > ${sinceRev}`, limit + 1)));
+     candidates.sort(byRev);
+     let rows = candidates.slice(0, limit);
+     const last = rows.at(-1);
+     let hasMore = false;
+     if (last && candidates.length > limit) {
+       // Le groupe du dernier rev gardé est relu en entier dans chaque table.
+       const group: PulledRow[] = [];
+       for (const s of sources) group.push(...(await selectRows(trx, s, sql`rev = ${last.rev}`)));
+       rows = [...rows.filter((r) => r.rev !== last.rev), ...group.sort(byRev)];
+       hasMore = await hasRowsAfter(trx, sources, last.rev);
+     }
+-    const nextRev = hasMore && last ? last.rev : Math.max(sinceRev, meta.syncCounter);
++    // sinceRev ≤ syncCounter (vérifié plus haut) : la fin du flux est le compteur courant.
++    const nextRev = hasMore && last ? last.rev : meta.syncCounter;
+     return {
+       rows,
+       nextWatermark: encodeWatermark(meta.serverEpoch, nextRev),
+       hasMore,
+       catalogVersion: meta.catalogVersion,
+     };
+   });
+ }
+diff --git a/apps/server/test/places/gyms.test.ts b/apps/server/test/places/gyms.test.ts
+index c61fe43..94643c7 100644
+--- a/apps/server/test/places/gyms.test.ts
++++ b/apps/server/test/places/gyms.test.ts
+@@ -508,10 +508,27 @@ describe('DELETE /api/admin/gyms/:id (R-SAL-7)', () => {
+     expect((await equipRow(gymId, 'barbell')).deletedAt).not.toBeNull();
+     const place = await ctx.deps.db
+       .selectFrom('place')
+       .select(['ownerId', 'gymId'])
+       .where('id', '=', body.placeId)
+       .executeTakeFirstOrThrow();
+     expect(place).toEqual({ ownerId: b.id, gymId });
+     expect((await detail(b, gymId)).history[0]?.action).toBe('create');
+   });
+ });
++
++describe('historique : horodatage à la minute', () => {
++  it('`at` est tronqué à la minute dans la réponse (pas de corrélation exacte avec les lignes synchronisées)', async () => {
++    ctx = await createTestContext({ now: '2026-10-06T10:17:42.123Z' });
++    const a = await createUserAndLogin(ctx);
++    const res = await createGym(a);
++    const { gymId } = (await res.json()) as { gymId: string };
++    const d = (await (await call(a.cookie, `/api/gyms/${gymId}`)).json()) as { history: { at: string }[] };
++    expect(d.history.map((h) => h.at)).toEqual(['2026-10-06T10:17:00.000Z']);
++    const stored = await ctx.deps.db
++      .selectFrom('gymHistory')
++      .select('at')
++      .where('gymId', '=', gymId)
++      .execute();
++    expect(stored.map((h) => h.at)).toEqual(['2026-10-06T10:17:42.123Z']);
++  });
++});
+diff --git a/apps/server/test/sync/pull-leak.test.ts b/apps/server/test/sync/pull-leak.test.ts
+index 950ce7b..9057bf9 100644
+--- a/apps/server/test/sync/pull-leak.test.ts
++++ b/apps/server/test/sync/pull-leak.test.ts
+@@ -48,49 +48,68 @@ async function pullAll(cookie: string, since?: string): Promise<{ rows: Pulled[]
+   let watermark = since;
+   for (;;) {
+     const res = await syncPull(ctx, cookie, watermark ? { since: watermark } : {});
+     expect(res.status).toBe(200);
+     rows.push(...res.body.rows);
+     watermark = res.body.nextWatermark;
+     if (!res.body.hasMore) return { rows, watermark: watermark as string };
+   }
+ }
+ 
++describe('pull : masquage des auteurs', () => {
++  it("toute colonne vers user d'une table miroir sans propriétaire est dans pullRedact", async () => {
++    ctx = await createTestContext();
++    for (const table of mirroredTables().filter((t) => entityRules[t]?.ownerColumn === null)) {
++      const fks = ctx.deps.sqlite
++        .prepare(`SELECT "from" AS col FROM pragma_foreign_key_list(?) WHERE "table" = 'user'`)
++        .all(table) as { col: string }[];
++      expect(fks.length, table).toBeGreaterThan(0);
++      for (const { col } of fks) expect(entityRules[table]?.pullRedact ?? [], table).toContain(col);
++    }
++  });
++});
++
+ describe.each(['member', 'admin'] as const)('pull : test de fuite (session %s)', (role) => {
+   it("aucune ligne ni valeur de l'autre utilisateur, aucune colonne secrète", async () => {
+     ctx = await createTestContext();
+     const a = await createUserAndLogin(ctx, { role });
+     const b = await createUser(ctx);
+     const own = await seedUser(a.id, 'A');
+     const others = await seedUser(b.id, 'B');
+-    const gym = await insertFixtureRow(ctx.deps.db, 'gym');
+-    await insertFixtureRow(ctx.deps.db, 'gym_equipment', { gymId: gym.id });
++    // Salle de B, auteur vivant : ses ids d'auteur sont masqués ; salle de A : les siens restent.
++    const gymB = await insertFixtureRow(ctx.deps.db, 'gym', { createdBy: b.id, updatedBy: b.id });
++    await insertFixtureRow(ctx.deps.db, 'gym_equipment', { gymId: gymB.id, addedBy: b.id });
++    const gymA = await insertFixtureRow(ctx.deps.db, 'gym', { createdBy: a.id, updatedBy: b.id });
+ 
+     const { rows } = await pullAll(a.cookie);
+     const dump = JSON.stringify(rows);
+     expect(new Set(rows.map((r) => r.entity))).toEqual(new Set(mirroredTables()));
+     for (const r of rows) expect(mirroredTables()).toContain(r.entity);
+     for (const w of own) expect(dump).toContain(w);
+     expect(dump).not.toContain(b.id);
+     for (const w of others) expect(dump).not.toContain(w);
+     for (const r of rows) for (const key of SECRET_KEYS) expect(r.row).not.toHaveProperty(key);
++    expect(rows.find((r) => r.row.id === gymB.id)?.row).toMatchObject({ createdBy: null, updatedBy: null });
++    expect(rows.find((r) => r.entity === 'gym_equipment')?.row).toMatchObject({ addedBy: null });
++    expect(rows.find((r) => r.row.id === gymA.id)?.row).toMatchObject({ createdBy: a.id, updatedBy: null });
+   });
+ 
+   it("après la suppression d'un compte, aucun pull ne contient son id", async () => {
+     ctx = await createTestContext();
+     const a = await createUserAndLogin(ctx, { role });
+     const b = await createUser(ctx);
+     await seedUser(a.id, 'A');
+     await seedUser(b.id, 'B');
+     const gym = await insertFixtureRow(ctx.deps.db, 'gym', { createdBy: b.id, updatedBy: b.id });
+     await insertFixtureRow(ctx.deps.db, 'gym_equipment', { gymId: gym.id, addedBy: b.id });
+     const before = await pullAll(a.cookie);
++    expect(JSON.stringify(before.rows)).not.toContain(b.id);
+ 
+     await ctx.deps.db
+       .transaction()
+       .execute((trx) => deleteAccount(trx, ctx.deps, b.id, { actorId: b.id, ip: null }));
+ 
+     const full = await pullAll(a.cookie);
+     expect(JSON.stringify(full.rows)).not.toContain(b.id);
+     const delta = await pullAll(a.cookie, before.watermark);
+     expect(delta.rows.find((r) => r.entity === 'gym')?.row).toMatchObject({
+       createdBy: null,
+diff --git a/apps/server/test/sync/pull.test.ts b/apps/server/test/sync/pull.test.ts
+index 80925d8..2102b11 100644
+--- a/apps/server/test/sync/pull.test.ts
++++ b/apps/server/test/sync/pull.test.ts
+@@ -42,20 +42,31 @@ const bumpRev = () =>
+ function insertNote(owner: { id: string }, o: { rev?: number; deletedAt?: string | null } = {}): string {
+   const id = rowIds.uuidv7();
+   ctx.deps.sqlite
+     .prepare(
+       'INSERT INTO fixture_note (id, owner_id, rev, created_at, updated_at, updated_by, deleted_at, title) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+     )
+     .run(id, owner.id, o.rev ?? bumpRev(), NOW, NOW, owner.id, o.deletedAt ?? null, 'note');
+   return id;
+ }
+ 
++/** Ligne de la seconde table de test, au rev donné. */
++function insertLog(owner: { id: string }, rev: number): string {
++  const id = rowIds.uuidv7();
++  ctx.deps.sqlite
++    .prepare(
++      'INSERT INTO fixture_c2_log (id, owner_id, rev, created_at, updated_at, updated_by, deleted_at, value) VALUES (?, ?, ?, ?, ?, ?, NULL, 1)',
++    )
++    .run(id, owner.id, rev, NOW, NOW, owner.id);
++  return id;
++}
++
+ /** Watermark courant après un pull complet (point de départ des tests de pagination). */
+ async function drain(u: Member): Promise<string> {
+   const res = await syncPull(ctx, u.cookie);
+   expect(res.status).toBe(200);
+   expect(res.body.hasMore).toBe(false);
+   return res.body.nextWatermark;
+ }
+ 
+ const notes = (rows: Pulled[]) => rows.filter((r) => r.entity === 'fixture_note');
+ 
+@@ -112,20 +123,45 @@ describe('GET /api/sync/pull : pagination', () => {
+     const shared = bumpRev();
+     const second = insertNote(a, { rev: shared });
+     const third = insertNote(a, { rev: shared });
+     const res = await syncPull(ctx, a.cookie, { since, limit: 2 });
+     const rows = res.body.rows as Pulled[];
+     expect(rows.map((r) => r.row.id).sort()).toEqual([first, second, third].sort());
+     expect(res.body.hasMore).toBe(false);
+     expect(res.body.nextWatermark).toBe(`${meta().server_epoch}:${shared}`);
+   });
+ 
++  it('deux tables entrelacées, groupe de même rev à cheval sur les deux à la coupe, limit=2', async () => {
++    const a = await setup();
++    const since = await drain(a);
++    const n1 = insertNote(a);
++    const shared = bumpRev();
++    const n2 = insertNote(a, { rev: shared });
++    const l2 = insertLog(a, shared);
++    const l3 = insertLog(a, bumpRev());
++    const n4 = insertNote(a);
++
++    const first = await syncPull(ctx, a.cookie, { since, limit: 2 });
++    const page1 = first.body.rows as Pulled[];
++    expect(page1.map((r) => [r.entity, r.row.id])).toEqual([
++      ['fixture_note', n1],
++      ['fixture_c2_log', l2],
++      ['fixture_note', n2],
++    ]);
++    const epoch = meta().server_epoch;
++    expect(first.body).toMatchObject({ hasMore: true, nextWatermark: `${epoch}:${shared}` });
++
++    const second = await syncPull(ctx, a.cookie, { since: first.body.nextWatermark, limit: 2 });
++    expect((second.body.rows as Pulled[]).map((r) => r.row.id)).toEqual([l3, n4]);
++    expect(second.body).toMatchObject({ hasMore: false, nextWatermark: `${epoch}:${meta().sync_counter}` });
++  });
++
+   it('un watermark sans ligne nouvelle garde son rev au moins', async () => {
+     const a = await setup();
+     const since = await drain(a);
+     const res = await syncPull(ctx, a.cookie, { since });
+     expect(res.body).toMatchObject({ rows: [], hasMore: false, nextWatermark: since });
+   });
+ });
+ 
+ describe('GET /api/sync/pull : contenu des lignes', () => {
+   it('tombstone avec deletedAt ; tombstone health_screening → caution null ; booléens décodés', async () => {
+@@ -155,36 +191,46 @@ describe('GET /api/sync/pull : contenu des lignes', () => {
+     const users = (res.body.rows as Pulled[]).filter((r) => r.entity === 'user');
+     expect(users.map((r) => r.row.id)).toEqual([a.id]);
+     expect(users[0]?.row).not.toHaveProperty('passwordHash');
+     expect(users[0]?.row).toMatchObject({ username: a.username, deletedAt: null });
+     expect(JSON.stringify(res.body)).not.toContain(b.id);
+   });
+ 
+   it('salle créée par b : gym et gym_equipment présents, loadSettings objet ; aucun place de b', async () => {
+     const a = await setup();
+     const b = await createUserAndLogin(ctx);
+-    const gym = await insertFixtureRow(ctx.deps.db, 'gym', { loadSettings: '{"barG":20000}' });
+-    const equipment = await insertFixtureRow(ctx.deps.db, 'gym_equipment', { gymId: gym.id });
++    const gym = await insertFixtureRow(ctx.deps.db, 'gym', {
++      loadSettings: '{"barG":20000}',
++      createdBy: b.id,
++      updatedBy: b.id,
++    });
++    const equipment = await insertFixtureRow(ctx.deps.db, 'gym_equipment', { gymId: gym.id, addedBy: b.id });
+     const place = await insertFixtureRow(ctx.deps.db, 'place', {
+       ownerId: b.id,
+       kind: 'gym',
+       gymId: gym.id,
+       name: null,
+       loadSettings: null,
+     });
+     const rows = (await syncPull(ctx, a.cookie)).body.rows as Pulled[];
+     expect(rows.find((r) => r.entity === 'gym')?.row).toMatchObject({
+       id: gym.id,
+       loadSettings: { barG: 20000 },
++      createdBy: null,
++      updatedBy: null,
++    });
++    expect(rows.find((r) => r.entity === 'gym_equipment')?.row).toMatchObject({
++      id: equipment.id,
++      addedBy: null,
+     });
+-    expect(rows.find((r) => r.entity === 'gym_equipment')?.row.id).toBe(equipment.id);
+     expect(rows.some((r) => r.row.id === place.id)).toBe(false);
++    expect(JSON.stringify(rows)).not.toContain(b.id);
+   });
+ 
+   it('place : booléens et réglages JSON décodés, réglages null restent null', async () => {
+     const a = await setup();
+     await insertFixtureRow(ctx.deps.db, 'place', {
+       ownerId: a.id,
+       isPrimary: 1,
+       visibleAtGym: 0,
+       loadSettings: '{"barG":15000}',
+     });
+@@ -196,28 +242,39 @@ describe('GET /api/sync/pull : contenu des lignes', () => {
+ describe('GET /api/sync/pull : watermark et métadonnées', () => {
+   it("since d'une autre époque → 410 watermark_expired", async () => {
+     const a = await setup();
+     const res = await syncPull(ctx, a.cookie, { since: '0199aaaa-0000-7000-8000-000000000000:3' });
+     expect(res.status).toBe(410);
+     expect(res.body).toEqual({ error: 'watermark_expired' });
+   });
+ 
+   it('tombstone_purge_rev = 10 : since rev 5 → 410, rev 10 → 200', async () => {
+     const a = await setup();
+-    ctx.deps.sqlite.prepare('UPDATE server_meta SET tombstone_purge_rev = 10').run();
++    ctx.deps.sqlite
++      .prepare('UPDATE server_meta SET tombstone_purge_rev = 10, sync_counter = max(sync_counter, 12)')
++      .run();
+     const epoch = meta().server_epoch;
+     const old = await syncPull(ctx, a.cookie, { since: `${epoch}:5` });
+     expect(old.status).toBe(410);
+     expect(old.body).toEqual({ error: 'watermark_expired' });
+     expect((await syncPull(ctx, a.cookie, { since: `${epoch}:10` })).status).toBe(200);
+   });
+ 
++  it('since au-delà du compteur de la même époque → 410 watermark_expired (resynchro complète)', async () => {
++    const a = await setup();
++    const { server_epoch, sync_counter } = meta();
++    const ahead = await syncPull(ctx, a.cookie, { since: `${server_epoch}:${sync_counter + 1}` });
++    expect(ahead.status).toBe(410);
++    expect(ahead.body).toEqual({ error: 'watermark_expired' });
++    expect((await syncPull(ctx, a.cookie, { since: `${server_epoch}:${sync_counter}` })).status).toBe(200);
++  });
++
+   it("since 'abc' → 400 validation", async () => {
+     const a = await setup();
+     const res = await syncPull(ctx, a.cookie, { since: 'abc' });
+     expect(res.status).toBe(400);
+     expect(res.body.error).toBe('validation');
+   });
+ 
+   it('catalogVersion reprend server_meta.catalog_version', async () => {
+     const a = await setup();
+     expect((await syncPull(ctx, a.cookie)).body.catalogVersion).toBeNull();
+diff --git a/packages/contracts/src/entity-rules.ts b/packages/contracts/src/entity-rules.ts
+index cb63e90..06f607a 100644
+--- a/packages/contracts/src/entity-rules.ts
++++ b/packages/contracts/src/entity-rules.ts
+@@ -9,38 +9,40 @@ export interface EntityRule {
+   columns: readonly string[];
+   clientWritable: readonly string[];
+   c2Columns: readonly string[];
+   secretColumns: readonly string[];
+   exported: boolean;
+   onUserDelete: OnUserDelete;
+   /** Parent d'une table J (rejet `parent_rejected`, renvoi `restore_upsert` trié parents d'abord). */
+   parent?: { entity: string; column: string };
+   /** Colonne C1 → valeurs C2 (ex. `swap_reason: ['pain']`) ; clés ⊂ columns \ c2Columns. */
+   c2Values?: Record<string, readonly string[]>;
++  /** Colonnes vers `user` d'une table sans propriétaire, mises à null au pull sauf si elles valent l'utilisateur de la session. */
++  pullRedact?: readonly string[];
+ }
+ 
+ export type EntityRulesMap = Readonly<Record<string, EntityRule>>;
+ 
+ export const SYNC_COLUMNS = [
+   'owner_id',
+   'rev',
+   'created_at',
+   'updated_at',
+   'updated_by',
+   'deleted_at',
+ ] as const;
+ 
+ type Spec = Pick<
+   EntityRule,
+   'category' | 'syncClass' | 'ownerColumn' | 'columns' | 'exported' | 'onUserDelete'
+ > &
+-  Partial<Pick<EntityRule, 'clientWritable' | 'secretColumns'>>;
++  Partial<Pick<EntityRule, 'clientWritable' | 'secretColumns' | 'pullRedact'>>;
+ 
+ const rule = (spec: Spec): EntityRule => ({ clientWritable: [], c2Columns: [], secretColumns: [], ...spec });
+ 
+ export const entityRules: EntityRulesMap = {
+   server_meta: rule({
+     category: 'C0',
+     syncClass: 'H',
+     ownerColumn: null,
+     columns: [
+       'id',
+@@ -237,28 +239,30 @@ export const entityRules: EntityRulesMap = {
+       'city',
+       'city_key',
+       'load_settings',
+       'created_by',
+       'updated_by',
+       'rev',
+       'created_at',
+       'updated_at',
+       'deleted_at',
+     ],
++    pullRedact: ['created_by', 'updated_by'],
+     exported: false,
+     onUserDelete: 'set_null',
+   }),
+   gym_equipment: rule({
+     category: 'C0',
+     syncClass: 'E',
+     ownerColumn: null,
+     columns: ['id', 'gym_id', 'equipment_code', 'added_by', 'rev', 'created_at', 'updated_at', 'deleted_at'],
++    pullRedact: ['added_by'],
+     exported: false,
+     onUserDelete: 'set_null',
+   }),
+   gym_history: rule({
+     category: 'C0',
+     syncClass: 'H',
+     ownerColumn: null,
+     columns: ['id', 'gym_id', 'author_id', 'at', 'action', 'detail'],
+     exported: false,
+     onUserDelete: 'set_null',
+diff --git a/packages/contracts/test/entity-rules.test.ts b/packages/contracts/test/entity-rules.test.ts
+index 7186c59..4a81913 100644
+--- a/packages/contracts/test/entity-rules.test.ts
++++ b/packages/contracts/test/entity-rules.test.ts
+@@ -37,20 +37,30 @@ describe('entityRules', () => {
+   it('déclare les 18 tables du socle avec leurs valeurs', () => {
+     expect(Object.keys(entityRules).sort()).toEqual(Object.keys(EXPECTED));
+     for (const t of Object.keys(EXPECTED)) expect(pick(t)).toBe(EXPECTED[t]);
+   });
+ 
+   it('porte les colonnes écrivables par le client et les secrets', () => {
+     expect(ruleOf('sync_rejection').clientWritable).toEqual(['dismissed_at']);
+     expect(ruleOf('user').secretColumns).toEqual(['password_hash']);
+   });
+ 
++  it('masque au pull les auteurs des salles et de leur matériel', () => {
++    const redacted = Object.entries(entityRules)
++      .filter(([, r]) => r.pullRedact !== undefined)
++      .map(([t, r]) => [t, r.pullRedact]);
++    expect(redacted).toEqual([
++      ['gym', ['created_by', 'updated_by']],
++      ['gym_equipment', ['added_by']],
++    ]);
++  });
++
+   it('liste les tables miroir en ordre alphabétique', () => {
+     expect(mirroredTables()).toEqual([
+       'consent_event',
+       'gym',
+       'gym_equipment',
+       'health_screening',
+       'home_equipment',
+       'limitation',
+       'place',
+       'sync_rejection',
+@@ -86,20 +96,21 @@ describe('entityRules', () => {
+     it('les tables J, D et E portent rev', () => {
+       for (const [, r] of all) if (['J', 'D', 'E'].includes(r.syncClass)) expect(r.columns).toContain('rev');
+     });
+ 
+     it("les points d'extension, quand ils existent, sont cohérents", () => {
+       for (const [, r] of all) {
+         if (r.parent) {
+           expect(Object.keys(entityRules)).toContain(r.parent.entity);
+           expect(r.columns).toContain(r.parent.column);
+         }
++        for (const c of r.pullRedact ?? []) expect(r.columns).toContain(c);
+         for (const c of Object.keys(r.c2Values ?? {})) {
+           expect(r.columns).toContain(c);
+           expect(r.c2Columns).not.toContain(c);
+         }
+       }
+     });
+ 
+     it("aucune table du socle n'a de parent ni de c2Values", () => {
+       for (const [, r] of all) {
+         expect(r.parent).toBeUndefined();

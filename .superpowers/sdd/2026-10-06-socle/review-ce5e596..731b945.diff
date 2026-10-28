@@ -1,0 +1,2343 @@
+# Review package: ce5e596..HEAD
+
+## Commits
+731b945 fix(web): raison du « Non » désactivé liée au bouton, réponses de sport enregistrées testées
+0c2fee5 fix(web): visibilité avant les boutons de création, réponse périmée ignorée, « Réessayer » la recherche
+50647e8 fix(web): focus sur le titre à chaque écran, raison d'un retour imposé, marque sans lien
+a5e072f fix(web): écran Santé enregistré au clic sur « Suivant », conseil médical dès un « oui »
+
+## Files changed
+ apps/web/src/App.tsx                               |   2 +-
+ .../src/features/onboarding/AvailabilityStep.tsx   |   3 +-
+ .../web/src/features/onboarding/ExperienceStep.tsx |   3 +-
+ apps/web/src/features/onboarding/GoalStep.tsx      |   3 +-
+ apps/web/src/features/onboarding/HealthStep.tsx    | 235 +++++++++++++++------
+ .../web/src/features/onboarding/OnboardingFlow.tsx |  76 ++++---
+ apps/web/src/features/onboarding/PlaceKindStep.tsx |   3 +-
+ apps/web/src/features/onboarding/PlaceStep.tsx     |   3 +-
+ apps/web/src/features/onboarding/ReadyStep.tsx     |   3 +-
+ apps/web/src/features/onboarding/SportStep.tsx     |  14 +-
+ apps/web/src/features/onboarding/StepActions.tsx   |  20 +-
+ apps/web/src/features/onboarding/StepTitle.tsx     |  34 +++
+ apps/web/src/features/places/GymCreate.tsx         |  12 +-
+ apps/web/src/features/places/GymPicker.tsx         |  34 ++-
+ apps/web/src/ui/AppShell.tsx                       |  18 +-
+ apps/web/src/ui/ChoiceList.tsx                     |   8 +-
+ apps/web/test/onboarding/flow.test.tsx             |  58 ++++-
+ apps/web/test/onboarding/health-step.test.tsx      | 144 ++++++++++++-
+ apps/web/test/onboarding/ready-step.test.tsx       |  24 ++-
+ apps/web/test/onboarding/steps.test.tsx            |  80 ++++++-
+ apps/web/test/places/gym-picker.test.tsx           | 137 +++++++++++-
+ 21 files changed, 773 insertions(+), 141 deletions(-)
+
+## Diff
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+index 7ec87bc..0f66ae9 100644
+--- a/apps/web/src/App.tsx
++++ b/apps/web/src/App.tsx
+@@ -120,21 +120,21 @@ export function App() {
+       if (PUBLIC_PATHS.includes(route)) {
+         return (
+           <PublicShell>
+             <PublicRoutes />
+           </PublicShell>
+         );
+       }
+       // L'onboarding n'a ni navigation de compte ni bandeau de mise à jour.
+       if (route === '/onboarding') {
+         return (
+-          <PublicShell>
++          <PublicShell homeLink={false}>
+             <OnboardingFlow />
+           </PublicShell>
+         );
+       }
+       return (
+         <AppShell>
+           <ConnectedRoutes />
+         </AppShell>
+       );
+     }
+diff --git a/apps/web/src/features/onboarding/AvailabilityStep.tsx b/apps/web/src/features/onboarding/AvailabilityStep.tsx
+index 5156968..a34a60e 100644
+--- a/apps/web/src/features/onboarding/AvailabilityStep.tsx
++++ b/apps/web/src/features/onboarding/AvailabilityStep.tsx
+@@ -1,33 +1,34 @@
+ import { DAYS_PER_WEEK, SESSION_MINUTES } from '@appsport/contracts';
+ import { useState } from 'react';
+ import { useLive } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { ChoiceList } from '../../ui';
+ import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++import { StepTitle } from './StepTitle';
+ 
+ type Days = (typeof DAYS_PER_WEEK)[number];
+ type Minutes = (typeof SESSION_MINUTES)[number];
+ 
+ /** E6 Disponibilité : séances par semaine (« 2 », « 3 », « 4 ») et durée (« 30 min » à « 90 min »). */
+ export function AvailabilityStep(p: StepProps) {
+   const repos = useRepos();
+   const profile = useLive(() => repos.profile.get(), [repos]);
+   const [days, setDays] = useState<Days | null>(null);
+   const [minutes, setMinutes] = useState<Minutes | null>(null);
+   const save = useSaveStep(p, 'availability');
+   if (profile === undefined) return null;
+   const daysValue = days ?? profile?.daysPerWeek ?? null;
+   const minutesValue = minutes ?? profile?.sessionMinutes ?? null;
+   return (
+     <>
+-      <h2>Disponibilité</h2>
++      <StepTitle>Disponibilité</StepTitle>
+       <ChoiceList<Days>
+         name="days-per-week"
+         legend="Séances par semaine"
+         value={daysValue}
+         onChange={setDays}
+         options={DAYS_PER_WEEK.map((n) => ({ value: n, label: String(n) }))}
+       />
+       <ChoiceList<Minutes>
+         name="session-minutes"
+         legend="Durée d'une séance"
+diff --git a/apps/web/src/features/onboarding/ExperienceStep.tsx b/apps/web/src/features/onboarding/ExperienceStep.tsx
+index 4e10c36..b3cd688 100644
+--- a/apps/web/src/features/onboarding/ExperienceStep.tsx
++++ b/apps/web/src/features/onboarding/ExperienceStep.tsx
+@@ -1,28 +1,29 @@
+ import { EXPERIENCE_LABELS, EXPERIENCES, type Experience } from '@appsport/contracts';
+ import { useState } from 'react';
+ import { useLive } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { ChoiceList } from '../../ui';
+ import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++import { StepTitle } from './StepTitle';
+ 
+ /** E5 Niveau. */
+ export function ExperienceStep(p: StepProps) {
+   const repos = useRepos();
+   const profile = useLive(() => repos.profile.get(), [repos]);
+   const [choice, setChoice] = useState<Experience | null>(null);
+   const save = useSaveStep(p, 'experience');
+   if (profile === undefined) return null;
+   const value = choice ?? profile?.experience ?? null;
+   return (
+     <>
+-      <h2>Niveau</h2>
++      <StepTitle>Niveau</StepTitle>
+       <ChoiceList<Experience>
+         name="experience"
+         legend="Depuis combien de temps fais-tu de la musculation régulièrement (au moins une fois par semaine) ?"
+         value={value}
+         onChange={setChoice}
+         options={EXPERIENCES.map((e) => ({ value: e, label: EXPERIENCE_LABELS[e] }))}
+       />
+       <StepActions
+         onBack={p.onBack}
+         pending={save.pending}
+diff --git a/apps/web/src/features/onboarding/GoalStep.tsx b/apps/web/src/features/onboarding/GoalStep.tsx
+index 8c7e15c..74929c1 100644
+--- a/apps/web/src/features/onboarding/GoalStep.tsx
++++ b/apps/web/src/features/onboarding/GoalStep.tsx
+@@ -1,18 +1,19 @@
+ import { GOAL_LABELS, type Goal } from '@appsport/contracts';
+ import { availableGoals } from '@appsport/domain';
+ import { useState } from 'react';
+ import { useLive, useMe } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { ChoiceList } from '../../ui';
+ import { SportStep } from './SportStep';
+ import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++import { StepTitle } from './StepTitle';
+ 
+ /**
+  * E1 Objectif : « Perdre du gras » n'est pas proposé à un mineur. En édition, choisir l'objectif
+  * sportif sans sport enregistré mène d'abord au sport, puis un seul PATCH (R-ONB-3).
+  */
+ export function GoalStep(p: StepProps) {
+   const repos = useRepos();
+   const me = useMe();
+   const profile = useLive(() => repos.profile.get(), [repos]);
+   const [choice, setChoice] = useState<Goal | null>(null);
+@@ -31,21 +32,21 @@ export function GoalStep(p: StepProps) {
+         mode="edit"
+         pendingGoal="sport_support"
+         onNext={p.onNext}
+         onBack={() => setAskSport(false)}
+       />
+     );
+   }
+ 
+   return (
+     <>
+-      <h2>Objectif</h2>
++      <StepTitle>Objectif</StepTitle>
+       <ChoiceList<Goal>
+         name="goal"
+         legend="Quel est ton objectif principal ?"
+         value={value}
+         onChange={setChoice}
+         options={goals.map((g) => ({ value: g, label: GOAL_LABELS[g] }))}
+       />
+       <StepActions
+         onBack={p.onBack}
+         pending={save.pending}
+diff --git a/apps/web/src/features/onboarding/HealthStep.tsx b/apps/web/src/features/onboarding/HealthStep.tsx
+index eaa03dc..64b7353 100644
+--- a/apps/web/src/features/onboarding/HealthStep.tsx
++++ b/apps/web/src/features/onboarding/HealthStep.tsx
+@@ -4,46 +4,52 @@ import {
+   type BodyArea,
+   HEALTH_CONSENT_TEXT,
+   HEALTH_QUESTIONNAIRE,
+   LIMITATION_NOTE_MAX,
+   LIMITATION_SEVERITIES,
+   LIMITATION_SEVERITY_LABELS,
+   LIMITATION_SIDE_LABELS,
+   LIMITATION_SIDES,
+   type LimitationSeverity,
+   type LimitationSide,
++  type TrainingProfilePatch,
+ } from '@appsport/contracts';
+ import { useId, useState } from 'react';
+ import { useLive, useMe } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { Banner, Button, ChoiceList, Field, HealthWarning, useAction } from '../../ui';
+ import styles from './onboarding.module.css';
+-import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++import { StepActions, type StepProps, saveLabel, saveStep } from './StepActions';
++import { StepTitle } from './StepTitle';
+ 
+ const SELF_CHECK_TEXT =
+   "Si l'une de ces situations te concerne, demande l'avis d'un médecin avant de commencer.";
+ const SEE_DOCTOR_TEXT = 'Nous te recommandons de consulter un médecin avant de commencer.';
++const SCREENING_INCOMPLETE = 'Réponds aux 4 questions ou efface tes réponses avant de continuer.';
++const DRAFT_INCOMPLETE = 'Termine ou efface la limitation en cours avant de continuer.';
++const CAUTIOUS_NOT_HEALTH_DATA =
++  "Réglage d'entraînement, pas une donnée de santé : enregistré même sans accord.";
+ 
+ /** Explication et accord santé (E7.1, P-CST-1) : case jamais pré-cochée, distincte de Confidentialité. */
+ export function HealthConsentPanel(p: { onGranted(): void; onSkip?: () => void }) {
+   const repos = useRepos();
+   const [agreed, setAgreed] = useState(false);
+   const grant = useAction(async () => {
+     await repos.consent.grantHealth();
+     p.onGranted();
+   });
+   return (
+     <section className={styles.panel}>
+       <p>
+-        Les réponses de cet écran sont des données de santé. Elles servent seulement à adapter tes séances et
+-        restent sur le serveur du cercle. Elles ne vont au coach qu'avec son propre accord, en plus de
+-        celui-ci. Tu peux les supprimer à tout moment.
++        Tes réponses au questionnaire et tes limitations sont des données de santé. Elles servent seulement à
++        adapter tes séances et restent sur le serveur du cercle. Elles ne vont au coach qu'avec son propre
++        accord, en plus de celui-ci. Tu peux les supprimer à tout moment.
+       </p>
+       <label className={styles.check}>
+         <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+         <span>{HEALTH_CONSENT_TEXT.text}</span>
+       </label>
+       {grant.error ? <Banner tone="error">{grant.error}</Banner> : null}
+       <div className={styles.actions}>
+         {p.onSkip ? (
+           <Button variant="secondary" onClick={p.onSkip}>
+             Passer
+@@ -52,101 +58,172 @@ export function HealthConsentPanel(p: { onGranted(): void; onSkip?: () => void }
+         <Button disabled={!agreed || grant.pending} onClick={() => void grant.run()}>
+           J'accepte et je renseigne
+         </Button>
+       </div>
+     </section>
+   );
+ }
+ 
+ type Answer = 'yes' | 'no';
+ 
++const noAnswers = (): (Answer | null)[] => HEALTH_QUESTIONNAIRE.questions.map(() => null);
++
++/**
++ * Questionnaire d'alerte en cours (E7.2) : réponses, réponses déjà envoyées et `persist` (PUT des
++ * 4 réponses, qui lève en cas d'échec). Tenu par `HealthStep` pour l'envoyer au clic sur « Suivant ».
++ */
++export function useScreening(onSaved?: (caution: boolean) => void) {
++  const repos = useRepos();
++  const [answers, setAnswers] = useState(noAnswers);
++  const [sent, setSent] = useState<(Answer | null)[] | null>(null);
++  const [a, b, c, d] = answers.map((x) => (x === null ? null : x === 'yes'));
++  const values: [boolean, boolean, boolean, boolean] | null =
++    a != null && b != null && c != null && d != null ? [a, b, c, d] : null;
++  const answered = answers.some((x) => x !== null);
++  const dirty = answered && (sent === null || sent.some((x, i) => x !== answers[i]));
++  return {
++    answers,
++    setAnswer: (i: number, v: Answer) => setAnswers((prev) => prev.map((x, j) => (j === i ? v : x))),
++    clear: () => setAnswers(noAnswers()),
++    complete: values !== null,
++    /** Réponses commencées mais pas toutes données. */
++    partial: answered && values === null,
++    /** Réponses données et pas encore envoyées telles quelles. */
++    dirty,
++    saved: sent !== null && !dirty,
++    /** Un seul « oui » suffit pour recommander un médecin, avant tout envoi. */
++    advice: answers.includes('yes'),
++    async persist(): Promise<void> {
++      if (values === null) return;
++      const result = await repos.consent.saveScreening(values);
++      setSent(answers);
++      onSaved?.(result.caution);
++    },
++  };
++}
++
++export type Screening = ReturnType<typeof useScreening>;
++
+ /**
+  * Questionnaire d'alerte (E7.2) : avec accord, réponses envoyées et seul l'indicateur de prudence
+  * est gardé ; sans accord (`record` faux), auto-vérification affichée, rien n'est envoyé (P-CST-2).
++ * `screening` : réponses tenues par l'écran parent (onboarding), sinon par le composant.
+  */
+-export function ScreeningQuestions(p: { record: boolean; onSaved?(caution: boolean): void }) {
+-  const repos = useRepos();
++export function ScreeningQuestions(p: {
++  record: boolean;
++  onSaved?(caution: boolean): void;
++  screening?: Screening;
++}) {
+   const id = useId();
+-  const [answers, setAnswers] = useState<(Answer | null)[]>(() =>
+-    HEALTH_QUESTIONNAIRE.questions.map(() => null),
+-  );
+-  const [caution, setCaution] = useState<boolean | null>(null);
+-  const save = useAction(async (a: [boolean, boolean, boolean, boolean]) => {
+-    const result = await repos.consent.saveScreening(a);
+-    setCaution(result.caution);
+-    p.onSaved?.(result.caution);
+-  });
++  const own = useScreening(p.onSaved);
++  const s = p.screening ?? own;
++  const save = useAction(() => s.persist());
+ 
+   if (!p.record) {
+     return (
+       <section className={styles.panel}>
+         <p>{SELF_CHECK_TEXT}</p>
+         <ul className={styles.questions}>
+           {HEALTH_QUESTIONNAIRE.questions.map((q) => (
+             <li key={q}>{q}</li>
+           ))}
+         </ul>
+       </section>
+     );
+   }
+ 
+-  const [a, b, c, d] = answers.map((x) => (x === null ? null : x === 'yes'));
+-  const complete = a != null && b != null && c != null && d != null;
+   return (
+     <section className={styles.panel}>
+       {HEALTH_QUESTIONNAIRE.questions.map((q, i) => (
+         <ChoiceList<Answer>
+           key={q}
+           name={`${id}-screening-${i}`}
+           legend={q}
+-          value={answers[i] ?? null}
+-          onChange={(v) => setAnswers((prev) => prev.map((x, j) => (j === i ? v : x)))}
++          value={s.answers[i] ?? null}
++          onChange={(v) => s.setAnswer(i, v)}
+           options={[
+             { value: 'yes', label: 'Oui' },
+             { value: 'no', label: 'Non' },
+           ]}
+         />
+       ))}
+       {save.error ? <Banner tone="error">{save.error}</Banner> : null}
+-      {caution === true ? <Banner tone="warning">{SEE_DOCTOR_TEXT}</Banner> : null}
+-      {caution === false ? <Banner tone="info">Réponses enregistrées.</Banner> : null}
+-      <Button
+-        variant="secondary"
+-        disabled={!complete || save.pending}
+-        onClick={() => {
+-          if (complete) void save.run([a, b, c, d]);
+-        }}
+-      >
+-        Enregistrer mes réponses
+-      </Button>
++      {s.advice ? <Banner tone="warning">{SEE_DOCTOR_TEXT}</Banner> : null}
++      {s.saved ? <Banner tone="info">Réponses enregistrées.</Banner> : null}
++      <div className={styles.actions}>
++        {s.dirty ? (
++          <Button variant="secondary" onClick={s.clear}>
++            Effacer mes réponses
++          </Button>
++        ) : null}
++        <Button variant="secondary" disabled={!s.complete || save.pending} onClick={() => void save.run()}>
++          Enregistrer mes réponses
++        </Button>
++      </div>
+     </section>
+   );
+ }
+ 
+-/** Limitations facultatives (E7.3) : zone, côté, gêne et note de 200 caractères au plus. */
+-export function LimitationsEditor() {
++/**
++ * Limitation en cours de saisie (E7.3) : `persist` l'ajoute (POST, lève en cas d'échec) puis vide
++ * la saisie. Tenue par `HealthStep` pour l'envoyer au clic sur « Suivant ».
++ */
++export function useLimitationDraft() {
+   const repos = useRepos();
+-  const id = useId();
+-  const limitations = useLive(() => repos.consent.limitations(), [repos]);
+   const [bodyArea, setBodyArea] = useState<BodyArea | ''>('');
+   const [side, setSide] = useState<LimitationSide | ''>('');
+   const [severity, setSeverity] = useState<LimitationSeverity | null>(null);
+   const [note, setNote] = useState('');
+-  const add = useAction(async () => {
+-    if (bodyArea === '' || side === '' || severity === null) return;
+-    const trimmed = note.trim();
+-    await repos.consent.addLimitation({ bodyArea, side, severity, note: trimmed === '' ? null : trimmed });
++  const complete = bodyArea !== '' && side !== '' && severity !== null;
++  const empty = bodyArea === '' && side === '' && severity === null && note.trim() === '';
++  const clear = () => {
+     setBodyArea('');
+     setSide('');
+     setSeverity(null);
+     setNote('');
+-  });
++  };
++  return {
++    bodyArea,
++    setBodyArea,
++    side,
++    setSide,
++    severity,
++    setSeverity,
++    note,
++    setNote,
++    complete,
++    /** Saisie commencée mais pas complète. */
++    partial: !empty && !complete,
++    empty,
++    clear,
++    async persist(): Promise<void> {
++      if (bodyArea === '' || side === '' || severity === null) return;
++      const trimmed = note.trim();
++      await repos.consent.addLimitation({ bodyArea, side, severity, note: trimmed === '' ? null : trimmed });
++      clear();
++    },
++  };
++}
++
++export type LimitationDraft = ReturnType<typeof useLimitationDraft>;
++
++/**
++ * Limitations facultatives (E7.3) : zone, côté, gêne et note de 200 caractères au plus. `draft` :
++ * saisie tenue par l'écran parent (onboarding), sinon par le composant.
++ */
++export function LimitationsEditor(p: { draft?: LimitationDraft } = {}) {
++  const repos = useRepos();
++  const id = useId();
++  const limitations = useLive(() => repos.consent.limitations(), [repos]);
++  const own = useLimitationDraft();
++  const draft = p.draft ?? own;
++  const add = useAction(() => draft.persist());
+   const remove = useAction((limitationId: string) => repos.consent.removeLimitation(limitationId));
+ 
+   return (
+     <section className={styles.panel}>
+       <h3>Limitations</h3>
+       <p className={styles.note}>
+         Facultatif : une zone sensible ou une gêne à ménager ; aucun diagnostic n'est nécessaire.
+       </p>
+       {limitations === undefined ? null : limitations.length === 0 ? (
+         <p>Aucune</p>
+@@ -166,127 +243,153 @@ export function LimitationsEditor() {
+                 disabled={remove.pending}
+                 onClick={() => void remove.run(l.id)}
+               >
+                 Supprimer
+               </Button>
+             </li>
+           ))}
+         </ul>
+       )}
+       <Field label="Zone">
+-        <select value={bodyArea} onChange={(e) => setBodyArea(e.target.value as BodyArea | '')}>
++        <select value={draft.bodyArea} onChange={(e) => draft.setBodyArea(e.target.value as BodyArea | '')}>
+           <option value="">Choisir</option>
+           {BODY_AREAS.map((a) => (
+             <option key={a} value={a}>
+               {BODY_AREA_LABELS[a]}
+             </option>
+           ))}
+         </select>
+       </Field>
+       <Field label="Côté">
+-        <select value={side} onChange={(e) => setSide(e.target.value as LimitationSide | '')}>
++        <select value={draft.side} onChange={(e) => draft.setSide(e.target.value as LimitationSide | '')}>
+           <option value="">Choisir</option>
+           {LIMITATION_SIDES.map((s) => (
+             <option key={s} value={s}>
+               {LIMITATION_SIDE_LABELS[s]}
+             </option>
+           ))}
+         </select>
+       </Field>
+       <ChoiceList<LimitationSeverity>
+         name={`${id}-severity`}
+         legend="Gêne"
+-        value={severity}
+-        onChange={setSeverity}
++        value={draft.severity}
++        onChange={draft.setSeverity}
+         options={LIMITATION_SEVERITIES.map((s) => ({ value: s, label: LIMITATION_SEVERITY_LABELS[s] }))}
+       />
+       <Field label="Note" hint={`${LIMITATION_NOTE_MAX} caractères au plus.`}>
+         <input
+           type="text"
+           maxLength={LIMITATION_NOTE_MAX}
+-          value={note}
+-          onChange={(e) => setNote(e.target.value)}
++          value={draft.note}
++          onChange={(e) => draft.setNote(e.target.value)}
+         />
+       </Field>
+       {add.error ? <Banner tone="error">{add.error}</Banner> : null}
+       {remove.error ? <Banner tone="error">{remove.error}</Banner> : null}
+-      <Button
+-        variant="secondary"
+-        disabled={bodyArea === '' || side === '' || severity === null || add.pending}
+-        onClick={() => void add.run()}
+-      >
+-        Ajouter une limitation
+-      </Button>
++      <div className={styles.actions}>
++        {draft.empty ? null : (
++          <Button variant="secondary" onClick={draft.clear}>
++            Effacer la saisie
++          </Button>
++        )}
++        <Button variant="secondary" disabled={!draft.complete || add.pending} onClick={() => void add.run()}>
++          Ajouter une limitation
++        </Button>
++      </div>
+     </section>
+   );
+ }
+ 
+ /** Mode prudent (E7.5, C1) : proposé à tous ; affiché imposé pour un mineur (R-CST-7). */
+ export function CautiousModeToggle(p: { value: boolean; minor: boolean; onChange(v: boolean): void }) {
+   const hintId = useId();
++  const noteId = useId();
+   return (
+     <div className={styles.toggle}>
+       <label className={styles.check}>
+         <input
+           type="checkbox"
+           role="switch"
+           aria-checked={p.minor || p.value}
+           checked={p.minor || p.value}
+           disabled={p.minor}
+-          aria-describedby={p.minor ? hintId : undefined}
++          aria-describedby={p.minor ? `${hintId} ${noteId}` : noteId}
+           onChange={(e) => p.onChange(e.target.checked)}
+         />
+         <span>Je préfère une progression plus prudente</span>
+       </label>
+       {p.minor ? (
+         <span id={hintId} className={styles.note}>
+           Imposé jusqu'à 18 ans
+         </span>
+       ) : null}
++      <span id={noteId} className={styles.note}>
++        {CAUTIOUS_NOT_HEALTH_DATA}
++      </span>
+     </div>
+   );
+ }
+ 
+ /**
+  * E7 Santé et prudence, facultatif. Avec accord : questionnaire enregistré et limitations ; sans :
+- * accord proposé, ou auto-vérification après « Passer ». Le mode prudent est un état local, envoyé
+- * au clic sur « Suivant » (R-ONB-2).
++ * accord proposé, ou auto-vérification après « Passer ». Au clic sur « Suivant » (R-ONB-2), l'écran
++ * envoie ce qui n'est pas encore enregistré : réponses complètes (PUT), limitation complète (POST),
++ * puis le mode prudent avec l'étape (PATCH). Une saisie à moitié faite arrête « Suivant ».
+  */
+ export function HealthStep(p: StepProps) {
+   const repos = useRepos();
+   const me = useMe();
+   const profile = useLive(() => repos.profile.get(), [repos]);
+   const [skipped, setSkipped] = useState(false);
+   const [cautious, setCautious] = useState<boolean | null>(null);
+-  const save = useSaveStep(p, 'health');
++  const [blocked, setBlocked] = useState<string | null>(null);
++  const screening = useScreening();
++  const draft = useLimitationDraft();
++  const recording = me?.consents.health.active === true;
++  const next = useAction(async (patch: TrainingProfilePatch) => {
++    if (recording && screening.dirty) await screening.persist();
++    if (recording && draft.complete) await draft.persist();
++    await saveStep(repos, p, 'health', patch);
++  });
+   if (!me || profile === undefined) return null;
+ 
+   const minor = me.ageBand === 'minor';
+   const stored = profile?.cautiousMode ?? false;
+   const changed = !minor && cautious !== null && cautious !== stored;
++  const issue = !recording
++    ? null
++    : screening.partial
++      ? SCREENING_INCOMPLETE
++      : draft.partial
++        ? DRAFT_INCOMPLETE
++        : null;
++
++  function submit() {
++    setBlocked(issue);
++    if (issue === null) void next.run(changed ? { cautiousMode: cautious === true } : {});
++  }
++
+   return (
+     <>
+-      <h2>Santé et prudence</h2>
+-      {me.consents.health.active ? (
++      <StepTitle>Santé et prudence</StepTitle>
++      {recording ? (
+         <>
+-          <ScreeningQuestions record />
+-          <LimitationsEditor />
++          <ScreeningQuestions record screening={screening} />
++          <LimitationsEditor draft={draft} />
+         </>
+       ) : skipped ? (
+         <ScreeningQuestions record={false} />
+       ) : (
+         <HealthConsentPanel onGranted={() => {}} onSkip={() => setSkipped(true)} />
+       )}
+       <CautiousModeToggle value={cautious ?? stored} minor={minor} onChange={setCautious} />
+       <HealthWarning />
+       <StepActions
+         onBack={p.onBack}
+-        pending={save.pending}
+-        error={save.error}
+-        primary={{
+-          label: saveLabel(p.mode),
+-          onClick: () => void save.run(changed ? { cautiousMode: cautious === true } : {}),
+-        }}
++        pending={next.pending}
++        error={blocked !== null && blocked === issue ? blocked : next.error}
++        primary={{ label: saveLabel(p.mode), onClick: submit }}
+       />
+     </>
+   );
+ }
+diff --git a/apps/web/src/features/onboarding/OnboardingFlow.tsx b/apps/web/src/features/onboarding/OnboardingFlow.tsx
+index 4cd2bea..910ae35 100644
+--- a/apps/web/src/features/onboarding/OnboardingFlow.tsx
++++ b/apps/web/src/features/onboarding/OnboardingFlow.tsx
+@@ -1,48 +1,58 @@
+ import { ONBOARDING_STEPS, type OnboardingStep, type PlaceKind } from '@appsport/contracts';
+ import { firstIncompleteStep } from '@appsport/domain';
+-import { useCallback, useEffect, useRef, useState } from 'react';
++import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+ import { useSyncState } from '../../app-services';
+ import { useRepos } from '../../repos';
+-import { Page } from '../../ui';
++import { Banner, ERROR_MESSAGES, Page } from '../../ui';
+ import { AvailabilityStep } from './AvailabilityStep';
+ import { ExperienceStep } from './ExperienceStep';
+ import { GoalStep } from './GoalStep';
+ import { HealthStep } from './HealthStep';
+ import styles from './onboarding.module.css';
+ import { PlaceKindStep } from './PlaceKindStep';
+ import { PlaceStep } from './PlaceStep';
+ import { ReadyStep } from './ReadyStep';
+ import { SportStep } from './SportStep';
++import { StepTitleContext } from './StepTitle';
+ 
+ interface FlowState {
+   step: OnboardingStep;
+   /** Type du lieu principal : choisi à l'écran « Lieu principal », ou celui du lieu déjà créé. */
+   kind: PlaceKind | null;
+ }
+ 
+-/** Écran affiché : l'écran du lieu sans type connu revient à la question du type. */
+-const shownStep = (s: FlowState): OnboardingStep =>
++/**
++ * Écran affiché : l'écran du lieu sans type connu revient à la question du type (seul un 409 du
++ * serveur peut mener à 'place' : la reprise locale passe par 'place_kind').
++ */
++export const shownStep = (s: FlowState): OnboardingStep =>
+   s.step === 'place' && s.kind === null ? 'place_kind' : s.step;
+ 
+ /**
+  * Onboarding en 8 écrans (02 §8), hors de la coquille de l'appli. Départ au premier écran
+  * incomplet (R-ONB-2), recalculé à chaque pull réussi tant que l'utilisateur n'a rien changé (un
+  * nouvel appareil reçoit ses réponses après l'ouverture) ; chaque écran s'enregistre au clic sur
+- * « Suivant », « Retour » revient à l'écran précédent avec ses réponses.
++ * « Suivant », « Retour » revient à l'écran précédent avec ses réponses. À chaque changement
++ * d'écran, le titre du nouvel écran (« Étape n/8 <titre> ») prend le focus.
+  */
+ export function OnboardingFlow() {
+   const repos = useRepos();
+   const { lastPullOkAt } = useSyncState();
+   const [state, setState] = useState<FlowState | null>(null);
++  // Raison d'un retour imposé par le serveur (409), affichée jusqu'au changement d'écran suivant.
++  const [notice, setNotice] = useState<string | null>(null);
+   // Écran ou type de lieu changé par l'utilisateur : la reprise calculée ne s'applique plus.
+   const moved = useRef(false);
++  const focusNext = useRef(false);
++  const progressId = useId();
++  const titles = useMemo(() => ({ progressId, focusNext }), [progressId]);
+ 
+   const resume = useCallback(async (): Promise<FlowState> => {
+     const [input, places] = await Promise.all([repos.profile.onboardingInput(), repos.places.list()]);
+     return { step: firstIncompleteStep(input), kind: places.find((p) => p.isPrimary)?.kind ?? null };
+   }, [repos]);
+ 
+   // biome-ignore lint/correctness/useExhaustiveDependencies: reprise recalculée après chaque pull réussi
+   useEffect(() => {
+     let active = true;
+     resume().then(
+@@ -56,60 +66,70 @@ export function OnboardingFlow() {
+     );
+     return () => {
+       active = false;
+     };
+   }, [resume, lastPullOkAt]);
+ 
+   if (!state) return null;
+ 
+   const step = shownStep(state);
+   const index = ONBOARDING_STEPS.indexOf(step);
+-  const goTo = (s: OnboardingStep) => {
++  const goTo = (s: OnboardingStep, reason: string | null = null) => {
+     moved.current = true;
++    focusNext.current = true;
++    setNotice(reason);
+     setState((prev) => (prev ? { ...prev, step: s } : prev));
+   };
+   const next = ONBOARDING_STEPS[index + 1];
+   const previous = ONBOARDING_STEPS[index - 1];
+   const onNext = () => {
+     if (next) goTo(next);
+   };
+   const onBack = previous ? () => goTo(previous) : undefined;
+   const props = { mode: 'onboarding', onNext, onBack } as const;
+ 
+   /** 409 onboarding_incomplete : l'écran indiqué par le serveur, sinon celui de la base locale. */
+   const onIncomplete = (serverStep: OnboardingStep | null) => {
++    const reason = ERROR_MESSAGES.onboarding_incomplete;
+     if (serverStep) {
+-      goTo(serverStep);
++      goTo(serverStep, reason);
+       return;
+     }
+     moved.current = true;
+     resume().then(
+-      (s) => setState(s),
++      (s) => {
++        focusNext.current = true;
++        setNotice(reason);
++        setState(s);
++      },
+       () => {},
+     );
+   };
+ 
+   return (
+     <Page title="Prise en main">
+-      <p className={styles.progress}>{`Étape ${index + 1}/${ONBOARDING_STEPS.length}`}</p>
+-      <div key={step} data-testid="onboarding-step" data-step={step} className={styles.step}>
+-        {step === 'goal' ? <GoalStep {...props} /> : null}
+-        {step === 'sport' ? <SportStep {...props} /> : null}
+-        {step === 'place_kind' ? (
+-          <PlaceKindStep
+-            {...props}
+-            value={state.kind}
+-            onChange={(kind) => {
+-              moved.current = true;
+-              setState((prev) => (prev ? { ...prev, kind } : prev));
+-            }}
+-          />
+-        ) : null}
+-        {step === 'place' && state.kind ? <PlaceStep {...props} kind={state.kind} /> : null}
+-        {step === 'experience' ? <ExperienceStep {...props} /> : null}
+-        {step === 'availability' ? <AvailabilityStep {...props} /> : null}
+-        {step === 'health' ? <HealthStep {...props} /> : null}
+-        {step === 'ready' ? <ReadyStep onBack={() => goTo('health')} onIncomplete={onIncomplete} /> : null}
+-      </div>
++      <p id={progressId} className={styles.progress}>{`Étape ${index + 1}/${ONBOARDING_STEPS.length}`}</p>
++      {notice ? <Banner tone="warning">{notice}</Banner> : null}
++      <StepTitleContext.Provider value={titles}>
++        <div key={step} data-testid="onboarding-step" data-step={step} className={styles.step}>
++          {step === 'goal' ? <GoalStep {...props} /> : null}
++          {step === 'sport' ? <SportStep {...props} /> : null}
++          {step === 'place_kind' ? (
++            <PlaceKindStep
++              {...props}
++              value={state.kind}
++              onChange={(kind) => {
++                moved.current = true;
++                setState((prev) => (prev ? { ...prev, kind } : prev));
++              }}
++            />
++          ) : null}
++          {step === 'place' && state.kind ? <PlaceStep {...props} kind={state.kind} /> : null}
++          {step === 'experience' ? <ExperienceStep {...props} /> : null}
++          {step === 'availability' ? <AvailabilityStep {...props} /> : null}
++          {step === 'health' ? <HealthStep {...props} /> : null}
++          {step === 'ready' ? <ReadyStep onBack={() => goTo('health')} onIncomplete={onIncomplete} /> : null}
++        </div>
++      </StepTitleContext.Provider>
+     </Page>
+   );
+ }
+diff --git a/apps/web/src/features/onboarding/PlaceKindStep.tsx b/apps/web/src/features/onboarding/PlaceKindStep.tsx
+index 654a80c..8266201 100644
+--- a/apps/web/src/features/onboarding/PlaceKindStep.tsx
++++ b/apps/web/src/features/onboarding/PlaceKindStep.tsx
+@@ -1,23 +1,24 @@
+ import type { PlaceKind } from '@appsport/contracts';
+ import { ChoiceList } from '../../ui';
+ import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++import { StepTitle } from './StepTitle';
+ 
+ /**
+  * E3 Lieu principal. Le type n'est pas stocké (c'est celui du lieu principal, créé à l'écran
+  * suivant) : seule l'étape est enregistrée.
+  */
+ export function PlaceKindStep(p: StepProps & { value: PlaceKind | null; onChange(k: PlaceKind): void }) {
+   const save = useSaveStep(p, 'place_kind');
+   return (
+     <>
+-      <h2>Lieu principal</h2>
++      <StepTitle>Lieu principal</StepTitle>
+       <ChoiceList<PlaceKind>
+         name="place-kind"
+         legend="Où t'entraîneras-tu le plus souvent ?"
+         value={p.value}
+         onChange={p.onChange}
+         options={[
+           { value: 'gym', label: 'À la salle' },
+           { value: 'home', label: 'À la maison' },
+         ]}
+       />
+diff --git a/apps/web/src/features/onboarding/PlaceStep.tsx b/apps/web/src/features/onboarding/PlaceStep.tsx
+index dbc1097..3f98bbd 100644
+--- a/apps/web/src/features/onboarding/PlaceStep.tsx
++++ b/apps/web/src/features/onboarding/PlaceStep.tsx
+@@ -9,20 +9,21 @@ import {
+   type PresetId,
+ } from '@appsport/contracts';
+ import { useState } from 'react';
+ import { useLive, useMe } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { ChoiceList, Field, useAction } from '../../ui';
+ import { EquipmentChecklist, sortEquipment } from '../places/EquipmentChecklist';
+ import { GymPicker } from '../places/GymPicker';
+ import styles from './onboarding.module.css';
+ import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++import { StepTitle } from './StepTitle';
+ 
+ const HOME_PRESETS = PRESET_IDS.filter((id) => PRESETS[id].kind === 'home');
+ 
+ /**
+  * E4 Ma salle ou Ma maison : l'onboarding crée un seul lieu, principal (02 §8, E3/E4). Un lieu
+  * principal déjà là (retour arrière) est affiché sans rien recréer ; les autres lieux se gèrent
+  * dans Profil › Lieux.
+  */
+ export function PlaceStep(p: StepProps & { kind: PlaceKind }) {
+   const repos = useRepos();
+@@ -38,21 +39,21 @@ export function PlaceStep(p: StepProps & { kind: PlaceKind }) {
+   );
+   const save = useSaveStep(p, 'place');
+   const createHome = useAction(async () => {
+     await repos.places.create({ kind: 'home', name: name.trim(), equipment, isPrimary: true });
+     setCreated(true);
+     await save.run();
+   });
+   if (!me || places === undefined) return null;
+ 
+   const primary = places.find((pl) => pl.isPrimary);
+-  const title = <h2>{(primary?.kind ?? p.kind) === 'gym' ? 'Ma salle' : 'Ma maison'}</h2>;
++  const title = <StepTitle>{(primary?.kind ?? p.kind) === 'gym' ? 'Ma salle' : 'Ma maison'}</StepTitle>;
+ 
+   if (primary || created) {
+     return (
+       <>
+         {title}
+         <p>{primary ? `Ton lieu principal : ${primary.name}` : 'Ton lieu principal est enregistré.'}</p>
+         <p className={styles.note}>Tu pourras ajouter ou changer de lieu dans Profil › Lieux.</p>
+         <StepActions
+           onBack={p.onBack}
+           pending={save.pending}
+diff --git a/apps/web/src/features/onboarding/ReadyStep.tsx b/apps/web/src/features/onboarding/ReadyStep.tsx
+index b6b6eee..a2a7549 100644
+--- a/apps/web/src/features/onboarding/ReadyStep.tsx
++++ b/apps/web/src/features/onboarding/ReadyStep.tsx
+@@ -2,20 +2,21 @@ import { EXPERIENCE_LABELS, GOAL_LABELS, OnboardingStep, SPORTS } from '@appspor
+ import { useState } from 'react';
+ import { useLocation } from 'wouter';
+ import { ApiError } from '../../api/client';
+ import { ONBOARDING_COMPLETED_EVENT } from '../../app-events';
+ import { useLive } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { Banner, Button, plural, useAction } from '../../ui';
+ import { OfflineReadyIndicator } from '../status/OfflineReadyIndicator';
+ import { useReadiness } from '../status/use-readiness';
+ import styles from './onboarding.module.css';
++import { StepTitle } from './StepTitle';
+ 
+ /**
+  * E8 C'est prêt : récapitulatif et voyant « Prêt hors ligne ». « Commencer » termine l'onboarding
+  * une fois le voyant au vert (R-SYN-33), émet ONBOARDING_COMPLETED_EVENT puis mène à l'accueil ;
+  * sinon « Réessayer ». Un écran encore incomplet pour le serveur (409) est rendu à `onIncomplete`,
+  * avec l'étape qu'il indique (null si illisible).
+  */
+ export function ReadyStep(p: { onBack(): void; onIncomplete(step: OnboardingStep | null): void }) {
+   const repos = useRepos();
+   const [, navigate] = useLocation();
+@@ -43,21 +44,21 @@ export function ReadyStep(p: { onBack(): void; onIncomplete(step: OnboardingStep
+ 
+   const primary = places?.find((pl) => pl.isPrimary);
+   const sport = profile?.sportCode
+     ? profile.sportCode === 'other'
+       ? profile.sportOtherLabel
+       : SPORTS.find((s) => s.code === profile.sportCode)?.label
+     : null;
+ 
+   return (
+     <>
+-      <h2>C'est prêt</h2>
++      <StepTitle>C'est prêt</StepTitle>
+       {profile ? (
+         <dl className={styles.summary}>
+           {profile.goal ? (
+             <div>
+               <dt>Objectif</dt>
+               <dd>{GOAL_LABELS[profile.goal]}</dd>
+             </div>
+           ) : null}
+           {sport ? (
+             <div>
+diff --git a/apps/web/src/features/onboarding/SportStep.tsx b/apps/web/src/features/onboarding/SportStep.tsx
+index f965d8d..436628b 100644
+--- a/apps/web/src/features/onboarding/SportStep.tsx
++++ b/apps/web/src/features/onboarding/SportStep.tsx
+@@ -1,41 +1,43 @@
+ import {
+   GOAL_LABELS,
+   type Goal,
+   ONBOARDING_STEPS,
+   SPORT_OTHER_LABEL_MAX,
+   SPORTS,
+   type SportCode,
+ } from '@appsport/contracts';
+-import { useState } from 'react';
++import { useId, useState } from 'react';
+ import { useLive, useMe } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { ChoiceList, Field } from '../../ui';
+ import styles from './onboarding.module.css';
+ import { StepActions, type StepProps, saveLabel, useSaveStep } from './StepActions';
++import { StepTitle } from './StepTitle';
+ 
+ type Practice = 'yes' | 'no';
+ 
+ export const SPORT_REQUIRED_TEXT = `Obligatoire avec l'objectif « ${GOAL_LABELS.sport_support} ».`;
+ 
+ /**
+  * E2 Autre sport : « Oui » imposé avec l'objectif sportif ; « Autre » exige un libellé (40
+  * caractères au plus). `pendingGoal` (édition depuis l'objectif) : PATCH { goal, sportCode,
+  * sportOtherLabel } en un seul envoi.
+  */
+ export function SportStep(p: StepProps & { pendingGoal?: Goal }) {
+   const repos = useRepos();
+   const me = useMe();
+   const profile = useLive(() => repos.profile.get(), [repos]);
+   const [practice, setPractice] = useState<Practice | null>(null);
+   const [sport, setSport] = useState<SportCode | null>(null);
+   const [otherLabel, setOtherLabel] = useState<string | null>(null);
++  const requiredId = useId();
+   const save = useSaveStep(p, 'sport');
+   if (!me || profile === undefined) return null;
+ 
+   const savedSport = profile?.sportCode ?? null;
+   // Sans sport enregistré, « Non » n'est une réponse que si l'écran a déjà été validé.
+   const answered =
+     p.mode === 'edit' ||
+     me.onboardingCompletedAt !== null ||
+     (me.onboardingStep !== null &&
+       ONBOARDING_STEPS.indexOf(me.onboardingStep) >= ONBOARDING_STEPS.indexOf('sport'));
+@@ -52,32 +54,36 @@ export function SportStep(p: StepProps & { pendingGoal?: Goal }) {
+     if (!complete) return;
+     const answer =
+       practiceValue === 'yes' && sportValue !== null
+         ? { sportCode: sportValue, sportOtherLabel: sportValue === 'other' ? label : null }
+         : { sportCode: null, sportOtherLabel: null };
+     void save.run(p.pendingGoal ? { goal: p.pendingGoal, ...answer } : answer);
+   }
+ 
+   return (
+     <>
+-      <h2>Autre sport</h2>
++      <StepTitle>Autre sport</StepTitle>
+       <ChoiceList<Practice>
+         name="sport-practice"
+         legend="Pratiques-tu un autre sport régulièrement ?"
+         value={practiceValue}
+         onChange={setPractice}
+         options={[
+-          { value: 'no', label: 'Non', disabled: required },
++          { value: 'no', label: 'Non', disabled: required, describedBy: required ? requiredId : undefined },
+           { value: 'yes', label: 'Oui' },
+         ]}
+       />
+-      {required ? <p className={styles.note}>{SPORT_REQUIRED_TEXT}</p> : null}
++      {required ? (
++        <p id={requiredId} className={styles.note}>
++          {SPORT_REQUIRED_TEXT}
++        </p>
++      ) : null}
+       {practiceValue === 'yes' ? (
+         <ChoiceList<SportCode>
+           name="sport"
+           legend="Quel sport ?"
+           value={sportValue}
+           onChange={setSport}
+           options={SPORTS.map((s) => ({ value: s.code, label: s.label }))}
+         />
+       ) : null}
+       {practiceValue === 'yes' && sportValue === 'other' ? (
+diff --git a/apps/web/src/features/onboarding/StepActions.tsx b/apps/web/src/features/onboarding/StepActions.tsx
+index cced649..0d52886 100644
+--- a/apps/web/src/features/onboarding/StepActions.tsx
++++ b/apps/web/src/features/onboarding/StepActions.tsx
+@@ -1,36 +1,44 @@
+ import type { OnboardingStep, TrainingProfilePatch } from '@appsport/contracts';
+-import { useRepos } from '../../repos';
++import { type Repos, useRepos } from '../../repos';
+ import { Banner, Button, useAction } from '../../ui';
+ import styles from './onboarding.module.css';
+ 
+ /** Écran partagé par l'onboarding et le Profil (R-ONB-3). */
+ export interface StepProps {
+   mode: 'onboarding' | 'edit';
+   onNext(): void;
+   onBack?: () => void;
+ }
+ 
+ /** Bouton qui enregistre l'écran : « Suivant » pendant l'onboarding, « Enregistrer » dans le Profil. */
+ export const saveLabel = (mode: StepProps['mode']) => (mode === 'onboarding' ? 'Suivant' : 'Enregistrer');
+ 
+ /**
+  * Enregistrement d'un écran au clic (R-ONB-2) : PATCH du profil, avec `onboardingStep` pendant
+  * l'onboarding (rien n'est envoyé en édition si rien n'a changé), puis `onNext`.
+  */
++export async function saveStep(
++  repos: Repos,
++  p: StepProps,
++  step: OnboardingStep,
++  patch: TrainingProfilePatch = {},
++): Promise<void> {
++  const body = p.mode === 'onboarding' ? { ...patch, onboardingStep: step } : patch;
++  if (Object.keys(body).length > 0) await repos.profile.update(body);
++  p.onNext();
++}
++
++/** `saveStep` en action d'écran (en cours, erreur traduite). */
+ export function useSaveStep(p: StepProps, step: OnboardingStep) {
+   const repos = useRepos();
+-  return useAction(async (patch: TrainingProfilePatch = {}) => {
+-    const body = p.mode === 'onboarding' ? { ...patch, onboardingStep: step } : patch;
+-    if (Object.keys(body).length > 0) await repos.profile.update(body);
+-    p.onNext();
+-  });
++  return useAction((patch: TrainingProfilePatch = {}) => saveStep(repos, p, step, patch));
+ }
+ 
+ /** Erreur de l'écran, « Retour » et bouton principal. */
+ export function StepActions(p: {
+   onBack?: () => void;
+   primary?: { label: string; disabled?: boolean; onClick(): void };
+   pending?: boolean;
+   error?: string | null;
+ }) {
+   return (
+diff --git a/apps/web/src/features/onboarding/StepTitle.tsx b/apps/web/src/features/onboarding/StepTitle.tsx
+new file mode 100644
+index 0000000..e125e52
+--- /dev/null
++++ b/apps/web/src/features/onboarding/StepTitle.tsx
+@@ -0,0 +1,34 @@
++import { createContext, type ReactNode, type RefObject, useCallback, useContext, useId } from 'react';
++
++/**
++ * Titre d'écran dans l'onboarding : `progressId` nomme le titre avec « Étape n/8 » ; `focusNext`
++ * vaut vrai après un changement d'écran, et le prochain titre affiché prend alors le focus.
++ */
++export const StepTitleContext = createContext<{
++  progressId: string;
++  focusNext: RefObject<boolean>;
++} | null>(null);
++
++/**
++ * Titre d'un écran (h2). Dans l'onboarding, il est nommé « Étape n/8 <titre> » et reçoit le focus
++ * dès qu'il apparaît après un changement d'écran (lecteur d'écran et clavier repartent de là) ;
++ * hors onboarding (Profil), simple titre.
++ */
++export function StepTitle(p: { children: ReactNode }) {
++  const ctx = useContext(StepTitleContext);
++  const id = useId();
++  const focusOnMount = useCallback(
++    (el: HTMLHeadingElement | null) => {
++      if (!el || !ctx?.focusNext.current) return;
++      ctx.focusNext.current = false;
++      el.focus();
++    },
++    [ctx],
++  );
++  if (!ctx) return <h2>{p.children}</h2>;
++  return (
++    <h2 id={id} ref={focusOnMount} tabIndex={-1} aria-labelledby={`${ctx.progressId} ${id}`}>
++      {p.children}
++    </h2>
++  );
++}
+diff --git a/apps/web/src/features/places/GymCreate.tsx b/apps/web/src/features/places/GymCreate.tsx
+index 4846ffa..c03f910 100644
+--- a/apps/web/src/features/places/GymCreate.tsx
++++ b/apps/web/src/features/places/GymCreate.tsx
+@@ -2,65 +2,71 @@ import {
+   type EquipmentCode,
+   GYM_CITY_MAX,
+   GYM_CITY_MIN,
+   GYM_NAME_MAX,
+   GYM_NAME_MIN,
+   type GymSummary,
+   PRESET_IDS,
+   PRESETS,
+   type PresetId,
+ } from '@appsport/contracts';
+-import { useId, useState } from 'react';
++import { type ReactNode, useId, useRef, useState } from 'react';
+ import { ApiError } from '../../api/client';
+ import { useRepos } from '../../repos';
+ import { Banner, Button, ChoiceList, ERROR_MESSAGES, Field, plural, useAction } from '../../ui';
+ import { EquipmentChecklist, sortEquipment } from './EquipmentChecklist';
+ import styles from './places.module.css';
+ 
+ const GYM_PRESETS = PRESET_IDS.filter((id) => PRESETS[id].kind === 'gym');
+ 
+ /** « Basic Fit · Lyon · 2 membres visibles » (R-SAL-1). */
+ export const gymLabel = (g: GymSummary) =>
+   `${g.name} · ${g.city} · ${g.visibleMemberCount} ${plural(g.visibleMemberCount, 'membre visible', 'membres visibles')}`;
+ 
+ const lengthError = (value: string, min: number, max: number) =>
+   value.length < min || value.length > max ? `${min} à ${max} caractères.` : null;
+ 
+ type Stage = 'info' | 'similar' | 'equipment';
+ 
+ /**
+  * Création d'une salle (R-SAL-2, R-SAL-3) : nom et ville, salles proches à écarter, préréglage,
+  * puis validation de la liste pré-cochée. Une salle existante (proche ou doublon) se choisit à la
+- * place par `onPickExisting`.
++ * place par `onPickExisting`. `visibility` (réglage de « Qui va à cette salle ») est rendu après la
++ * ville, avant tout bouton qui enregistre (R-VIS-3).
+  */
+ export function GymCreate(p: {
+   isPrimary: boolean;
+   visibleAtGym: boolean;
+   onDone(): void;
+   onPickExisting(gymId: string): void;
++  visibility?: ReactNode;
+ }) {
+   const repos = useRepos();
+   const uid = useId();
+   const [name, setName] = useState('');
+   const [city, setCity] = useState('');
+   const [errors, setErrors] = useState<{ name: string | null; city: string | null }>({
+     name: null,
+     city: null,
+   });
+   const [stage, setStage] = useState<Stage>('info');
+   const [similar, setSimilar] = useState<GymSummary[]>([]);
+   const [preset, setPreset] = useState<PresetId | null>(null);
+   const [equipment, setEquipment] = useState<EquipmentCode[]>([]);
+   const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
++  // Modifications du nom ou de la ville : une réponse arrivée après l'une d'elles est périmée.
++  const edits = useRef(0);
+ 
+   const check = useAction(async (n: string, c: string) => {
++    const at = edits.current;
+     const found = await repos.gyms.similar(n, c);
++    if (edits.current !== at) return;
+     setSimilar(found);
+     setStage(found.length > 0 ? 'similar' : 'equipment');
+   });
+ 
+   const create = useAction(async () => {
+     setDuplicateOf(null);
+     try {
+       await repos.gyms.create({
+         name: name.trim(),
+         city: city.trim(),
+@@ -72,20 +78,21 @@ export function GymCreate(p: {
+       const gymId = error instanceof ApiError && error.code === 'gym_duplicate' ? error.body.gymId : null;
+       if (typeof gymId !== 'string') throw error;
+       setDuplicateOf(gymId);
+       return;
+     }
+     p.onDone();
+   });
+ 
+   /** Nom ou ville modifiés : les salles proches sont à revoir. */
+   const edit = (set: (v: string) => void) => (v: string) => {
++    edits.current += 1;
+     set(v);
+     setStage('info');
+     setDuplicateOf(null);
+   };
+ 
+   function submitInfo() {
+     const n = name.trim();
+     const c = city.trim();
+     const next = {
+       name: lengthError(n, GYM_NAME_MIN, GYM_NAME_MAX),
+@@ -112,20 +119,21 @@ export function GymCreate(p: {
+         />
+       </Field>
+       <Field label="Ville" error={errors.city}>
+         <input
+           type="text"
+           maxLength={GYM_CITY_MAX}
+           value={city}
+           onChange={(e) => edit(setCity)(e.target.value)}
+         />
+       </Field>
++      {p.visibility}
+       {check.error ? <Banner tone="error">{check.error}</Banner> : null}
+       {stage === 'info' ? (
+         <Button onClick={submitInfo} disabled={check.pending}>
+           Continuer
+         </Button>
+       ) : null}
+ 
+       {stage === 'similar' ? (
+         <section className={styles.similar}>
+           <p>Ces salles existent peut-être déjà :</p>
+diff --git a/apps/web/src/features/places/GymPicker.tsx b/apps/web/src/features/places/GymPicker.tsx
+index f567a4a..17d46bf 100644
+--- a/apps/web/src/features/places/GymPicker.tsx
++++ b/apps/web/src/features/places/GymPicker.tsx
+@@ -1,57 +1,62 @@
+ import type { GymSummary } from '@appsport/contracts';
+ import { useEffect, useId, useState } from 'react';
+ import { useRepos } from '../../repos';
+-import { Banner, Button, ChoiceList, errorMessage, Field, useAction } from '../../ui';
++import { Banner, Button, ChoiceList, errorMessage, Field, plural, useAction } from '../../ui';
+ import { GymCreate, gymLabel } from './GymCreate';
+ import styles from './places.module.css';
+ 
+ export const VISIBILITY_LABEL = 'Apparaître dans « Qui va à cette salle »';
+ export const MINOR_VISIBILITY_HINT = 'Désactivé par défaut pour les moins de 18 ans.';
+ 
+-/** Salles du serveur pour `query` ; la dernière recherche lancée l'emporte. */
+-function useGymSearch(query: string): { gyms: GymSummary[] | null; error: string | null } {
++/**
++ * Salles du serveur pour `query` ; la dernière recherche lancée l'emporte. Changer `reload` relance
++ * la même recherche (« Réessayer » après un échec).
++ */
++function useGymSearch(query: string, reload: number): { gyms: GymSummary[] | null; error: string | null } {
+   const repos = useRepos();
+   const [state, setState] = useState<{ gyms: GymSummary[] | null; error: string | null }>({
+     gyms: null,
+     error: null,
+   });
++  // biome-ignore lint/correctness/useExhaustiveDependencies: `reload` relance la recherche
+   useEffect(() => {
+     let current = true;
+     repos.gyms.search(query.trim()).then(
+       (gyms) => {
+         if (current) setState({ gyms, error: null });
+       },
+       (error: unknown) => {
+         if (current) setState((s) => ({ gyms: s.gyms, error: errorMessage(error) }));
+       },
+     );
+     return () => {
+       current = false;
+     };
+-  }, [repos, query]);
++  }, [repos, query, reload]);
+   return state;
+ }
+ 
+ /**
+  * « Ta salle » (R-SAL-1) : choisir une salle existante ou en créer une, et régler sa visibilité
+  * dans « Qui va à cette salle » (R-VIS-3 ; désactivée par défaut pour un mineur, P-MIN-6). Le lieu
+  * est créé ici, puis `onDone`.
+  */
+ export function GymPicker(p: { isPrimary: boolean; defaultVisible: boolean; onDone(): void }) {
+   const repos = useRepos();
+   const hintId = useId();
+   const [query, setQuery] = useState('');
+   const [selected, setSelected] = useState<string | null>(null);
+   const [visible, setVisible] = useState(p.defaultVisible);
+   const [creating, setCreating] = useState(false);
+-  const { gyms, error } = useGymSearch(query);
++  const [reload, setReload] = useState(0);
++  const { gyms, error } = useGymSearch(query, reload);
+   // Une salle choisie puis écartée par la recherche n'est plus validable.
+   const chosen = gyms?.some((g) => g.id === selected) ? selected : null;
+ 
+   const pick = useAction(async (gymId: string) => {
+     await repos.places.create({ kind: 'gym', gymId, isPrimary: p.isPrimary, visibleAtGym: visible });
+     p.onDone();
+   });
+ 
+   const visibility = (
+     <div className={styles.visibility}>
+@@ -71,39 +76,52 @@ export function GymPicker(p: { isPrimary: boolean; defaultVisible: boolean; onDo
+       )}
+     </div>
+   );
+ 
+   if (creating) {
+     return (
+       <div className={styles.picker}>
+         <GymCreate
+           isPrimary={p.isPrimary}
+           visibleAtGym={visible}
++          visibility={visibility}
+           onDone={p.onDone}
+           onPickExisting={(gymId) => void pick.run(gymId)}
+         />
+-        {visibility}
+         {pick.error ? <Banner tone="error">{pick.error}</Banner> : null}
+         <Button variant="secondary" onClick={() => setCreating(false)}>
+           Revenir à la liste
+         </Button>
+       </div>
+     );
+   }
+ 
+   return (
+     <div className={styles.picker}>
+       <Field label="Rechercher une salle">
+         <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} />
+       </Field>
+-      {error ? <Banner tone="error">{error}</Banner> : null}
+-      {gyms !== null && gyms.length === 0 ? <p className={styles.hint}>Aucune salle trouvée.</p> : null}
++      {error ? (
++        <>
++          <Banner tone="error">{error}</Banner>
++          <Button variant="secondary" onClick={() => setReload((n) => n + 1)}>
++            Réessayer
++          </Button>
++        </>
++      ) : null}
++      {gyms !== null ? (
++        <p role="status" className={styles.hint}>
++          {gyms.length === 0
++            ? 'Aucune salle trouvée.'
++            : `${gyms.length} ${plural(gyms.length, 'salle trouvée', 'salles trouvées')}.`}
++        </p>
++      ) : null}
+       {gyms !== null && gyms.length > 0 ? (
+         <ChoiceList<string>
+           name="gym"
+           legend="Salles"
+           value={chosen}
+           onChange={setSelected}
+           options={gyms.map((g) => ({ value: g.id, label: gymLabel(g) }))}
+         />
+       ) : null}
+       <Button variant="secondary" onClick={() => setCreating(true)}>
+diff --git a/apps/web/src/ui/AppShell.tsx b/apps/web/src/ui/AppShell.tsx
+index 6ceb939..82dfb07 100644
+--- a/apps/web/src/ui/AppShell.tsx
++++ b/apps/web/src/ui/AppShell.tsx
+@@ -17,28 +17,36 @@ export function AppShell(p: { children: ReactNode }) {
+           <Link href="/profile">Profil</Link>
+           {me?.role === 'admin' ? <Link href="/admin/members">Administration</Link> : null}
+         </nav>
+       </header>
+       <main className={styles.main}>{p.children}</main>
+       <PublicLinks />
+     </div>
+   );
+ }
+ 
+-/** Cadre des pages publiques, lisibles sans session, et de l'onboarding : pas de navigation de compte. */
+-export function PublicShell(p: { children: ReactNode }) {
++/**
++ * Cadre des pages publiques, lisibles sans session, et de l'onboarding : pas de navigation de
++ * compte. `homeLink` faux (onboarding) : la marque est un simple texte, l'accueil ramènerait à
++ * l'onboarding en perdant l'écran en cours.
++ */
++export function PublicShell(p: { children: ReactNode; homeLink?: boolean }) {
+   return (
+     <div className={styles.shell}>
+       <header className={styles.header}>
+-        <Link href="/" className={styles.brand}>
+-          appsport
+-        </Link>
++        {p.homeLink === false ? (
++          <span className={styles.brand}>appsport</span>
++        ) : (
++          <Link href="/" className={styles.brand}>
++            appsport
++          </Link>
++        )}
+       </header>
+       <main className={styles.main}>{p.children}</main>
+       <PublicLinks />
+     </div>
+   );
+ }
+ 
+ /** Liens vers les pages lisibles sans compte (03 §13). */
+ export function PublicLinks() {
+   return (
+diff --git a/apps/web/src/ui/ChoiceList.tsx b/apps/web/src/ui/ChoiceList.tsx
+index e8fad7d..7ae9495 100644
+--- a/apps/web/src/ui/ChoiceList.tsx
++++ b/apps/web/src/ui/ChoiceList.tsx
+@@ -1,29 +1,33 @@
+ import styles from './ui.module.css';
+ 
+-/** Groupe de boutons radio sous une légende. */
++/**
++ * Groupe de boutons radio sous une légende. `describedBy` d'une option : id du texte qui l'explique
++ * (par exemple la raison d'une option désactivée), lu avec elle.
++ */
+ export function ChoiceList<T extends string | number>(p: {
+   name: string;
+   legend: string;
+   value: T | null;
+   onChange(v: T): void;
+-  options: readonly { value: T; label: string; disabled?: boolean }[];
++  options: readonly { value: T; label: string; disabled?: boolean; describedBy?: string }[];
+ }) {
+   return (
+     <fieldset className={styles.choices}>
+       <legend>{p.legend}</legend>
+       {p.options.map((o) => (
+         <label key={String(o.value)} className={styles.choice}>
+           <input
+             type="radio"
+             name={p.name}
+             value={String(o.value)}
+             checked={p.value === o.value}
+             disabled={o.disabled}
++            aria-describedby={o.describedBy}
+             onChange={() => p.onChange(o.value)}
+           />
+           {o.label}
+         </label>
+       ))}
+     </fieldset>
+   );
+ }
+diff --git a/apps/web/test/onboarding/flow.test.tsx b/apps/web/test/onboarding/flow.test.tsx
+index 67549b8..3f0493d 100644
+--- a/apps/web/test/onboarding/flow.test.tsx
++++ b/apps/web/test/onboarding/flow.test.tsx
+@@ -1,13 +1,14 @@
+ import { firstIncompleteStep } from '@appsport/domain';
+ import { fireEvent, screen } from '@testing-library/react';
+ import { describe, expect, it } from 'vitest';
++import { shownStep } from '../../src/features/onboarding/OnboardingFlow';
+ import { createRepos } from '../../src/repos';
+ import { settle } from '../support/auth';
+ import { createFakeApi } from '../support/fake-api';
+ import { createTestLocalDb } from '../support/local-db';
+ import {
+   button,
+   choose,
+   currentStep,
+   isChecked,
+   newcomer,
+@@ -22,29 +23,47 @@ import { until } from '../support/wait';
+ 
+ /** Onboarding dans l'appli (garde comprise), base et faux serveur fournis par le test. */
+ async function openFlow(me = newcomer()) {
+   const db = createTestLocalDb();
+   const api = createFakeApi();
+   const server = serveProfile(api, db, me);
+   return { db, api, me, server, render: () => renderApp({ path: '/onboarding', me, db, api }) };
+ }
+ 
+ const progress = () => screen.getByText(/^Étape \d\/8$/).textContent;
++/** Le titre de l'écran, nommé avec l'indicateur d'étape, a le focus. */
++const hasFocus = (name: string) =>
++  screen.queryByRole('heading', { level: 2, name }) === document.activeElement;
+ 
+ describe('OnboardingFlow (R-ONB-1, R-ONB-2)', () => {
+   it("départ 'goal', « Étape 1/8 », hors de la coquille de l'appli", async () => {
+     const { render } = await openFlow();
+     const { location } = await render();
+     await until(() => currentStep() === 'goal');
+     expect(progress()).toBe('Étape 1/8');
+     expect(location()).toBe('/onboarding');
+     expect(screen.queryByRole('navigation', { name: 'Navigation principale' })).toBeNull();
++    // La marque ne mène pas hors de l'onboarding (la garde y ramènerait en perdant l'écran).
++    expect(screen.getByText('appsport')).toBeTruthy();
++    expect(screen.queryByRole('link', { name: 'appsport' })).toBeNull();
++  });
++
++  it('changement d’écran : le titre, nommé avec « Étape n/8 », reçoit le focus ; pas au premier affichage', async () => {
++    const t = await openFlow();
++    await t.render();
++    await screen.findByRole('heading', { level: 2, name: 'Étape 1/8 Objectif' });
++    expect(document.activeElement).toBe(document.body);
++    choose('Prendre du muscle');
++    fireEvent.click(button('Suivant'));
++    await until(() => hasFocus('Étape 2/8 Autre sport'));
++    fireEvent.click(button('Retour'));
++    await until(() => hasFocus('Étape 1/8 Objectif'));
+   });
+ 
+   it('reprise au premier écran incomplet (firstIncompleteStep)', async () => {
+     const t = await openFlow(newcomer({ onboardingStep: 'place' }));
+     await seedProfile(t.db, { goal: 'muscle' });
+     await seedPrimaryGym(t.db);
+     const { services } = await createTestServices({ db: t.db, me: t.me });
+     const expected = firstIncompleteStep(await createRepos(services).profile.onboardingInput());
+     expect(expected).toBe('experience');
+     await t.render();
+@@ -98,30 +117,67 @@ describe('OnboardingFlow (R-ONB-1, R-ONB-2)', () => {
+     expect(t.server.patches).toEqual([{ goal: 'muscle', onboardingStep: 'goal' }]);
+     expect(progress()).toBe('Étape 2/8');
+ 
+     fireEvent.click(await screen.findByRole('button', { name: 'Retour' }));
+     await until(() => currentStep() === 'goal');
+     await until(() => isChecked('Prendre du muscle'));
+     expect(progress()).toBe('Étape 1/8');
+     expect(t.server.patches).toHaveLength(1);
+   });
+ 
+-  it("étape 'place' sans type de lieu connu → 'place_kind' (le choix n'est pas gardé)", async () => {
++  it('« Non » au sport enregistré, puis « Retour » depuis le lieu : « Non » toujours coché', async () => {
++    const t = await openFlow(newcomer({ onboardingStep: 'goal' }));
++    await seedProfile(t.db, { goal: 'muscle' });
++    await t.render();
++    await until(() => currentStep() === 'sport');
++    await screen.findByRole('radio', { name: 'Non' });
++    choose('Non');
++    fireEvent.click(button('Suivant'));
++    await until(() => currentStep() === 'place_kind');
++    expect(t.server.patches).toEqual([{ sportCode: null, sportOtherLabel: null, onboardingStep: 'sport' }]);
++    fireEvent.click(button('Retour'));
++    await until(() => currentStep() === 'sport');
++    await until(() => isChecked('Non'));
++    expect(button('Suivant').disabled).toBe(false);
++  });
++
++  it('sport enregistré, puis « Retour » depuis le lieu : « Oui » et le sport toujours cochés', async () => {
++    const t = await openFlow(newcomer({ onboardingStep: 'goal' }));
++    await seedProfile(t.db, { goal: 'muscle' });
++    await t.render();
++    await until(() => currentStep() === 'sport');
++    await screen.findByRole('radio', { name: 'Oui' });
++    choose('Oui');
++    choose('Course à pied');
++    fireEvent.click(button('Suivant'));
++    await until(() => currentStep() === 'place_kind');
++    fireEvent.click(button('Retour'));
++    await until(() => currentStep() === 'sport');
++    await until(() => isChecked('Oui') && isChecked('Course à pied'));
++  });
++
++  it("reprise sans lieu principal : 'place_kind', aucun type coché (le choix n'est pas gardé)", async () => {
+     const t = await openFlow(newcomer({ onboardingStep: 'place_kind' }));
+     await seedProfile(t.db, { goal: 'muscle' });
+     await t.render();
+     await until(() => currentStep() === 'place_kind');
+     expect(radio('À la salle').checked).toBe(false);
+     expect(radio('À la maison').checked).toBe(false);
+     expect(progress()).toBe('Étape 3/8');
+   });
+ 
++  it("shownStep : 'place' sans type de lieu connu → 'place_kind' ; avec un type → 'place'", () => {
++    expect(shownStep({ step: 'place', kind: null })).toBe('place_kind');
++    expect(shownStep({ step: 'place', kind: 'gym' })).toBe('place');
++    expect(shownStep({ step: 'experience', kind: null })).toBe('experience');
++  });
++
+   it('retour depuis le niveau : le lieu principal existant est affiché, rien n’est recréé', async () => {
+     const t = await openFlow(newcomer({ onboardingStep: 'place' }));
+     await seedProfile(t.db, { goal: 'muscle' });
+     await seedPrimaryGym(t.db);
+     await t.render();
+     await until(() => currentStep() === 'experience');
+     fireEvent.click(await screen.findByRole('button', { name: 'Retour' }));
+     await until(() => currentStep() === 'place');
+     await screen.findByText('Ton lieu principal : Basic Fit');
+     fireEvent.click(button('Suivant'));
+diff --git a/apps/web/test/onboarding/health-step.test.tsx b/apps/web/test/onboarding/health-step.test.tsx
+index 028c8c2..3daebe3 100644
+--- a/apps/web/test/onboarding/health-step.test.tsx
++++ b/apps/web/test/onboarding/health-step.test.tsx
+@@ -1,56 +1,79 @@
+ import { HEALTH_CONSENT_TEXT, HEALTH_QUESTIONNAIRE, type MeResponse } from '@appsport/contracts';
+ import { fireEvent, screen, within } from '@testing-library/react';
+ import { describe, expect, it, vi } from 'vitest';
+ import { HealthStep } from '../../src/features/onboarding/HealthStep';
+ import { HEALTH_WARNING_TEXT } from '../../src/ui';
+ import { createFakeApi } from '../support/fake-api';
+ import { createTestLocalDb } from '../support/local-db';
+-import { button, newcomer, seedProfile, serveProfile } from '../support/onboarding';
++import { button, newcomer, seedProfile, serveProfile, writes } from '../support/onboarding';
+ import { renderWithServices } from '../support/render';
+ import { seedMirror } from '../support/seed';
+ import { until } from '../support/wait';
+ 
+ const CAUTIOUS = 'Je préfère une progression plus prudente';
+ const SELF_CHECK = "Si l'une de ces situations te concerne, demande l'avis d'un médecin avant de commencer";
++const SEE_DOCTOR = 'Nous te recommandons de consulter un médecin avant de commencer.';
++const SCREENING_INCOMPLETE = 'Réponds aux 4 questions ou efface tes réponses avant de continuer.';
++const DRAFT_INCOMPLETE = 'Termine ou efface la limitation en cours avant de continuer.';
++const NOT_HEALTH_DATA = "Réglage d'entraînement, pas une donnée de santé : enregistré même sans accord.";
++const SCREENING = 'PUT /api/me/health-screening';
++const PATCH = 'PATCH /api/me/training-profile';
+ const consenting = (o: Partial<MeResponse> = {}) =>
+   newcomer({
+     consents: {
+       health: { active: true, textVersion: '1.0', at: '2026-10-06T10:00:00.000Z' },
+       aiCoach: { active: false, textVersion: null, at: null },
+     },
+     ...o,
+   });
+ 
+-async function renderHealth(me: MeResponse = newcomer()) {
++async function renderHealth(me: MeResponse = newcomer(), profile: Parameters<typeof seedProfile>[1] = {}) {
+   const db = createTestLocalDb();
+   const api = createFakeApi();
+-  await seedProfile(db, { goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45 });
++  await seedProfile(db, {
++    goal: 'muscle',
++    experience: 'none',
++    daysPerWeek: 3,
++    sessionMinutes: 45,
++    ...profile,
++  });
+   const server = serveProfile(api, db, me);
+   const onNext = vi.fn();
+   const rendered = await renderWithServices(<HealthStep mode="onboarding" onNext={onNext} />, {
+     me,
+     db,
+     api,
+   });
+   await screen.findByRole('switch', { name: CAUTIOUS });
+   return { ...rendered, ...server, onNext };
+ }
+ 
+ const toggle = () => screen.getByRole('switch', { name: CAUTIOUS }) as HTMLInputElement;
+ const question = (i: number) =>
+   within(screen.getByRole('group', { name: HEALTH_QUESTIONNAIRE.questions[i] }));
++const answer = (i: number, label: 'Oui' | 'Non') =>
++  fireEvent.click(question(i).getByRole('radio', { name: label }));
++const describedBy = (el: HTMLElement) =>
++  (el.getAttribute('aria-describedby') ?? '')
++    .split(' ')
++    .map((id) => document.getElementById(id)?.textContent);
+ 
+ describe('HealthStep sans accord santé (E7, P-CST-1, P-CST-2)', () => {
+   it('texte de l’accord, case décochée, « J’accepte et je renseigne » désactivé', async () => {
+     await renderHealth();
+     expect(screen.getByText(HEALTH_CONSENT_TEXT.text)).toBeTruthy();
++    // L'explication vise le questionnaire et les limitations, pas le mode prudent (C1).
++    expect(
++      screen.getByText(/^Tes réponses au questionnaire et tes limitations sont des données de santé\./),
++    ).toBeTruthy();
++    expect(screen.queryByText(/Les réponses de cet écran/)).toBeNull();
+     const box = screen.getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text }) as HTMLInputElement;
+     expect(box.checked).toBe(false);
+     expect(button("J'accepte et je renseigne").disabled).toBe(true);
+     fireEvent.click(box);
+     expect(button("J'accepte et je renseigne").disabled).toBe(false);
+   });
+ 
+   it('« Passer » : les 4 questions en auto-vérification, aucune requête', async () => {
+     const { api } = await renderHealth();
+     fireEvent.click(button('Passer'));
+@@ -72,20 +95,36 @@ describe('HealthStep sans accord santé (E7, P-CST-1, P-CST-2)', () => {
+     expect(t.patches).toEqual([{ cautiousMode: true, onboardingStep: 'health' }]);
+   });
+ 
+   it('« Suivant » sans changement : seulement l’étape', async () => {
+     const t = await renderHealth();
+     fireEvent.click(button('Suivant'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ onboardingStep: 'health' }]);
+   });
+ 
++  it('mode prudent : présenté comme un réglage enregistré même sans accord (P-CST-2)', async () => {
++    await renderHealth();
++    expect(screen.getByText(NOT_HEALTH_DATA)).toBeTruthy();
++    expect(describedBy(toggle())).toContain(NOT_HEALTH_DATA);
++  });
++
++  it('mode prudent enregistré : interrupteur coché ; le décocher envoie cautiousMode: false', async () => {
++    const t = await renderHealth(newcomer(), { cautiousMode: true });
++    await until(() => toggle().checked);
++    fireEvent.click(toggle());
++    expect(toggle().checked).toBe(false);
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(t.patches).toEqual([{ cautiousMode: false, onboardingStep: 'health' }]);
++  });
++
+   it('accord donné : POST du consentement, puis le questionnaire enregistré', async () => {
+     const t = await renderHealth();
+     t.api.on('POST', '/api/me/consents', { status: 200, body: consenting() });
+     fireEvent.click(screen.getByRole('checkbox', { name: HEALTH_CONSENT_TEXT.text }));
+     fireEvent.click(button("J'accepte et je renseigne"));
+     await screen.findByRole('button', { name: 'Enregistrer mes réponses' });
+     expect(t.api.calls.find((c) => c.path === '/api/me/consents')?.body).toEqual({
+       type: 'health',
+       textVersion: '1.0',
+     });
+@@ -97,24 +136,89 @@ describe('HealthStep avec accord santé', () => {
+     const t = await renderHealth(consenting());
+     let body: unknown;
+     t.api.on('PUT', '/api/me/health-screening', (req) => {
+       body = req.body;
+       return { status: 200, body: { caution: true } };
+     });
+     expect(button('Enregistrer mes réponses').disabled).toBe(true);
+     fireEvent.click(question(0).getByRole('radio', { name: 'Oui' }));
+     for (const i of [1, 2, 3]) fireEvent.click(question(i).getByRole('radio', { name: 'Non' }));
+     fireEvent.click(button('Enregistrer mes réponses'));
+-    await screen.findByText('Nous te recommandons de consulter un médecin avant de commencer.');
++    await screen.findByText('Réponses enregistrées.');
++    expect(screen.getByText(SEE_DOCTOR)).toBeTruthy();
+     expect(body).toEqual({ answers: [true, false, false, false], questionnaireVersion: '1.0' });
+   });
+ 
++  it('un seul « Oui » affiche tout de suite la recommandation, sans requête (E7.2)', async () => {
++    const t = await renderHealth(consenting());
++    expect(screen.queryByText(SEE_DOCTOR)).toBeNull();
++    answer(2, 'Oui');
++    expect(screen.getByText(SEE_DOCTOR)).toBeTruthy();
++    expect(t.api.calls).toEqual([]);
++    answer(2, 'Non');
++    expect(screen.queryByText(SEE_DOCTOR)).toBeNull();
++  });
++
++  it('réponses non enregistrées : « Suivant » envoie le PUT puis le PATCH (R-ONB-2, R-CST-7)', async () => {
++    const t = await renderHealth(consenting());
++    let body: unknown;
++    t.api.on('PUT', '/api/me/health-screening', (req) => {
++      body = req.body;
++      return { status: 200, body: { caution: true } };
++    });
++    answer(0, 'Oui');
++    for (const i of [1, 2, 3]) answer(i, 'Non');
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(writes(t.api)).toEqual([SCREENING, PATCH]);
++    expect(body).toEqual({ answers: [true, false, false, false], questionnaireVersion: '1.0' });
++    expect(t.patches).toEqual([{ onboardingStep: 'health' }]);
++  });
++
++  it('réponses déjà enregistrées : « Suivant » ne renvoie pas le questionnaire', async () => {
++    const t = await renderHealth(consenting());
++    t.api.on('PUT', '/api/me/health-screening', { status: 200, body: { caution: false } });
++    for (const i of [0, 1, 2, 3]) answer(i, 'Non');
++    fireEvent.click(button('Enregistrer mes réponses'));
++    await screen.findByText('Réponses enregistrées.');
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(writes(t.api)).toEqual([SCREENING, PATCH]);
++  });
++
++  it('hors ligne : le « Oui » affiche la recommandation ; « Suivant » → « Nécessite le réseau »', async () => {
++    const t = await renderHealth(consenting());
++    t.api.setOffline('reject');
++    answer(0, 'Oui');
++    expect(screen.getByText(SEE_DOCTOR)).toBeTruthy();
++    for (const i of [1, 2, 3]) answer(i, 'Non');
++    fireEvent.click(button('Suivant'));
++    expect((await screen.findByRole('alert')).textContent).toBe('Nécessite le réseau');
++    expect(t.onNext).not.toHaveBeenCalled();
++    expect(t.patches).toEqual([]);
++    expect(screen.getByText(SEE_DOCTOR)).toBeTruthy();
++  });
++
++  it('réponses incomplètes : « Suivant » s’arrête avec un message ; « Effacer mes réponses » débloque', async () => {
++    const t = await renderHealth(consenting());
++    answer(0, 'Oui');
++    fireEvent.click(button('Suivant'));
++    expect((await screen.findByRole('alert')).textContent).toBe(SCREENING_INCOMPLETE);
++    expect(t.api.calls).toEqual([]);
++    fireEvent.click(button('Effacer mes réponses'));
++    expect(screen.queryByText(SCREENING_INCOMPLETE)).toBeNull();
++    expect(screen.queryAllByRole('radio', { checked: true })).toEqual([]);
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(writes(t.api)).toEqual([PATCH]);
++  });
++
+   it('limitations : « aucun diagnostic », « Aucune », ajout avec note de 200 caractères au plus', async () => {
+     const t = await renderHealth(consenting());
+     let body: unknown;
+     t.api.on('POST', '/api/me/limitations', async (req) => {
+       body = req.body;
+       await seedMirror(t.db, 'limitation', [
+         {
+           id: 'l-1',
+           ownerId: 'u-1',
+           bodyArea: 'knee',
+@@ -159,20 +263,52 @@ describe('HealthStep avec accord santé', () => {
+     await renderWithServices(<HealthStep mode="onboarding" onNext={() => {}} />, {
+       me: consenting(),
+       db,
+       api,
+     });
+     await screen.findByText("Hanche · Les deux · Forte : m'empêche certains mouvements");
+     fireEvent.click(button('Supprimer'));
+     await until(() => api.calls.some((c) => c.method === 'DELETE'));
+     expect(api.calls.find((c) => c.method === 'DELETE')?.path).toBe('/api/me/limitations/l-1');
+   });
++
++  it('limitation remplie sans « Ajouter » : « Suivant » l’envoie, puis l’étape (R-ONB-2)', async () => {
++    const t = await renderHealth(consenting());
++    let body: unknown;
++    t.api.on('POST', '/api/me/limitations', (req) => {
++      body = req.body;
++      return { status: 201, body: { id: 'l-1' } };
++    });
++    await screen.findByText('Aucune');
++    fireEvent.change(screen.getByLabelText('Zone'), { target: { value: 'knee' } });
++    fireEvent.change(screen.getByLabelText('Côté'), { target: { value: 'left' } });
++    fireEvent.click(screen.getByRole('radio', { name: 'Légère' }));
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(writes(t.api)).toEqual(['POST /api/me/limitations', PATCH]);
++    expect(body).toEqual({ bodyArea: 'knee', side: 'left', severity: 'mild', note: null });
++  });
++
++  it('limitation incomplète : « Suivant » s’arrête avec un message ; « Effacer la saisie » débloque', async () => {
++    const t = await renderHealth(consenting());
++    await screen.findByText('Aucune');
++    fireEvent.change(screen.getByLabelText('Zone'), { target: { value: 'knee' } });
++    fireEvent.click(button('Suivant'));
++    expect((await screen.findByRole('alert')).textContent).toBe(DRAFT_INCOMPLETE);
++    expect(t.api.calls).toEqual([]);
++    fireEvent.click(button('Effacer la saisie'));
++    expect((screen.getByLabelText('Zone') as HTMLSelectElement).value).toBe('');
++    expect(screen.queryByText(DRAFT_INCOMPLETE)).toBeNull();
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(writes(t.api)).toEqual([PATCH]);
++  });
+ });
+ 
+ describe('HealthStep pour un mineur (R-CST-7)', () => {
+   it('mode prudent coché, désactivé et imposé ; avertissement santé ; « Suivant » actif sans réponse', async () => {
+     const t = await renderHealth(newcomer({ ageBand: 'minor', cautious: true }));
+     expect(toggle().checked).toBe(true);
+     expect(toggle().disabled).toBe(true);
+     expect(screen.getByText("Imposé jusqu'à 18 ans")).toBeTruthy();
+     expect(screen.getByText(HEALTH_WARNING_TEXT)).toBeTruthy();
+     expect(button('Suivant').disabled).toBe(false);
+diff --git a/apps/web/test/onboarding/ready-step.test.tsx b/apps/web/test/onboarding/ready-step.test.tsx
+index a314a2d..8bb3efa 100644
+--- a/apps/web/test/onboarding/ready-step.test.tsx
++++ b/apps/web/test/onboarding/ready-step.test.tsx
+@@ -10,20 +10,21 @@ import {
+   newcomer,
+   seedPrimaryGym,
+   seedProfile,
+   serveProfile,
+ } from '../support/onboarding';
+ import { DEFAULT_NOW, makeMe, renderApp } from '../support/render';
+ import { until } from '../support/wait';
+ 
+ const HOUR = 3_600_000;
+ const COMPLETE = '/api/me/onboarding/complete';
++const INCOMPLETE = "Termine d'abord ta prise en main.";
+ 
+ let events = 0;
+ const count = () => {
+   events += 1;
+ };
+ afterEach(() => {
+   window.removeEventListener(ONBOARDING_COMPLETED_EVENT, count);
+   events = 0;
+ });
+ 
+@@ -64,28 +65,49 @@ describe('ReadyStep (E8, R-SYN-33)', () => {
+ 
+   it('dernier pull il y a 25 h : « Commencer » désactivé, « Réessayer » lance une synchro manuelle', async () => {
+     const { sync, api } = await openReady(25 * HOUR);
+     await until(() => indicatorState() === 'not-ready');
+     expect(button('Commencer').disabled).toBe(true);
+     fireEvent.click(button('Réessayer'));
+     await until(() => sync.triggers.includes('manual'));
+     expect(api.calls.some((c) => c.path === COMPLETE)).toBe(false);
+   });
+ 
+-  it('409 onboarding_incomplete : retour au premier écran incomplet', async () => {
++  it('409 onboarding_incomplete : retour au premier écran incomplet, avec la raison', async () => {
+     const { api, location } = await openReady(HOUR);
+     api.on('POST', COMPLETE, { status: 409, body: { error: 'onboarding_incomplete', step: 'availability' } });
+     window.addEventListener(ONBOARDING_COMPLETED_EVENT, count);
+     await until(() => indicatorState() === 'ready');
+     await until(() => !button('Commencer').disabled);
++    expect(screen.queryByText(INCOMPLETE)).toBeNull();
+     fireEvent.click(button('Commencer'));
+     await until(() => currentStep() === 'availability');
++    expect(screen.getByText(INCOMPLETE).closest('[role="status"]')).not.toBeNull();
++    expect(location()).toBe('/onboarding');
++    expect(events).toBe(0);
++    // Message affiché une fois : il disparaît à l'écran suivant.
++    fireEvent.click(await screen.findByRole('button', { name: 'Retour' }));
++    await until(() => currentStep() === 'experience');
++    expect(screen.queryByText(INCOMPLETE)).toBeNull();
++  });
++
++  it('409 sans étape lisible : écran recalculé depuis la base locale', async () => {
++    const { api, db, location } = await openReady(HOUR);
++    api.on('POST', COMPLETE, { status: 409, body: { error: 'onboarding_incomplete' } });
++    window.addEventListener(ONBOARDING_COMPLETED_EVENT, count);
++    await until(() => indicatorState() === 'ready');
++    await until(() => !button('Commencer').disabled);
++    // Disponibilité effacée depuis un autre appareil, sans nouveau pull : l'écran reste « C'est prêt ».
++    await seedProfile(db, { goal: 'muscle', experience: 'none', daysPerWeek: null, sessionMinutes: 45 });
++    fireEvent.click(button('Commencer'));
++    await until(() => currentStep() === 'availability');
++    expect(screen.getByText(INCOMPLETE)).toBeTruthy();
+     expect(location()).toBe('/onboarding');
+     expect(events).toBe(0);
+   });
+ 
+   it('« Retour » ramène à la santé', async () => {
+     await openReady(HOUR);
+     fireEvent.click(button('Retour'));
+     await until(() => currentStep() === 'health');
+   });
+ });
+diff --git a/apps/web/test/onboarding/steps.test.tsx b/apps/web/test/onboarding/steps.test.tsx
+index 6a9d2f3..15992ea 100644
+--- a/apps/web/test/onboarding/steps.test.tsx
++++ b/apps/web/test/onboarding/steps.test.tsx
+@@ -108,27 +108,62 @@ describe('GoalStep (E1)', () => {
+     });
+     await until(() => isChecked('Prendre du muscle'));
+     choose('Me renforcer pour mon sport');
+     fireEvent.click(button('Enregistrer'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ goal: 'sport_support' }]);
+   });
+ });
+ 
+ describe('SportStep (E2)', () => {
+-  it('objectif sport : « Oui » imposé, « Non » désactivé, avec la raison', async () => {
++  it('objectif sport : « Oui » imposé, « Non » désactivé, avec la raison liée au bouton', async () => {
+     await renderStep((onNext) => <SportStep mode="onboarding" onNext={onNext} />, {
+       profile: { goal: 'sport_support' },
+     });
+     await until(() => isChecked('Oui'));
+     expect(radio('Non').disabled).toBe(true);
+-    expect(screen.getByText("Obligatoire avec l'objectif « Me renforcer pour mon sport ».")).toBeTruthy();
++    const reason = "Obligatoire avec l'objectif « Me renforcer pour mon sport ».";
++    expect(screen.getByText(reason)).toBeTruthy();
++    const describedBy = radio('Non').getAttribute('aria-describedby');
++    expect(describedBy && document.getElementById(describedBy)?.textContent).toBe(reason);
++  });
++
++  it('« Non » déjà validé (étape sport passée, aucun sport) : « Non » coché, « Suivant » actif', async () => {
++    const t = await renderStep((onNext) => <SportStep mode="onboarding" onNext={onNext} />, {
++      me: newcomer({ onboardingStep: 'sport' }),
++      profile: { goal: 'muscle' },
++    });
++    await until(() => isChecked('Non'));
++    expect(radio('Oui').checked).toBe(false);
++    expect(button('Suivant').disabled).toBe(false);
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(t.patches).toEqual([{ sportCode: null, sportOtherLabel: null, onboardingStep: 'sport' }]);
++  });
++
++  it('sport enregistré : « Oui » et ce sport cochés', async () => {
++    await renderStep((onNext) => <SportStep mode="onboarding" onNext={onNext} />, {
++      me: newcomer({ onboardingStep: 'sport' }),
++      profile: { goal: 'muscle', sportCode: 'running' },
++    });
++    await until(() => isChecked('Oui') && isChecked('Course à pied'));
++    expect(button('Suivant').disabled).toBe(false);
++  });
++
++  it('« Autre » enregistré : « Ton sport » rempli avec le libellé', async () => {
++    await renderStep((onNext) => <SportStep mode="onboarding" onNext={onNext} />, {
++      me: newcomer({ onboardingStep: 'sport' }),
++      profile: { goal: 'muscle', sportCode: 'other', sportOtherLabel: 'Pétanque' },
++    });
++    await until(() => isChecked('Autre'));
++    expect((screen.getByLabelText('Ton sport') as HTMLInputElement).value).toBe('Pétanque');
++    expect(button('Suivant').disabled).toBe(false);
+   });
+ 
+   it('« Autre » + « Pétanque » : 15 sports, libellé de 40 caractères au plus', async () => {
+     const t = await renderStep((onNext) => <SportStep mode="onboarding" onNext={onNext} />, {
+       profile: { goal: 'muscle' },
+     });
+     await screen.findByRole('radio', { name: 'Oui' });
+     choose('Oui');
+     expect(radioLabels('Quel sport ?')).toEqual(SPORTS.map((s) => s.label));
+     choose('Autre');
+@@ -271,20 +306,49 @@ describe('PlaceStep (E4)', () => {
+     await until(() => currentStep() === 'experience');
+     expect(server.patches).toEqual([{ onboardingStep: 'place_kind' }, { onboardingStep: 'place' }]);
+     expect(api.calls.find((c) => c.path === '/api/places')?.body).toEqual({
+       kind: 'gym',
+       gymId: 'g-1',
+       isPrimary: true,
+       visibleAtGym: true,
+     });
+   });
+ 
++  it('salle, mineur : case de visibilité décochée avec la raison ; « Valider » → visibleAtGym: false (P-MIN-6)', async () => {
++    const me = newcomer({ ageBand: 'minor', onboardingStep: 'place_kind' });
++    const db = createTestLocalDb();
++    const api = createFakeApi()
++      .on('GET', '/api/gyms', {
++        status: 200,
++        body: [{ id: 'g-1', name: 'Basic Fit', city: 'Lyon', visibleMemberCount: 2 }],
++      })
++      .on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
++    await seedProfile(db, { goal: 'muscle' });
++    serveProfile(api, db, me);
++    await renderApp({ path: '/onboarding', me, db, api });
++    await until(() => currentStep() === 'place_kind');
++    choose('À la salle');
++    fireEvent.click(button('Suivant'));
++    await screen.findByRole('radio', { name: 'Basic Fit · Lyon · 2 membres visibles' });
++    expect(checkbox('Apparaître dans « Qui va à cette salle »').checked).toBe(false);
++    expect(screen.getByText('Désactivé par défaut pour les moins de 18 ans.')).toBeTruthy();
++    choose('Basic Fit · Lyon · 2 membres visibles');
++    fireEvent.click(button('Valider'));
++    await until(() => currentStep() === 'experience');
++    expect(api.calls.find((c) => c.path === '/api/places')?.body).toEqual({
++      kind: 'gym',
++      gymId: 'g-1',
++      isPrimary: true,
++      visibleAtGym: false,
++    });
++  });
++
+   it('lieu principal existant : « Ton lieu principal : Basic Fit », aucun POST', async () => {
+     const me = newcomer({ onboardingStep: 'place_kind' });
+     const db = createTestLocalDb();
+     const api = createFakeApi();
+     await seedPrimaryGym(db);
+     const server = serveProfile(api, db, me);
+     const onNext = vi.fn();
+     await renderWithServices(<PlaceStep mode="onboarding" kind="home" onNext={onNext} />, { me, db, api });
+     await screen.findByText('Ton lieu principal : Basic Fit');
+     expect(screen.queryByLabelText('Nom du lieu')).toBeNull();
+@@ -301,20 +365,32 @@ describe('ExperienceStep (E5)', () => {
+     await screen.findByRole('radio', { name: 'Jamais' });
+     const legend =
+       'Depuis combien de temps fais-tu de la musculation régulièrement (au moins une fois par semaine) ?';
+     expect(radioLabels(legend)).toEqual(['Jamais', 'Moins de 6 mois', '6 mois à 2 ans', 'Plus de 2 ans']);
+     expect(button('Suivant').disabled).toBe(true);
+     choose('6 mois à 2 ans');
+     fireEvent.click(button('Suivant'));
+     await until(() => t.onNext.mock.calls.length === 1);
+     expect(t.patches).toEqual([{ experience: '6_to_24_months', onboardingStep: 'experience' }]);
+   });
++
++  it('niveau enregistré : coché, « Suivant » actif (R-ONB-2, R-ONB-3)', async () => {
++    const t = await renderStep((onNext) => <ExperienceStep mode="onboarding" onNext={onNext} />, {
++      me: newcomer({ onboardingStep: 'experience' }),
++      profile: { experience: '6_to_24_months' },
++    });
++    await until(() => isChecked('6 mois à 2 ans'));
++    expect(button('Suivant').disabled).toBe(false);
++    fireEvent.click(button('Suivant'));
++    await until(() => t.onNext.mock.calls.length === 1);
++    expect(t.patches).toEqual([{ experience: '6_to_24_months', onboardingStep: 'experience' }]);
++  });
+ });
+ 
+ describe('AvailabilityStep (E6)', () => {
+   it('« 3 » (exact) et « 60 min » → PATCH ; les deux réponses sont exigées', async () => {
+     const t = await renderStep((onNext) => <AvailabilityStep mode="onboarding" onNext={onNext} />);
+     await screen.findByRole('radio', { name: '30 min' });
+     expect(radioLabels('Séances par semaine')).toEqual(['2', '3', '4']);
+     expect(radioLabels("Durée d'une séance")).toEqual(['30 min', '45 min', '60 min', '75 min', '90 min']);
+     choose('3');
+     expect(button('Suivant').disabled).toBe(true);
+diff --git a/apps/web/test/places/gym-picker.test.tsx b/apps/web/test/places/gym-picker.test.tsx
+index f9a41e1..7176bf9 100644
+--- a/apps/web/test/places/gym-picker.test.tsx
++++ b/apps/web/test/places/gym-picker.test.tsx
+@@ -2,44 +2,54 @@ import {
+   EQUIPMENT,
+   EQUIPMENT_CATEGORY_LABELS,
+   EQUIPMENT_LABELS,
+   type EquipmentCode,
+   PRESETS,
+ } from '@appsport/contracts';
+ import { fireEvent, screen, within } from '@testing-library/react';
+ import { describe, expect, it, vi } from 'vitest';
+ import { EquipmentChecklist, sortEquipment } from '../../src/features/places/EquipmentChecklist';
+ import { GymPicker } from '../../src/features/places/GymPicker';
++import { settle } from '../support/auth';
+ import { createFakeApi, type FakeApi } from '../support/fake-api';
+ import { button, checkbox, choose, radio } from '../support/onboarding';
+ import { renderWithServices } from '../support/render';
+ import { until } from '../support/wait';
+ 
+ const BASIC_FIT = { id: 'g-1', name: 'Basic Fit', city: 'Lyon', visibleMemberCount: 2 };
++/** Salle proche renvoyée par /api/gyms/similar : id distinct de la liste de recherche. */
++const SIMILAR = { id: 'g-2', name: 'Basic-Fit', city: 'Lyon', visibleMemberCount: 0 };
++/** Id renvoyé par un 409 gym_duplicate : présent dans aucune liste. */
++const DUPLICATE_ID = 'g-9';
+ const BASIC_FIT_LABEL = 'Basic Fit · Lyon · 2 membres visibles';
+ const VISIBLE = 'Apparaître dans « Qui va à cette salle »';
+ const NOT_LISTED = "Ma salle n'est pas dans la liste";
+ 
+ async function renderPicker(o: { defaultVisible?: boolean; api?: FakeApi } = {}) {
+   const api = o.api ?? createFakeApi();
+   api.on('GET', '/api/gyms', { status: 200, body: [BASIC_FIT] });
+   const onDone = vi.fn();
+   const rendered = await renderWithServices(
+     <GymPicker isPrimary defaultVisible={o.defaultVisible ?? true} onDone={onDone} />,
+     { api },
+   );
+   await screen.findByRole('radio', { name: BASIC_FIT_LABEL });
+   return { ...rendered, onDone };
+ }
+ 
+ const gets = (api: FakeApi, path: string) =>
+   api.calls.filter((c) => c.method === 'GET' && c.path === path).map((c) => c.query.toString());
++const posted = (api: FakeApi, path: string) =>
++  api.calls.find((c) => c.method === 'POST' && c.path === path)?.body;
++/** `a` est avant `b` dans le document (ordre de lecture et de tabulation). */
++const precedes = (a: Node, b: Node) =>
++  (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+ 
+ /** Ouvre la création et passe le nom et la ville. */
+ function startCreate(name: string, city: string) {
+   fireEvent.click(button(NOT_LISTED));
+   fireEvent.change(screen.getByLabelText('Nom de la salle'), { target: { value: name } });
+   fireEvent.change(screen.getByLabelText('Ville'), { target: { value: city } });
+   fireEvent.click(button('Continuer'));
+ }
+ 
+ describe('GymPicker (R-SAL-1, R-VIS-3)', () => {
+@@ -78,39 +88,39 @@ describe('GymCreate (R-SAL-2, R-SAL-3)', () => {
+   it('nom d’un caractère : « 2 à 60 caractères. », aucune requête', async () => {
+     const { api } = await renderPicker();
+     const before = api.calls.length;
+     startCreate('B', 'Lyon');
+     expect(screen.getByText('2 à 60 caractères.')).toBeTruthy();
+     expect(api.calls.length).toBe(before);
+   });
+ 
+   it('salles proches : « C’est ma salle » → POST du lieu de cette salle', async () => {
+     const api = createFakeApi()
+-      .on('GET', '/api/gyms/similar', { status: 200, body: [BASIC_FIT] })
++      .on('GET', '/api/gyms/similar', { status: 200, body: [SIMILAR] })
+       .on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
+     const { onDone } = await renderPicker({ api });
+     startCreate('Basic-Fit', 'Lyon');
+     await screen.findByText('Ces salles existent peut-être déjà :');
+     expect(gets(api, '/api/gyms/similar')).toEqual(['name=Basic-Fit&city=Lyon']);
+     expect(screen.getByRole('button', { name: 'Non, créer ma salle' })).toBeTruthy();
+     fireEvent.click(button("C'est ma salle"));
+     await until(() => onDone.mock.calls.length === 1);
+     expect(api.calls.find((c) => c.path === '/api/places')?.body).toEqual({
+       kind: 'gym',
+-      gymId: 'g-1',
++      gymId: SIMILAR.id,
+       isPrimary: true,
+       visibleAtGym: true,
+     });
+   });
+ 
+   it('« Non, créer ma salle » mène aux préréglages', async () => {
+-    const api = createFakeApi().on('GET', '/api/gyms/similar', { status: 200, body: [BASIC_FIT] });
++    const api = createFakeApi().on('GET', '/api/gyms/similar', { status: 200, body: [SIMILAR] });
+     await renderPicker({ api });
+     startCreate('Basic-Fit', 'Lyon');
+     fireEvent.click(await screen.findByRole('button', { name: 'Non, créer ma salle' }));
+     await screen.findByRole('group', { name: 'Type de salle' });
+   });
+ 
+   it('aucune salle proche : préréglages directement ; « Petite salle de quartier » ; « Créer la salle »', async () => {
+     const api = createFakeApi()
+       .on('GET', '/api/gyms/similar', { status: 200, body: [] })
+       .on('POST', '/api/gyms', { status: 201, body: { gymId: 'g-2', placeId: 'p-2' } });
+@@ -140,46 +150,163 @@ describe('GymCreate (R-SAL-2, R-SAL-3)', () => {
+       city: 'Lyon',
+       equipment: sortEquipment(PRESETS.gym_small.equipment),
+       isPrimary: true,
+       visibleAtGym: true,
+     });
+   });
+ 
+   it('409 gym_duplicate : « Cette salle existe déjà. » puis « Choisir cette salle »', async () => {
+     const api = createFakeApi()
+       .on('GET', '/api/gyms/similar', { status: 200, body: [] })
+-      .on('POST', '/api/gyms', { status: 409, body: { error: 'gym_duplicate', gymId: 'g-1' } })
++      .on('POST', '/api/gyms', { status: 409, body: { error: 'gym_duplicate', gymId: DUPLICATE_ID } })
+       .on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
+     const { onDone } = await renderPicker({ api });
+     startCreate('Basic Fit', 'Lyon');
+     await screen.findByRole('group', { name: 'Type de salle' });
+     choose('Autre');
+     fireEvent.click(button('Créer la salle'));
+     expect((await screen.findByRole('alert')).textContent).toContain('Cette salle existe déjà.');
+     fireEvent.click(button('Choisir cette salle'));
+     await until(() => onDone.mock.calls.length === 1);
+     expect(api.calls.find((c) => c.path === '/api/places')?.body).toEqual({
+       kind: 'gym',
+-      gymId: 'g-1',
++      gymId: DUPLICATE_ID,
+       isPrimary: true,
+       visibleAtGym: true,
+     });
+   });
+ 
+   it('« Revenir à la liste » quitte la création', async () => {
+     await renderPicker();
+     fireEvent.click(button(NOT_LISTED));
+     fireEvent.click(button('Revenir à la liste'));
+     expect(radio(BASIC_FIT_LABEL)).toBeTruthy();
+   });
+ });
+ 
++describe('GymPicker : recherche en échec et annonces (R-SAL-1)', () => {
++  it('hors ligne : « Nécessite le réseau » et « Réessayer », qui relance la recherche', async () => {
++    const api = createFakeApi();
++    api.setOffline('reject');
++    await renderWithServices(<GymPicker isPrimary defaultVisible onDone={() => {}} />, { api });
++    expect((await screen.findByRole('alert')).textContent).toContain('Nécessite le réseau');
++    expect(button('Valider').disabled).toBe(true);
++    api.setOffline(false);
++    api.on('GET', '/api/gyms', { status: 200, body: [BASIC_FIT] });
++    fireEvent.click(button('Réessayer'));
++    await screen.findByRole('radio', { name: BASIC_FIT_LABEL });
++    expect(screen.queryByRole('alert')).toBeNull();
++    expect(gets(api, '/api/gyms')).toEqual(['q=', 'q=']);
++  });
++
++  it('nombre de salles trouvées et « Aucune salle trouvée. » dans une zone annoncée (role status)', async () => {
++    const api = createFakeApi();
++    await renderPicker({ api });
++    expect(screen.getByText('1 salle trouvée.').getAttribute('role')).toBe('status');
++    api.on('GET', '/api/gyms', { status: 200, body: [] });
++    fireEvent.change(screen.getByLabelText('Rechercher une salle'), { target: { value: 'zzz' } });
++    expect((await screen.findByText('Aucune salle trouvée.')).getAttribute('role')).toBe('status');
++  });
++});
++
++describe('GymCreate : visibilité et salles proches (R-VIS-3, P-MIN-6, R-SAL-3)', () => {
++  it('la case de visibilité précède « C’est ma salle » et « Créer la salle »', async () => {
++    const api = createFakeApi().on('GET', '/api/gyms/similar', { status: 200, body: [SIMILAR] });
++    await renderPicker({ api });
++    startCreate('Basic-Fit', 'Lyon');
++    const mine = await screen.findByRole('button', { name: "C'est ma salle" });
++    expect(precedes(checkbox(VISIBLE), mine)).toBe(true);
++    fireEvent.click(button('Non, créer ma salle'));
++    choose('Autre');
++    expect(precedes(checkbox(VISIBLE), button('Créer la salle'))).toBe(true);
++  });
++
++  it('nom modifié pendant la recherche des salles proches : la réponse arrivée ensuite est ignorée', async () => {
++    let release = () => {};
++    const api = createFakeApi().on(
++      'GET',
++      '/api/gyms/similar',
++      () =>
++        new Promise((resolve) => {
++          release = () => resolve({ status: 200, body: [] });
++        }),
++    );
++    await renderPicker({ api });
++    startCreate('Basic-Fit', 'Lyon');
++    await until(() => gets(api, '/api/gyms/similar').length === 1);
++    fireEvent.change(screen.getByLabelText('Nom de la salle'), { target: { value: 'Basic-Fit Part-Dieu' } });
++    release();
++    await settle();
++    expect(screen.queryByRole('group', { name: 'Type de salle' })).toBeNull();
++    expect(button('Continuer').disabled).toBe(false);
++  });
++
++  it('majeur qui décoche la case : « Valider » → visibleAtGym: false', async () => {
++    const api = createFakeApi().on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
++    const { onDone } = await renderPicker({ api });
++    fireEvent.click(checkbox(VISIBLE));
++    choose(BASIC_FIT_LABEL);
++    fireEvent.click(button('Valider'));
++    await until(() => onDone.mock.calls.length === 1);
++    expect(posted(api, '/api/places')).toEqual({
++      kind: 'gym',
++      gymId: 'g-1',
++      isPrimary: true,
++      visibleAtGym: false,
++    });
++  });
++
++  const cases = [
++    { who: 'mineur, case laissée décochée', defaultVisible: false, toggle: false, sent: false },
++    { who: 'mineur qui coche la case', defaultVisible: false, toggle: true, sent: true },
++    { who: 'majeur qui décoche la case', defaultVisible: true, toggle: true, sent: false },
++  ];
++
++  it.each(cases)('$who : « Créer la salle » → POST /api/gyms visibleAtGym: $sent', async (c) => {
++    const api = createFakeApi()
++      .on('GET', '/api/gyms/similar', { status: 200, body: [] })
++      .on('POST', '/api/gyms', { status: 201, body: { gymId: 'g-3', placeId: 'p-3' } });
++    const { onDone } = await renderPicker({ api, defaultVisible: c.defaultVisible });
++    startCreate('Basic-Fit', 'Lyon');
++    await screen.findByRole('group', { name: 'Type de salle' });
++    if (c.toggle) fireEvent.click(checkbox(VISIBLE));
++    choose('Autre');
++    fireEvent.click(button('Créer la salle'));
++    await until(() => onDone.mock.calls.length === 1);
++    expect(posted(api, '/api/gyms')).toMatchObject({ visibleAtGym: c.sent });
++  });
++
++  it.each(cases)(
++    '$who : 409 puis « Choisir cette salle » → POST /api/places visibleAtGym: $sent',
++    async (c) => {
++      const api = createFakeApi()
++        .on('GET', '/api/gyms/similar', { status: 200, body: [] })
++        .on('POST', '/api/gyms', { status: 409, body: { error: 'gym_duplicate', gymId: DUPLICATE_ID } })
++        .on('POST', '/api/places', { status: 201, body: { id: 'p-1' } });
++      const { onDone } = await renderPicker({ api, defaultVisible: c.defaultVisible });
++      startCreate('Basic Fit', 'Lyon');
++      await screen.findByRole('group', { name: 'Type de salle' });
++      if (c.toggle) fireEvent.click(checkbox(VISIBLE));
++      choose('Autre');
++      fireEvent.click(button('Créer la salle'));
++      fireEvent.click(await screen.findByRole('button', { name: 'Choisir cette salle' }));
++      await until(() => onDone.mock.calls.length === 1);
++      expect(posted(api, '/api/places')).toEqual({
++        kind: 'gym',
++        gymId: DUPLICATE_ID,
++        isPrimary: true,
++        visibleAtGym: c.sent,
++      });
++    },
++  );
++});
++
+ describe('EquipmentChecklist (R-EQ-3)', () => {
+   const groups = () => screen.getAllByRole('group').map((g) => g.querySelector('legend')?.textContent);
+ 
+   it('salle : 4 groupes, sans objets du quotidien', async () => {
+     await renderWithServices(<EquipmentChecklist kind="gym" value={[]} onChange={() => {}} />);
+     expect(groups()).toEqual([
+       EQUIPMENT_CATEGORY_LABELS.small_equipment,
+       EQUIPMENT_CATEGORY_LABELS.benches_racks,
+       EQUIPMENT_CATEGORY_LABELS.free_weights,
+       EQUIPMENT_CATEGORY_LABELS.machines,

@@ -1,0 +1,2094 @@
+# Review package: 7260f0f..HEAD
+
+## Commits
+30484af test(admin): code d'invitation et lien de réinitialisation ni gardés ni journalisés
+dd68822 fix(admin): « Chargement… » pendant la première lecture des écrans admin
+5ee26ec fix(admin): dialogue neuf pour chaque membre et focus gardé dans les dialogues
+f1c559b fix(admin): élément changé entre-temps, la liste est relue
+39b1f1b fix(admin): pas de nouvelle invitation tant que le code affiché n'est pas noté
+9d69391 fix(admin): état du serveur, sauvegarde absente signalée et âge en heures sous 72 h
+86da22c fix(admin): copie refusée ou presse-papiers absent, consigne et sélection d'un geste
+e60f1ac test(admin): partage annulé vérifié après le refus, partage refusé testé
+0c9fa26 test(admin): une action confirmée ne part qu'une fois et le dialogue reste ouvert pendant l'envoi
+7a7428e fix(admin): se rétrograder soi-même ou perdre ses droits ferme l'administration
+c6c1674 fix(admin): garde des routes admin insensible à la casse
+
+## Files changed
+ apps/web/src/App.tsx                             |   6 +-
+ apps/web/src/features/admin/AdminGymsPage.tsx    |   7 +-
+ apps/web/src/features/admin/InvitationsPage.tsx  |  46 +++--
+ apps/web/src/features/admin/MembersPage.tsx      |  36 +++-
+ apps/web/src/features/admin/ServerHealthPage.tsx |  24 ++-
+ apps/web/src/features/admin/admin-ui.tsx         |  45 +++-
+ apps/web/src/features/admin/admin.module.css     |   5 +-
+ apps/web/src/ui/CopyButton.tsx                   |  13 +-
+ apps/web/src/ui/Dialog.tsx                       |  28 ++-
+ apps/web/test/admin/gyms-health.test.tsx         |  72 ++++++-
+ apps/web/test/admin/invitations.test.tsx         | 145 ++++++++++++-
+ apps/web/test/admin/members.test.tsx             | 249 +++++++++++++++++++++++
+ apps/web/test/app/guard.test.tsx                 |   4 +
+ apps/web/test/app/ui.test.tsx                    |  46 ++++-
+ 14 files changed, 685 insertions(+), 41 deletions(-)
+
+## Diff
+diff --git a/apps/web/src/App.tsx b/apps/web/src/App.tsx
+index 5132e94..f3889b5 100644
+--- a/apps/web/src/App.tsx
++++ b/apps/web/src/App.tsx
+@@ -34,21 +34,25 @@ export const PUBLIC_PATHS: readonly string[] = [
+ ];
+ 
+ export type GuardResult =
+   | { kind: 'render' }
+   | { kind: 'wait' }
+   | { kind: 'redirect'; to: string }
+   | { kind: 'not_found' };
+ 
+ const LOST_SESSION: readonly ConnectionState[] = ['unauthenticated', 'account_deleted'];
+ 
+-const isAdminPath = (path: string) => path === '/admin' || path.startsWith('/admin/');
++/** Sans tenir compte de la casse, comme les routes de wouter : `/Admin/members` est une page admin. */
++const isAdminPath = (path: string) => {
++  const p = path.toLowerCase();
++  return p === '/admin' || p.startsWith('/admin/');
++};
+ 
+ /** Chemin sans barre finale (`/privacy/` → `/privacy`), `/` gardé. */
+ export const normalizePath = (path: string): string => path.replace(/\/+$/, '') || '/';
+ 
+ /**
+  * Garde des routes, dans l'ordre : chemin public ; base locale pas encore lue ; session absente ou
+  * refusée par le serveur ; mot de passe à changer (R-MDP-1) ; onboarding ; rôle admin (R-ROLE-1).
+  */
+ export function resolveGuard(i: {
+   path: string;
+diff --git a/apps/web/src/features/admin/AdminGymsPage.tsx b/apps/web/src/features/admin/AdminGymsPage.tsx
+index bf01b26..491dc97 100644
+--- a/apps/web/src/features/admin/AdminGymsPage.tsx
++++ b/apps/web/src/features/admin/AdminGymsPage.tsx
+@@ -5,48 +5,49 @@ import {
+   GYM_NAME_MIN,
+   type GymSummary,
+   type UpdateGymRequest,
+ } from '@appsport/contracts';
+ import { type RefObject, useCallback, useRef, useState } from 'react';
+ import { Link } from 'wouter';
+ import { useRepos } from '../../repos';
+ import { Button, Field, Page, plural } from '../../ui';
+ import { AdminNav } from './AdminNav';
+ import styles from './admin.module.css';
+-import { ActionDialog, LoadFailure, useServerData } from './admin-ui';
++import { ActionDialog, LoadFailure, Loading, useServerData } from './admin-ui';
+ 
+ export const GYM_IN_USE_MESSAGE =
+   'Des membres ont encore cette salle parmi leurs lieux : elle ne peut pas être supprimée.';
+ 
+ const lengthError = (value: string, min: number, max: number) =>
+   value.length < min || value.length > max ? `${min} à ${max} caractères.` : null;
+ 
+ /**
+  * Admin › Salles (02 §6) : liste avec recherche, modification du nom et de la ville (R-SAL-4,
+  * matériel sur la fiche de la salle), suppression d'une salle inutilisée (R-SAL-7). En ligne
+  * seulement ; la liste est relue après chaque réussite.
+  */
+ export function AdminGymsPage() {
+   const repos = useRepos();
+   const [query, setQuery] = useState('');
+   const load = useCallback(() => repos.gyms.search(query.trim()), [repos, query]);
+-  const { data: gyms, error, reload } = useServerData(load);
++  const { data: gyms, error, loading, reload } = useServerData(load);
+   const [editing, setEditing] = useState<GymSummary | null>(null);
+   const [deleting, setDeleting] = useState<GymSummary | null>(null);
+   const searchRef = useRef<HTMLInputElement>(null);
+ 
+   return (
+     <Page title="Salles">
+       <AdminNav />
+       <Field label="Rechercher une salle">
+         <input ref={searchRef} type="search" value={query} onChange={(e) => setQuery(e.target.value)} />
+       </Field>
++      {loading ? <Loading /> : null}
+       {error ? <LoadFailure message={error} onRetry={() => void reload()} /> : null}
+       {gyms && gyms.length === 0 ? <p>Aucune salle trouvée.</p> : null}
+       {gyms && gyms.length > 0 ? (
+         <ul aria-label="Salles" className={styles.cards}>
+           {gyms.map((g) => (
+             <li key={g.id} className={styles.card}>
+               <Link href={`/gyms/${g.id}`} className={styles.cardTitle}>
+                 {g.name}
+               </Link>
+               <span className={styles.meta}>
+@@ -73,20 +74,21 @@ export function AdminGymsPage() {
+           fallbackFocus={searchRef}
+         />
+       ) : null}
+       {deleting ? (
+         <ActionDialog
+           title={`Supprimer ${deleting.name}`}
+           confirmLabel="Supprimer"
+           danger
+           overrides={{ gym_in_use: GYM_IN_USE_MESSAGE }}
+           fallbackFocus={searchRef}
++          reload={reload}
+           onClose={() => setDeleting(null)}
+           onConfirm={async () => {
+             await repos.admin.deleteGym(deleting.id);
+             await reload();
+           }}
+         >
+           <p>
+             Possible seulement si plus aucun membre ne l'a parmi ses lieux. Les séances passées y restent
+             rattachées ; recréer une salle de même nom dans la même ville la réactive.
+           </p>
+@@ -133,20 +135,21 @@ function EditGymDialog(p: {
+     if (Object.keys(patch).length === 0) return;
+     await repos.gyms.update(p.gym.id, patch);
+     await p.reload();
+   }
+ 
+   return (
+     <ActionDialog
+       title={`Modifier ${p.gym.name}`}
+       confirmLabel="Enregistrer"
+       fallbackFocus={p.fallbackFocus}
++      reload={p.reload}
+       validate={validate}
+       onConfirm={save}
+       onClose={p.onClose}
+     >
+       <Field label="Nom de la salle" error={errors.name}>
+         <input type="text" maxLength={GYM_NAME_MAX} value={name} onChange={(e) => setName(e.target.value)} />
+       </Field>
+       <Field label="Ville" error={errors.city}>
+         <input type="text" maxLength={GYM_CITY_MAX} value={city} onChange={(e) => setCity(e.target.value)} />
+       </Field>
+diff --git a/apps/web/src/features/admin/InvitationsPage.tsx b/apps/web/src/features/admin/InvitationsPage.tsx
+index 8f612db..afdfd6d 100644
+--- a/apps/web/src/features/admin/InvitationsPage.tsx
++++ b/apps/web/src/features/admin/InvitationsPage.tsx
+@@ -1,25 +1,27 @@
+ import {
+   type CreateInvitationResponse,
+   INVITATION_NOTE_MAX,
+   type InvitationSummary,
+ } from '@appsport/contracts';
+ import { type FormEvent, useCallback, useId, useRef, useState } from 'react';
+ import { useRepos } from '../../repos';
+ import { Banner, Button, CopyButton, Field, formatDate, formatDateTime, Page, useAction } from '../../ui';
+ import { AdminNav } from './AdminNav';
+ import styles from './admin.module.css';
+-import { ActionDialog, LoadFailure, SECRET_SHOWN_ONCE, useServerData } from './admin-ui';
++import { ActionDialog, LoadFailure, Loading, SECRET_SHOWN_ONCE, useServerData } from './admin-ui';
+ import { buildInvitationShareMessage } from './share-message';
+ 
+ const BIRTH_DATE_REQUIRED = 'Saisis la date de naissance.';
+ const SHARE_FAILED = 'Partage impossible : copie le message.';
++const COPY_FAILED = 'Copie impossible : sélectionne le message et copie-le.';
++const NOTE_CODE_FIRST = "Note d'abord le code affiché, puis appuie sur « J'ai noté le code ».";
+ 
+ /** État affiché d'une invitation (R-INV-7). */
+ export function invitationStateText(i: InvitationSummary): string {
+   switch (i.state) {
+     case 'pending':
+       return `En attente (expire le ${formatDate(i.expiresAt)})`;
+     case 'used':
+       return `Utilisée par ${i.usedByUsername ?? 'un ancien membre'}`;
+     case 'revoked':
+       return 'Révoquée';
+@@ -29,36 +31,37 @@ export function invitationStateText(i: InvitationSummary): string {
+ }
+ 
+ /**
+  * Admin › Invitations (02 §6, R-INV-1 à R-INV-9) : création (date de naissance obligatoire, note
+  * facultative), code et lien affichés une seule fois avec le message de partage, puis liste avec
+  * note, dates, état et pseudo créé ; une invitation en attente se révoque. En ligne seulement.
+  */
+ export function InvitationsPage() {
+   const repos = useRepos();
+   const load = useCallback(() => repos.admin.invitations(), [repos]);
+-  const { data: invitations, error, reload } = useServerData(load);
++  const { data: invitations, error, loading, reload } = useServerData(load);
+   const [created, setCreated] = useState<CreateInvitationResponse | null>(null);
+   const [revoking, setRevoking] = useState<InvitationSummary | null>(null);
+   const newHeadingId = useId();
+   const listHeadingId = useId();
+   const newRef = useRef<HTMLHeadingElement>(null);
+   const listRef = useRef<HTMLHeadingElement>(null);
+ 
+   return (
+     <Page title="Invitations">
+       <AdminNav />
+       <section aria-labelledby={newHeadingId} className={styles.section}>
+         <h2 id={newHeadingId} ref={newRef} tabIndex={-1}>
+           Nouvelle invitation
+         </h2>
+         <InvitationForm
++          blocked={created !== null}
+           onCreated={(r) => {
+             setCreated(r);
+             void reload();
+           }}
+         />
+       </section>
+       {created ? (
+         <CreatedInvitation
+           key={created.code}
+           created={created}
+@@ -66,20 +69,21 @@ export function InvitationsPage() {
+             // Le panneau disparaît : le focus revient au formulaire.
+             newRef.current?.focus();
+             setCreated(null);
+           }}
+         />
+       ) : null}
+       <section aria-labelledby={listHeadingId} className={styles.section}>
+         <h2 id={listHeadingId} ref={listRef} tabIndex={-1}>
+           Invitations envoyées
+         </h2>
++        {loading ? <Loading /> : null}
+         {error ? <LoadFailure message={error} onRetry={() => void reload()} /> : null}
+         {invitations && invitations.length === 0 ? <p>Aucune invitation pour l'instant.</p> : null}
+         {invitations && invitations.length > 0 ? (
+           <ul aria-labelledby={listHeadingId} className={styles.cards}>
+             {invitations.map((i) => (
+               <li key={i.id} className={styles.card}>
+                 <span className={styles.cardTitle}>{i.note ?? 'Sans note'}</span>
+                 <span className={styles.meta}>Créée le {formatDate(i.createdAt)}</span>
+                 <span>{invitationStateText(i)}</span>
+                 {i.state === 'pending' ? (
+@@ -93,54 +97,60 @@ export function InvitationsPage() {
+             ))}
+           </ul>
+         ) : null}
+       </section>
+       {revoking ? (
+         <ActionDialog
+           title="Révoquer l'invitation"
+           confirmLabel="Révoquer"
+           danger
+           fallbackFocus={listRef}
++          reload={reload}
+           onClose={() => setRevoking(null)}
+           onConfirm={async () => {
+             await repos.admin.revokeInvitation(revoking.id);
+             await reload();
+           }}
+         >
+           <p>
+             L'invitation {revoking.note ? `« ${revoking.note} »` : 'sans note'} ne pourra plus servir, et la
+             date de naissance qu'elle portait est effacée.
+           </p>
+         </ActionDialog>
+       ) : null}
+     </Page>
+   );
+ }
+ 
+-/** Date de naissance complète (obligatoire) et note libre de 60 caractères au plus (R-INV-1). */
+-function InvitationForm(p: { onCreated(r: CreateInvitationResponse): void }) {
++/**
++ * Date de naissance complète (obligatoire) et note libre de 60 caractères au plus (R-INV-1).
++ * `blocked` : le code de l'invitation précédente est encore affiché ; une nouvelle création le
++ * remplacerait et il serait perdu (affiché une seule fois, R-INV-3).
++ */
++function InvitationForm(p: { blocked: boolean; onCreated(r: CreateInvitationResponse): void }) {
+   const repos = useRepos();
++  const blockedHintId = useId();
+   const [birthDate, setBirthDate] = useState('');
+   const [note, setNote] = useState('');
+   const [fieldError, setFieldError] = useState<string | null>(null);
+   const birthDateRef = useRef<HTMLInputElement>(null);
+   const create = useAction(async () => {
+     const trimmed = note.trim();
+     const r = await repos.admin.createInvitation({ birthDate, ...(trimmed ? { note: trimmed } : {}) });
+     setBirthDate('');
+     setNote('');
+     p.onCreated(r);
+   });
+ 
+   function submit(e: FormEvent) {
+     e.preventDefault();
+-    if (create.pending) return;
++    if (create.pending || p.blocked) return;
+     if (birthDate === '') {
+       setFieldError(BIRTH_DATE_REQUIRED);
+       birthDateRef.current?.focus();
+       return;
+     }
+     setFieldError(null);
+     void create.run();
+   }
+ 
+   return (
+@@ -158,47 +168,53 @@ function InvitationForm(p: { onCreated(r: CreateInvitationResponse): void }) {
+         hint={`${INVITATION_NOTE_MAX} caractères au plus, par exemple « pour Léa ».`}
+       >
+         <input
+           type="text"
+           maxLength={INVITATION_NOTE_MAX}
+           value={note}
+           onChange={(e) => setNote(e.target.value)}
+         />
+       </Field>
+       {create.error ? <Banner tone="error">{create.error}</Banner> : null}
+-      <Button type="submit" disabled={create.pending}>
++      {p.blocked ? <p id={blockedHintId}>{NOTE_CODE_FIRST}</p> : null}
++      <Button
++        type="submit"
++        disabled={create.pending || p.blocked}
++        aria-describedby={p.blocked ? blockedHintId : undefined}
++      >
+         Créer l'invitation
+       </Button>
+     </form>
+   );
+ }
+ 
+ /**
+  * Invitation créée (R-INV-3, R-INV-9) : code, lien et message de partage, affichés une seule fois ;
+- * « Partager » si l'appareil sait partager, « Copier le message » toujours (le message reste
+- * sélectionnable si la copie échoue). « J'ai noté le code » les efface de l'écran.
++ * « Partager » si l'appareil sait partager, « Copier le message » toujours. Partage ou copie
++ * impossible : un message le dit, le message reste affiché et se sélectionne d'un geste.
++ * « J'ai noté le code » les efface de l'écran.
+  */
+ function CreatedInvitation(p: { created: CreateInvitationResponse; onDone(): void }) {
+   const { code, link, invitation } = p.created;
+   const message = buildInvitationShareMessage(window.location.origin, link, code);
+   const canShare = typeof navigator.share === 'function';
+-  const [shareError, setShareError] = useState<string | null>(null);
++  const [failure, setFailure] = useState<string | null>(null);
+   const headingId = useId();
+   const focusOnMount = useCallback((el: HTMLHeadingElement | null) => el?.focus(), []);
+ 
+   async function share() {
+-    setShareError(null);
++    setFailure(null);
+     try {
+       await navigator.share({ text: message });
+     } catch (e) {
+       // Partage annulé par l'utilisateur : rien à signaler.
+-      if (!(e instanceof Error && e.name === 'AbortError')) setShareError(SHARE_FAILED);
++      if (!(e instanceof Error && e.name === 'AbortError')) setFailure(SHARE_FAILED);
+     }
+   }
+ 
+   return (
+     <section aria-labelledby={headingId} className={`${styles.section} ${styles.secretPanel}`}>
+       <h2 id={headingId} ref={focusOnMount} tabIndex={-1}>
+         Invitation créée
+       </h2>
+       <p>
+         Code : <span className={styles.secret}>{code}</span>
+@@ -206,20 +222,24 @@ function CreatedInvitation(p: { created: CreateInvitationResponse; onDone(): voi
+       <p>
+         Lien : <span className={styles.secret}>{link}</span>
+       </p>
+       <p>Valable jusqu'au {formatDateTime(invitation.expiresAt)}.</p>
+       <p>Message à envoyer :</p>
+       <pre data-testid="share-message" className={styles.message}>
+         {message}
+       </pre>
+       <div className={styles.actions}>
+         {canShare ? <Button onClick={() => void share()}>Partager</Button> : null}
+-        <CopyButton text={message} label="Copier le message" />
++        <CopyButton
++          text={message}
++          label="Copier le message"
++          onResult={(copied) => setFailure(copied ? null : COPY_FAILED)}
++        />
+       </div>
+-      {shareError ? <Banner tone="error">{shareError}</Banner> : null}
++      {failure ? <Banner tone="error">{failure}</Banner> : null}
+       <p className={styles.once}>{SECRET_SHOWN_ONCE}</p>
+       <Button variant="secondary" onClick={p.onDone}>
+         J'ai noté le code
+       </Button>
+     </section>
+   );
+ }
+diff --git a/apps/web/src/features/admin/MembersPage.tsx b/apps/web/src/features/admin/MembersPage.tsx
+index d02e845..7ee0695 100644
+--- a/apps/web/src/features/admin/MembersPage.tsx
++++ b/apps/web/src/features/admin/MembersPage.tsx
+@@ -1,33 +1,37 @@
+ import {
+   type MemberSummary,
+   MIN_AGE,
+   PASSWORD_MIN_ADMIN,
+   RESET_TTL_HOURS,
+   type ResetLinkResponse,
+ } from '@appsport/contracts';
+ import { usernameKey } from '@appsport/domain';
+ import { type RefObject, useCallback, useId, useRef, useState } from 'react';
++import { useMe } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { Banner, Button, CopyButton, Dialog, Field, formatDateTime, Page, plural, useAction } from '../../ui';
+ import { AdminNav } from './AdminNav';
+ import styles from './admin.module.css';
+ import {
+   ActionDialog,
++  isStaleError,
+   LoadFailure,
++  Loading,
+   SECRET_SHOWN_ONCE,
+   useRestoreFocus,
+   useServerData,
+   WRONG_PASSWORD_MESSAGE,
+ } from './admin-ui';
+ 
+ export const RESET_SELF_MESSAGE = 'Pour toi-même, utilise la commande admin:reset sur le serveur.';
++const COPY_LINK_FAILED = 'Copie impossible : sélectionne le lien et copie-le.';
+ 
+ const PASSWORD_OVERRIDES = { invalid_credentials: WRONG_PASSWORD_MESSAGE } as const;
+ 
+ type MemberAction = 'reset' | 'sessions' | 'status' | 'role' | 'birthDate' | 'delete';
+ 
+ type DialogProps = {
+   member: MemberSummary;
+   /** Relit la liste après une réussite ; le dialogue se ferme ensuite. */
+   reload(): Promise<void>;
+   onClose(): void;
+@@ -40,28 +44,29 @@ const yesNo = (v: boolean) => (v ? 'oui' : 'non');
+ /**
+  * Admin › Membres (02 §6) : un tableau, une ligne par membre nommée par son pseudo, avec
+  * seulement ce que renvoie /api/admin (P-ADM-1) : rôle, statut, badge « mineur », dernière
+  * connexion, onboarding, accords santé et coach (oui ou non, jamais de donnée C2). Chaque action
+  * passe par un dialogue de confirmation, en ligne seulement ; la liste est relue après chaque
+  * réussite.
+  */
+ export function MembersPage() {
+   const repos = useRepos();
+   const load = useCallback(() => repos.admin.members(), [repos]);
+-  const { data: members, error, reload } = useServerData(load);
++  const { data: members, error, loading, reload } = useServerData(load);
+   const [action, setAction] = useState<{ kind: MemberAction; member: MemberSummary } | null>(null);
+   const tableRef = useRef<HTMLElement>(null);
+   const captionId = useId();
+ 
+   return (
+     <Page title="Membres">
+       <AdminNav />
++      {loading ? <Loading /> : null}
+       {error ? <LoadFailure message={error} onRetry={() => void reload()} /> : null}
+       {members ? (
+         <section
+           ref={tableRef}
+           className={styles.tableWrap}
+           aria-labelledby={captionId}
+           // biome-ignore lint/a11y/noNoninteractiveTabindex: zone qui défile sur petit écran, atteignable au clavier
+           tabIndex={0}
+         >
+           <table className={styles.table}>
+@@ -83,20 +88,22 @@ export function MembersPage() {
+             <tbody>
+               {members.map((m) => (
+                 <MemberRow key={m.id} member={m} onAction={(kind) => setAction({ kind, member: m })} />
+               ))}
+             </tbody>
+           </table>
+         </section>
+       ) : null}
+       {action ? (
+         <MemberDialog
++          // Une autre action ou un autre membre : dialogue neuf (rien de la saisie précédente).
++          key={`${action.kind}:${action.member.id}`}
+           kind={action.kind}
+           member={action.member}
+           reload={reload}
+           onClose={() => setAction(null)}
+           fallbackFocus={tableRef}
+         />
+       ) : null}
+     </Page>
+   );
+ }
+@@ -168,23 +175,29 @@ function AdminPasswordField(p: { value: string; onChange(v: string): void }) {
+ 
+ /**
+  * Lien de réinitialisation (R-RST-1 à R-RST-4) : généré à la demande, puis lien et code affichés
+  * une seule fois. Ils ne vivent que dans ce dialogue : « J'ai transmis le lien », Échap ou la
+  * fermeture les effacent. L'admin ne voit ni ne choisit jamais le mot de passe.
+  */
+ function ResetLinkDialog(p: DialogProps) {
+   const repos = useRepos();
+   const name = p.member.username;
+   const [created, setCreated] = useState<ResetLinkResponse | null>(null);
++  const [copyFailed, setCopyFailed] = useState(false);
+   const generate = useAction(
+     async () => {
+-      setCreated(await repos.admin.resetLink(p.member.id));
++      const r = await repos.admin.resetLink(p.member.id).catch((e: unknown) => {
++        // Membre supprimé entre-temps : la liste est relue, le message reste.
++        if (isStaleError(e)) void p.reload();
++        throw e;
++      });
++      setCreated(r);
+       void p.reload();
+     },
+     { reset_self_forbidden: RESET_SELF_MESSAGE },
+   );
+   useRestoreFocus(p.fallbackFocus);
+   const busy = useRef(false);
+   busy.current = generate.pending;
+   const onClose = useRef(p.onClose);
+   onClose.current = p.onClose;
+   const close = useCallback(() => {
+@@ -215,21 +228,22 @@ function ResetLinkDialog(p: DialogProps) {
+     >
+       {created ? (
+         <div ref={focusOnMount} tabIndex={-1} className={styles.secretPanel}>
+           <p>
+             Lien pour {name} : <span className={styles.secret}>{created.link}</span>
+           </p>
+           <p>
+             Code : <span className={styles.secret}>{created.code}</span>
+           </p>
+           <p>Valable jusqu'au {formatDateTime(created.expiresAt)}.</p>
+-          <CopyButton text={created.link} />
++          <CopyButton text={created.link} onResult={(copied) => setCopyFailed(!copied)} />
++          {copyFailed ? <Banner tone="error">{COPY_LINK_FAILED}</Banner> : null}
+           <p className={styles.once}>{SECRET_SHOWN_ONCE}</p>
+         </div>
+       ) : (
+         <div className={styles.dialogForm}>
+           <p>
+             Pour {name}. Le lien et le code ne s'affichent qu'une fois : transmets-les hors de l'appli. Ils
+             sont valables {RESET_TTL_HOURS} h ; un nouveau lien annule le précédent.
+           </p>
+           {generate.error ? <Banner tone="error">{generate.error}</Banner> : null}
+         </div>
+@@ -246,20 +260,21 @@ function sessionsText(name: string, n: number): string {
+ 
+ /** Fermeture de toutes les sessions d'un membre (R-AUTH-7 : téléphone perdu). */
+ function SessionsDialog(p: DialogProps) {
+   const repos = useRepos();
+   const name = p.member.username;
+   return (
+     <ActionDialog
+       title={`Fermer les sessions de ${name}`}
+       confirmLabel="Fermer les sessions"
+       fallbackFocus={p.fallbackFocus}
++      reload={p.reload}
+       onClose={p.onClose}
+       onConfirm={async () => {
+         await repos.admin.revokeSessions(p.member.id);
+         await p.reload();
+       }}
+     >
+       <p>{sessionsText(name, p.member.activeSessions)}</p>
+       <p>Ce qui n'était pas encore envoyé reste sur l'appareil et partira à la reconnexion.</p>
+     </ActionDialog>
+   );
+@@ -269,55 +284,64 @@ function SessionsDialog(p: DialogProps) {
+ function StatusDialog(p: DialogProps) {
+   const repos = useRepos();
+   const name = p.member.username;
+   const disabling = p.member.status === 'active';
+   return (
+     <ActionDialog
+       title={disabling ? `Désactiver ${name}` : `Réactiver ${name}`}
+       confirmLabel={disabling ? 'Désactiver' : 'Réactiver'}
+       danger={disabling}
+       fallbackFocus={p.fallbackFocus}
++      reload={p.reload}
+       onClose={p.onClose}
+       onConfirm={async () => {
+         await repos.admin.setStatus(p.member.id, disabling ? 'disabled' : 'active');
+         await p.reload();
+       }}
+     >
+       {disabling ? (
+         <p>
+           {name} ne pourra plus se connecter et ses sessions seront fermées. Ses données sont conservées : tu
+           pourras réactiver le compte. Pour un départ, retire aussi son partage Tailscale.
+         </p>
+       ) : (
+         <p>{name} pourra de nouveau se connecter.</p>
+       )}
+     </ActionDialog>
+   );
+ }
+ 
+-/** Promotion et rétrogradation : mot de passe de l'admin ressaisi (P-AUT-5), dernier admin gardé (R-ROLE-2). */
++/**
++ * Promotion et rétrogradation : mot de passe de l'admin ressaisi (P-AUT-5), dernier admin gardé
++ * (R-ROLE-2). Se rétrograder soi-même retire tout droit d'administration : le profil est relu (la
++ * liste serait refusée) et la garde des routes répond « Page introuvable ».
++ */
+ function RoleDialog(p: DialogProps) {
+   const repos = useRepos();
++  const me = useMe();
+   const [password, setPassword] = useState('');
+   const name = p.member.username;
+   const promoting = p.member.role === 'member';
++  const self = p.member.id === me?.id;
+   return (
+     <ActionDialog
+       title={promoting ? `Promouvoir ${name} administrateur` : `Rétrograder ${name}`}
+       confirmLabel={promoting ? 'Promouvoir administrateur' : 'Rétrograder'}
+       canConfirm={password !== ''}
+       overrides={PASSWORD_OVERRIDES}
+       fallbackFocus={p.fallbackFocus}
++      reload={p.reload}
+       onClose={p.onClose}
+       onConfirm={async () => {
+         await repos.admin.setRole(p.member.id, promoting ? 'admin' : 'member', password);
+-        await p.reload();
++        if (self) await repos.me.refresh();
++        else await p.reload();
+       }}
+     >
+       {promoting ? (
+         <p>
+           {name} aura tous les droits d'administration. Un administrateur a un mot de passe de{' '}
+           {PASSWORD_MIN_ADMIN} caractères au moins : s'il est plus court, il faudra le changer à la prochaine
+           connexion.
+         </p>
+       ) : (
+         <p>{name} perdra les droits d'administration et redeviendra membre.</p>
+@@ -331,20 +355,21 @@ function RoleDialog(p: DialogProps) {
+ function BirthDateDialog(p: DialogProps) {
+   const repos = useRepos();
+   const [birthDate, setBirthDate] = useState('');
+   const name = p.member.username;
+   return (
+     <ActionDialog
+       title={`Corriger la date de naissance de ${name}`}
+       confirmLabel="Enregistrer"
+       canConfirm={birthDate !== ''}
+       fallbackFocus={p.fallbackFocus}
++      reload={p.reload}
+       onClose={p.onClose}
+       onConfirm={async () => {
+         await repos.admin.setBirthDate(p.member.id, birthDate);
+         await p.reload();
+       }}
+     >
+       <p>
+         Refusée si {name} a moins de {MIN_AGE} ans : désactive ou supprime alors le compte.
+       </p>
+       <Field label="Date de naissance">
+@@ -365,20 +390,21 @@ function DeleteDialog(p: DialogProps) {
+   const name = p.member.username;
+   const confirmed = usernameKey(typed.trim()) === usernameKey(name);
+   return (
+     <ActionDialog
+       title={`Supprimer le compte de ${name}`}
+       confirmLabel="Supprimer définitivement"
+       danger
+       canConfirm={confirmed && password !== ''}
+       overrides={PASSWORD_OVERRIDES}
+       fallbackFocus={p.fallbackFocus}
++      reload={p.reload}
+       onClose={p.onClose}
+       onConfirm={async () => {
+         await repos.admin.deleteMember(p.member.id, typed.trim(), password);
+         await p.reload();
+       }}
+     >
+       <p>
+         À faire seulement à la demande de {name}. Tout son compte est effacé tout de suite et définitivement :
+         profil, lieux, accords et données de santé. Les salles restent.
+       </p>
+diff --git a/apps/web/src/features/admin/ServerHealthPage.tsx b/apps/web/src/features/admin/ServerHealthPage.tsx
+index 7a4ec43..0805837 100644
+--- a/apps/web/src/features/admin/ServerHealthPage.tsx
++++ b/apps/web/src/features/admin/ServerHealthPage.tsx
+@@ -1,43 +1,56 @@
+ import type { OpsStatus, OpsStatusResponse } from '@appsport/contracts';
+ import { useCallback, useId } from 'react';
+ import { useServices } from '../../app-services';
+ import { useRepos } from '../../repos';
+ import { Banner, formatAge, formatDate, Page } from '../../ui';
+ import { AdminNav } from './AdminNav';
+ import styles from './admin.module.css';
+-import { LoadFailure, useServerData } from './admin-ui';
++import { LoadFailure, Loading, useServerData } from './admin-ui';
+ 
++const HOUR_MS = 3_600_000;
+ /** [décision plan] période de 24 h + 2 h de grâce du contrôle `backup` (08 §9). */
+-export const BACKUP_LATE_MS = 26 * 3_600_000;
+-const BACKUP_LATE_HOURS = BACKUP_LATE_MS / 3_600_000;
++export const BACKUP_LATE_MS = 26 * HOUR_MS;
++const BACKUP_LATE_HOURS = BACKUP_LATE_MS / HOUR_MS;
+ /** Disque en alerte au-delà de ce taux d'occupation (08 §9, contrôle `host`). */
+ export const DISK_WARN_PCT = 80;
+ 
+ export const NO_OPS_STATUS =
+   "Aucun état d'exploitation disponible : les scripts de l'hôte n'ont encore rien écrit.";
++/** Contrôle `backup` : « sauvegarde absente » est une alerte (08 §9). */
++export const NO_BACKUP = 'Aucune sauvegarde enregistrée';
++
++/**
++ * Âge de la dernière sauvegarde : en heures jusqu'à 72 h, pour qu'un retard (au-delà de 26 h) ne
++ * se lise pas « il y a 1 j » ; au-delà, en jours.
++ */
++function backupAge(iso: string, nowMs: number): string {
++  const hours = Math.floor((nowMs - Date.parse(iso)) / HOUR_MS);
++  return hours >= 1 && hours < 72 ? `il y a ${hours} h` : formatAge(iso, nowMs);
++}
+ 
+ const done = (ok: boolean) => (ok ? 'réussi' : 'échoué');
+ const doneFeminine = (ok: boolean) => (ok ? 'réussie' : 'échouée');
+ 
+ /**
+  * Admin › État du serveur (08 §9) : version en service, dernier déploiement, âge de la dernière
+  * sauvegarde (en retard au-delà de 26 h), dernier test de restauration, espace disque, SMART et
+  * redémarrage, tels qu'écrits par les scripts de l'hôte dans /data/ops/status.json.
+  */
+ export function ServerHealthPage() {
+   const repos = useRepos();
+   const load = useCallback(() => repos.admin.opsStatus(), [repos]);
+-  const { data, error, reload } = useServerData(load);
++  const { data, error, loading, reload } = useServerData(load);
+   return (
+     <Page title="État du serveur">
+       <AdminNav />
++      {loading ? <Loading /> : null}
+       {error ? <LoadFailure message={error} onRetry={() => void reload()} /> : null}
+       {data ? <HealthReport status={data} /> : null}
+     </Page>
+   );
+ }
+ 
+ function HealthReport(p: { status: OpsStatusResponse }) {
+   const { now } = useServices();
+   const ops = p.status.opsStatus;
+   return (
+@@ -53,30 +66,31 @@ function OpsReport(p: { ops: OpsStatus; nowMs: number }) {
+   const hostId = useId();
+   const disksId = useId();
+   const late = backup !== undefined && p.nowMs - Date.parse(backup.at) > BACKUP_LATE_MS;
+   return (
+     <>
+       {backup && !backup.ok ? (
+         <Banner tone="error">
+           La dernière sauvegarde a échoué.{backup.detail ? ` Détail : ${backup.detail}` : ''}
+         </Banner>
+       ) : null}
++      {backup === undefined ? <Banner tone="warning">{NO_BACKUP}</Banner> : null}
+       {late ? <Banner tone="warning">Sauvegarde en retard (plus de {BACKUP_LATE_HOURS} h)</Banner> : null}
+       <ul className={styles.facts}>
+         <li>
+           {deploy
+             ? `Dernier déploiement : ${deploy.version} le ${formatDate(deploy.at)} (${done(deploy.ok)})`
+             : 'Dernier déploiement : aucun'}
+         </li>
+         <li>
+           {backup
+-            ? `Dernière sauvegarde : ${formatAge(backup.at, p.nowMs)} (${doneFeminine(backup.ok)})`
++            ? `Dernière sauvegarde : ${backupAge(backup.at, p.nowMs)} (${doneFeminine(backup.ok)})`
+             : 'Dernière sauvegarde : aucune'}
+         </li>
+         <li>
+           {restoreTest
+             ? `Dernier test de restauration : ${formatDate(restoreTest.at)} (${done(restoreTest.ok)})`
+             : 'Dernier test de restauration : aucun'}
+         </li>
+         <li>
+           {host
+             ? `Dernier contrôle de l'hôte : ${formatAge(host.at, p.nowMs)}`
+diff --git a/apps/web/src/features/admin/admin-ui.tsx b/apps/web/src/features/admin/admin-ui.tsx
+index 59abc56..acc69a8 100644
+--- a/apps/web/src/features/admin/admin-ui.tsx
++++ b/apps/web/src/features/admin/admin-ui.tsx
+@@ -3,72 +3,101 @@ import {
+   type FormEvent,
+   type ReactNode,
+   type RefObject,
+   useCallback,
+   useEffect,
+   useId,
+   useRef,
+   useState,
+ } from 'react';
+ import { ApiError } from '../../api/client';
++import { useRepos } from '../../repos';
+ import { Banner, Button, Dialog, errorMessage } from '../../ui';
+ import { loginErrorMessage } from '../auth/messages';
+ import styles from './admin.module.css';
+ 
+ type Overrides = Partial<Record<ApiErrorCode, string>>;
+ 
+ /** Mot de passe de l'admin ressaisi pour une action sensible (P-AUT-5) et refusé. */
+ export const WRONG_PASSWORD_MESSAGE = 'Mot de passe incorrect.';
+ 
+ /** Code d'invitation ou de réinitialisation : affiché une seule fois, jamais gardé (R-INV-3, R-RST-1). */
+ export const SECRET_SHOWN_ONCE = 'Ce code ne sera plus affiché.';
+ 
++/** Refus d'une action sur un élément changé ou disparu depuis la lecture de la liste. */
++const STALE_CODES: readonly ApiErrorCode[] = ['conflict', 'not_found', 'validation'];
++
++/** L'élément a changé entre-temps (409, 404, 400) : la liste affichée est périmée, à relire. */
++export const isStaleError = (e: unknown): boolean => e instanceof ApiError && STALE_CODES.includes(e.code);
++
++const STALE_CONFLICT = "L'élément a changé entre-temps : la liste est relue.";
++
+ /**
+  * Message d'une action d'administration : surcharges de l'écran, puis message commun ;
+  * `rate_limited` (ressaisie du mot de passe, R-AUTH-2) annonce l'attente en minutes.
+  */
+ export function adminErrorMessage(e: unknown, overrides?: Overrides): string {
+   if (e instanceof ApiError && e.code === 'rate_limited') return loginErrorMessage(e);
+   return errorMessage(e, overrides);
+ }
+ 
+ /**
+  * Données lues en ligne (classe E) : la dernière lecture lancée l'emporte ; un échec garde les
+- * données déjà affichées. `load` doit être stable (`useCallback`) : la lecture repart quand il change.
++ * données déjà affichées, sauf un refus (403) : les droits d'administration ont été retirés
++ * (R-ROLE-4), rien de l'ancienne liste ne reste et le profil est relu pour que la garde des routes
++ * réponde « Page introuvable ». `loading` : première lecture en cours, ni données ni échec.
++ * `load` doit être stable (`useCallback`) : la lecture repart quand il change.
+  */
+ export function useServerData<T>(load: () => Promise<T>): {
+   data: T | null;
+   error: string | null;
++  loading: boolean;
+   reload(): Promise<void>;
+ } {
++  const repos = useRepos();
+   const [state, setState] = useState<{ data: T | null; error: string | null }>({ data: null, error: null });
+   const latest = useRef(0);
+ 
+   const reload = useCallback(async () => {
+     const id = ++latest.current;
+     try {
+       const data = await load();
+       if (id === latest.current) setState({ data, error: null });
+     } catch (e) {
+-      if (id === latest.current) setState((s) => ({ data: s.data, error: errorMessage(e) }));
++      if (id !== latest.current) return;
++      if (e instanceof ApiError && e.code === 'forbidden') {
++        setState({ data: null, error: errorMessage(e) });
++        await repos.me.refresh().catch(() => null);
++        return;
++      }
++      setState((s) => ({ data: s.data, error: errorMessage(e) }));
+     }
+-  }, [load]);
++  }, [load, repos]);
+ 
+   useEffect(() => {
+     void reload();
+     return () => {
+       // Démontage ou nouvelle lecture : une réponse en retard est ignorée.
+       latest.current += 1;
+     };
+   }, [reload]);
+ 
+-  return { ...state, reload };
++  return { ...state, loading: state.data === null && state.error === null, reload };
++}
++
++/** Lecture en cours, annoncée poliment (rien d'autre à l'écran ne le dirait). */
++export function Loading() {
++  return (
++    <p role="status" className={styles.meta}>
++      Chargement…
++    </p>
++  );
+ }
+ 
+ /** Lecture impossible (hors ligne : « Nécessite le réseau ») et « Réessayer ». */
+ export function LoadFailure(p: { message: string; onRetry(): void }) {
+   return (
+     <div className={styles.failure}>
+       <Banner tone="error">{p.message}</Banner>
+       <Button variant="secondary" onClick={p.onRetry}>
+         Réessayer
+       </Button>
+@@ -90,32 +119,35 @@ export function useRestoreFocus(fallback?: RefObject<HTMLElement | null>): void
+       else fallback?.current?.focus();
+     },
+     [trigger, fallback],
+   );
+ }
+ 
+ /**
+  * Dialogue de confirmation d'une action d'administration (en ligne seulement). Le bouton de
+  * confirmation soumet le formulaire du dialogue (Entrée dans un champ aussi) ; `validate` faux :
+  * saisie à corriger, signalée par l'écran, rien ne part. Pendant l'envoi, ni « Annuler » ni Échap
+- * ne ferment. Échec : message dans le dialogue, qui reste ouvert. Réussite : `onConfirm` a fini
++ * ne ferment. Échec : message dans le dialogue, qui reste ouvert ; élément changé entre-temps
++ * (`isStaleError`) : la liste est relue (`reload`), le message reste. Réussite : `onConfirm` a fini
+  * (liste relue comprise), le dialogue se ferme. Monté seulement ouvert : chaque ouverture repart vide.
+  */
+ export function ActionDialog(p: {
+   title: string;
+   confirmLabel: string;
+   danger?: boolean;
+   canConfirm?: boolean;
+   overrides?: Overrides;
+   fallbackFocus?: RefObject<HTMLElement | null>;
+   validate?(): boolean;
+   onConfirm(): Promise<void>;
++  /** Relit la liste de l'écran quand l'élément a changé entre-temps. */
++  reload(): Promise<void>;
+   onClose(): void;
+   children?: ReactNode;
+ }) {
+   const formId = useId();
+   const [pending, setPending] = useState(false);
+   const [error, setError] = useState<string | null>(null);
+   const busy = useRef(false);
+   const onClose = useRef(p.onClose);
+   onClose.current = p.onClose;
+   useRestoreFocus(p.fallbackFocus);
+@@ -128,21 +160,22 @@ export function ActionDialog(p: {
+ 
+   async function submit(e: FormEvent) {
+     e.preventDefault();
+     if (busy.current || !ready || p.validate?.() === false) return;
+     busy.current = true;
+     setPending(true);
+     setError(null);
+     try {
+       await p.onConfirm();
+     } catch (err) {
+-      setError(adminErrorMessage(err, p.overrides));
++      if (isStaleError(err)) void p.reload();
++      setError(adminErrorMessage(err, { conflict: STALE_CONFLICT, ...p.overrides }));
+       return;
+     } finally {
+       busy.current = false;
+       setPending(false);
+     }
+     close();
+   }
+ 
+   return (
+     <Dialog
+diff --git a/apps/web/src/features/admin/admin.module.css b/apps/web/src/features/admin/admin.module.css
+index b282796..2665717 100644
+--- a/apps/web/src/features/admin/admin.module.css
++++ b/apps/web/src/features/admin/admin.module.css
+@@ -150,45 +150,48 @@
+ .cardTitle {
+   font-size: 1.125rem;
+   font-weight: 600;
+ }
+ 
+ .meta {
+   font-size: 0.875rem;
+   color: var(--color-muted);
+ }
+ 
+-/* Code et lien affichés une seule fois. */
++/* Code et lien affichés une seule fois ; un geste les sélectionne en entier si la copie échoue. */
+ .secretPanel {
+   display: flex;
+   flex-direction: column;
+   gap: var(--space-3);
+   padding: var(--space-4);
+   border: 2px solid var(--color-primary);
+   border-radius: var(--radius);
+   background: var(--color-surface);
+ }
+ 
+ .secret {
+   font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+   font-weight: 600;
+   overflow-wrap: anywhere;
++  -webkit-user-select: all;
++  user-select: all;
+ }
+ 
+ .message {
+   margin: 0;
+   padding: var(--space-3);
+   border-radius: var(--radius);
+   background: var(--color-bg);
+   font: inherit;
+   white-space: pre-wrap;
+   overflow-wrap: anywhere;
++  -webkit-user-select: all;
+   user-select: all;
+ }
+ 
+ .once {
+   font-weight: 700;
+ }
+ 
+ /* État du serveur. */
+ .facts {
+   margin: 0;
+diff --git a/apps/web/src/ui/CopyButton.tsx b/apps/web/src/ui/CopyButton.tsx
+index 12bd6ef..50714f9 100644
+--- a/apps/web/src/ui/CopyButton.tsx
++++ b/apps/web/src/ui/CopyButton.tsx
+@@ -1,22 +1,27 @@
+ import { useState } from 'react';
+ import { Button } from './Button';
+ 
+-/** Copie `text` dans le presse-papiers ; le libellé confirme la copie. */
+-export function CopyButton(p: { text: string; label?: string }) {
++/**
++ * Copie `text` dans le presse-papiers ; le libellé confirme la copie. Presse-papiers refusé ou
++ * absent : « Copie impossible », et `onResult(false)` laisse l'écran dire quoi sélectionner.
++ */
++export function CopyButton(p: { text: string; label?: string; onResult?(copied: boolean): void }) {
+   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
+   const copy = async () => {
++    let copied = true;
+     try {
+       await navigator.clipboard.writeText(p.text);
+-      setState('copied');
+     } catch {
+-      setState('failed');
++      copied = false;
+     }
++    setState(copied ? 'copied' : 'failed');
++    p.onResult?.(copied);
+   };
+   const label =
+     state === 'copied' ? 'Copié' : state === 'failed' ? 'Copie impossible' : (p.label ?? 'Copier');
+   return (
+     <Button variant="secondary" onClick={() => void copy()}>
+       {label}
+     </Button>
+   );
+ }
+diff --git a/apps/web/src/ui/Dialog.tsx b/apps/web/src/ui/Dialog.tsx
+index c4acdc2..b289eec 100644
+--- a/apps/web/src/ui/Dialog.tsx
++++ b/apps/web/src/ui/Dialog.tsx
+@@ -1,30 +1,56 @@
+ import { type ReactNode, useEffect, useId, useRef } from 'react';
+ import styles from './ui.module.css';
+ 
+-/** Fenêtre modale nommée par son titre ; Échap la ferme ; le focus y entre à l'ouverture. */
++const FOCUSABLE =
++  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
++
++/**
++ * Tab et Maj+Tab restent dans le dialogue : du dernier élément au premier et inversement, et un
++ * focus sorti du dialogue y revient. Au milieu, le navigateur avance seul.
++ */
++function keepFocusInside(root: HTMLElement, e: KeyboardEvent): void {
++  const items = [...root.querySelectorAll<HTMLElement>(FOCUSABLE)];
++  const first = items[0];
++  const last = items.at(-1);
++  const active = document.activeElement;
++  let target: HTMLElement | undefined;
++  if (!first || !last) target = root;
++  else if (!root.contains(active)) target = e.shiftKey ? last : first;
++  else if (e.shiftKey && (active === first || active === root)) target = last;
++  else if (!e.shiftKey && active === last) target = first;
++  if (!target) return;
++  e.preventDefault();
++  target.focus();
++}
++
++/**
++ * Fenêtre modale nommée par son titre ; Échap la ferme ; le focus y entre à l'ouverture et n'en
++ * sort pas au clavier.
++ */
+ export function Dialog(p: {
+   open: boolean;
+   title: string;
+   onClose(): void;
+   actions: ReactNode;
+   children: ReactNode;
+ }) {
+   const titleId = useId();
+   const ref = useRef<HTMLDivElement>(null);
+   const { open, onClose } = p;
+ 
+   useEffect(() => {
+     if (!open) return;
+     ref.current?.focus();
+     const onKey = (e: KeyboardEvent) => {
+       if (e.key === 'Escape') onClose();
++      else if (e.key === 'Tab' && ref.current) keepFocusInside(ref.current, e);
+     };
+     document.addEventListener('keydown', onKey);
+     return () => document.removeEventListener('keydown', onKey);
+   }, [open, onClose]);
+ 
+   if (!open) return null;
+   return (
+     <div className={styles.backdrop}>
+       <div
+         ref={ref}
+diff --git a/apps/web/test/admin/gyms-health.test.tsx b/apps/web/test/admin/gyms-health.test.tsx
+index c8c3699..c8506dc 100644
+--- a/apps/web/test/admin/gyms-health.test.tsx
++++ b/apps/web/test/admin/gyms-health.test.tsx
+@@ -42,20 +42,33 @@ describe('AdminGymsPage (02 §6, R-SAL-4, R-SAL-7)', () => {
+     await renderGyms(api);
+     expect(screen.getByRole('heading', { level: 1, name: 'Salles' })).toBeTruthy();
+     expect(searches(api)).toEqual(['']);
+     expect(gym('Basic Fit').getByRole('link', { name: 'Basic Fit' }).getAttribute('href')).toBe('/gyms/g-1');
+     expect(gym('Basic Fit').getByText('Lyon · 2 membres visibles')).toBeTruthy();
+     expect(gym('Fitness Park').getByText('Villeurbanne · 0 membre visible')).toBeTruthy();
+     fill('Rechercher une salle', 'basic');
+     await until(() => searches(api).includes('basic'));
+   });
+ 
++  it('lecture en cours : « Chargement… », puis la liste', async () => {
++    const reply = Promise.withResolvers<void>();
++    const api = createFakeApi().on('GET', '/api/gyms', async () => {
++      await reply.promise;
++      return { status: 200, body: GYMS };
++    });
++    await renderWithServices(<AdminGymsPage />, { api, me: ADMIN });
++    expect((await screen.findByText('Chargement…')).getAttribute('role')).toBe('status');
++    reply.resolve();
++    expect(await screen.findByRole('list', { name: 'Salles' })).toBeTruthy();
++    expect(screen.queryByText('Chargement…')).toBeNull();
++  });
++
+   it('« Modifier » → PATCH /api/gyms/g-1 { city } (champs changés seulement) puis liste relue', async () => {
+     const api = createFakeApi().on('PATCH', '/api/gyms/:id', { status: 204 });
+     await renderGyms(api);
+     fireEvent.click(gym('Basic Fit').getByRole('button', { name: 'Modifier' }));
+     expect(screen.getByRole('dialog', { name: 'Modifier Basic Fit' })).toBeTruthy();
+     expect((dialog().getByLabelText('Nom de la salle') as HTMLInputElement).value).toBe('Basic Fit');
+     fill('Ville', 'Villeurbanne');
+     fireEvent.click(dialog().getByRole('button', { name: 'Enregistrer' }));
+     await until(() => screen.queryByRole('dialog') === null);
+     expect(searches(api)).toHaveLength(2);
+@@ -79,20 +92,32 @@ describe('AdminGymsPage (02 §6, R-SAL-4, R-SAL-7)', () => {
+     fireEvent.click(
+       within(screen.getByRole('dialog', { name: 'Supprimer Basic Fit' })).getByRole('button', {
+         name: 'Supprimer',
+       }),
+     );
+     await until(() => screen.queryByRole('dialog') === null);
+     expect(searches(api)).toHaveLength(2);
+     expect(sent(api, 'DELETE', '/api/admin/gyms/g-1')).toEqual([{}]);
+   });
+ 
++  it('salle déjà supprimée (404 not_found) : message gardé, liste relue', async () => {
++    const api = createFakeApi().on('DELETE', '/api/admin/gyms/:id', {
++      status: 404,
++      body: { error: 'not_found' },
++    });
++    await renderGyms(api);
++    fireEvent.click(gym('Basic Fit').getByRole('button', { name: 'Supprimer' }));
++    fireEvent.click(dialog().getByRole('button', { name: 'Supprimer' }));
++    expect(await dialog().findByText('Élément introuvable.')).toBeTruthy();
++    await until(() => searches(api).length === 2);
++  });
++
+   it('409 gym_in_use → message, dialogue gardé', async () => {
+     const api = createFakeApi().on('DELETE', '/api/admin/gyms/:id', {
+       status: 409,
+       body: { error: 'gym_in_use' },
+     });
+     await renderGyms(api);
+     fireEvent.click(gym('Basic Fit').getByRole('button', { name: 'Supprimer' }));
+     fireEvent.click(dialog().getByRole('button', { name: 'Supprimer' }));
+     expect(
+       await dialog().findByText(
+@@ -144,28 +169,53 @@ describe('ServerHealthPage (08 §9)', () => {
+     expect(screen.getByText('Dernière sauvegarde : il y a 5 h (réussie)')).toBeTruthy();
+     expect(screen.getByText('Dernier test de restauration : 04/10/2026 (réussi)')).toBeTruthy();
+     expect(screen.getByText("Dernier contrôle de l'hôte : il y a 8 h")).toBeTruthy();
+     const disks = within(screen.getByRole('list', { name: 'Espace disque' }))
+       .getAllByRole('listitem')
+       .map((li) => li.textContent);
+     expect(disks).toEqual(['/ : 42 %', '/srv/appsport : 81 % (au-delà de 80 %)', '/srv/backup : 80 %']);
+     expect(screen.getByText('SMART : OK')).toBeTruthy();
+     expect(screen.getByText('Redémarrage nécessaire')).toBeTruthy();
+     expect(screen.queryByText('Sauvegarde en retard (plus de 26 h)')).toBeNull();
++    expect(screen.queryByText('Aucune sauvegarde enregistrée')).toBeNull();
+     expect(screen.queryByRole('alert')).toBeNull();
+   });
+ 
++  it('pourcentages arrondis au-dessus : 80,2 % est au-delà de 80 %, 79,6 % ne l’est pas', async () => {
++    await renderHealth({
++      ...OPS,
++      host: {
++        ...(OPS.host as NonNullable<OpsStatus['host']>),
++        disks: [
++          { mount: '/', usedPct: 80.2 },
++          { mount: '/srv/appsport', usedPct: 79.6 },
++        ],
++      },
++    });
++    const disks = within(screen.getByRole('list', { name: 'Espace disque' }))
++      .getAllByRole('listitem')
++      .map((li) => li.textContent);
++    expect(disks).toEqual(['/ : 81 % (au-delà de 80 %)', '/srv/appsport : 80 %']);
++  });
++
+   it('sauvegarde de plus de 26 h → bandeau « Sauvegarde en retard (plus de 26 h) »', async () => {
+     await renderHealth({ ...OPS, backup: { at: ago(28 * HOUR), ok: true } });
+     const late = screen.getByText('Sauvegarde en retard (plus de 26 h)');
+     expect(late.closest('[role="status"], [role="alert"]')).not.toBeNull();
+-    expect(screen.getByText('Dernière sauvegarde : il y a 1 j (réussie)')).toBeTruthy();
++    // En heures sous 72 h : « il y a 1 j » sous « plus de 26 h » minimiserait le retard.
++    expect(screen.getByText('Dernière sauvegarde : il y a 28 h (réussie)')).toBeTruthy();
++  });
++
++  it('sauvegarde de 3 jours et plus : âge en jours', async () => {
++    await renderHealth({ ...OPS, backup: { at: ago(80 * HOUR), ok: true } });
++    expect(screen.getByText('Dernière sauvegarde : il y a 3 j (réussie)')).toBeTruthy();
++    expect(screen.getByText('Sauvegarde en retard (plus de 26 h)')).toBeTruthy();
+   });
+ 
+   it('sauvegarde de 26 h tout juste : pas encore en retard', async () => {
+     await renderHealth({ ...OPS, backup: { at: ago(26 * HOUR), ok: true } });
+     expect(screen.queryByText('Sauvegarde en retard (plus de 26 h)')).toBeNull();
+   });
+ 
+   it('sauvegarde échouée → « (échouée) » et bandeau d’erreur', async () => {
+     await renderHealth({
+       ...OPS,
+@@ -183,28 +233,48 @@ describe('ServerHealthPage (08 §9)', () => {
+       deploy: { at: '2026-10-01T09:00:00.000Z', version: 'v1.2.4', previousVersion: 'v1.2.3', ok: false },
+       restoreTest: { at: '2026-10-04T05:00:00.000Z', ok: false },
+       host: { ...(OPS.host as NonNullable<OpsStatus['host']>), smartOk: false, rebootRequired: false },
+     });
+     expect(screen.getByText('Dernier déploiement : v1.2.4 le 01/10/2026 (échoué)')).toBeTruthy();
+     expect(screen.getByText('Dernier test de restauration : 04/10/2026 (échoué)')).toBeTruthy();
+     expect(screen.getByText('SMART : problème détecté')).toBeTruthy();
+     expect(screen.queryByText('Redémarrage nécessaire')).toBeNull();
+   });
+ 
++  it('aucune sauvegarde enregistrée : bandeau d’avertissement (08 §9 : sauvegarde absente)', async () => {
++    await renderHealth({ deploy: OPS.deploy, host: OPS.host });
++    const missing = screen.getByText('Aucune sauvegarde enregistrée');
++    expect(missing.closest('[role="status"], [role="alert"]')).not.toBeNull();
++    expect(screen.getByText('Dernière sauvegarde : aucune')).toBeTruthy();
++  });
++
+   it('contrôles absents : « aucune », « aucun »', async () => {
+     await renderHealth({});
+     expect(screen.getByText('Dernier déploiement : aucun')).toBeTruthy();
+     expect(screen.getByText('Dernière sauvegarde : aucune')).toBeTruthy();
+     expect(screen.getByText('Dernier test de restauration : aucun')).toBeTruthy();
+     expect(screen.getByText("Dernier contrôle de l'hôte : aucun")).toBeTruthy();
+   });
+ 
++  it('lecture en cours : « Chargement… », puis l’état', async () => {
++    const reply = Promise.withResolvers<void>();
++    const api = createFakeApi().on('GET', '/api/admin/ops-status', async () => {
++      await reply.promise;
++      return { status: 200, body: { version: 'v1.2.3', opsStatus: OPS } };
++    });
++    await renderWithServices(<ServerHealthPage />, { api, me: ADMIN });
++    expect((await screen.findByText('Chargement…')).getAttribute('role')).toBe('status');
++    reply.resolve();
++    expect(await screen.findByText('Version en service : v1.2.3')).toBeTruthy();
++    expect(screen.queryByText('Chargement…')).toBeNull();
++  });
++
+   it('opsStatus null → aucun état d’exploitation disponible', async () => {
+     await renderHealth(null);
+     expect(
+       screen.getByText(
+         "Aucun état d'exploitation disponible : les scripts de l'hôte n'ont encore rien écrit.",
+       ),
+     ).toBeTruthy();
+     expect(screen.queryByText(/Dernière sauvegarde/)).toBeNull();
+   });
+ 
+diff --git a/apps/web/test/admin/invitations.test.tsx b/apps/web/test/admin/invitations.test.tsx
+index f2a4614..f4697ab 100644
+--- a/apps/web/test/admin/invitations.test.tsx
++++ b/apps/web/test/admin/invitations.test.tsx
+@@ -1,16 +1,16 @@
+ import { INVITATION_NOTE_MAX, type InvitationSummary } from '@appsport/contracts';
+ import { fireEvent, screen, within } from '@testing-library/react';
+ import { afterEach, describe, expect, it, vi } from 'vitest';
+ import { InvitationsPage } from '../../src/features/admin/InvitationsPage';
+ import { buildInvitationShareMessage } from '../../src/features/admin/share-message';
+-import { fill } from '../support/auth';
++import { fill, settle } from '../support/auth';
+ import { createFakeApi, type FakeApi } from '../support/fake-api';
+ import { makeMe, renderWithServices } from '../support/render';
+ import { until } from '../support/wait';
+ 
+ const ADMIN = makeMe({ id: 'u-1', username: 'bastien', role: 'admin' });
+ const CODE = 'ABCD-EFGH-JKMN-PQRS';
+ 
+ const invitation = (o: Partial<InvitationSummary> & { id: string }): InvitationSummary => ({
+   note: null,
+   createdAt: '2026-10-06T10:00:00.000Z',
+@@ -55,22 +55,33 @@ function createdApi(): { api: FakeApi; link: string } {
+   });
+   return { api, link };
+ }
+ 
+ function create(birthDate: string, note?: string) {
+   fill('Date de naissance', birthDate);
+   if (note !== undefined) fill('Note (facultative)', note);
+   fireEvent.click(screen.getByRole('button', { name: "Créer l'invitation" }));
+ }
+ 
++/** Presse-papiers refusé (permission) ou absent (contexte non sécurisé, vieux navigateur). */
++function breakClipboard(mode: 'refusé' | 'absent'): void {
++  if (mode === 'absent')
++    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
++  else
++    vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(
++      new DOMException('refusé', 'NotAllowedError'),
++    );
++}
++
+ afterEach(() => {
+   Reflect.deleteProperty(navigator, 'share');
++  Reflect.deleteProperty(navigator, 'clipboard');
+   vi.restoreAllMocks();
+ });
+ 
+ describe('buildInvitationShareMessage (R-INV-9)', () => {
+   it('trois étapes, puis le lien sur la dernière ligne', () => {
+     const origin = 'https://appsport.example';
+     expect(buildInvitationShareMessage(origin, `${origin}/invite#${CODE}`, CODE)).toBe(
+       [
+         '1. Installe Tailscale et accepte le partage.',
+         "2. Ouvre https://appsport.example et installe l'appli.",
+@@ -92,26 +103,58 @@ describe('InvitationsPage : liste (R-INV-7)', () => {
+     expect(item(1).getByText('Utilisée par lea')).toBeTruthy();
+     expect(item(2).getByText('Sans note')).toBeTruthy();
+     expect(item(2).getByText('Révoquée')).toBeTruthy();
+     expect(item(3).getByText('Expirée')).toBeTruthy();
+     expect(item(3).getByText('Créée le 20/09/2026')).toBeTruthy();
+     expect(item(4).getByText('Utilisée par un ancien membre')).toBeTruthy();
+     expect(item(0).getByRole('button', { name: 'Révoquer' })).toBeTruthy();
+     for (const i of [1, 2, 3, 4]) expect(item(i).queryByRole('button', { name: 'Révoquer' })).toBeNull();
+   });
+ 
++  it('lecture en cours : « Chargement… » plutôt qu’une liste vide', async () => {
++    const reply = Promise.withResolvers<void>();
++    const api = createFakeApi().on('GET', '/api/admin/invitations', async () => {
++      await reply.promise;
++      return { status: 200, body: [] };
++    });
++    await renderWithServices(<InvitationsPage />, { api, me: ADMIN });
++    expect((await screen.findByText('Chargement…')).getAttribute('role')).toBe('status');
++    reply.resolve();
++    expect(await screen.findByText("Aucune invitation pour l'instant.")).toBeTruthy();
++    expect(screen.queryByText('Chargement…')).toBeNull();
++  });
++
+   it('aucune invitation : « Aucune invitation pour l’instant. »', async () => {
+     const api = createFakeApi().on('GET', '/api/admin/invitations', { status: 200, body: [] });
+     await renderWithServices(<InvitationsPage />, { api, me: ADMIN });
+     expect(await screen.findByText("Aucune invitation pour l'instant.")).toBeTruthy();
+   });
+ 
++  it('invitation utilisée entre-temps (409 conflict) : message, liste relue avec le nouvel état', async () => {
++    const api = createFakeApi().on('POST', '/api/admin/invitations/:id/revoke', {
++      status: 409,
++      body: { error: 'conflict' },
++    });
++    await renderInvitations({ api });
++    api.on('GET', '/api/admin/invitations', {
++      status: 200,
++      body: [invitation({ id: 'i-1', note: 'pour Léa', state: 'used', usedByUsername: 'lea' })],
++    });
++    fireEvent.click(item(0).getByRole('button', { name: 'Révoquer' }));
++    const d = within(screen.getByRole('dialog', { name: "Révoquer l'invitation" }));
++    fireEvent.click(d.getByRole('button', { name: 'Révoquer' }));
++    expect(await d.findByText("L'élément a changé entre-temps : la liste est relue.")).toBeTruthy();
++    expect(await screen.findByText('Utilisée par lea')).toBeTruthy();
++    expect(loads(api)).toBe(2);
++    expect(screen.getByRole('dialog')).toBeTruthy();
++  });
++
+   it('« Révoquer » (confirmé) → POST …/i-1/revoke {} puis liste rechargée', async () => {
+     const api = createFakeApi().on('POST', '/api/admin/invitations/:id/revoke', { status: 204 });
+     await renderInvitations({ api });
+     fireEvent.click(item(0).getByRole('button', { name: 'Révoquer' }));
+     const d = within(screen.getByRole('dialog', { name: "Révoquer l'invitation" }));
+     fireEvent.click(d.getByRole('button', { name: 'Révoquer' }));
+     await until(() => screen.queryByRole('dialog') === null);
+     expect(loads(api)).toBe(2);
+     expect(sent(api, 'POST', '/api/admin/invitations/i-1/revoke')).toEqual([{}]);
+   });
+@@ -148,20 +191,82 @@ describe('InvitationsPage : création (R-INV-1 à R-INV-3, R-INV-9)', () => {
+     await until(() => loads(api) === 2);
+     // Le formulaire repart vide pour l'invitation suivante.
+     expect((screen.getByLabelText('Date de naissance') as HTMLInputElement).value).toBe('');
+     expect((screen.getByLabelText('Note (facultative)') as HTMLInputElement).value).toBe('');
+     fireEvent.click(screen.getByRole('button', { name: "J'ai noté le code" }));
+     expect(screen.queryByText(CODE)).toBeNull();
+     expect(screen.queryByText(link)).toBeNull();
+     expect(screen.queryByTestId('share-message')).toBeNull();
+   });
+ 
++  it('double envoi du formulaire pendant la création : une seule invitation', async () => {
++    const reply = Promise.withResolvers<void>();
++    const link = `${window.location.origin}/invite#${CODE}`;
++    const api = createFakeApi().on('POST', '/api/admin/invitations', async () => {
++      await reply.promise;
++      return { status: 201, body: { invitation: invitation({ id: 'i-9' }), code: CODE, link } };
++    });
++    await renderInvitations({ api });
++    fill('Date de naissance', '2009-05-01');
++    const submit = screen.getByRole('button', { name: "Créer l'invitation" }) as HTMLButtonElement;
++    const form = submit.closest('form') as HTMLFormElement;
++    fireEvent.submit(form);
++    fireEvent.submit(form);
++    await until(() => sent(api, 'POST', '/api/admin/invitations').length > 0);
++    await settle();
++    expect(sent(api, 'POST', '/api/admin/invitations')).toHaveLength(1);
++    expect(submit.disabled).toBe(true);
++    reply.resolve();
++    expect(await screen.findByText(CODE)).toBeTruthy();
++    expect(sent(api, 'POST', '/api/admin/invitations')).toHaveLength(1);
++  });
++
++  it('code affiché : « Créer l’invitation » bloqué jusqu’à « J’ai noté le code » (le code ne se perd pas)', async () => {
++    const { api } = createdApi();
++    await renderInvitations({ api });
++    create('2009-05-01', 'pour Léa');
++    await screen.findByText(CODE);
++    const submit = screen.getByRole('button', { name: "Créer l'invitation" }) as HTMLButtonElement;
++    const hintText = "Note d'abord le code affiché, puis appuie sur « J'ai noté le code ».";
++    expect(submit.disabled).toBe(true);
++    expect(submit.getAttribute('aria-describedby')).toBe(screen.getByText(hintText).id);
++    // Entrée dans un champ : rien ne part, le code reste.
++    fill('Date de naissance', '2009-06-01');
++    fireEvent.submit(submit.closest('form') as HTMLFormElement);
++    await settle();
++    expect(sent(api, 'POST', '/api/admin/invitations')).toHaveLength(1);
++    expect(screen.getByText(CODE)).toBeTruthy();
++    fireEvent.click(screen.getByRole('button', { name: "J'ai noté le code" }));
++    expect(submit.disabled).toBe(false);
++    expect(screen.queryByText(hintText)).toBeNull();
++  });
++
++  it('code ni gardé ni journalisé : absent après remontage, rien en stockage du navigateur, en base locale ni en console', async () => {
++    localStorage.clear();
++    sessionStorage.clear();
++    const logs = (['log', 'info', 'warn', 'error', 'debug'] as const).map((m) => vi.spyOn(console, m));
++    const { api, link } = createdApi();
++    const { unmount, db } = await renderInvitations({ api });
++    create('2009-05-01', 'pour Léa');
++    await screen.findByText(CODE);
++    await until(() => loads(api) === 2);
++    unmount();
++    await renderWithServices(<InvitationsPage />, { api, me: ADMIN, db });
++    await screen.findByRole('list', { name: 'Invitations envoyées' });
++    expect(screen.queryByText(CODE)).toBeNull();
++    expect(screen.queryByText(link)).toBeNull();
++    expect(localStorage.length).toBe(0);
++    expect(sessionStorage.length).toBe(0);
++    expect(JSON.stringify(await Promise.all(db.tables.map((t) => t.toArray())))).not.toContain(CODE);
++    expect(logs.flatMap((spy) => spy.mock.calls.flat().map(String)).join(' ')).not.toContain(CODE);
++  });
++
+   it('note vide : seule la date part', async () => {
+     const { api } = createdApi();
+     await renderInvitations({ api });
+     create('2009-05-01', '   ');
+     await screen.findByText(CODE);
+     expect(sent(api, 'POST', '/api/admin/invitations')).toEqual([{ birthDate: '2009-05-01' }]);
+   });
+ 
+   it('sans date de naissance : message lié au champ, aucun envoi', async () => {
+     const { api } = createdApi();
+@@ -187,35 +292,73 @@ describe('InvitationsPage : création (R-INV-1 à R-INV-3, R-INV-9)', () => {
+   });
+ 
+   it('partage annulé : aucun message d’erreur', async () => {
+     const share = vi.fn().mockRejectedValue(new DOMException('annulé', 'AbortError'));
+     Object.defineProperty(navigator, 'share', { value: share, configurable: true, writable: true });
+     const { api } = createdApi();
+     await renderInvitations({ api });
+     create('2009-05-01');
+     fireEvent.click(await screen.findByRole('button', { name: 'Partager' }));
+     await until(() => share.mock.calls.length === 1);
++    // Le refus du partage arrive après le clic : on le laisse aboutir avant de regarder.
++    await settle();
+     expect(screen.queryByRole('alert')).toBeNull();
++    expect(screen.getByText(CODE)).toBeTruthy();
++  });
++
++  it('partage refusé (autre qu’une annulation) : « Partage impossible : copie le message. », message gardé', async () => {
++    const share = vi.fn().mockRejectedValue(new DOMException('refusé', 'NotAllowedError'));
++    Object.defineProperty(navigator, 'share', { value: share, configurable: true, writable: true });
++    const { api, link } = createdApi();
++    await renderInvitations({ api });
++    create('2009-05-01');
++    fireEvent.click(await screen.findByRole('button', { name: 'Partager' }));
++    expect((await screen.findByRole('alert')).textContent).toBe('Partage impossible : copie le message.');
++    expect(screen.getByTestId('share-message').textContent).toBe(
++      buildInvitationShareMessage(window.location.origin, link, CODE),
++    );
++    expect(screen.getByRole('button', { name: 'Copier le message' })).toBeTruthy();
+   });
+ 
+   it('sans navigator.share : « Copier le message » copie le message', async () => {
+     const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+     const { api, link } = createdApi();
+     await renderInvitations({ api });
+     create('2009-05-01');
+     await screen.findByText(CODE);
+     expect(screen.queryByRole('button', { name: 'Partager' })).toBeNull();
+     fireEvent.click(screen.getByRole('button', { name: 'Copier le message' }));
+     await until(() => writeText.mock.calls.length === 1);
+     expect(writeText).toHaveBeenCalledWith(buildInvitationShareMessage(window.location.origin, link, CODE));
+   });
+ 
++  it.each(['refusé', 'absent'] as const)(
++    'presse-papiers %s : « Copie impossible », consigne de sélection ; code, lien et message restent affichés',
++    async (mode) => {
++      breakClipboard(mode);
++      const { api, link } = createdApi();
++      await renderInvitations({ api });
++      create('2009-05-01');
++      await screen.findByText(CODE);
++      fireEvent.click(screen.getByRole('button', { name: 'Copier le message' }));
++      expect(await screen.findByRole('button', { name: 'Copie impossible' })).toBeTruthy();
++      expect((await screen.findByRole('alert')).textContent).toBe(
++        'Copie impossible : sélectionne le message et copie-le.',
++      );
++      expect(screen.getByTestId('share-message').textContent).toBe(
++        buildInvitationShareMessage(window.location.origin, link, CODE),
++      );
++      expect(screen.getByText(CODE)).toBeTruthy();
++      expect(screen.getByText(link)).toBeTruthy();
++    },
++  );
++
+   it('400 under_min_age → « appsport est réservé aux 16 ans et plus », aucun code', async () => {
+     const api = createFakeApi().on('POST', '/api/admin/invitations', {
+       status: 400,
+       body: { error: 'under_min_age' },
+     });
+     await renderInvitations({ api });
+     create('2015-05-01');
+     expect(await screen.findByText('appsport est réservé aux 16 ans et plus')).toBeTruthy();
+     expect(screen.queryByText('Ce code ne sera plus affiché.')).toBeNull();
+     expect((screen.getByLabelText('Date de naissance') as HTMLInputElement).value).toBe('2015-05-01');
+diff --git a/apps/web/test/admin/members.test.tsx b/apps/web/test/admin/members.test.tsx
+index 48f4817..3a8e4fc 100644
+--- a/apps/web/test/admin/members.test.tsx
++++ b/apps/web/test/admin/members.test.tsx
+@@ -54,20 +54,21 @@ const memberLoads = (api: FakeApi) => sent(api, 'GET', '/api/admin/members').len
+ function open(username: string, action: string) {
+   fireEvent.click(row(username).getByRole('button', { name: action }));
+   return dialog();
+ }
+ 
+ function confirmButton(name: string): HTMLButtonElement {
+   return dialog().getByRole('button', { name }) as HTMLButtonElement;
+ }
+ 
+ afterEach(() => {
++  Reflect.deleteProperty(navigator, 'clipboard');
+   vi.restoreAllMocks();
+ });
+ 
+ describe('MembersPage : tableau des membres (02 §6, P-ADM-1)', () => {
+   it('une ligne par membre, nommée par le pseudo : rôle, statut, mineur, connexion, onboarding, accords', async () => {
+     await renderMembers();
+     expect(screen.getByRole('heading', { level: 1, name: 'Membres' })).toBeTruthy();
+     const lea = screen.getByRole('row', { name: 'lea' });
+     expect(within(lea).getByRole('rowheader').textContent).toContain('lea');
+     expect(within(lea).getByText('mineur')).toBeTruthy();
+@@ -111,39 +112,63 @@ describe('MembersPage : tableau des membres (02 §6, P-ADM-1)', () => {
+ 
+   it('membre désactivé : statut « désactivé », « Réactiver » au lieu de « Désactiver »', async () => {
+     await renderMembers({ members: [BASTIEN, { ...LEA, status: 'disabled' }] });
+     expect(row('lea').getByText('désactivé')).toBeTruthy();
+     expect(row('lea').queryByRole('button', { name: 'Désactiver' })).toBeNull();
+     expect(row('lea').getByRole('button', { name: 'Réactiver' })).toBeTruthy();
+     expect(row('lea').getByRole('button', { name: 'Promouvoir administrateur' })).toBeTruthy();
+     expect(row('bastien').getByRole('button', { name: 'Rétrograder' })).toBeTruthy();
+   });
+ 
++  it('lecture en cours : « Chargement… » annoncé poliment, puis le tableau', async () => {
++    const reply = Promise.withResolvers<void>();
++    const api = createFakeApi().on('GET', '/api/admin/members', async () => {
++      await reply.promise;
++      return { status: 200, body: [BASTIEN, LEA] };
++    });
++    await renderWithServices(<MembersPage />, { api, me: ADMIN });
++    expect((await screen.findByText('Chargement…')).getAttribute('role')).toBe('status');
++    reply.resolve();
++    expect(await screen.findByRole('row', { name: 'lea' })).toBeTruthy();
++    expect(screen.queryByText('Chargement…')).toBeNull();
++  });
++
+   it('liste illisible hors ligne : « Nécessite le réseau » puis « Réessayer »', async () => {
+     const api = createFakeApi();
+     api.setOffline('reject');
+     await renderWithServices(<MembersPage />, { api, me: ADMIN });
+     expect(await screen.findByText('Nécessite le réseau')).toBeTruthy();
++    expect(screen.queryByText('Chargement…')).toBeNull();
+     api.setOffline(false);
+     api.on('GET', '/api/admin/members', { status: 200, body: [BASTIEN, LEA] });
+     fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
+     expect(await screen.findByRole('row', { name: 'lea' })).toBeTruthy();
+     expect(screen.queryByText('Nécessite le réseau')).toBeNull();
+   });
+ 
+   it('un membre sur /admin/members : « Page introuvable », aucune requête /api/admin', async () => {
+     const { api } = await renderApp({ path: '/admin/members', me: makeMe({ role: 'member' }) });
+     expect(await screen.findByRole('heading', { level: 1, name: 'Page introuvable' })).toBeTruthy();
+     await settle();
+     expect(api.calls.filter((c) => c.path.startsWith('/api/admin'))).toEqual([]);
+   });
+ 
++  it.each(['/Admin/members', '/ADMIN/health', '/admin/Invitations'])(
++    'un membre sur %s (casse différente, que wouter accepte) : « Page introuvable », aucune requête admin',
++    async (path) => {
++      const { api } = await renderApp({ path, me: makeMe({ role: 'member' }) });
++      expect(await screen.findByRole('heading', { level: 1, name: 'Page introuvable' })).toBeTruthy();
++      await settle();
++      expect(api.calls.filter((c) => c.path.toLowerCase().startsWith('/api/admin'))).toEqual([]);
++    },
++  );
++
+   it('routes admin et navigation Membres · Invitations · Salles · État du serveur', async () => {
+     const api = createFakeApi()
+       .on('GET', '/api/admin/members', { status: 200, body: [BASTIEN] })
+       .on('GET', '/api/admin/invitations', { status: 200, body: [] })
+       .on('GET', '/api/gyms', { status: 200, body: [] })
+       .on('GET', '/api/admin/ops-status', { status: 200, body: { version: 'dev', opsStatus: null } });
+     await renderApp({ path: '/admin/members', me: ADMIN, api });
+     expect(await screen.findByRole('heading', { level: 1, name: 'Membres' })).toBeTruthy();
+     const nav = within(screen.getByRole('navigation', { name: 'Administration' }));
+     const links = nav.getAllByRole('link');
+@@ -191,32 +216,100 @@ describe('MembersPage : lien de réinitialisation (R-RST-1 à R-RST-4)', () => {
+     fireEvent.click(dialog().getByRole('button', { name: "J'ai transmis le lien" }));
+     expect(screen.queryByRole('dialog')).toBeNull();
+     expect(screen.queryByText(CODE)).toBeNull();
+     expect(screen.queryByText(LINK)).toBeNull();
+     // Rouvert : rien de l'ancien lien, il faut en générer un nouveau.
+     open('lea', 'Lien de réinitialisation');
+     expect(dialog().queryByText(CODE)).toBeNull();
+     expect(dialog().getByRole('button', { name: 'Générer' })).toBeTruthy();
+   });
+ 
++  it.each(['refusé', 'absent'] as const)(
++    'presse-papiers %s : « Copie impossible », consigne de sélection ; lien et code restent affichés',
++    async (mode) => {
++      if (mode === 'absent')
++        Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
++      else
++        vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(
++          new DOMException('refusé', 'NotAllowedError'),
++        );
++      const api = createFakeApi().on('POST', '/api/admin/members/:id/reset-link', {
++        status: 200,
++        body: { code: CODE, link: LINK, expiresAt: '2026-10-07T12:00:00.000Z' },
++      });
++      await renderMembers({ api });
++      fireEvent.click(open('lea', 'Lien de réinitialisation').getByRole('button', { name: 'Générer' }));
++      await dialog().findByText(CODE);
++      fireEvent.click(dialog().getByRole('button', { name: 'Copier' }));
++      expect(await dialog().findByRole('button', { name: 'Copie impossible' })).toBeTruthy();
++      expect((await dialog().findByRole('alert')).textContent).toBe(
++        'Copie impossible : sélectionne le lien et copie-le.',
++      );
++      expect(dialog().getByText(LINK)).toBeTruthy();
++      expect(dialog().getByText(CODE)).toBeTruthy();
++    },
++  );
++
++  it('lien et code ni gardés ni journalisés : rien en stockage du navigateur, en base locale ni en console', async () => {
++    localStorage.clear();
++    sessionStorage.clear();
++    const logs = (['log', 'info', 'warn', 'error', 'debug'] as const).map((m) => vi.spyOn(console, m));
++    const api = createFakeApi().on('POST', '/api/admin/members/:id/reset-link', {
++      status: 200,
++      body: { code: CODE, link: LINK, expiresAt: '2026-10-07T12:00:00.000Z' },
++    });
++    const { db } = await renderMembers({ api });
++    fireEvent.click(open('lea', 'Lien de réinitialisation').getByRole('button', { name: 'Générer' }));
++    await dialog().findByText(CODE);
++    await until(() => memberLoads(api) === 2);
++    fireEvent.click(dialog().getByRole('button', { name: "J'ai transmis le lien" }));
++    expect(screen.queryByText(CODE)).toBeNull();
++    expect(localStorage.length).toBe(0);
++    expect(sessionStorage.length).toBe(0);
++    expect(JSON.stringify(await Promise.all(db.tables.map((t) => t.toArray())))).not.toContain(CODE);
++    expect(logs.flatMap((spy) => spy.mock.calls.flat().map(String)).join(' ')).not.toContain(CODE);
++  });
++
+   it('Échap après la génération efface aussi le code', async () => {
+     const api = createFakeApi().on('POST', '/api/admin/members/:id/reset-link', {
+       status: 200,
+       body: { code: CODE, link: LINK, expiresAt: '2026-10-07T12:00:00.000Z' },
+     });
+     await renderMembers({ api });
+     fireEvent.click(open('lea', 'Lien de réinitialisation').getByRole('button', { name: 'Générer' }));
+     await dialog().findByText(CODE);
+     fireEvent.keyDown(document, { key: 'Escape' });
+     expect(screen.queryByText(CODE)).toBeNull();
+   });
+ 
++  it('double clic sur « Générer » : une seule requête, rien ne ferme pendant l’envoi', async () => {
++    const reply = Promise.withResolvers<void>();
++    const api = createFakeApi().on('POST', '/api/admin/members/:id/reset-link', async () => {
++      await reply.promise;
++      return { status: 200, body: { code: CODE, link: LINK, expiresAt: '2026-10-07T12:00:00.000Z' } };
++    });
++    await renderMembers({ api });
++    open('lea', 'Lien de réinitialisation');
++    fireEvent.click(confirmButton('Générer'));
++    fireEvent.click(confirmButton('Générer'));
++    await until(() => sent(api, 'POST', '/api/admin/members/u-2/reset-link').length > 0);
++    await settle();
++    expect(sent(api, 'POST', '/api/admin/members/u-2/reset-link')).toHaveLength(1);
++    expect(confirmButton('Générer').disabled).toBe(true);
++    expect(confirmButton('Annuler').disabled).toBe(true);
++    fireEvent.keyDown(document, { key: 'Escape' });
++    expect(screen.getByRole('dialog')).toBeTruthy();
++    reply.resolve();
++    expect(await dialog().findByText(CODE)).toBeTruthy();
++    expect(sent(api, 'POST', '/api/admin/members/u-2/reset-link')).toHaveLength(1);
++  });
++
+   it('403 reset_self_forbidden : commande admin:reset indiquée', async () => {
+     const api = createFakeApi().on('POST', '/api/admin/members/:id/reset-link', {
+       status: 403,
+       body: { error: 'reset_self_forbidden' },
+     });
+     await renderMembers({ api });
+     fireEvent.click(open('bastien', 'Lien de réinitialisation').getByRole('button', { name: 'Générer' }));
+     expect(
+       await dialog().findByText('Pour toi-même, utilise la commande admin:reset sur le serveur.'),
+     ).toBeTruthy();
+@@ -226,20 +319,88 @@ describe('MembersPage : lien de réinitialisation (R-RST-1 à R-RST-4)', () => {
+   it('hors ligne : « Nécessite le réseau », rien n’est affiché', async () => {
+     const api = createFakeApi();
+     await renderMembers({ api });
+     api.setOffline('reject');
+     fireEvent.click(open('lea', 'Lien de réinitialisation').getByRole('button', { name: 'Générer' }));
+     expect(await dialog().findByText('Nécessite le réseau')).toBeTruthy();
+     expect(dialog().queryByText('Ce code ne sera plus affiché.')).toBeNull();
+   });
+ });
+ 
++describe('MembersPage : membre changé entre-temps (02 §6)', () => {
++  it.each([
++    [
++      'Fermer les sessions',
++      404,
++      'not_found',
++      'Fermer les sessions',
++      'revoke-sessions',
++      'Élément introuvable.',
++    ],
++    [
++      'Supprimer',
++      400,
++      'validation',
++      'Supprimer définitivement',
++      'delete',
++      'Certaines valeurs ne sont pas valides.',
++    ],
++  ] as const)(
++    '« %s » refusé (%i %s) : message gardé dans le dialogue, liste relue',
++    async (action, status, code, confirm, route, message) => {
++      const api = createFakeApi().on('POST', `/api/admin/members/:id/${route}`, {
++        status,
++        body: { error: code },
++      });
++      await renderMembers({ api });
++      // Supprimée ou renommée ailleurs : la liste relue ne contient plus « lea ».
++      api.on('GET', '/api/admin/members', { status: 200, body: [BASTIEN, { ...LEA, username: 'lea2' }] });
++      open('lea', action);
++      if (route === 'delete') {
++        fill('Tape le pseudo pour confirmer', 'lea');
++        fill('Ton mot de passe', PASSWORD);
++      }
++      fireEvent.click(confirmButton(confirm));
++      expect(await dialog().findByText(message)).toBeTruthy();
++      expect(await screen.findByRole('row', { name: 'lea2' })).toBeTruthy();
++      expect(memberLoads(api)).toBe(2);
++      expect(screen.getByRole('dialog')).toBeTruthy();
++    },
++  );
++
++  it('lien de réinitialisation, membre supprimé entre-temps (404) : liste relue', async () => {
++    const api = createFakeApi().on('POST', '/api/admin/members/:id/reset-link', {
++      status: 404,
++      body: { error: 'not_found' },
++    });
++    await renderMembers({ api });
++    api.on('GET', '/api/admin/members', { status: 200, body: [BASTIEN] });
++    fireEvent.click(open('lea', 'Lien de réinitialisation').getByRole('button', { name: 'Générer' }));
++    expect(await dialog().findByText('Élément introuvable.')).toBeTruthy();
++    await until(() => screen.queryByRole('row', { name: 'lea' }) === null);
++    expect(memberLoads(api)).toBe(2);
++  });
++
++  it('autre refus (409 last_admin) : la liste n’est pas relue', async () => {
++    const api = createFakeApi().on('POST', '/api/admin/members/:id/status', {
++      status: 409,
++      body: { error: 'last_admin' },
++    });
++    await renderMembers({ api });
++    open('bastien', 'Désactiver');
++    fireEvent.click(confirmButton('Désactiver'));
++    expect(await dialog().findByText('Il doit rester au moins un administrateur actif.')).toBeTruthy();
++    await settle();
++    expect(memberLoads(api)).toBe(1);
++  });
++});
++
+ describe('MembersPage : sessions et statut (R-AUTH-7, R-ADM-1, R-ROLE-2)', () => {
+   it('« Fermer les sessions » → POST revoke-sessions {} puis liste rechargée', async () => {
+     const api = createFakeApi().on('POST', '/api/admin/members/:id/revoke-sessions', { status: 204 });
+     await renderMembers({ api });
+     const d = open('lea', 'Fermer les sessions');
+     expect(d.getByText(/1 session ouverte/)).toBeTruthy();
+     fireEvent.click(confirmButton('Fermer les sessions'));
+     await until(() => screen.queryByRole('dialog') === null);
+     expect(memberLoads(api)).toBe(2);
+     expect(sent(api, 'POST', '/api/admin/members/u-2/revoke-sessions')).toEqual([{}]);
+@@ -276,20 +437,31 @@ describe('MembersPage : sessions et statut (R-AUTH-7, R-ADM-1, R-ROLE-2)', () =>
+     open('lea', 'Désactiver');
+     expect(document.activeElement).toBe(screen.getByRole('dialog'));
+     fireEvent.click(confirmButton('Annuler'));
+     expect(screen.queryByRole('dialog')).toBeNull();
+     expect(api.calls.filter((c) => c.method !== 'GET')).toEqual([]);
+     await until(() => document.activeElement === trigger);
+   });
+ });
+ 
+ describe('MembersPage : rôle (R-ROLE-2, P-AUT-5)', () => {
++  it('même action ouverte sur un autre membre : dialogue neuf, mot de passe saisi oublié', async () => {
++    await renderMembers();
++    open('lea', 'Promouvoir administrateur');
++    fill('Ton mot de passe', PASSWORD);
++    // Le fond reste dans le DOM : un clic (ou un clavier sorti du dialogue) ouvre l'action d'un autre.
++    open('bastien', 'Rétrograder');
++    expect(screen.getByRole('dialog', { name: 'Rétrograder bastien' })).toBeTruthy();
++    expect((dialog().getByLabelText('Ton mot de passe') as HTMLInputElement).value).toBe('');
++    expect(confirmButton('Rétrograder').disabled).toBe(true);
++  });
++
+   it('« Promouvoir administrateur » exige « Ton mot de passe » → POST role { role, password }', async () => {
+     const api = createFakeApi().on('POST', '/api/admin/members/:id/role', { status: 204 });
+     await renderMembers({ api });
+     open('lea', 'Promouvoir administrateur');
+     expect(confirmButton('Promouvoir administrateur').disabled).toBe(true);
+     fill('Ton mot de passe', PASSWORD);
+     expect(confirmButton('Promouvoir administrateur').disabled).toBe(false);
+     fireEvent.click(confirmButton('Promouvoir administrateur'));
+     await until(() => screen.queryByRole('dialog') === null);
+     expect(memberLoads(api)).toBe(2);
+@@ -303,20 +475,69 @@ describe('MembersPage : rôle (R-ROLE-2, P-AUT-5)', () => {
+     open('bastien', 'Rétrograder');
+     fill('Ton mot de passe', PASSWORD);
+     fireEvent.click(confirmButton('Rétrograder'));
+     expect(await dialog().findByText('Il doit rester au moins un administrateur actif.')).toBeTruthy();
+     expect(sent(api, 'POST', '/api/admin/members/u-1/role')).toEqual([
+       { role: 'member', password: PASSWORD },
+     ]);
+     expect(memberLoads(api)).toBe(1);
+   });
+ 
++  it('se rétrograder soi-même (un autre admin reste) : profil relu, « Page introuvable », plus de tableau', async () => {
++    let role: 'admin' | 'member' = 'admin';
++    const api = createFakeApi()
++      .on('GET', '/api/me', () => ({ status: 200, body: { ...ADMIN, role } }))
++      .on('GET', '/api/admin/members', () =>
++        role === 'admin'
++          ? { status: 200, body: [BASTIEN, { ...LEA, role: 'admin' }] }
++          : { status: 403, body: { error: 'forbidden' } },
++      )
++      .on('POST', '/api/admin/members/:id/role', () => {
++        role = 'member';
++        return { status: 204 };
++      });
++    await renderApp({ path: '/admin/members', me: ADMIN, api });
++    await screen.findByRole('row', { name: 'bastien' });
++    open('bastien', 'Rétrograder');
++    fill('Ton mot de passe', PASSWORD);
++    fireEvent.click(confirmButton('Rétrograder'));
++    expect(await screen.findByRole('heading', { level: 1, name: 'Page introuvable' })).toBeTruthy();
++    expect(screen.queryByRole('table')).toBeNull();
++    expect(screen.queryByText("Cette action n'est pas autorisée.")).toBeNull();
++    expect(screen.queryByRole('link', { name: 'Administration' })).toBeNull();
++    expect(sent(api, 'POST', '/api/admin/members/u-1/role')).toEqual([
++      { role: 'member', password: PASSWORD },
++    ]);
++    // Plus de droits : la liste n'est pas relue (elle serait refusée).
++    expect(memberLoads(api)).toBe(1);
++  });
++
++  it('droits retirés ailleurs : liste refusée (403) → tableau retiré et profil relu', async () => {
++    let forbidden = false;
++    const api = createFakeApi()
++      .on('GET', '/api/admin/members', () =>
++        forbidden ? { status: 403, body: { error: 'forbidden' } } : { status: 200, body: [BASTIEN, LEA] },
++      )
++      .on('POST', '/api/admin/members/:id/revoke-sessions', () => {
++        // Un autre admin vient de rétrograder bastien.
++        forbidden = true;
++        return { status: 204 };
++      });
++    await renderWithServices(<MembersPage />, { api, me: ADMIN });
++    await screen.findByRole('row', { name: 'lea' });
++    open('lea', 'Fermer les sessions');
++    fireEvent.click(confirmButton('Fermer les sessions'));
++    expect(await screen.findByText("Cette action n'est pas autorisée.")).toBeTruthy();
++    expect(screen.queryByRole('table')).toBeNull();
++    await until(() => api.calls.some((c) => c.method === 'GET' && c.path === '/api/me'));
++  });
++
+   it('401 invalid_credentials → « Mot de passe incorrect. » ; 429 rate_limited → attente en minutes', async () => {
+     let reply: FakeReply = { status: 401, body: { error: 'invalid_credentials' } };
+     const api = createFakeApi().on('POST', '/api/admin/members/:id/role', () => reply);
+     await renderMembers({ api });
+     open('lea', 'Promouvoir administrateur');
+     fill('Ton mot de passe', 'faux');
+     fireEvent.click(confirmButton('Promouvoir administrateur'));
+     expect(await dialog().findByText('Mot de passe incorrect.')).toBeTruthy();
+     reply = { status: 429, body: { error: 'rate_limited', retryAfterS: 90 } };
+     fireEvent.click(confirmButton('Promouvoir administrateur'));
+@@ -400,11 +621,39 @@ describe('MembersPage : suppression (R-SUP-2, P-AUT-5, P-DRT-3)', () => {
+     });
+     await renderMembers({ api });
+     open('lea', 'Supprimer');
+     fill('Tape le pseudo pour confirmer', 'lea');
+     fill('Ton mot de passe', 'faux');
+     fireEvent.click(confirmButton('Supprimer définitivement'));
+     expect(await dialog().findByText('Mot de passe incorrect.')).toBeTruthy();
+     expect(memberLoads(api)).toBe(1);
+     expect(screen.getByRole('row', { name: 'lea' })).toBeTruthy();
+   });
++
++  it('envoi en cours : un second envoi ne part pas, boutons désactivés, Échap ne ferme pas ; la réponse ferme', async () => {
++    const reply = Promise.withResolvers<void>();
++    const api = createFakeApi().on('POST', '/api/admin/members/:id/delete', async () => {
++      await reply.promise;
++      return { status: 204 };
++    });
++    await renderMembers({ api });
++    open('lea', 'Supprimer');
++    fill('Tape le pseudo pour confirmer', 'lea');
++    fill('Ton mot de passe', PASSWORD);
++    // Deux envois du formulaire (Entrée deux fois, double clic) : le bouton désactivé n'y suffit pas.
++    const form = screen.getByRole('dialog').querySelector('form') as HTMLFormElement;
++    fireEvent.submit(form);
++    fireEvent.submit(form);
++    await until(() => sent(api, 'POST', '/api/admin/members/u-2/delete').length > 0);
++    await settle();
++    expect(sent(api, 'POST', '/api/admin/members/u-2/delete')).toHaveLength(1);
++    expect(confirmButton('Supprimer définitivement').disabled).toBe(true);
++    expect(confirmButton('Annuler').disabled).toBe(true);
++    fireEvent.keyDown(document, { key: 'Escape' });
++    expect(screen.getByRole('dialog')).toBeTruthy();
++    api.on('GET', '/api/admin/members', { status: 200, body: [BASTIEN] });
++    reply.resolve();
++    await until(() => screen.queryByRole('dialog') === null);
++    expect(sent(api, 'POST', '/api/admin/members/u-2/delete')).toHaveLength(1);
++    expect(screen.queryByRole('row', { name: 'lea' })).toBeNull();
++  });
+ });
+diff --git a/apps/web/test/app/guard.test.tsx b/apps/web/test/app/guard.test.tsx
+index dd95455..ed224d2 100644
+--- a/apps/web/test/app/guard.test.tsx
++++ b/apps/web/test/app/guard.test.tsx
+@@ -32,20 +32,24 @@ const ROWS: Row[] = [
+   ['/profile', true, makeMe(), 'account_deleted', to('/login')],
+   ['/', true, notOnboarded(), 'online', to('/onboarding')],
+   ['/admin/members', true, admin({ onboardingCompletedAt: null }), 'online', to('/onboarding')],
+   ['/onboarding', true, makeMe(), 'online', to('/')],
+   ['/onboarding', true, notOnboarded(), 'online', RENDER],
+   ['/profile', true, makeMe({ mustChangePassword: true }), 'online', RENDER],
+   ['/', true, makeMe({ mustChangePassword: true }), 'online', to('/profile')],
+   ['/login', true, makeMe(), 'online', to('/')],
+   ['/admin/members', true, makeMe(), 'online', { kind: 'not_found' }],
+   ['/admin/members', true, admin(), 'online', RENDER],
++  // wouter compare les chemins sans tenir compte de la casse : la garde aussi.
++  ['/Admin/members', true, makeMe(), 'online', { kind: 'not_found' }],
++  ['/ADMIN/health', true, makeMe(), 'online', { kind: 'not_found' }],
++  ['/ADMIN', true, makeMe(), 'online', { kind: 'not_found' }],
+   ['/privacy/', false, null, 'online', RENDER],
+   ['/help/', true, null, 'offline', RENDER],
+   ['/login/', true, makeMe(), 'online', to('/')],
+   ['/onboarding/', true, makeMe(), 'online', to('/')],
+ ];
+ 
+ describe('resolveGuard', () => {
+   it.each(ROWS)('%s, chargé %s, connexion %s', (path, loaded, me, connection, expected) => {
+     expect(resolveGuard({ path, loaded, me, connection })).toEqual(expected);
+   });
+diff --git a/apps/web/test/app/ui.test.tsx b/apps/web/test/app/ui.test.tsx
+index 63c92ac..bb88446 100644
+--- a/apps/web/test/app/ui.test.tsx
++++ b/apps/web/test/app/ui.test.tsx
+@@ -1,11 +1,11 @@
+-import { render, screen } from '@testing-library/react';
++import { fireEvent, render, screen } from '@testing-library/react';
+ import { describe, expect, it } from 'vitest';
+ import { Banner, Dialog, Field, HEALTH_WARNING_TEXT, HealthWarning } from '../../src/ui';
+ 
+ describe('ui', () => {
+   it('Field associe son libellé au champ (useId, htmlFor)', () => {
+     render(
+       <Field label="Pseudo" hint="3 à 24 caractères" error="Trop court">
+         <input type="text" />
+       </Field>,
+     );
+@@ -27,20 +27,64 @@ describe('ui', () => {
+     const dialog = screen.getByRole('dialog', { name: 'Se déconnecter ?' });
+     expect(dialog.getAttribute('aria-modal')).toBe('true');
+     rerender(
+       <Dialog open={false} title="Se déconnecter ?" onClose={() => {}} actions={null}>
+         <p>Contenu</p>
+       </Dialog>,
+     );
+     expect(screen.queryByRole('dialog')).toBeNull();
+   });
+ 
++  it('Dialog : Tab et Maj+Tab restent dans le dialogue (fenêtre modale)', () => {
++    render(
++      <>
++        <button type="button">Dehors</button>
++        <Dialog
++          open
++          title="Modifier"
++          onClose={() => {}}
++          actions={
++            <>
++              <button type="button">Annuler</button>
++              <button type="button" disabled>
++                Inactif
++              </button>
++              <button type="button">Enregistrer</button>
++            </>
++          }
++        >
++          <input aria-label="Nom" />
++        </Dialog>
++      </>,
++    );
++    const dialog = screen.getByRole('dialog');
++    const field = screen.getByLabelText('Nom');
++    const save = screen.getByRole('button', { name: 'Enregistrer' });
++    // Dernier élément → premier ; le bouton désactivé ne compte pas.
++    save.focus();
++    expect(fireEvent.keyDown(save, { key: 'Tab' })).toBe(false);
++    expect(document.activeElement).toBe(field);
++    // Premier élément, ou le dialogue lui-même (focus à l'ouverture) → dernier.
++    expect(fireEvent.keyDown(field, { key: 'Tab', shiftKey: true })).toBe(false);
++    expect(document.activeElement).toBe(save);
++    dialog.focus();
++    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
++    expect(document.activeElement).toBe(save);
++    // Focus sorti du dialogue : Tab y revient.
++    const outside = screen.getByRole('button', { name: 'Dehors' });
++    outside.focus();
++    fireEvent.keyDown(outside, { key: 'Tab' });
++    expect(document.activeElement).toBe(field);
++    // Au milieu : le navigateur avance seul.
++    expect(fireEvent.keyDown(field, { key: 'Tab' })).toBe(true);
++  });
++
+   it('Banner : role alert pour une erreur, status sinon', () => {
+     render(
+       <>
+         <Banner tone="error">Erreur</Banner>
+         <Banner tone="warning">Attention</Banner>
+         <Banner tone="info">Info</Banner>
+       </>,
+     );
+     expect(screen.getByRole('alert').textContent).toBe('Erreur');
+     expect(screen.getAllByRole('status').map((b) => b.textContent)).toEqual(['Attention', 'Info']);

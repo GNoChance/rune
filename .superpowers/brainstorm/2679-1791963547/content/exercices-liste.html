@@ -1,0 +1,99 @@
+<style>
+  .rn { --bg:#070A12; --card:#0E1424; --line:rgba(255,255,255,.08); --fg:#EEF6FB; --mut:#9DB0C4; --ice:#5ED8FF; --vio:#8C6BFF; --chip:#16203A;
+        font-family: "Barlow", "Segoe UI", system-ui, sans-serif; color: var(--fg); }
+  .rn .phone { width: 300px; height: 620px; background: var(--bg); border-radius: 34px; border: 8px solid #1b2232; overflow: hidden; position: relative; margin: 0 auto; box-shadow: 0 20px 50px rgba(0,0,0,.35); }
+  .rn .scr { padding: 14px 14px 90px; height: 100%; overflow: hidden; display: grid; gap: 10px; align-content: start; }
+  .rn h4 { margin: 4px 0 0; font-family: "Chakra Petch", "Segoe UI", sans-serif; font-size: 22px; letter-spacing: .02em; }
+  .rn .search { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; color: var(--mut); font-size: 14px; display:flex; gap:8px; align-items:center; }
+  .rn .chips { display: flex; gap: 6px; flex-wrap: nowrap; overflow: hidden; }
+  .rn .chip { background: var(--chip); color: var(--mut); border-radius: 999px; padding: 5px 10px; font-size: 12px; white-space: nowrap; font-weight: 600; }
+  .rn .chip.on { background: var(--ice); color: #05070D; }
+  .rn .toggle { display:flex; justify-content:space-between; align-items:center; font-size: 13px; color: var(--mut); }
+  .rn .sw { width: 34px; height: 20px; border-radius: 999px; background: var(--ice); position: relative; }
+  .rn .sw::after { content:""; position:absolute; right:3px; top:3px; width:14px; height:14px; border-radius:50%; background:#05070D; }
+  .rn .grp { font-family: "Chakra Petch", sans-serif; font-size: 12px; letter-spacing: .14em; color: var(--mut); text-transform: uppercase; margin-top: 4px; }
+  .rn .row { display: grid; grid-template-columns: 46px 1fr auto; gap: 10px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 8px; }
+  .rn .thumb { width: 46px; height: 46px; border-radius: 10px; background: #F2FDFF; display:grid; place-items:center; color:#5b6b7f; font-size: 9px; }
+  .rn .nm { font-weight: 600; font-size: 14px; line-height: 1.2; }
+  .rn .meta { font-size: 11.5px; color: var(--mut); margin-top: 2px; }
+  .rn .lvl { display:flex; gap:3px; }
+  .rn .lvl i { width: 6px; height: 14px; border-radius: 2px; background: var(--chip); display:block; }
+  .rn .lvl i.f { background: linear-gradient(180deg, var(--ice), var(--vio)); }
+  .rn .tabs { position: absolute; left: 12px; right: 12px; bottom: 12px; height: 58px; background: rgba(14,20,36,.95); border: 1px solid var(--line); border-radius: 999px; display:grid; grid-template-columns: repeat(4,1fr); align-items:center; text-align:center; font-size: 10.5px; color: var(--mut); }
+  .rn .tabs b { color: var(--ice); font-weight: 700; }
+  .rn .tiles { display:grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .rn .tile { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px; display:grid; gap: 6px; }
+  .rn .tile .t { font-family:"Chakra Petch", sans-serif; font-weight:700; font-size: 14px; }
+  .rn .stone { width: 26px; height: 26px; border-radius: 7px 9px 6px 10px; background: #3a4458; display:grid; place-items:center; font-family:"Chakra Petch",sans-serif; font-size: 12px; font-weight:700; color:#cdd8e4; }
+  .rn .tile .n { font-size: 11.5px; color: var(--mut); }
+  .rn .tile .hd { display:flex; justify-content:space-between; align-items:center; }
+  .rn .alpha { font-family:"Chakra Petch",sans-serif; color: var(--ice); font-size: 13px; font-weight:700; margin-top: 2px; }
+  .cap { font-size: 13px; color: var(--text-secondary, #888); margin-top: 8px; }
+</style>
+
+<h2>Onglet Exercices : quelle liste ?</h2>
+<p class="subtitle">Trois façons d'arriver sur la bibliothèque. Clique celle qui te parle (tu peux aussi en mélanger deux), puis réponds dans le terminal.</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image rn" style="padding:16px 0">
+      <div class="phone"><div class="scr">
+        <h4>Exercices</h4>
+        <div class="search">⌕ Chercher : squat, pompe, tirage…</div>
+        <div class="chips"><span class="chip on">Tout</span><span class="chip">Poids du corps</span><span class="chip">Haltères</span><span class="chip">Machines</span></div>
+        <div class="toggle">Faisable à Fitness Centre <span class="sw"></span></div>
+        <div class="grp">Jambes · 18</div>
+        <div class="row"><div class="thumb">illus.</div><div><div class="nm">Squat goblet</div><div class="meta">Quadriceps · Fessiers · Haltère</div></div><div class="lvl"><i class="f"></i><i></i><i></i></div></div>
+        <div class="row"><div class="thumb">illus.</div><div><div class="nm">Fente arrière</div><div class="meta">Quadriceps · Fessiers · Sans matériel</div></div><div class="lvl"><i class="f"></i><i></i><i></i></div></div>
+        <div class="grp">Pectoraux · 12</div>
+        <div class="row"><div class="thumb">illus.</div><div><div class="nm">Pompes inclinées</div><div class="meta">Pectoraux · Triceps · Banc ou chaise</div></div><div class="lvl"><i class="f"></i><i></i><i></i></div></div>
+        <div class="row"><div class="thumb">illus.</div><div><div class="nm">Développé couché haltères</div><div class="meta">Pectoraux · Épaules · Banc, haltères</div></div><div class="lvl"><i class="f"></i><i class="f"></i><i></i></div></div>
+      </div>
+      <div class="tabs"><span>Accueil</span><b>Exercices</b><span>Progression</span><span>Profil</span></div></div>
+    </div>
+    <div class="card-body"><h3>A · Recherche et liste par muscle</h3><p>Classique et rapide : recherche en haut, filtres matériel, interrupteur « faisable dans mon lieu », liste groupée par muscle. Ce que font Hevy ou Strong.</p></div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image rn" style="padding:16px 0">
+      <div class="phone"><div class="scr">
+        <h4>Exercices</h4>
+        <div class="search">⌕ Chercher un exercice</div>
+        <div class="toggle">Faisable à Fitness Centre <span class="sw"></span></div>
+        <div class="tiles">
+          <div class="tile"><div class="hd"><span class="t">Jambes</span><span class="stone">E</span></div><span class="n">18 exercices</span></div>
+          <div class="tile"><div class="hd"><span class="t">Pectoraux</span><span class="stone">E</span></div><span class="n">12 exercices</span></div>
+          <div class="tile"><div class="hd"><span class="t">Dos</span><span class="stone">E</span></div><span class="n">15 exercices</span></div>
+          <div class="tile"><div class="hd"><span class="t">Épaules</span><span class="stone">E</span></div><span class="n">11 exercices</span></div>
+          <div class="tile"><div class="hd"><span class="t">Bras</span><span class="stone">E</span></div><span class="n">10 exercices</span></div>
+          <div class="tile"><div class="hd"><span class="t">Fessiers</span><span class="stone">E</span></div><span class="n">9 exercices</span></div>
+          <div class="tile"><div class="hd"><span class="t">Abdos, gainage</span><span class="stone">E</span></div><span class="n">14 exercices</span></div>
+          <div class="tile"><div class="hd"><span class="t">Mollets</span><span class="stone">E</span></div><span class="n">4 exercices</span></div>
+        </div>
+      </div>
+      <div class="tabs"><span>Accueil</span><b>Exercices</b><span>Progression</span><span>Profil</span></div></div>
+    </div>
+    <div class="card-body"><h3>B · Tuiles par groupe musculaire, avec le rang</h3><p>Plus « RPG » : chaque groupe montre ta pierre de rang, on touche une tuile pour voir ses exercices. La recherche reste en haut. Fait le lien direct avec Progression.</p></div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image rn" style="padding:16px 0">
+      <div class="phone"><div class="scr">
+        <h4>Exercices</h4>
+        <div class="search">⌕ Chercher un exercice</div>
+        <div class="chips"><span class="chip on">Faisable ici</span><span class="chip">Niveau 1</span><span class="chip">Muscle ▾</span><span class="chip">Matériel ▾</span></div>
+        <div class="alpha">C</div>
+        <div class="row"><div class="thumb">illus.</div><div><div class="nm">Curl haltères</div><div class="meta">Biceps · Haltères</div></div><div class="lvl"><i class="f"></i><i></i><i></i></div></div>
+        <div class="row"><div class="thumb">illus.</div><div><div class="nm">Crunch</div><div class="meta">Abdos · Sans matériel</div></div><div class="lvl"><i class="f"></i><i></i><i></i></div></div>
+        <div class="alpha">D</div>
+        <div class="row"><div class="thumb">illus.</div><div><div class="nm">Dead bug</div><div class="meta">Abdos · Sans matériel</div></div><div class="lvl"><i class="f"></i><i></i><i></i></div></div>
+        <div class="row"><div class="thumb">illus.</div><div><div class="nm">Développé militaire</div><div class="meta">Épaules · Barre</div></div><div class="lvl"><i class="f"></i><i class="f"></i><i></i></div></div>
+        <div class="row"><div class="thumb">illus.</div><div><div class="nm">Dips sur chaise</div><div class="meta">Triceps · Chaise</div></div><div class="lvl"><i class="f"></i><i></i><i></i></div></div>
+      </div>
+      <div class="tabs"><span>Accueil</span><b>Exercices</b><span>Progression</span><span>Profil</span></div></div>
+    </div>
+    <div class="card-body"><h3>C · Liste alphabétique et filtres</h3><p>Tout à plat de A à Z, filtres en pastilles (faisable ici, niveau, muscle, matériel). Efficace quand on connaît le nom, moins guidant pour un débutant.</p></div>
+  </div>
+</div>
+
+<p class="cap">Maquettes basse fidélité : les vraies couleurs, polices et illustrations suivront la refonte (thèmes clair, sombre, Carnet, Salle de nuit). Les barres à droite = niveau 1 à 3. « Fitness Centre » = ton lieu principal, exemple fictif.</p>
