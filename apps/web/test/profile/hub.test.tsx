@@ -152,10 +152,10 @@ describe('ProfileHub (spec refonte §5, maquette C01)', () => {
     await until(() => description(link('Santé')) === 'Accord non donné');
   });
 
-  it('Administration, dans le groupe Cercle, pour un admin seulement', async () => {
+  it('Administration, dans le groupe Cercle, pour un admin seulement (puis la relecture, spec brique 2 §4.4)', async () => {
     const admin = await renderHub({ me: makeMe({ role: 'admin' }) });
     expect(groupTitles()).toEqual(['Entraînement', 'Compte et appli', 'Cercle']);
-    expect(rowLabels('Cercle')).toEqual(['Administration']);
+    expect(rowLabels('Cercle')).toEqual(['Administration', 'Relecture des exercices']);
     expect(link('Administration').getAttribute('href')).toBe('/admin/members');
     expect(description(link('Administration'))).toBe('Membres, invitations, salles');
     admin.unmount();

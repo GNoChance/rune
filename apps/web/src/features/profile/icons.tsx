@@ -76,6 +76,15 @@ export const UsersIcon = () => (
   </Stroke>
 );
 
+/** Relecture des exercices : une fiche cochée. */
+export const ReviewIcon = () => (
+  <Stroke>
+    <rect x="5" y="4" width="14" height="17" rx="2" />
+    <path d="M9 4.5V3h6v1.5" />
+    <path d="m9 13 2 2 4-4" />
+  </Stroke>
+);
+
 export const LogoutIcon = () => (
   <Stroke>
     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

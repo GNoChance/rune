@@ -1,14 +1,29 @@
+import type { MeResponse } from '@rune/contracts';
+import { isHealthReviewer, isReviewer } from '@rune/domain';
 import { useCallback, useRef, useState } from 'react';
+import { useSearch } from 'wouter';
 import { useLive, useMe, useSyncState } from '../../app-services';
 import { useRepos } from '../../repos';
-import { Badge, COACH_NAMES, CoachAvatar, ListGroup, ListRow, Page, plural, RankBadge } from '../../ui';
+import {
+  Badge,
+  Banner,
+  COACH_NAMES,
+  CoachAvatar,
+  ListGroup,
+  ListRow,
+  Page,
+  plural,
+  RankBadge,
+} from '../../ui';
 import { LogoutDialog } from '../auth/LogoutDialog';
+import { REVIEW_ACCESS_LOST_MESSAGE, REVIEW_ACCESS_LOST_REASON } from '../review/use-lost-access';
 import {
   ChatIcon,
   HeartIcon,
   HelpIcon,
   LogoutIcon,
   PinIcon,
+  ReviewIcon,
   ShieldIcon,
   SlidersIcon,
   TargetIcon,
@@ -19,15 +34,27 @@ import { profileSummary } from './profile-summary';
 import { useFocusAfterClose } from './use-focus-after-close';
 
 /**
+ * Valeur de la ligne « Relecture des exercices » : ce que le compte y fait. La relectrice santé y lit son propre
+ * drapeau (spec brique 2 §3.1) ; l'admin n'est jamais relecteur santé.
+ */
+function reviewRowValue(me: MeResponse): string {
+  if (me.role === 'admin') return 'Corriger, valider et publier les fiches';
+  return isHealthReviewer(me) ? 'Commenter, donner le feu vert santé' : 'Commenter et valider les fiches';
+}
+
+/**
  * Espace Profil (spec refonte §5, maquette C01), qui remplace « Plus » : l'en-tête du compte (initiale,
  * pseudo, rôle, rang), puis les lignes groupées (Entraînement ; Compte et appli, avec un badge sur Réglages
- * quand la synchro a des refus ; Cercle pour l'admin seulement), et « Se déconnecter » à part, en bas, qui
- * ouvre la feuille où se choisit cet appareil ou tous. Les valeurs des lignes sont lues sur l'appareil, jamais
- * inventées : une valeur pas encore connue n'est pas affichée.
+ * quand la synchro a des refus ; Cercle pour l'admin et les relecteurs : Administration, puis « Relecture des
+ * exercices », spec brique 2 §4.4), et « Se déconnecter » à part, en bas, qui ouvre la feuille où se choisit cet
+ * appareil ou tous. Les valeurs des lignes sont lues sur l'appareil, jamais inventées : une valeur pas encore
+ * connue n'est pas affichée. Au retour d'une relecture refusée en pleine session (`?reason=review_access_lost`),
+ * un bandeau le dit.
  */
 export function ProfileHub() {
   const me = useMe();
   const repos = useRepos();
+  const search = useSearch();
   const { rejected } = useSyncState();
   const profile = useLive(() => repos.profile.get(), [repos]);
   const places = useLive(() => repos.places.list(), [repos]);
@@ -44,9 +71,12 @@ export function ProfileHub() {
   const health = me.consents.health.active
     ? `Accord donné${activeLimitations > 0 ? ` · ${activeLimitations} ${plural(activeLimitations, 'limitation', 'limitations')}` : ''}`
     : 'Accord non donné';
+  const reviewer = isReviewer(me);
+  const accessLost = new URLSearchParams(search).get('reason') === REVIEW_ACCESS_LOST_REASON;
 
   return (
     <Page title="Profil">
+      {accessLost ? <Banner tone="warning">{REVIEW_ACCESS_LOST_MESSAGE}</Banner> : null}
       <div className={`${styles.hub} stagger`}>
         <section aria-label="Ton compte" className={styles.account}>
           <span className={styles.initial} aria-hidden="true">
@@ -108,13 +138,22 @@ export function ProfileHub() {
             />
             <ListRow icon={<HelpIcon />} label="Aide" value="En cas d'urgence : 15 ou 112" href="/help" />
           </ListGroup>
-          {me.role === 'admin' ? (
+          {/* Un admin est toujours relecteur : le groupe n'existe que pour un relecteur effectif. */}
+          {reviewer ? (
             <ListGroup title="Cercle">
+              {me.role === 'admin' ? (
+                <ListRow
+                  icon={<UsersIcon />}
+                  label="Administration"
+                  value="Membres, invitations, salles"
+                  href="/admin/members"
+                />
+              ) : null}
               <ListRow
-                icon={<UsersIcon />}
-                label="Administration"
-                value="Membres, invitations, salles"
-                href="/admin/members"
+                icon={<ReviewIcon />}
+                label="Relecture des exercices"
+                value={reviewRowValue(me)}
+                href="/review/exercises"
               />
             </ListGroup>
           ) : null}

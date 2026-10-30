@@ -1,10 +1,16 @@
 import { type EntityRule, type EntityRulesMap, entityRules } from '@rune/contracts';
 import { isC2Value, stripC2Fields } from './c2';
+import { clearAllCommentDrafts } from './comment-drafts';
 import { type AppDb, mirrorStoreNames } from './db';
 import { USER_META_KEYS } from './meta';
 
-/** Efface les données de l'utilisateur ; l'appareil (deviceId) et le catalogue restent. */
+/**
+ * Efface les données de l'utilisateur ; l'appareil (deviceId) et le catalogue restent. Les brouillons de
+ * commentaire de relecture (`localStorage`, hors de la base) partent en premier : déconnexion, suppression du
+ * compte, compte supprimé constaté par l'API et changement de compte passent tous par ici.
+ */
 export async function wipeUserData(db: AppDb, opts: { keepOutbox: boolean }): Promise<void> {
+  clearAllCommentDrafts();
   await db.transaction('rw', db.tables, async () => {
     for (const store of mirrorStoreNames(db)) await db.mirror(store).clear();
     await db.meta.bulkDelete([...USER_META_KEYS]);

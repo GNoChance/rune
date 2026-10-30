@@ -15,6 +15,11 @@ export interface MetaValues {
   me: MeResponse;
   /** Tranche d'âge vue en dernier sur l'appareil : message des 18 ans, une fois (R-AGE-6). */
   lastAgeBand: AgeBand;
+  /**
+   * Compte qui a déjà vu « Comment relire » au premier passage sur la relecture (spec brique 2 §4.4) ; effacé
+   * avec les données de l'utilisateur.
+   */
+  reviewIntroSeen: string;
 }
 
 /** Clés liées à l'utilisateur connecté, effacées par `wipeUserData`. */
@@ -26,6 +31,7 @@ export const USER_META_KEYS: readonly (keyof MetaValues)[] = [
   'activeSessionId',
   'me',
   'lastAgeBand',
+  'reviewIntroSeen',
 ];
 
 export async function getMeta<K extends keyof MetaValues>(

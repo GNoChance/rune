@@ -1,8 +1,12 @@
 import { HELP_RESOURCES, type HelpResource } from '@rune/contracts';
-import { type ReactNode, useId } from 'react';
-import { formatDate, Page } from '../../ui';
+import { isReviewer } from '@rune/domain';
+import { type ReactNode, useId, useState } from 'react';
+import { useMe } from '../../app-services';
+import { Button, formatDate, Page } from '../../ui';
 import { InstallSteps } from '../auth/InstallSteps';
 import { installHelp } from '../auth/install-help';
+import { HowToReview } from '../review/HowToReview';
+import reviewStyles from '../review/review.module.css';
 import { CreditsContent } from './CreditsPage';
 import { ExternalLink, Glyph } from './ExternalLink';
 import styles from './public.module.css';
@@ -104,13 +108,31 @@ function HelpSection(p: { title: string; children: ReactNode }) {
   );
 }
 
+/** Rappel de « Comment relire » (spec brique 2 §4.4), pour un relecteur seulement. */
+function ReviewHelp() {
+  const [open, setOpen] = useState(false);
+  return (
+    <HelpSection title="Relecture des exercices">
+      <div className={`${styles.card} ${reviewStyles.helpReview}`}>
+        <p>Les cinq mots de la relecture, expliqués en une phrase chacun.</p>
+        <Button variant="secondary" onClick={() => setOpen(true)}>
+          Comment relire
+        </Button>
+      </div>
+      <HowToReview open={open} onClose={() => setOpen(false)} />
+    </HelpSection>
+  );
+}
+
 /**
  * Aide (spec refonte §10.6, maquette A05) : l'encadré d'urgence (15, 112) d'abord, puis « Installer Rune »
- * (les consignes de l'invitation, pour les deux systèmes), les numéros utiles et les Crédits (P10). Tout est
+ * (les consignes de l'invitation, pour les deux systèmes), les numéros utiles, « Comment relire » pour un
+ * relecteur (spec brique 2 §4.4, d'après le profil gardé sur l'appareil) et les Crédits (P10). Tout est
  * statique : la page se lit hors ligne, sans requête.
  */
 export function HelpPage() {
   const back = usePublicBack();
+  const me = useMe();
   const emergency = HELP_RESOURCES.find((r) => r.id === 'emergency');
   const useful = HELP_RESOURCES.filter((r) => r.id !== 'emergency');
   const verifiedOn = HELP_RESOURCES.map((r) => r.verifiedOn).sort()[0];
@@ -124,6 +146,7 @@ export function HelpPage() {
           </div>
         </HelpSection>
         <UsefulNumbers resources={useful} verifiedOn={verifiedOn} />
+        {me && isReviewer(me) ? <ReviewHelp /> : null}
         <HelpSection title="Crédits">
           <CreditsContent headingLevel={3} />
         </HelpSection>

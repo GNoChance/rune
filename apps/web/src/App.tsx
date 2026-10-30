@@ -1,4 +1,5 @@
 import type { MeResponse } from '@rune/contracts';
+import { isReviewer } from '@rune/domain';
 import { useEffect, useRef } from 'react';
 import { Redirect, Route, Switch, useLocation } from 'wouter';
 import { useMeState, useSyncState } from './app-services';
@@ -25,6 +26,8 @@ import { CreditsPage } from './features/public/CreditsPage';
 import { HelpPage } from './features/public/HelpPage';
 import { NotFound } from './features/public/NotFound';
 import { PrivacyPage } from './features/public/PrivacyPage';
+import { HowToReviewFirstPass } from './features/review/HowToReview';
+import { ReviewPlaceholder } from './features/review/ReviewPlaceholder';
 import { RejectionsPage } from './features/status/RejectionsPage';
 import { SettingsPage } from './features/status/SettingsPage';
 import { useRepos } from './repos';
@@ -55,6 +58,12 @@ const isAdminPath = (path: string) => {
   return p === '/admin' || p.startsWith('/admin/');
 };
 
+/** Relecture des exercices (spec brique 2 §4.4) : `/review` et tout ce qui est dessous, casse comprise. */
+export const isReviewPath = (path: string) => {
+  const p = normalizePath(path).toLowerCase();
+  return p === '/review' || p.startsWith('/review/');
+};
+
 /**
  * Anciennes adresses des lieux, passés sous l'onglet Salles : `/profile/places…` mène au même chemin sous
  * `/places` (la suite, un identifiant par exemple, est gardée telle quelle).
@@ -69,8 +78,10 @@ export const normalizePath = (path: string): string => path.replace(/\/+$/, '') 
 
 /**
  * Garde des routes, dans l'ordre : chemin public ; base locale pas encore lue ; session absente ou
- * refusée par le serveur ; mot de passe à changer (R-MDP-1) ; onboarding ; rôle admin (R-ROLE-1) ; anciennes
- * adresses des lieux.
+ * refusée par le serveur ; mot de passe à changer (R-MDP-1) ; onboarding ; rôle admin (R-ROLE-1) ; relecteur
+ * effectif pour /review… (spec brique 2 §4.4 : drapeau ou admin, `isReviewer` ; un profil en cache d'avant la
+ * brique 2, sans drapeaux, n'est pas relecteur) ; anciennes adresses des lieux. Les deux gardes de rôle
+ * répondent comme une page introuvable.
  */
 export function resolveGuard(i: {
   path: string;
@@ -92,6 +103,7 @@ export function resolveGuard(i: {
   if (!onboarded && path !== '/onboarding') return { kind: 'redirect', to: '/onboarding' };
   if (onboarded && path === '/onboarding') return { kind: 'redirect', to: '/' };
   if (isAdminPath(path) && i.me.role !== 'admin') return { kind: 'not_found' };
+  if (isReviewPath(path) && !isReviewer(i.me)) return { kind: 'not_found' };
   const moved = MOVED_PLACES.exec(path);
   if (moved) return { kind: 'redirect', to: `/places${moved[1] ?? ''}` };
   return { kind: 'render' };
@@ -130,6 +142,10 @@ function ConnectedRoutes() {
       <Route path="/admin/invitations" component={InvitationsPage} />
       <Route path="/admin/gyms" component={AdminGymsPage} />
       <Route path="/admin/health" component={ServerHealthPage} />
+      <Route path="/review">
+        <Redirect to="/review/exercises" replace />
+      </Route>
+      <Route path="/review/exercises" component={ReviewPlaceholder} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -181,9 +197,11 @@ export function App() {
         );
       }
       // Accord santé à redemander (R-CST-6) : sur tout écran connecté, jamais pendant l'onboarding.
+      // « Comment relire » au premier passage sur n'importe quelle page de la relecture (spec brique 2 §4.4).
       return (
         <AppShell>
           <ConnectedRoutes />
+          {isReviewPath(route) ? <HowToReviewFirstPass /> : null}
           <HealthReconsentGate />
         </AppShell>
       );

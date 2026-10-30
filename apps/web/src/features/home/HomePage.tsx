@@ -1,4 +1,5 @@
 import { EXPERIENCE_LABELS, GOAL_LABELS } from '@rune/contracts';
+import { isReviewer } from '@rune/domain';
 import { useState } from 'react';
 import { Link } from 'wouter';
 import { useLive, useMe } from '../../app-services';
@@ -6,6 +7,7 @@ import { useRepos } from '../../repos';
 import { Banner, Button, CoachBubble, CountUp, Page, plural, SystemPanel } from '../../ui';
 import { coachLine } from '../coach/coach-lines';
 import { AwakeningQuests, awakeningQuests } from '../onboarding/AwakeningQuests';
+import { ReviewHomeCard } from '../review/ReviewHomeCard';
 import { OfflineReadyIndicator } from '../status/OfflineReadyIndicator';
 import { useReadiness } from '../status/use-readiness';
 import styles from './home.module.css';
@@ -87,7 +89,8 @@ function Chevron() {
 
 /**
  * Accueil (spec refonte §10.2, maquettes MixSombre / MixClair, prototype « Accueil ») : salutation selon l'heure
- * de Paris, bandeaux du compte, bulle du coach « Aujourd'hui » avec sa ligne du jour, fenêtre du Système et ses
+ * de Paris, bandeaux du compte, carte « Relecture : N fiches t'attendent » pour un relecteur (en ligne seulement,
+ * spec brique 2 §4.4), bulle du coach « Aujourd'hui » avec sa ligne du jour, fenêtre du Système et ses
  * quêtes d'éveil aux vrais états (« Éveil terminé. » à 3/3 seulement, « Éveil en cours. » tant qu'une quête reste
  * ouverte : pull de plus de 24 h, nouvel appareil avant le premier pull), tuiles lieu principal et rythme, ligne
  * objectif et niveau, puis le voyant « Prêt hors ligne » (R-SYN-33). Les cartes, voyant compris, entrent en
@@ -141,6 +144,7 @@ export function HomePage() {
           </Button>
         </Banner>
       ) : null}
+      {isReviewer(me) ? <ReviewHomeCard me={me} /> : null}
       {readsDone ? (
         <div className={`${styles.cards} stagger`}>
           {coach ? (

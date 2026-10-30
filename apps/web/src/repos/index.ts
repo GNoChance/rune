@@ -9,6 +9,7 @@ import { createMeRepo, type MeRepo } from './me-repo';
 import { createPlacesRepo, type PlacesRepo } from './places-repo';
 import { createProfileRepo, type ProfileRepo } from './profile-repo';
 import { createRejectionsRepo, type RejectionsRepo } from './rejections-repo';
+import { createReviewRepo, type ReviewRepo } from './review-repo';
 import { createStatusRepo, type StatusRepo } from './status-repo';
 
 export type { AdminRepo } from './admin-repo';
@@ -33,6 +34,20 @@ export type { DeviceOwner, MeRepo } from './me-repo';
 export type { PlacesRepo, PlaceView } from './places-repo';
 export type { ProfileRepo, TrainingProfileView } from './profile-repo';
 export type { RejectionsRepo, RejectionView } from './rejections-repo';
+export {
+  CATALOG_EXPORT_FILE_NAME,
+  type CatalogExport,
+  type CommentDraft,
+  commentDraft,
+  isLostAccess,
+  ReviewAccessLostError,
+  type ReviewListFilters,
+  type ReviewRepo,
+  revisionConflictOf,
+  type SaveSheetRequest,
+  type TransitionRequest,
+  transitionBlockersOf,
+} from './review-repo';
 export { isLive, parseJsonColumn } from './rows';
 export type { StatusRepo } from './status-repo';
 
@@ -48,6 +63,7 @@ export interface Repos {
   status: StatusRepo;
   catalog: CatalogRepo;
   credits: CreditsRepo;
+  review: ReviewRepo;
 }
 
 export function createRepos(s: AppServices): Repos {
@@ -63,6 +79,7 @@ export function createRepos(s: AppServices): Repos {
     // Le même que celui des hooks du catalogue (`useCatalog`, `useExerciseView`).
     catalog: catalogRepoFor(s),
     credits: createCreditsRepo(s),
+    review: createReviewRepo(s),
   };
 }
 
