@@ -1,3 +1,4 @@
+import { BatchSchema } from '@rune/contracts';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { migrate } from '../../src/db/migrate';
 import { MIGRATIONS } from '../../src/db/migrations/index';
@@ -8,11 +9,11 @@ import { dumpSchema } from './schema-dump';
 const S = "1, '2026-10-06T10:00:00.000Z', '2026-10-06T10:00:00.000Z'";
 const x = (n: number) => 'x'.repeat(n);
 
-describe('schéma du socle', () => {
+describe('schéma du socle et du catalogue', () => {
   let h: ReturnType<typeof openDatabase>;
   const run = (q: string) => h.sqlite.exec(q);
   const ok = (q: string) => expect(() => run(q)).not.toThrow();
-  const bad = (q: string, kind: 'CHECK' | 'UNIQUE' | 'FOREIGN KEY' = 'CHECK') =>
+  const bad = (q: string, kind: 'CHECK' | 'UNIQUE' | 'FOREIGN KEY' | 'NOT NULL' = 'CHECK') =>
     expect(() => run(q)).toThrow(`${kind} constraint failed`);
   const count = (q: string) => (h.sqlite.prepare(q).get() as { n: number }).n;
 
@@ -28,6 +29,55 @@ describe('schéma du socle', () => {
     `INSERT INTO session (id, token_hash, created_at, last_seen_at, expires_at, ${cols}) VALUES ('${id}', 't-${id}', 'x', 'x', 'x', ${vals})`;
   const limitation = (area: string | null, note: string | null) =>
     `INSERT INTO limitation (id, owner_id, rev, created_at, updated_at, body_area, side, severity, active, note) VALUES ('l1', 'u1', ${S}, ${area ? `'${area}'` : 'NULL'}, 'left', 'mild', 1, ${note ? `'${note}'` : 'NULL'})`;
+  /** INSERT d'une ligne : valeurs SQL par colonne, les valeurs de `over` remplaçant celles de `base`. */
+  const insert = (table: string, base: Record<string, string>, over: Record<string, string>) => {
+    const row = { ...base, ...over };
+    return `INSERT INTO ${table} (${Object.keys(row).join(', ')}) VALUES (${Object.values(row).join(', ')})`;
+  };
+  const exercise = (over: Record<string, string>) =>
+    insert(
+      'exercise',
+      {
+        schema_version: '1',
+        revision: '1',
+        status: "'draft'",
+        batch: "'A'",
+        name: "'Squat goblet'",
+        movement_pattern: "'squat'",
+        mechanics: "'compound'",
+        unilateral: '0',
+        measure: "'reps'",
+        load_mode: "'dumbbell'",
+        level: '1',
+        not_for_minors: '0',
+        equipment_options: `'[["dumbbells"]]'`,
+        content: "'{}'",
+      },
+      over,
+    );
+  const illustration = (id: string, over: Record<string, string> = {}) =>
+    insert(
+      'illustration',
+      {
+        id: `'${id}'`,
+        file: `'${id}.0a1b2c3d.svg'`,
+        sha256: `'${'0'.repeat(64)}'`,
+        bytes: '2048',
+        media_type: "'image/svg+xml'",
+        source: "'everkinetic'",
+        source_url: "'https://github.com/everkinetic/data/blob/0123abc/svg/squat-1.svg'",
+        creators: `'["Greg Priday"]'`,
+        license: "'CC-BY-SA-4.0'",
+        license_url: "'https://creativecommons.org/licenses/by-sa/4.0/'",
+      },
+      over,
+    );
+  const comment = (id: string, part: string, body: string, exerciseId = 'e1') =>
+    `INSERT INTO exercise_comment (id, exercise_id, author_id, part, body, revision, created_at) VALUES ('${id}', '${exerciseId}', 'u1', '${part}', '${body}', 1, 'x')`;
+  const validation = (id: string, reviewer: string, revision: number, health = '1') =>
+    `INSERT INTO exercise_validation (id, exercise_id, reviewer_id, revision, health, created_at) VALUES ('${id}', 'e1', '${reviewer}', ${revision}, ${health}, 'x')`;
+  const revision = (n: number, status = "'draft'", content = "'{}'") =>
+    `INSERT INTO exercise_revision (exercise_id, revision, content, status, saved_by, saved_at) VALUES ('e1', ${n}, ${content}, ${status}, 'u1', 'x')`;
 
   beforeEach(async () => {
     h = openDatabase(':memory:');
@@ -41,13 +91,13 @@ describe('schéma du socle', () => {
     await expect(dumpSchema(h.sqlite)).toMatchFileSnapshot('../__snapshots__/schema.sql');
   });
 
-  it('18 tables, toutes STRICT', () => {
+  it('23 tables (18 du socle, 5 du catalogue), toutes STRICT', () => {
     const rows = h.sqlite
       .prepare(
         "SELECT name, strict FROM pragma_table_list WHERE schema = 'main' AND name NOT LIKE 'sqlite_%'",
       )
       .all() as { name: string; strict: number }[];
-    expect(rows).toHaveLength(18);
+    expect(rows).toHaveLength(23);
     expect(rows.every((r) => r.strict === 1)).toBe(true);
   });
 
@@ -69,6 +119,113 @@ describe('schéma du socle', () => {
     run('DELETE FROM training_profile');
     bad(profile('coach', "'berserker'"));
     ok(profile('coach', "'skald'"));
+  });
+
+  it('drapeaux de relecteur du compte : 0 par défaut, puis 0 ou 1 seulement', () => {
+    expect(
+      h.sqlite.prepare("SELECT catalog_reviewer, health_professional FROM user WHERE id = 'u1'").get(),
+    ).toEqual({ catalog_reviewer: 0, health_professional: 0 });
+    for (const col of ['catalog_reviewer', 'health_professional']) {
+      bad(`UPDATE user SET ${col} = 2 WHERE id = 'u1'`);
+      bad(`UPDATE user SET ${col} = NULL WHERE id = 'u1'`, 'NOT NULL');
+      ok(`UPDATE user SET ${col} = 1 WHERE id = 'u1'`);
+    }
+  });
+
+  it('exercise : statut, mécanique, mesure, mode de charge, niveau, booléens, nom et JSON', () => {
+    ok(exercise({ id: "'e0'" }));
+    ok(exercise({ id: "'e1'", name: `'${x(60)}'`, level: '3', not_for_minors: '1', aliases: "'[]'" }));
+    const refused: Record<string, string>[] = [
+      { status: "'archived'" },
+      { mechanics: "'mixed'" },
+      { measure: "'distance'" },
+      { load_mode: "'kettlebell'" },
+      { level: '0' },
+      { level: '4' },
+      { unilateral: '2' },
+      { not_for_minors: '2' },
+      { revision: '0' },
+      { name: `'${x(61)}'` },
+      { equipment_options: "'pas du JSON'" },
+      { content: "'{'" },
+      { aliases: "'['" },
+      { illustrations: "'['" },
+      { drafting: "'{'" },
+    ];
+    for (const [i, over] of refused.entries()) bad(exercise({ id: `'r${i}'`, ...over }));
+    bad(exercise({ id: "'r-batch'", batch: 'NULL' }), 'NOT NULL');
+    // Pas de CHECK sur movement_pattern (09 §2) : taxonomie extensible par PR, gardée par Zod.
+    ok(exercise({ id: "'e2'", movement_pattern: "'nouveau_pattern'" }));
+  });
+
+  it('exercise.batch accepte exactement les valeurs de BatchSchema', () => {
+    const valid = ['A', 'B', 'E1', 'E9', 'E10', 'E42', 'E99'];
+    const cases = [...valid, 'E0', 'E01', 'E100', 'C', 'e1', 'AB', 'E', '', 'A '];
+    const accepted = cases.filter((batch, i) => {
+      try {
+        run(exercise({ id: `'b${i}'`, batch: `'${batch}'` }));
+        return true;
+      } catch (error) {
+        expect(String(error)).toContain('CHECK constraint failed');
+        return false;
+      }
+    });
+    expect(accepted).toEqual(valid);
+    expect(accepted).toEqual(cases.filter((batch) => BatchSchema.safeParse(batch).success));
+  });
+
+  it('exercise : pointeurs de chaîne vérifiés en fin de transaction', () => {
+    // Deux fiches qui se pointent : l'ordre d'insertion est libre dans une transaction (chargeur).
+    run('BEGIN');
+    run(exercise({ id: "'a'", harder_id: "'b'" }));
+    run(exercise({ id: "'b'", easier_id: "'a'" }));
+    ok('COMMIT');
+    run('BEGIN');
+    run(exercise({ id: "'c'", easier_id: "'absente'" }));
+    expect(() => run('COMMIT')).toThrow('FOREIGN KEY constraint failed');
+    run('ROLLBACK');
+    bad(exercise({ id: "'d'", harder_id: "'absente'" }), 'FOREIGN KEY');
+    expect(count("SELECT count(*) AS n FROM exercise WHERE id IN ('c', 'd')")).toBe(0);
+  });
+
+  it('illustration : fichier unique, source, licence, type et marquage', () => {
+    ok(illustration('i1'));
+    bad(illustration('i2', { file: "'i1.0a1b2c3d.svg'" }), 'UNIQUE');
+    bad(illustration('i3', { source: "'wikimedia'" }));
+    bad(illustration('i4', { license: "'CC-BY-NC-4.0'" }));
+    bad(illustration('i5', { media_type: "'image/gif'" }));
+    bad(illustration('i6', { replace_before_public: '2' }));
+    bad(illustration('i7', { creators: "'Greg'" }));
+    ok(illustration('i8', { source: "'workout_guide'", license: "'CC0-1.0'", replace_before_public: '1' }));
+    expect(count("SELECT replace_before_public AS n FROM illustration WHERE id = 'i1'")).toBe(0);
+  });
+
+  it('relecture : commentaires, validations et révisions', () => {
+    run(exercise({ id: "'e1'" }));
+    ok(comment('c1', 'general', x(1)));
+    ok(comment('c2', 'illustrations', x(1000)));
+    bad(comment('c3', 'ailleurs', 'x'));
+    bad(comment('c4', 'general', ''));
+    bad(comment('c5', 'general', x(1001)));
+    bad(comment('c6', 'general', 'x', 'e-absente'), 'FOREIGN KEY');
+    // « Traité » pose resolved_at ; resolved_by sans resolved_at est incohérent
+    bad("UPDATE exercise_comment SET resolved_by = 'u2' WHERE id = 'c1'");
+    ok("UPDATE exercise_comment SET resolved_at = 'x', resolved_by = 'u2' WHERE id = 'c1'");
+
+    ok(validation('v1', 'u1', 1));
+    bad(validation('v2', 'u1', 1), 'UNIQUE');
+    ok(validation('v3', 'u1', 2));
+    ok(validation('v4', 'u2', 1));
+    bad(validation('v5', 'u2', 3, '2'));
+
+    ok(revision(1));
+    bad(revision(1), 'UNIQUE');
+    bad(revision(0));
+    bad(revision(2, "'archived'"));
+    bad(revision(3, "'draft'", "'{'"));
+    ok(revision(2));
+    // Une fiche ne se supprime jamais (04, Relations) : ses lignes de relecture la retiennent.
+    bad("DELETE FROM exercise WHERE id = 'e1'", 'FOREIGN KEY');
   });
 
   it('health_screening et limitation', () => {

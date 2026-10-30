@@ -4,11 +4,17 @@ import { entityRules, mirroredTables, SYNC_COLUMNS } from '../src/entity-rules';
 const EXPECTED: Record<string, string> = {
   applied_op: 'C0/H/user_id/false/cascade',
   consent_event: 'C1/E/owner_id/true/cascade',
+  exercise: 'C0/C//false/set_null',
+  exercise_comment: 'C0/H//false/set_null',
+  exercise_revision: 'C0/H//false/set_null',
+  exercise_validation: 'C0/H//false/set_null',
   gym: 'C0/E//false/set_null',
   gym_equipment: 'C0/E//false/set_null',
   gym_history: 'C0/H//false/set_null',
   health_screening: 'C2/E/owner_id/true/cascade',
   home_equipment: 'C1/E/owner_id/true/cascade',
+  // Aucune colonne vers user : comme server_meta (la règle `set_null` d'exercise tient à reviewed_by).
+  illustration: 'C0/C//false/not_linked',
   invitation: 'C0/H//false/set_null',
   limitation: 'C2/E/owner_id/true/cascade',
   password_reset: 'C0/H/user_id/false/cascade',
@@ -22,6 +28,15 @@ const EXPECTED: Record<string, string> = {
   user: 'C0/E/id/true/cascade',
 };
 
+/** Tables de la brique 2 : catalogue (classe C) et relecture (classe H). */
+const CATALOG_TABLES = [
+  'exercise',
+  'illustration',
+  'exercise_comment',
+  'exercise_validation',
+  'exercise_revision',
+] as const;
+
 const ruleOf = (t: string) => {
   const r = entityRules[t];
   if (!r) throw new Error(t);
@@ -34,9 +49,20 @@ const pick = (t: string) => {
 };
 
 describe('entityRules', () => {
-  it('déclare les 18 tables du socle avec leurs valeurs', () => {
+  it('déclare les 18 tables du socle et les 5 du catalogue avec leurs valeurs', () => {
     expect(Object.keys(entityRules).sort()).toEqual(Object.keys(EXPECTED));
     for (const t of Object.keys(EXPECTED)) expect(pick(t)).toBe(EXPECTED[t]);
+  });
+
+  it('déclare les drapeaux de relecteur du compte et les colonnes éditoriales des fiches', () => {
+    expect(ruleOf('user').columns.slice(-2)).toEqual(['catalog_reviewer', 'health_professional']);
+    expect(ruleOf('exercise').columns).toEqual(
+      expect.arrayContaining(['batch', 'reviewed_by', 'exported_revision']),
+    );
+    for (const t of CATALOG_TABLES) {
+      expect(ruleOf(t).secretColumns, t).toEqual([]);
+      expect(ruleOf(t).pullRedact, t).toBeUndefined();
+    }
   });
 
   it('porte les colonnes écrivables par le client et les secrets', () => {
@@ -54,7 +80,7 @@ describe('entityRules', () => {
     ]);
   });
 
-  it('liste les tables miroir en ordre alphabétique', () => {
+  it('liste les tables miroir en ordre alphabétique, sans aucune table du catalogue', () => {
     expect(mirroredTables()).toEqual([
       'consent_event',
       'gym',
@@ -67,6 +93,8 @@ describe('entityRules', () => {
       'training_profile',
       'user',
     ]);
+    // Catalogue servi par GET /api/catalog (classe C), relecture en ligne seulement (classe H) : hors pull.
+    for (const t of CATALOG_TABLES) expect(mirroredTables(), t).not.toContain(t);
   });
 
   describe('invariants', () => {

@@ -34,6 +34,9 @@ export const DRAFTING_ORIGINS = ['ai', 'human'] as const;
 /** Longueur maximale d'une entrée de `safety` (spec brique 2 §4.2, guide de style). */
 export const SAFETY_ENTRY_MAX = 120;
 
+/** Longueur maximale du nom d'une fiche (04 §4), recoupée par le CHECK de `exercise.name`. */
+export const EXERCISE_NAME_MAX = 60;
+
 const Slug = z.string().max(60).regex(EXERCISE_ID_RE);
 const IsoDateTime = z.iso.datetime();
 const text = (max: number) => z.string().min(1).max(max);
@@ -92,7 +95,7 @@ const SheetObject = z.strictObject({
   revision: z.number().int().min(1),
   status: ExerciseStatusSchema,
   batch: BatchSchema,
-  name: text(60),
+  name: text(EXERCISE_NAME_MAX),
   aliases: distinctList(text(60), 0, 6),
   movement_pattern: MovementPatternSchema,
   mechanics: z.enum(MECHANICS),
@@ -249,6 +252,10 @@ export const COMMENT_PARTS = [
 ] as const;
 export const CommentPartSchema = z.enum(COMMENT_PARTS);
 export type CommentPart = z.infer<typeof CommentPartSchema>;
+
+/** Longueur d'un commentaire après nettoyage (spec brique 2 §3.3), recoupée par le CHECK de `exercise_comment.body`. */
+export const COMMENT_BODY_MIN = 1;
+export const COMMENT_BODY_MAX = 1000;
 
 /**
  * Blocages d'une transition (spec brique 2 §3.6), dans l'ordre fixe du tableau : la liste `blockers` d'un refus

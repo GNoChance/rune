@@ -29,6 +29,7 @@ describe('COLUMN_CODECS', () => {
 
   it('valeur exacte', () => {
     expect(COLUMN_CODECS).toEqual({
+      user: { catalog_reviewer: 'boolean', health_professional: 'boolean' },
       training_profile: { cautious_mode: 'boolean' },
       health_screening: { caution: 'boolean' },
       limitation: { active: 'boolean' },

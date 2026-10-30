@@ -1,4 +1,17 @@
-import { type CoachId, type Experience, type Goal, snakeToCamel } from '@rune/contracts';
+import {
+  type CoachId,
+  type CommentPart,
+  type ExerciseStatus,
+  type Experience,
+  type Goal,
+  type ILLUSTRATION_LICENSES,
+  type ILLUSTRATION_MEDIA_TYPES,
+  type ILLUSTRATION_SOURCES,
+  type LoadMode,
+  type MEASURES,
+  type MECHANICS,
+  snakeToCamel,
+} from '@rune/contracts';
 import type { Generated, Kysely, Transaction } from 'kysely';
 
 /** Gabarit +SYNC des tables à propriétaire (09 §0). */
@@ -79,6 +92,9 @@ export interface UserTable {
   createdAt: string;
   updatedAt: string;
   updatedBy: string | null;
+  /** Migration 0003_catalog (spec brique 2 §3.1) : 0/1, écrits par l'admin seulement. */
+  catalogReviewer: Generated<number>;
+  healthProfessional: Generated<number>;
 }
 
 export interface InvitationTable {
@@ -232,6 +248,91 @@ export interface HomeEquipmentTable extends SyncColumns, SoftDelete {
   equipmentCode: string;
 }
 
+/**
+ * Fiche d'exercice (migration 0003_catalog, 04 « Modèle de données »). Colonnes JSON en texte ; champs IA à
+ * null tant qu'un brouillon ne les a pas (R-FIC-1). Booléens 0/1.
+ */
+export interface ExerciseTable {
+  id: string;
+  schemaVersion: number;
+  revision: number;
+  status: ExerciseStatus;
+  batch: string;
+  name: string;
+  aliases: string | null;
+  movementPattern: string;
+  mechanics: (typeof MECHANICS)[number];
+  unilateral: number;
+  measure: (typeof MEASURES)[number];
+  loadMode: LoadMode;
+  level: number;
+  notForMinors: number;
+  primaryMuscles: string | null;
+  secondaryMuscles: string | null;
+  equipmentOptions: string;
+  stressedJoints: string | null;
+  content: string;
+  chainId: string | null;
+  easierId: string | null;
+  harderId: string | null;
+  illustrations: string | null;
+  reviewNotes: string | null;
+  drafting: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  publishedAt: string | null;
+  retiredAt: string | null;
+  updatedAt: string | null;
+  exportedRevision: number | null;
+}
+
+/** Fichier d'illustration retenu (migration 0003_catalog) ; `creators` en JSON. */
+export interface IllustrationTable {
+  id: string;
+  file: string;
+  sha256: string;
+  bytes: number;
+  mediaType: (typeof ILLUSTRATION_MEDIA_TYPES)[number];
+  source: (typeof ILLUSTRATION_SOURCES)[number];
+  sourceUrl: string;
+  creators: string;
+  license: (typeof ILLUSTRATION_LICENSES)[number];
+  licenseUrl: string;
+  modifications: string | null;
+  replaceBeforePublic: Generated<number>;
+}
+
+/** Tables de la relecture (spec brique 2 §3.3 à §3.5) ; auteurs à null après suppression du compte. */
+export interface ExerciseCommentTable {
+  id: string;
+  exerciseId: string;
+  authorId: string | null;
+  part: CommentPart;
+  body: string;
+  revision: number;
+  createdAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+}
+
+export interface ExerciseValidationTable {
+  id: string;
+  exerciseId: string;
+  reviewerId: string | null;
+  revision: number;
+  health: number;
+  createdAt: string;
+}
+
+export interface ExerciseRevisionTable {
+  exerciseId: string;
+  revision: number;
+  content: string;
+  status: ExerciseStatus;
+  savedBy: string | null;
+  savedAt: string;
+}
+
 export interface Database {
   serverMeta: ServerMetaTable;
   schemaMigrations: SchemaMigrationsTable;
@@ -251,6 +352,11 @@ export interface Database {
   gymHistory: GymHistoryTable;
   place: PlaceTable;
   homeEquipment: HomeEquipmentTable;
+  exercise: ExerciseTable;
+  illustration: IllustrationTable;
+  exerciseComment: ExerciseCommentTable;
+  exerciseValidation: ExerciseValidationTable;
+  exerciseRevision: ExerciseRevisionTable;
 }
 
 export type DbExecutor = Kysely<Database> | Transaction<Database>;

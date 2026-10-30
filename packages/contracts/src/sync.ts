@@ -111,6 +111,7 @@ export type ColumnCodec = 'boolean' | 'json';
 
 /** Colonnes `x IN (0,1)` (boolean) et `json_valid(x)` (json) des tables miroirs. */
 export const COLUMN_CODECS: Readonly<Record<string, Readonly<Record<string, ColumnCodec>>>> = {
+  user: { catalog_reviewer: 'boolean', health_professional: 'boolean' },
   training_profile: { cautious_mode: 'boolean' },
   health_screening: { caution: 'boolean' },
   limitation: { active: 'boolean' },

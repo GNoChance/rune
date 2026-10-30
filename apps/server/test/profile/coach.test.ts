@@ -47,6 +47,8 @@ const READY_WITHOUT_COACH = {
 
 describe('migration 0002_coach', () => {
   const socleOnly = MIGRATIONS.filter((m) => m.id === '0001_socle');
+  // Les migrations suivantes (0003_catalog…) ont leur propre test.
+  const upToCoach = MIGRATIONS.filter((m) => m.id <= '0002_coach');
   const open = () => openDatabase(':memory:');
   const columns = (h: ReturnType<typeof open>, table: string) =>
     (h.sqlite.prepare('SELECT name FROM pragma_table_info(?)').all(table) as { name: string }[]).map(
@@ -56,10 +58,11 @@ describe('migration 0002_coach', () => {
     h.sqlite.prepare(`SELECT * FROM "${table}" ORDER BY rowid`).all();
 
   it("suit 0001_socle et n'est pas cassante", () => {
-    expect(MIGRATIONS.map((m) => ({ id: m.id, breaking: m.breaking }))).toEqual([
+    expect(upToCoach.map((m) => ({ id: m.id, breaking: m.breaking }))).toEqual([
       { id: '0001_socle', breaking: false },
       { id: '0002_coach', breaking: false },
     ]);
+    expect(MIGRATIONS.slice(0, 2)).toEqual(upToCoach);
   });
 
   it("une base 0001 avec des lignes migre sans perte ; coach vaut null puis n'admet que les trois coachs", async () => {
@@ -85,7 +88,7 @@ describe('migration 0002_coach', () => {
       };
       expect(columns(h, 'training_profile')).not.toContain('coach');
 
-      expect(await migrate(h.db, MIGRATIONS, new FakeClock())).toEqual({
+      expect(await migrate(h.db, upToCoach, new FakeClock())).toEqual({
         applied: ['0002_coach'],
         unknownNonBreaking: [],
       });

@@ -26,16 +26,24 @@ const next = (db: Kysely<Database>) => {
 
 const SYNC = { rev: 1, createdAt: NOW, updatedAt: NOW };
 
-/** Insère la ligne puis la relit (camelCase). */
-async function insert(db: Kysely<Database>, table: string, row: Values, keyColumn = 'id'): Promise<Values> {
+/** Insère la ligne puis la relit (camelCase) par sa clé, simple ou composée. */
+async function insert(
+  db: Kysely<Database>,
+  table: string,
+  row: Values,
+  keyColumns: string | readonly string[] = 'id',
+): Promise<Values> {
   const cols = Object.keys(row).map(camelToSnake);
   const query = sql`insert into ${sql.table(table)} (${sql.join(cols.map((c) => sql.ref(c)))}) values (${sql.join(
     Object.values(row),
   )})`;
   await query.execute(db);
-  const key = row[snakeToCamel(keyColumn)];
-  const read =
-    await sql<Values>`select * from ${sql.table(table)} where ${sql.ref(keyColumn)} = ${key}`.execute(db);
+  const keys = typeof keyColumns === 'string' ? [keyColumns] : keyColumns;
+  const where = sql.join(
+    keys.map((k) => sql`${sql.ref(k)} = ${row[snakeToCamel(k)]}`),
+    sql` and `,
+  );
+  const read = await sql<Values>`select * from ${sql.table(table)} where ${where}`.execute(db);
   const found = read.rows[0];
   if (!found) throw new Error(`Ligne introuvable dans ${table}`);
   return rowToCamel(found);
@@ -209,6 +217,79 @@ const FACTORIES: Record<string, Factory> = {
       ...v,
     });
   },
+  // Brouillon de squelette (04 §8 étape 1) : champs IA, illustrations et colonnes éditoriales absents.
+  exercise: plain('exercise', (db) => {
+    const n = next(db);
+    return {
+      id: `exercise-${n}`,
+      schemaVersion: 1,
+      revision: 1,
+      status: 'draft',
+      batch: 'A',
+      name: `Exercice ${n}`,
+      movementPattern: 'squat',
+      mechanics: 'compound',
+      unilateral: 0,
+      measure: 'reps',
+      loadMode: 'dumbbell',
+      level: 1,
+      notForMinors: 0,
+      equipmentOptions: '[["dumbbells"]]',
+      content: '{}',
+    };
+  }),
+  illustration: plain('illustration', (db) => {
+    const n = next(db);
+    return {
+      id: `illustration-${n}`,
+      file: `illustration-${n}.0a1b2c3d.svg`,
+      sha256: '0'.repeat(64),
+      bytes: 2048,
+      mediaType: 'image/svg+xml',
+      source: 'everkinetic',
+      sourceUrl: 'https://github.com/everkinetic/data/blob/0123abc/svg/fixture.svg',
+      creators: '["Greg Priday"]',
+      license: 'CC-BY-SA-4.0',
+      licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    };
+  }),
+  exercise_comment: async (db, v) =>
+    insert(db, 'exercise_comment', {
+      id: ids(db).uuidv7(),
+      exerciseId: await parentId(db, v, 'exerciseId', 'exercise'),
+      authorId: await parentId(db, v, 'authorId', 'user'),
+      part: 'general',
+      body: 'Commentaire de relecture',
+      revision: 1,
+      createdAt: NOW,
+      ...v,
+    }),
+  exercise_validation: async (db, v) =>
+    insert(db, 'exercise_validation', {
+      id: ids(db).uuidv7(),
+      exerciseId: await parentId(db, v, 'exerciseId', 'exercise'),
+      reviewerId: await parentId(db, v, 'reviewerId', 'user'),
+      revision: 1,
+      health: 0,
+      createdAt: NOW,
+      ...v,
+    }),
+  // Ligne écrite par le chargeur (`saved_by` NULL) sauf valeur fournie.
+  exercise_revision: async (db, v) =>
+    insert(
+      db,
+      'exercise_revision',
+      {
+        exerciseId: await parentId(db, v, 'exerciseId', 'exercise'),
+        revision: 1,
+        content: '{}',
+        status: 'draft',
+        savedBy: null,
+        savedAt: NOW,
+        ...v,
+      },
+      ['exercise_id', 'revision'],
+    ),
 };
 
 const ownerOf = (v: Values): Values => (v.ownerId ? { ownerId: v.ownerId } : {});

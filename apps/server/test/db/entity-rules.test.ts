@@ -35,6 +35,20 @@ describe('entityRules contre la base migrée', () => {
     }
   });
 
+  it('onUserDelete concorde avec les clés vers user : set_null = toutes en SET NULL, not_linked = aucune', () => {
+    const toUser = h.sqlite.prepare(
+      `SELECT on_delete FROM pragma_foreign_key_list(?) WHERE "table" = 'user'`,
+    );
+    for (const [t, r] of Object.entries(entityRules)) {
+      const actions = (toUser.all(t) as { on_delete: string }[]).map((fk) => fk.on_delete);
+      if (r.onUserDelete === 'set_null') {
+        expect(actions.length, t).toBeGreaterThan(0);
+        expect(new Set(actions), t).toEqual(new Set(['SET NULL']));
+      }
+      if (r.onUserDelete === 'not_linked') expect(actions, t).toEqual([]);
+    }
+  });
+
   it('secretColumns = toutes les colonnes *_hash', () => {
     const declared = Object.entries(entityRules)
       .flatMap(([t, r]) => r.secretColumns.map((c) => `${t}.${c}`))

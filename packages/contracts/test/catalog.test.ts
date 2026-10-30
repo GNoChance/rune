@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { CatalogBundle, ILLUSTRATION_FILE_RE, IllustrationRef } from '../src/catalog';
+import {
+  CatalogBundle,
+  ILLUSTRATION_FILE_RE,
+  ILLUSTRATION_MEDIA_TYPES,
+  IllustrationRef,
+} from '../src/catalog';
 
 describe('IllustrationRef', () => {
   it('accepte un fichier haché', () => {
@@ -16,6 +21,13 @@ describe('IllustrationRef', () => {
     expect(ILLUSTRATION_FILE_RE.test('squat.0a1b2c3d.gif')).toBe(false);
     expect(ILLUSTRATION_FILE_RE.test('../squat.0a1b2c3d.svg')).toBe(false);
     expect(ILLUSTRATION_FILE_RE.test('back-squat.0a1b2c3d.webp')).toBe(true);
+  });
+
+  it('chaque extension admise a son type, et rien de plus', () => {
+    const byExtension = { svg: 'image/svg+xml', png: 'image/png', webp: 'image/webp', jpg: 'image/jpeg' };
+    for (const ext of Object.keys(byExtension))
+      expect(ILLUSTRATION_FILE_RE.test(`a.0a1b2c3d.${ext}`)).toBe(true);
+    expect([...ILLUSTRATION_MEDIA_TYPES].sort()).toEqual(Object.values(byExtension).sort());
   });
 });
 

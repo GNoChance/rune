@@ -8,20 +8,29 @@ import { dumpSchema } from './schema-dump';
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8');
 
-describe('passage de la version précédente (01 §9.1.4)', () => {
+/**
+ * Schémas figés des versions précédentes, au format de dumpSchema : v1 après 0001_socle, v2 après
+ * 0002_coach (socle de départ de la brique 2). Ils ne se régénèrent jamais.
+ */
+const PREVIOUS = [
+  { fixture: 'schema-v1.sql', done: ['0001_socle'], applied: ['0002_coach', '0003_catalog'] },
+  { fixture: 'schema-v2.sql', done: ['0001_socle', '0002_coach'], applied: ['0003_catalog'] },
+];
+
+describe('passage des versions précédentes (01 §9.1.4)', () => {
   let h: ReturnType<typeof openDatabase>;
   beforeEach(() => {
     h = openDatabase(':memory:');
   });
   afterEach(() => h.sqlite.close());
 
-  it("le schéma v1 figé reçoit 0002_coach et devient identique à l'instantané", async () => {
-    h.sqlite.exec(read('../fixtures/schema-v1.sql'));
-    h.sqlite.exec("INSERT INTO schema_migrations VALUES ('0001_socle', 0, 'x')");
-    expect(await migrate(h.db, MIGRATIONS, new FakeClock())).toEqual({
-      applied: ['0002_coach'],
-      unknownNonBreaking: [],
-    });
-    expect(dumpSchema(h.sqlite)).toBe(read('../__snapshots__/schema.sql'));
-  });
+  it.each(PREVIOUS)(
+    "le schéma figé $fixture reçoit $applied et devient identique à l'instantané",
+    async ({ fixture, done, applied }) => {
+      h.sqlite.exec(read(`../fixtures/${fixture}`));
+      for (const id of done) h.sqlite.prepare("INSERT INTO schema_migrations VALUES (?, 0, 'x')").run(id);
+      expect(await migrate(h.db, MIGRATIONS, new FakeClock())).toEqual({ applied, unknownNonBreaking: [] });
+      expect(dumpSchema(h.sqlite)).toBe(read('../__snapshots__/schema.sql'));
+    },
+  );
 });
