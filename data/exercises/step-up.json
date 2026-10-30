@@ -1,0 +1,26 @@
+{
+  "id": "step-up",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Step-up",
+  "movement_pattern": "lunge",
+  "mechanics": "compound",
+  "unilateral": true,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    [
+      "box"
+    ],
+    [
+      "chair"
+    ],
+    [
+      "flat_bench"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

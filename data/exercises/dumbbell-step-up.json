@@ -1,0 +1,25 @@
+{
+  "id": "dumbbell-step-up",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Step-up aux haltères",
+  "movement_pattern": "lunge",
+  "mechanics": "compound",
+  "unilateral": true,
+  "measure": "reps",
+  "load_mode": "dumbbell",
+  "equipment_options": [
+    [
+      "dumbbells",
+      "box"
+    ],
+    [
+      "dumbbells",
+      "flat_bench"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

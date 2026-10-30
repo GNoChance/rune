@@ -1,0 +1,20 @@
+{
+  "id": "archer-push-up",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Pompe archer",
+  "movement_pattern": "horizontal_push",
+  "mechanics": "compound",
+  "unilateral": true,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    []
+  ],
+  "level": 3,
+  "not_for_minors": true,
+  "chain_id": "push-up",
+  "easier_id": "decline-push-up"
+}

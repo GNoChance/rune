@@ -1,0 +1,23 @@
+{
+  "id": "goblet-squat",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Squat goblet",
+  "movement_pattern": "squat",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "dumbbell",
+  "equipment_options": [
+    [
+      "dumbbells"
+    ],
+    [
+      "kettlebell"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

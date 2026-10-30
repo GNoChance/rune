@@ -1,0 +1,20 @@
+{
+  "id": "standing-calf-raise",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Mollets debout",
+  "movement_pattern": "calf_raise",
+  "mechanics": "isolation",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    []
+  ],
+  "level": 1,
+  "not_for_minors": false,
+  "chain_id": "standing-calf-raise",
+  "harder_id": "single-leg-calf-raise"
+}

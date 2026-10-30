@@ -1,0 +1,21 @@
+{
+  "id": "back-squat",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Squat barre",
+  "movement_pattern": "squat",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "barbell",
+  "equipment_options": [
+    [
+      "barbell",
+      "squat_rack"
+    ]
+  ],
+  "level": 2,
+  "not_for_minors": false
+}

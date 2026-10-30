@@ -1,0 +1,81 @@
+{
+  "id": "push-up",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Pompe",
+  "aliases": [
+    "Pompe classique",
+    "Pompe au sol",
+    "Push-up"
+  ],
+  "movement_pattern": "horizontal_push",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "primary_muscles": [
+    "chest",
+    "triceps"
+  ],
+  "secondary_muscles": [
+    "front_delts",
+    "abs"
+  ],
+  "equipment_options": [
+    []
+  ],
+  "level": 1,
+  "not_for_minors": false,
+  "stressed_joints": [
+    "shoulders",
+    "wrists"
+  ],
+  "instructions": [
+    "Pose les mains au sol, un peu plus écartées que tes épaules, les doigts vers l'avant.",
+    "Recule les pieds un à un pour former une ligne droite des talons à la tête.",
+    "Gaine le tronc : serre le ventre et les fessiers pour garder cette ligne.",
+    "Plie les coudes pour descendre la poitrine près du sol, en les gardant en diagonale vers l'arrière.",
+    "Pousse dans le sol pour remonter jusqu'à tendre les bras, sans casser la ligne du corps."
+  ],
+  "key_points": [
+    "Ton corps bouge d'un seul bloc : les fesses ne montent pas, le bas du dos ne se creuse pas.",
+    "La poitrine et les hanches descendent et remontent ensemble.",
+    "Garde la nuque dans le prolongement du dos, le regard vers le sol devant tes mains."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Les hanches s'affaissent et le bas du dos se creuse.",
+      "fix": "Serre davantage le ventre et les fessiers ; si la ligne casse encore, passe à la pompe inclinée."
+    },
+    {
+      "mistake": "Les coudes partent sur les côtés, à hauteur des épaules.",
+      "fix": "Rapproche les coudes du corps pour qu'ils partent en diagonale vers l'arrière."
+    },
+    {
+      "mistake": "Tu ne descends qu'à mi-hauteur.",
+      "fix": "Descends jusqu'à ce que ta poitrine frôle le sol, quitte à faire moins de répétitions."
+    },
+    {
+      "mistake": "La tête plonge vers le sol avant la poitrine.",
+      "fix": "Garde la nuque longue et laisse la poitrine arriver en premier."
+    }
+  ],
+  "safety": [
+    "Arrête la série si tu sens une douleur vive à l'épaule, au coude ou au poignet.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Inspire en descendant, souffle en poussant pour remonter, sans bloquer ta respiration.",
+  "chain_id": "push-up",
+  "easier_id": "incline-push-up",
+  "harder_id": "decline-push-up",
+  "easier_tip": "Pose les mains sur une table ou un banc stable : plus l'appui est haut, plus la pompe est facile.",
+  "harder_tip": "Pose les pieds sur une chaise ou un banc stable, ou descends lentement en 3 secondes.",
+  "illustrations": [],
+  "review_notes": "Fiche étalon écrite à la main (04 §8, étape 0). À confirmer à la relecture : épaules et poignets comme articulations sollicitées (la fiche devient sensible) ; pectoraux et triceps en muscles principaux, deltoïdes antérieurs en secondaire.",
+  "drafting": {
+    "origin": "human",
+    "generated_at": "2026-10-30T15:00:00.000Z"
+  }
+}

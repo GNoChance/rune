@@ -1,0 +1,20 @@
+{
+  "id": "romanian-deadlift",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Soulevé de terre roumain",
+  "movement_pattern": "hip_hinge",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "barbell",
+  "equipment_options": [
+    [
+      "barbell"
+    ]
+  ],
+  "level": 2,
+  "not_for_minors": false
+}

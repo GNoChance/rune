@@ -1,0 +1,23 @@
+{
+  "id": "hip-thrust",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Hip thrust",
+  "movement_pattern": "glute_bridge",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "barbell",
+  "equipment_options": [
+    [
+      "barbell",
+      "flat_bench"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false,
+  "chain_id": "glute-bridge",
+  "easier_id": "single-leg-glute-bridge"
+}

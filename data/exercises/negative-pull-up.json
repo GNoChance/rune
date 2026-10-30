@@ -1,0 +1,22 @@
+{
+  "id": "negative-pull-up",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Traction négative",
+  "movement_pattern": "vertical_pull",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    [
+      "pull_up_bar"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false,
+  "chain_id": "pull-up",
+  "harder_id": "band-assisted-pull-up"
+}

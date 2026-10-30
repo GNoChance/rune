@@ -1,0 +1,29 @@
+{
+  "id": "bulgarian-split-squat",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Fente bulgare",
+  "movement_pattern": "lunge",
+  "mechanics": "compound",
+  "unilateral": true,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    [
+      "chair"
+    ],
+    [
+      "flat_bench"
+    ],
+    [
+      "box"
+    ]
+  ],
+  "level": 2,
+  "not_for_minors": false,
+  "chain_id": "bodyweight-squat",
+  "easier_id": "reverse-lunge",
+  "harder_id": "assisted-pistol-squat"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "pike-push-up",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Pompe pike",
+  "movement_pattern": "vertical_push",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    []
+  ],
+  "level": 1,
+  "not_for_minors": false,
+  "chain_id": "pike-push-up",
+  "harder_id": "elevated-pike-push-up"
+}

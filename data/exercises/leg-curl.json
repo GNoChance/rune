@@ -1,0 +1,20 @@
+{
+  "id": "leg-curl",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Leg curl",
+  "movement_pattern": "knee_flexion",
+  "mechanics": "isolation",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "machine",
+  "equipment_options": [
+    [
+      "leg_curl"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

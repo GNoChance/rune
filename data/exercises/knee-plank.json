@@ -1,0 +1,20 @@
+{
+  "id": "knee-plank",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Planche sur les genoux",
+  "movement_pattern": "core_anti_extension",
+  "mechanics": "isolation",
+  "unilateral": false,
+  "measure": "duration",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    []
+  ],
+  "level": 1,
+  "not_for_minors": false,
+  "chain_id": "front-plank",
+  "harder_id": "front-plank"
+}

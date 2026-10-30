@@ -1,0 +1,23 @@
+{
+  "id": "overhead-dumbbell-triceps-extension",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Extension triceps au-dessus de la tête",
+  "movement_pattern": "elbow_extension",
+  "mechanics": "isolation",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "dumbbell",
+  "equipment_options": [
+    [
+      "dumbbells"
+    ],
+    [
+      "kettlebell"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

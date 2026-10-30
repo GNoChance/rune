@@ -1,0 +1,23 @@
+{
+  "id": "lat-pulldown",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Tirage vertical",
+  "movement_pattern": "vertical_pull",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "machine",
+  "equipment_options": [
+    [
+      "lat_pulldown"
+    ],
+    [
+      "cable_station"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

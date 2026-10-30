@@ -1,0 +1,20 @@
+{
+  "id": "band-pallof-press",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Pallof press à l'élastique",
+  "movement_pattern": "core_anti_rotation",
+  "mechanics": "isolation",
+  "unilateral": true,
+  "measure": "reps",
+  "load_mode": "band",
+  "equipment_options": [
+    [
+      "resistance_band"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

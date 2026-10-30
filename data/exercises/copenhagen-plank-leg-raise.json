@@ -1,0 +1,25 @@
+{
+  "id": "copenhagen-plank-leg-raise",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Planche de Copenhague avec levée de jambe",
+  "movement_pattern": "hip_adduction_abduction",
+  "mechanics": "isolation",
+  "unilateral": true,
+  "measure": "duration",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    [
+      "chair"
+    ],
+    [
+      "flat_bench"
+    ]
+  ],
+  "level": 3,
+  "not_for_minors": true,
+  "chain_id": "copenhagen-plank",
+  "easier_id": "copenhagen-plank"
+}

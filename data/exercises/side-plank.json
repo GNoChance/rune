@@ -1,0 +1,18 @@
+{
+  "id": "side-plank",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Planche latérale",
+  "movement_pattern": "core_anti_rotation",
+  "mechanics": "isolation",
+  "unilateral": true,
+  "measure": "duration",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    []
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

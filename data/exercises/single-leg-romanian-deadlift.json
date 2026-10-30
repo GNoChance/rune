@@ -1,0 +1,18 @@
+{
+  "id": "single-leg-romanian-deadlift",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Soulevé de terre roumain unipodal",
+  "movement_pattern": "hip_hinge",
+  "mechanics": "compound",
+  "unilateral": true,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    []
+  ],
+  "level": 2,
+  "not_for_minors": false
+}

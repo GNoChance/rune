@@ -1,0 +1,25 @@
+{
+  "id": "copenhagen-plank-short-lever",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Planche de Copenhague genou en appui",
+  "movement_pattern": "hip_adduction_abduction",
+  "mechanics": "isolation",
+  "unilateral": true,
+  "measure": "duration",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    [
+      "chair"
+    ],
+    [
+      "flat_bench"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false,
+  "chain_id": "copenhagen-plank",
+  "harder_id": "copenhagen-plank"
+}

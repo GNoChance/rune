@@ -1,0 +1,23 @@
+{
+  "id": "pull-up",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Traction",
+  "movement_pattern": "vertical_pull",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    [
+      "pull_up_bar"
+    ]
+  ],
+  "level": 2,
+  "not_for_minors": false,
+  "chain_id": "pull-up",
+  "easier_id": "band-assisted-pull-up",
+  "harder_id": "weighted-pull-up"
+}

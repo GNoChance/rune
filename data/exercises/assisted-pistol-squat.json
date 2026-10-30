@@ -1,0 +1,20 @@
+{
+  "id": "assisted-pistol-squat",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Squat sur une jambe assisté",
+  "movement_pattern": "lunge",
+  "mechanics": "compound",
+  "unilateral": true,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    []
+  ],
+  "level": 2,
+  "not_for_minors": false,
+  "chain_id": "bodyweight-squat",
+  "easier_id": "bulgarian-split-squat"
+}

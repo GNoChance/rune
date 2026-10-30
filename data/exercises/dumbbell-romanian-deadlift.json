@@ -1,0 +1,81 @@
+{
+  "id": "dumbbell-romanian-deadlift",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Soulevé de terre roumain aux haltères",
+  "aliases": [
+    "Dumbbell Romanian deadlift"
+  ],
+  "movement_pattern": "hip_hinge",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "dumbbell",
+  "primary_muscles": [
+    "glutes",
+    "hamstrings"
+  ],
+  "secondary_muscles": [
+    "lower_back",
+    "forearms"
+  ],
+  "equipment_options": [
+    [
+      "dumbbells"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false,
+  "stressed_joints": [
+    "lower_back",
+    "hips"
+  ],
+  "instructions": [
+    "Tiens-toi debout, pieds écartés à largeur de hanches, un haltère dans chaque main devant les cuisses.",
+    "Plie légèrement les genoux, puis garde cette flexion pendant toute la série.",
+    "Gaine le tronc et garde le dos neutre, ni rond ni creusé.",
+    "Recule les hanches et penche le buste en avant, les haltères glissant le long des cuisses.",
+    "Arrête la descente dès que l'arrière des cuisses tire fort ou que ton dos commence à s'arrondir.",
+    "Remonte en poussant les hanches vers l'avant jusqu'à te tenir debout, fessiers serrés."
+  ],
+  "key_points": [
+    "C'est une charnière de hanche : les hanches reculent, les genoux bougent à peine.",
+    "Les haltères restent près des jambes, à la descente comme à la remontée.",
+    "Descends selon la souplesse de l'arrière de tes cuisses, jamais en arrondissant le dos."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Le dos s'arrondit en bas du mouvement.",
+      "fix": "Descends moins bas : arrête-toi juste avant que le dos ne s'arrondisse."
+    },
+    {
+      "mistake": "Les genoux se plient de plus en plus, comme dans un squat.",
+      "fix": "Garde la même légère flexion des genoux et recule davantage les hanches."
+    },
+    {
+      "mistake": "Les haltères s'éloignent des jambes et tirent le buste vers l'avant.",
+      "fix": "Fais-les glisser le long des cuisses puis des tibias, bras tendus et relâchés."
+    },
+    {
+      "mistake": "Tu te penches en arrière en haut du mouvement.",
+      "fix": "Arrête-toi debout, fessiers serrés, le buste à la verticale."
+    }
+  ],
+  "safety": [
+    "Arrête la série si tu sens une douleur vive dans le bas du dos.",
+    "Arrête si une douleur descend dans la jambe ou si des picotements apparaissent dans les pieds.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Inspire et gaine le tronc avant de descendre, puis souffle en remontant.",
+  "setup": "Prends les haltères sur un support à hauteur des cuisses si tu peux. Sinon, ramasse-les en pliant les genoux, dos neutre.",
+  "easier_tip": "Arrête la descente au niveau des genoux, ou fais le mouvement sans haltères pour apprendre la charnière de hanche.",
+  "harder_tip": "Descends en 3 secondes et marque une pause d'une seconde en bas, sans arrondir le dos.",
+  "illustrations": [],
+  "review_notes": "Fiche étalon écrite à la main (04 §8, étape 0). À confirmer par la relectrice santé : niveau 1 ; bas du dos et hanches comme articulations sollicitées. Le glossaire refuse les abréviations anglaises et françaises de l'exercice : elles ne sont pas dans les alias, la recherche par abréviation ne trouvera pas la fiche (à trancher).",
+  "drafting": {
+    "origin": "human",
+    "generated_at": "2026-10-30T15:00:00.000Z"
+  }
+}

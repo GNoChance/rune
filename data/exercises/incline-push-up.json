@@ -1,0 +1,32 @@
+{
+  "id": "incline-push-up",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Pompe inclinée",
+  "movement_pattern": "horizontal_push",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    [
+      "table"
+    ],
+    [
+      "chair"
+    ],
+    [
+      "flat_bench"
+    ],
+    [
+      "box"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false,
+  "chain_id": "push-up",
+  "easier_id": "wall-push-up",
+  "harder_id": "push-up"
+}

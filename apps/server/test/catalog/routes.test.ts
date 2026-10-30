@@ -1,4 +1,5 @@
-import { dirname, resolve } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { rebuildCatalog } from '../../src/catalog/bundle';
@@ -95,6 +96,41 @@ describe('GET /api/catalog', () => {
       'E7',
     ];
     for (const marker of [...markers, reviewer.id]) expect(text).not.toContain(marker);
+  });
+
+  it('data/ du dépôt sur base vide : chaque fiche est amorcée avec son statut, les brouillons sont dans la relecture et jamais servis', async () => {
+    const dir = join(REPO_DATA, 'exercises');
+    const files = readdirSync(dir)
+      .filter((name) => name.endsWith('.json'))
+      .map(
+        (name) =>
+          JSON.parse(readFileSync(join(dir, name), 'utf8')) as {
+            id: string;
+            status: string;
+            published_at?: string;
+          },
+      )
+      .sort((a, b) => (a.id < b.id ? -1 : 1));
+    const drafts = files.filter((s) => s.status === 'draft').map((s) => s.id);
+    const served = files
+      .filter((s) => s.status === 'published' || (s.status === 'retired' && s.published_at !== undefined))
+      .map((s) => s.id);
+
+    const cookie = await setup();
+    expect(await ctx.deps.db.selectFrom('exercise').select(['id', 'status']).orderBy('id').execute()).toEqual(
+      files.map((s) => ({ id: s.id, status: s.status })),
+    );
+
+    const catalog = await ctx.request('/api/catalog', { cookie });
+    expect(catalog.status).toBe(200);
+    const body = (await catalog.json()) as { exercises: { id: string }[] };
+    expect(body.exercises.map((s) => s.id)).toEqual(served);
+
+    const reviewer = await createUserAndLogin(ctx, { catalogReviewer: true });
+    const res = await ctx.request('/api/review/exercises?status=draft', { cookie: reviewer.cookie });
+    expect(res.status).toBe(200);
+    const list = (await res.json()) as { items: { id: string }[] };
+    expect(list.items.map((i) => i.id).sort()).toEqual(drafts);
   });
 
   it('If-None-Match identique, faible ou dans une liste : 304 sans corps', async () => {

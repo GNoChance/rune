@@ -1,0 +1,22 @@
+{
+  "id": "bench-press",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Développé couché",
+  "movement_pattern": "horizontal_push",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "barbell",
+  "equipment_options": [
+    [
+      "barbell",
+      "flat_bench",
+      "squat_rack"
+    ]
+  ],
+  "level": 2,
+  "not_for_minors": false
+}

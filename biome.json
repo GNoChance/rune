@@ -10,5 +10,11 @@
     "lineWidth": 110
   },
   "javascript": { "formatter": { "quoteStyle": "single" } },
-  "linter": { "enabled": true, "rules": { "preset": "recommended" } }
+  "linter": { "enabled": true, "rules": { "preset": "recommended" } },
+  "overrides": [
+    {
+      "includes": ["data/exercises/**", "data/illustrations/manifest.json"],
+      "formatter": { "enabled": false }
+    }
+  ]
 }

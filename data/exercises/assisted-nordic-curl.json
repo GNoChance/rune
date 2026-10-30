@@ -1,0 +1,20 @@
+{
+  "id": "assisted-nordic-curl",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Nordic assisté",
+  "movement_pattern": "knee_flexion",
+  "mechanics": "isolation",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    []
+  ],
+  "level": 1,
+  "not_for_minors": false,
+  "chain_id": "nordic-curl",
+  "harder_id": "nordic-curl"
+}

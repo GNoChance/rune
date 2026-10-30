@@ -1,0 +1,28 @@
+{
+  "id": "chair-squat",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Squat sur chaise",
+  "movement_pattern": "squat",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "equipment_options": [
+    [
+      "chair"
+    ],
+    [
+      "flat_bench"
+    ],
+    [
+      "box"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false,
+  "chain_id": "bodyweight-squat",
+  "harder_id": "bodyweight-squat"
+}

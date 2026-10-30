@@ -1,6 +1,6 @@
 # Guide de style des fiches d'exercices
 
-Ce guide fixe la façon d'écrire les fiches de `data/exercises/`. Il sert à tous ceux qui rédigent ou relisent : le prompt de l'API Claude (`scripts/exercises/prompt-v<n>.md`), l'admin et les relectrices. On le lit avec le glossaire `data/glossary.json` et les deux fiches étalons (`push-up` et `dumbbell-romanian-deadlift`, une fois écrites).
+Ce guide fixe la façon d'écrire les fiches de `data/exercises/`. Il sert à tous ceux qui rédigent ou relisent : le prompt de l'API Claude (`scripts/exercises/prompt-v<n>.md`), l'admin et les relectrices. On le lit avec le glossaire `data/glossary.json` et les deux fiches étalons écrites à la main, `push-up` et `dumbbell-romanian-deadlift`.
 
 Sources : spec 04 §4 (schéma), §5 (chaînes), §8 étape 0 ; spec de la brique 2 §2, §3.2 et §5. En cas d'écart, les specs l'emportent. Les bornes chiffrées sont vérifiées par `pnpm data:validate` ; le reste l'est à la relecture.
 
@@ -54,7 +54,7 @@ Chaque entrée de `safety` :
 - n'emploie **aucun vocabulaire médical** et ne pose **aucun diagnostic** : ni « hernie », « tendinite », « lésion », « inflammation », « pathologie », « contre-indiqué », ni nom de maladie ou de structure anatomique savante ;
 - ne promet rien : pas de « sans risque », pas de « protège ».
 
-Une fiche a 1 à 3 entrées. La première couvre le risque principal de l'exercice. On peut ajouter : « Si la douleur revient à chaque séance, demande conseil à un professionnel de santé. »
+Une fiche a 1 à 3 entrées. La première couvre le risque principal de l'exercice. On peut ajouter, comme les étalons, une entrée qui dit elle aussi quand s'arrêter : « Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance. »
 
 | Bon | Pourquoi |
 |---|---|

@@ -1,0 +1,21 @@
+{
+  "id": "seated-dumbbell-shoulder-press",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Développé épaules assis aux haltères",
+  "movement_pattern": "vertical_push",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "dumbbell",
+  "equipment_options": [
+    [
+      "dumbbells",
+      "adjustable_bench"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

@@ -1,0 +1,21 @@
+{
+  "id": "dumbbell-bench-press",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Développé couché aux haltères",
+  "movement_pattern": "horizontal_push",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "dumbbell",
+  "equipment_options": [
+    [
+      "dumbbells",
+      "flat_bench"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

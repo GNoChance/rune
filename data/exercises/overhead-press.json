@@ -1,0 +1,21 @@
+{
+  "id": "overhead-press",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Développé militaire",
+  "movement_pattern": "vertical_push",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "barbell",
+  "equipment_options": [
+    [
+      "barbell",
+      "squat_rack"
+    ]
+  ],
+  "level": 2,
+  "not_for_minors": false
+}

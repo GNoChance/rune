@@ -1,0 +1,27 @@
+{
+  "id": "weighted-pull-up",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "A",
+  "name": "Traction lestée",
+  "movement_pattern": "vertical_pull",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "weighted",
+  "equipment_options": [
+    [
+      "pull_up_bar",
+      "dumbbells"
+    ],
+    [
+      "pull_up_bar",
+      "kettlebell"
+    ]
+  ],
+  "level": 3,
+  "not_for_minors": true,
+  "chain_id": "pull-up",
+  "easier_id": "pull-up"
+}
