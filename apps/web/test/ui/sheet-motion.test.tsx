@@ -39,9 +39,14 @@ const voiceClass = (name: string) => moduleClass(voiceStyles, 'voice.module.css'
 
 const allIds = (root: ParentNode) => [...root.querySelectorAll('[id]')].map((el) => el.id);
 
-/** Pierres D à S chargées (RankStoneUpper, à la demande) : plus aucune image sans son dessin dans `root`. */
+/**
+ * Pierres D à S chargées (RankStoneUpper, à la demande) : plus aucune image sans son dessin dans `root`.
+ * 4 s (sous les 5 s du test) : le premier import du module (150 ko de tracés) dépassait la seconde par défaut en suite complète chargée.
+ */
 const stonesLoaded = (root: ParentNode) =>
-  waitFor(() => expect(root.querySelector('svg[role="img"]:not([data-variant])')).toBeNull());
+  waitFor(() => expect(root.querySelector('svg[role="img"]:not([data-variant])')).toBeNull(), {
+    timeout: 4_000,
+  });
 
 /**
  * Dessin autonome : ids sans caractère spécial (deux-points, guillemets), et chaque `url(#…)` vise un id du

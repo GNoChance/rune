@@ -16,8 +16,10 @@ describe('RankBadge, rangs D à S chargés à la demande', () => {
     expect(pending.childElementCount).toBe(0);
     expect(pending.classList.contains(artStyles.locked ?? '.locked absente')).toBe(true);
 
-    await waitFor(() =>
-      expect(screen.getByRole('img', { name: 'Rang S' }).getAttribute('data-variant')).toBe('S'),
+    // 4 s (sous les 5 s du test) : premier import du module de tracés, lent en suite complète chargée.
+    await waitFor(
+      () => expect(screen.getByRole('img', { name: 'Rang S' }).getAttribute('data-variant')).toBe('S'),
+      { timeout: 4_000 },
     );
     const stone = screen.getByRole('img', { name: 'Rang S' });
     expect(stone.getAttribute('width')).toBe('48');
