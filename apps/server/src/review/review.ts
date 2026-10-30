@@ -64,7 +64,7 @@ type ValidationRow = Validation & {
 };
 
 /** Ce que la base sait de la relecture d'une fiche, ou de toutes. */
-type ReviewData = {
+export type ReviewData = {
   rows: ExerciseRow[];
   revisions: Map<string, RevisionRow[]>;
   validations: Map<string, ValidationRow[]>;
@@ -105,7 +105,7 @@ const groupBy = <T extends { exerciseId: string }>(items: readonly T[]): Map<str
  * (feu vert, « validée par toi », différentiel) : celles d'une fiche sans validation ne sont pas lues, ce qui ne
  * change aucun résultat des fonctions du domaine.
  */
-async function loadReviewData(db: DbExecutor, exerciseId?: string): Promise<ReviewData> {
+export async function loadReviewData(db: DbExecutor, exerciseId?: string): Promise<ReviewData> {
   const rows = await db
     .selectFrom('exercise')
     .selectAll()

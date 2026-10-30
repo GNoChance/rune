@@ -9,7 +9,13 @@ import {
 } from '@rune/contracts';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { type TransitionInput, transitionBlockers } from '../../src/catalog/blockers';
+import {
+  EXERCISE_TRANSITIONS,
+  isExerciseTransition,
+  type TransitionInput,
+  templateExerciseIds,
+  transitionBlockers,
+} from '../../src/catalog/blockers';
 import { linkChain, PUSH_UP_CHAIN, sheet, without } from '../fixtures/catalog';
 
 const MANIFEST: ReadonlySet<string> = new Set(['goblet-squat-start', 'goblet-squat-end']);
@@ -368,5 +374,74 @@ describe("transitionBlockers : ordre fixe quand plusieurs codes s'appliquent", (
         },
       ),
     );
+  });
+});
+
+describe('circuit éditorial (04 §8)', () => {
+  const ALLOWED = [
+    'draft → reviewed',
+    'draft → retired',
+    'reviewed → draft',
+    'reviewed → published',
+    'reviewed → retired',
+    'published → retired',
+    'retired → reviewed',
+  ];
+
+  it('les 7 transitions de 04 §8, et aucune autre (même statut compris)', () => {
+    const pairs = EXERCISE_STATUSES.flatMap((from) => EXERCISE_STATUSES.map((to) => [from, to] as const));
+    const allowed = pairs
+      .filter(([from, to]) => isExerciseTransition(from, to))
+      .map(([f, t]) => `${f} → ${t}`);
+    expect(allowed).toEqual(ALLOWED);
+    const table = Object.entries(EXERCISE_TRANSITIONS).flatMap(([from, targets]) =>
+      targets.map((to) => `${from} → ${to}`),
+    );
+    expect(table).toEqual(ALLOWED);
+  });
+});
+
+describe('templateExerciseIds : fiches citées par les modèles de programmes (05 §4)', () => {
+  const catalog = [
+    ...PUSH_UP_CHAIN,
+    sheet({ id: 'goblet-squat' }),
+    sheet({ id: 'leg-press', status: 'retired' }),
+    sheet({ id: 'front-plank', chain_id: 'front-plank' }),
+  ];
+  const template = (slots: unknown[]) => ({ id: 'gym-beginner', workouts: [{ id: 'A', slots }] });
+
+  it('listes de slot, et chaînes développées en leurs membres de tous statuts', () => {
+    const ids = templateExerciseIds(
+      [
+        template([
+          { id: 'A1', exercises: ['goblet-squat', 'leg-press', 'inconnue'] },
+          { id: 'A2', chain: 'push-up' },
+        ]),
+        template([{ id: 'B1', chain: 'front-plank' }]),
+      ],
+      catalog,
+    );
+    expect([...ids].sort()).toEqual([
+      'archer-push-up',
+      'feet-elevated-push-up',
+      'front-plank',
+      'goblet-squat',
+      'incline-push-up',
+      'inconnue',
+      'leg-press',
+      'push-up',
+      'wall-push-up',
+    ]);
+  });
+
+  it('modèle de forme inattendue : ignoré sans lever', () => {
+    const odd = [
+      null,
+      'texte',
+      { workouts: 'x' },
+      { workouts: [null, { slots: [3, { exercises: [1, 'goblet-squat'], chain: 7 }] }] },
+    ];
+    expect([...templateExerciseIds(odd, catalog)]).toEqual(['goblet-squat']);
+    expect(templateExerciseIds([], catalog).size).toBe(0);
   });
 });

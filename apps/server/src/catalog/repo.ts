@@ -107,16 +107,13 @@ export function rowToSheet(row: Selectable<ExerciseTable>): DraftSheet {
   return JSON.parse(canonicalJson(record)) as DraftSheet;
 }
 
+type Saved = { savedAt: string; savedBy: string | null };
+
 /**
- * Insère une fiche et sa ligne `exercise_revision` (spec brique 2 §3.5) : `content` = `contentOf` en forme
- * canonique, `saved_by` NULL pour le chargeur. À appeler dans une transaction.
+ * Ligne `exercise_revision` de la fiche à sa révision (spec brique 2 §3.5) : `content` = `contentOf` en forme
+ * canonique, donc sans champ éditorial ni identifiant de compte.
  */
-export async function insertSheet(
-  db: DbExecutor,
-  sheet: DraftSheet,
-  o: { savedAt: string; savedBy: string | null; exportedRevision: number | null },
-): Promise<void> {
-  await db.insertInto('exercise').values(sheetToRow(sheet, o.exportedRevision)).execute();
+async function insertRevision(db: DbExecutor, sheet: DraftSheet, o: Saved): Promise<void> {
   await db
     .insertInto('exerciseRevision')
     .values({
@@ -128,6 +125,43 @@ export async function insertSheet(
       savedAt: o.savedAt,
     })
     .execute();
+}
+
+/**
+ * Insère une fiche et sa ligne `exercise_revision`, `saved_by` NULL pour le chargeur. À appeler dans une
+ * transaction.
+ */
+export async function insertSheet(
+  db: DbExecutor,
+  sheet: DraftSheet,
+  o: Saved & { exportedRevision: number | null },
+): Promise<void> {
+  await db.insertInto('exercise').values(sheetToRow(sheet, o.exportedRevision)).execute();
+  await insertRevision(db, sheet, o);
+}
+
+/**
+ * Enregistre `sheet` (déjà validée, `revision` = `baseRevision` + 1) à la place de la fiche en base si celle-ci
+ * est encore à `baseRevision` : `UPDATE … WHERE id = ? AND revision = ?`, puis sa ligne `exercise_revision` (spec
+ * brique 2 §3.5). Toutes les colonnes sont réécrites (clé absente = NULL) sauf `exported_revision`. Rend faux,
+ * sans rien écrire, si aucune ligne n'est mise à jour (fiche absente ou révision dépassée). À appeler dans une
+ * transaction `BEGIN IMMEDIATE`.
+ */
+export async function updateSheet(
+  db: DbExecutor,
+  sheet: DraftSheet,
+  o: Saved & { baseRevision: number },
+): Promise<boolean> {
+  const { id, exportedRevision: _, ...changes } = sheetToRow(sheet, null);
+  const result = await db
+    .updateTable('exercise')
+    .set(changes)
+    .where('id', '=', id)
+    .where('revision', '=', o.baseRevision)
+    .executeTakeFirst();
+  if (result.numUpdatedRows === 0n) return false;
+  await insertRevision(db, sheet, o);
+  return true;
 }
 
 /** Ligne `illustration` d'une entrée du manifeste. */

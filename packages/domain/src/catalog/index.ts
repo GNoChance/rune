@@ -1,4 +1,10 @@
-export { type TransitionInput, transitionBlockers } from './blockers';
+export {
+  EXERCISE_TRANSITIONS,
+  isExerciseTransition,
+  type TransitionInput,
+  templateExerciseIds,
+  transitionBlockers,
+} from './blockers';
 export { canonicalJson } from './canonical';
 export { buildChains, chainRank, usableChainSteps } from './chains';
 export { expandEquipment, feasible } from './equipment';

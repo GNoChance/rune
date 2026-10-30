@@ -4,8 +4,10 @@ import {
   COMMENT_BODY_MAX,
   COMMENT_BODY_MIN,
   CommentPartSchema,
+  type DraftSheet,
   DraftSheetSchema,
   ExerciseStatusSchema,
+  PublishBlockerSchema,
 } from '../exercise';
 import { JointSchema, MovementPatternSchema } from '../taxonomy';
 
@@ -221,3 +223,75 @@ export const RevisionConflictBody = z.object({
   current: DraftSheetSchema,
 });
 export type RevisionConflictBody = z.infer<typeof RevisionConflictBody>;
+
+/*
+ * Édition des fiches par l'admin (spec brique 2 §3.5 à §3.7 et §3.9, 04 §8 et §10) : routes `/api/admin/exercises*`,
+ * garde admin (une relectrice reçoit 403). Contrôle des écritures simultanées : chaque écriture envoie la révision
+ * affichée (`baseRevision`) ; si ce n'est plus la révision courante, 409 `RevisionConflictBody` avant tout autre
+ * contrôle. Réponse d'une écriture réussie : 200 `ReviewSheetResponse`, la fiche vue par l'admin après l'écriture.
+ */
+
+/**
+ * Champs système d'une fiche (04 §4) : à un enregistrement, le serveur les reprend de la fiche en base et ignore
+ * ceux du corps. `revision` + 1 et `updated_at` à chaque écriture ; `status` ne change que par une transition ;
+ * `reviewed_by` et `reviewed_at` à l'entrée en `reviewed` et à l'enregistrement d'une fiche `reviewed` ou
+ * `published` ; `published_at` à la publication ; `retired_at` au retrait (effacé à la réactivation).
+ */
+export const SHEET_SYSTEM_KEYS = [
+  'id',
+  'schema_version',
+  'revision',
+  'status',
+  'drafting',
+  'reviewed_by',
+  'reviewed_at',
+  'published_at',
+  'retired_at',
+  'updated_at',
+] as const satisfies readonly (keyof DraftSheet)[];
+
+/**
+ * `PUT /api/admin/exercises/:id` : la fiche voulue, entière (une clé absente efface le champ facultatif ; jamais
+ * `null`), et la révision affichée. Les champs système du corps sont ignorés (`SHEET_SYSTEM_KEYS`). La fiche
+ * enregistrée doit passer le schéma de son statut (`DraftSheetSchema` ; fiche complète en `reviewed`, `published`
+ * et pour une fiche retirée déjà publiée, qui reste servie), garder ses pointeurs `easier_id` / `harder_id` vers des
+ * fiches existantes, et n'ajouter aucune erreur `duplicate_alias`, `load_mode_mismatch`, `illustration_unknown` ni
+ * `illustration_sources_mixed` au validateur du catalogue ; sinon 422 `TransitionBlockedBody` avec
+ * `['invalid_sheet']`. Les règles de chaîne ne bloquent pas : une chaîne se modifie une fiche à la fois, et
+ * `pnpm data:validate` les contrôle sur l'export.
+ */
+export const SaveSheetRequest = z.object({
+  sheet: z.record(z.string(), z.unknown()),
+  baseRevision: z.number().int().min(1),
+});
+export type SaveSheetRequest = z.infer<typeof SaveSheetRequest>;
+
+/**
+ * `POST /api/admin/exercises/:id/transition` : statut visé, révision affichée, et pour `draft → reviewed` les cases
+ * « Consignes et sécurité vérifiées » (`reviewChecked`) et « Déconseillé aux mineurs » confirmé
+ * (`minorsConfirmed`), fausses si absentes. Transition hors du circuit de 04 §8 (`EXERCISE_TRANSITIONS` de
+ * `@rune/domain`, même statut compris) : 400 `validation` sur `to`. Blocages du tableau §3.6 : 422
+ * `TransitionBlockedBody`.
+ */
+export const TransitionRequest = z.object({
+  to: ExerciseStatusSchema,
+  baseRevision: z.number().int().min(1),
+  reviewChecked: z.boolean().optional(),
+  minorsConfirmed: z.boolean().optional(),
+});
+export type TransitionRequest = z.infer<typeof TransitionRequest>;
+
+/** Corps d'un 422 `transition_blocked` (spec brique 2 §3.6) : codes de blocage dans l'ordre de `PUBLISH_BLOCKERS`. */
+export const TransitionBlockedBody = z.object({
+  error: z.literal('transition_blocked'),
+  blockers: z.array(PublishBlockerSchema).min(1),
+});
+export type TransitionBlockedBody = z.infer<typeof TransitionBlockedBody>;
+
+/**
+ * `GET /api/admin/exercises/export` (04 §10) : fichier à télécharger, toutes les fiches de tous statuts triées par
+ * `id`, en tableau JSON dont chaque fiche est en forme canonique (`canonicalJson`), sans `exported_revision`.
+ * L'export met `exported_revision` = `revision` sur chaque fiche (compteur `admin.toExport`). `pnpm data:pull
+ * <fichier>` le découpe dans `data/exercises/`.
+ */
+export const EXERCISES_EXPORT_FILE = 'exercises-export.json';

@@ -46,6 +46,51 @@ export type TransitionInput = {
   catalog: readonly Pick<DraftSheet, 'id' | 'status' | 'easier_id' | 'harder_id'>[];
 };
 
+/**
+ * Circuit éditorial (04 §8) : statuts atteignables depuis chaque statut. `draft → reviewed`, `reviewed → draft`
+ * (renvoi en rédaction), `reviewed → published`, tout statut → `retired`, `retired → reviewed` (réactivation).
+ * Un enregistrement (`PUT`) garde le statut : ce n'est pas une transition.
+ */
+export const EXERCISE_TRANSITIONS: { readonly [S in ExerciseStatus]: readonly ExerciseStatus[] } = {
+  draft: ['reviewed', 'retired'],
+  reviewed: ['draft', 'published', 'retired'],
+  published: ['retired'],
+  retired: ['reviewed'],
+};
+
+/** Vrai si `from → to` est une transition du circuit (04 §8) ; `transitionBlockers` ne le vérifie pas. */
+export function isExerciseTransition(from: ExerciseStatus, to: ExerciseStatus): boolean {
+  return EXERCISE_TRANSITIONS[from].includes(to);
+}
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const listOf = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
+
+/**
+ * `id` des fiches que citent des modèles de programmes (05 §4), pour `TransitionInput.templateRefs` : listes
+ * `workouts[].slots[].exercises[]`, et chaînes `workouts[].slots[].chain` développées en leurs membres
+ * (`chain_id`) parmi `catalog`, tous statuts. Les modèles sont lus sans hypothèse sur leur forme : ce qui n'a pas
+ * le bon type est ignoré, le reste relève du validateur de Programmes.
+ */
+export function templateExerciseIds(
+  templates: readonly unknown[],
+  catalog: readonly Pick<DraftSheet, 'id' | 'chain_id'>[],
+): Set<string> {
+  const ids = new Set<string>();
+  const slots = templates
+    .flatMap((t) => (isRecord(t) ? listOf(t.workouts) : []))
+    .flatMap((w) => (isRecord(w) ? listOf(w.slots) : []))
+    .filter(isRecord);
+  for (const slot of slots) {
+    for (const id of listOf(slot.exercises)) if (typeof id === 'string') ids.add(id);
+    const chain = slot.chain;
+    if (typeof chain !== 'string') continue;
+    for (const s of catalog) if (s.chain_id === chain) ids.add(s.id);
+  }
+  return ids;
+}
+
 type Move = { from: ExerciseStatus; to: ExerciseStatus };
 
 /** Enregistrement (`PUT`) d'une fiche `reviewed` ou `published` : elle doit rester complète et valide. */

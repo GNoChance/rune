@@ -17,6 +17,7 @@ import { httpError } from '../http/errors';
 import { parseJson } from '../http/validate';
 import { deleteGymAsAdmin } from '../places/gyms';
 import { deleteAccount } from '../privacy/delete-account';
+import { adminExerciseRoutes } from '../review/admin-routes';
 import { listMembers, revokeMemberSessions, setBirthDate, setRole, setStatus } from './members';
 import { readOpsStatus } from './ops-status';
 import { setReviewerFlags } from './reviewer-flags';
@@ -113,6 +114,9 @@ export function adminRoutes(deps: AppDeps): Hono<AppEnv> {
     await deps.db.transaction().execute((trx) => deleteGymAsAdmin(trx, deps, actor, id));
     return c.body(null, 204);
   });
+
+  // Édition des fiches d'exercices, transitions et export (spec brique 2 §3.9).
+  routes.route('/exercises', adminExerciseRoutes(deps));
 
   return routes;
 }
