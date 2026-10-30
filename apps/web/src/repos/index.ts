@@ -23,7 +23,9 @@ export {
   type ExerciseSearch,
   type ExerciseView,
   type MemberCatalogContext,
+  type SheetIllustration,
   type SheetView,
+  sheetIllustrations,
   useCatalog,
   useExerciseView,
 } from './catalog-repo';

@@ -11,6 +11,7 @@ import { InvitePage } from './features/auth/InvitePage';
 import { LoginPage } from './features/auth/LoginPage';
 import { ResetPage } from './features/auth/ResetPage';
 import { MyCoachPage } from './features/coach/MyCoachPage';
+import { ExerciseSheetPage } from './features/exercises/ExerciseSheetPage';
 import { HomePage } from './features/home/HomePage';
 import { OnboardingFlow } from './features/onboarding/OnboardingFlow';
 import { GymPage } from './features/places/GymPage';
@@ -128,6 +129,7 @@ function ConnectedRoutes() {
     <Switch>
       <Route path="/" component={HomePage} />
       <Route path="/progression" component={ProgressionPage} />
+      <Route path="/exercises/:id" component={ExerciseSheetPage} />
       <Route path="/places" component={PlacesPage} />
       <Route path="/places/:id" component={PlaceDetail} />
       <Route path="/profile" component={ProfileHub} />

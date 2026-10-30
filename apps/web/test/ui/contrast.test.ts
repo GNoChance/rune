@@ -9,6 +9,7 @@ const TOKENS_CSS = resolve(import.meta.dirname, '../../src/ui/theme/tokens.css')
 const VOICE_CSS = resolve(import.meta.dirname, '../../src/ui/voice.module.css');
 const SHELL_CSS = resolve(import.meta.dirname, '../../src/ui/shell.module.css');
 const COACH_CSS = resolve(import.meta.dirname, '../../src/features/coach/coach.module.css');
+const EXERCISES_CSS = resolve(import.meta.dirname, '../../src/features/exercises/exercises.module.css');
 const DARK = '(prefers-color-scheme: dark)';
 
 /** `#rgb` ou `#rrggbb` → [r, g, b] de 0 à 255. */
@@ -106,6 +107,15 @@ const COACH_PAIRS: readonly (readonly [string, string, string])[] = [
     '.modeSwitch[data-mode="nutrition"] .modeButton[aria-pressed="true"]',
     '.modeSwitch[data-mode="nutrition"] .modePill',
   ],
+];
+
+/**
+ * Encadré « Sécurité » de la fiche d'un exercice (spec brique 2 §4.2) : texte d'avertissement (titre et entrées,
+ * texte courant) sur le fond de l'encadré, lus dans la feuille de la fiche.
+ */
+const EXERCISE_PAIRS: readonly (readonly [string, string, string])[] = [
+  ['encadré Sécurité, titre', '.safetyTitle', '.safety'],
+  ['encadré Sécurité, entrées', '.safety', '.safety'],
 ];
 
 const rgbToHex = (rgb: number[]) =>
@@ -222,6 +232,7 @@ describe('contrastes des jetons, pour chaque thème', () => {
   const voice = parseCssBlocks(readFileSync(VOICE_CSS, 'utf8'));
   const shell = parseCssBlocks(readFileSync(SHELL_CSS, 'utf8'));
   const coach = parseCssBlocks(readFileSync(COACH_CSS, 'utf8'));
+  const exercises = parseCssBlocks(readFileSync(EXERCISES_CSS, 'utf8'));
   const root = declarationsOf(blocks, ':root');
   const own = (p: Palette) => declarationsOf(blocks, p.selector, p.media);
   /** Ce que voit la page dans ce rendu : `:root`, puis le bloc du thème par-dessus (la cascade). */
@@ -304,6 +315,12 @@ describe('contrastes des jetons, pour chaque thème', () => {
         const tokens = seen(p);
         expect(tokens, `bloc ${p.selector} absent de tokens.css`).not.toBeNull();
         expectTintPairs(coach, COACH_PAIRS, tokens ?? new Map(), p.name);
+      });
+
+      it('fiche d’exercice : le texte de l’encadré Sécurité atteint 4,5:1 sur son fond', () => {
+        const tokens = seen(p);
+        expect(tokens, `bloc ${p.selector} absent de tokens.css`).not.toBeNull();
+        expectTintPairs(exercises, EXERCISE_PAIRS, tokens ?? new Map(), p.name);
       });
 
       // Le pont est déclaré sur :root ; le bloc du thème, plus spécifique, l'emporte pour les jetons.

@@ -1,6 +1,9 @@
 import {
   type EquipmentCode,
   type ExerciseLevel,
+  ILLUSTRATION_ROLES,
+  IllustrationEntry,
+  type IllustrationRole,
   MUSCLE_GROUPS,
   type MuscleGroupCode,
   maxExerciseLevel,
@@ -85,6 +88,35 @@ export interface SheetView {
   chain: { easier?: ServedSheet; harder?: ServedSheet };
   /** `substitutes` : au plus 5, utilisables au lieu principal (tout le matériel sans lieu), niveau ≤ `maxLevel`. */
   substitutes: ServedSheet[];
+  /** Lieu principal (nom de « Pas faisable : <lieu> », matériel de la pastille) ; null sans lieu principal. */
+  place: CatalogPlace | null;
+  /** Poses de la fiche, rangées départ, milieu, fin (`sheetIllustrations`). */
+  illustrations: SheetIllustration[];
+}
+
+/** Une pose d'une fiche et son entrée du manifeste (04 §12) : fichier servi, créateurs, licence. */
+export interface SheetIllustration {
+  illustration_id: string;
+  role: IllustrationRole;
+  /**
+   * Entrée lue dans le magasin `illustrations` ; null si elle y manque ou est illisible (catalogue d'une version
+   * précédente) : la carte dit alors « Illustration disponible après synchronisation ».
+   */
+  entry: IllustrationEntry | null;
+}
+
+/** Poses d'une fiche dans l'ordre départ, milieu, fin (côte à côte, 04 §12), chacune avec son entrée ou null. */
+export function sheetIllustrations(
+  uses: readonly { illustration_id: string; role: IllustrationRole }[],
+  entries: ReadonlyMap<string, IllustrationEntry>,
+): SheetIllustration[] {
+  return [...uses]
+    .sort((a, b) => ILLUSTRATION_ROLES.indexOf(a.role) - ILLUSTRATION_ROLES.indexOf(b.role))
+    .map((use) => ({
+      illustration_id: use.illustration_id,
+      role: use.role,
+      entry: entries.get(use.illustration_id) ?? null,
+    }));
 }
 
 export interface CatalogRepo {
@@ -97,6 +129,11 @@ export interface CatalogRepo {
   searchExercises(query: string, filter: ExerciseFilter): Promise<ExerciseSearch>;
   /** Null pour un id absent du catalogue local (ou catalogue absent). */
   getSheetView(id: string): Promise<SheetView | null>;
+  /**
+   * Entrées du manifeste en local pour ces ids d'illustration (magasin `illustrations`) ; un id absent ou une
+   * entrée illisible n'est pas dans la carte rendue.
+   */
+  illustrationEntries(ids: readonly string[]): Promise<Map<string, IllustrationEntry>>;
 }
 
 const collator = new Intl.Collator('fr', { sensitivity: 'base' });
@@ -176,9 +213,21 @@ export function createCatalogRepo(s: AppServices): CatalogRepo {
     };
   }
 
+  async function illustrationEntries(ids: readonly string[]): Promise<Map<string, IllustrationEntry>> {
+    const out = new Map<string, IllustrationEntry>();
+    if (ids.length === 0) return out;
+    const rows: unknown[] = await db.table('illustrations').bulkGet([...ids]);
+    for (const row of rows) {
+      const parsed = IllustrationEntry.safeParse(row);
+      if (parsed.success) out.set(parsed.data.id, parsed.data);
+    }
+    return out;
+  }
+
   return {
     sheets,
     context,
+    illustrationEntries,
 
     async view(filter) {
       const [all, ctx] = await Promise.all([sheets(), context()]);
@@ -241,12 +290,15 @@ export function createCatalogRepo(s: AppServices): CatalogRepo {
           if (harder) chain.harder = harder;
         }
       }
+      const entries = await illustrationEntries(sheet.illustrations.map((use) => use.illustration_id));
       return {
         sheet,
         usable: !(ctx.cautious && sheet.not_for_minors),
         feasibleHere: ctx.place === null || feasible(sheet, ctx.place.equipment),
         chain,
         substitutes: substitutes(sheet, catalogCtx),
+        place: ctx.place,
+        illustrations: sheetIllustrations(sheet.illustrations, entries),
       };
     },
   };

@@ -13,6 +13,7 @@ import type { AppDb } from '../../src/local-db/db';
 import { setMeta } from '../../src/local-db/meta';
 import { reposFor } from '../../src/repos';
 import { useCatalog, useExerciseView } from '../../src/repos/catalog-repo';
+import { illustrationEntry } from '../support/catalog';
 import { createTestServices, makeMe } from '../support/render';
 import { seedMirror } from '../support/seed';
 
@@ -596,5 +597,38 @@ describe('getSheetView', () => {
     expect(ids(retired?.substitutes ?? [])).toEqual(['bodyweight-squat', 'goblet-squat', 'back-squat']);
     expect(await repo.getSheetView('inconnu')).toBeNull();
     expect(await (await setup({ catalog: null })).repo.getSheetView('goblet-squat')).toBeNull();
+  });
+
+  it('lieu principal rendu avec la vue (nom pour « Pas faisable : <lieu> ») ; null sans lieu', async () => {
+    const { repo } = await setup();
+    expect((await repo.getSheetView('back-squat'))?.place?.name).toBe('Garage');
+    const nowhere = await setup({ place: null });
+    expect((await nowhere.repo.getSheetView('back-squat'))?.place).toBeNull();
+  });
+
+  it('illustrations : poses rangées départ, milieu, fin, avec leur entrée du manifeste en local, ou null', async () => {
+    const sheet = served({
+      id: 'goblet-squat',
+      illustrations: [
+        { illustration_id: 'goblet-end', role: 'end' },
+        { illustration_id: 'goblet-mid', role: 'mid' },
+        { illustration_id: 'goblet-start', role: 'start' },
+      ],
+    });
+    const { db, repo } = await setup({ catalog: CATALOG.map((s) => (s.id === sheet.id ? sheet : s)) });
+    const start = illustrationEntry('goblet-start');
+    const end = illustrationEntry('goblet-end');
+    // Une ligne illisible du magasin (catalogue d'une version précédente) compte comme absente.
+    await db.table('illustrations').bulkPut([start, end, { id: 'goblet-mid', file: 'goblet-mid.svg' }]);
+    const view = await repo.getSheetView('goblet-squat');
+    expect(view?.illustrations).toEqual([
+      { illustration_id: 'goblet-start', role: 'start', entry: start },
+      { illustration_id: 'goblet-mid', role: 'mid', entry: null },
+      { illustration_id: 'goblet-end', role: 'end', entry: end },
+    ]);
+    expect([...(await repo.illustrationEntries(['goblet-end', 'goblet-mid', 'inconnue'])).keys()]).toEqual([
+      'goblet-end',
+    ]);
+    expect((await repo.getSheetView('push-up'))?.illustrations).toEqual([]);
   });
 });

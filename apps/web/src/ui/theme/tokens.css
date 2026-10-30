@@ -35,6 +35,11 @@
 
   /* Voile sous un dialogue ou une feuille du bas (GUIDE, Bottom sheet). */
   --backdrop: rgb(0 0 0 / 0.55);
+  /*
+   * Carte des illustrations d'exercice : claire dans tous les thèmes, sombres compris (04 §12), car les dessins
+   * sont tracés à l'encre sur fond blanc. Commune aux 5 thèmes, jamais redéfinie ; aucun texte ne s'y pose.
+   */
+  --illustration-bg: #ffffff;
   /* Décor de la page sous le contenu, et retrait du texte depuis le bord de début (la marge du Carnet). */
   --page-decor: none;
   --page-inset-start: var(--space-4);
