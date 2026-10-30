@@ -1,4 +1,5 @@
 import {
+  type DraftSheet,
   type EquipmentCode,
   EXERCISE_LEVELS,
   type ExerciseSheet,
@@ -9,6 +10,7 @@ import {
 } from '@rune/contracts';
 import fc from 'fast-check';
 import { expandEquipment } from '../../src/catalog/equipment';
+import { contentOf, type ReviewerState, type RevisionRow } from '../../src/catalog/review';
 import type { CatalogContext } from '../../src/catalog/usable';
 
 /** Fiche publiée complète et valide (squat goblet de la maquette), sans chaîne. */
@@ -186,3 +188,24 @@ export const arbSubstituteCase = arbCatalog(1).chain((catalog) =>
     }),
   }),
 );
+
+/*
+ * Relecture (spec brique 2 §3) : comptes, lignes de révision, brouillons incomplets.
+ */
+
+/** Compte de relecture : relectrice simple (membre, `catalogReviewer`) par défaut. */
+export function reviewer(id: string, overrides: Partial<ReviewerState> = {}): ReviewerState {
+  return { id, role: 'member', catalogReviewer: true, healthProfessional: false, ...overrides };
+}
+
+/** Ligne `exercise_revision` de la fiche `s` : son `revision`, son contenu, l'auteur de l'enregistrement. */
+export function revisionRow(s: DraftSheet, savedBy: string | null): RevisionRow {
+  return { revision: s.revision, content: contentOf(s), savedBy };
+}
+
+/** Copie de `s` sans les clés `keys` (brouillon dont des champs IA sont encore vides, R-FIC-1). */
+export function without(s: DraftSheet, ...keys: (keyof ExerciseSheet)[]): DraftSheet {
+  const copy: Record<string, unknown> = { ...s };
+  for (const key of keys) delete copy[key];
+  return copy as DraftSheet;
+}
