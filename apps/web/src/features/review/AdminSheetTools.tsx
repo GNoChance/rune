@@ -120,8 +120,9 @@ function BlockerList(p: { id?: string; label: string; blockers: readonly Publish
 }
 
 /**
- * Feuille de confirmation d'un changement de statut : ce qu'il engage, les deux cases de `draft → reviewed`
- * (« Consignes et sécurité vérifiées », « Déconseillé aux mineurs » confirmé), les blocages connus ici (bouton
+ * Feuille de confirmation d'un changement de statut : ce qu'il engage, les deux cases de l'entrée en `reviewed`
+ * (« Consignes et sécurité vérifiées », « Déconseillé aux mineurs » confirmé), demandées aussi à la réactivation
+ * d'une fiche retirée, qui a pu être modifiée depuis sa dernière relecture ; les blocages connus ici (bouton
  * inactif tant qu'il en reste), puis l'envoi avec la révision affichée.
  * - 422 : les blocages du serveur remplacent ceux de l'écran, la fiche est relue (`onBlocked`) ;
  * - 409 : la feuille se ferme, l'écran le dit et relit la fiche (`onConflict`) ;
@@ -139,7 +140,8 @@ function TransitionSheet(p: {
   const repos = useRepos();
   const onLostAccess = useOnLostAccess();
   const { sheet } = p.data;
-  const leavesDraft = sheet.status === 'draft' && p.to === 'reviewed';
+  // `reviewed` ne s'atteint que depuis `draft` ou `retired` (04 §8).
+  const entersReview = p.to === 'reviewed';
   const [checks, setChecks] = useState({ review: false, minors: false });
   const [refused, setRefused] = useState<PublishBlocker[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -162,7 +164,7 @@ function TransitionSheet(p: {
       const next = await repos.review.transition(sheet.id, {
         to: p.to,
         baseRevision: sheet.revision,
-        ...(leavesDraft ? { reviewChecked: checks.review, minorsConfirmed: checks.minors } : {}),
+        ...(entersReview ? { reviewChecked: checks.review, minorsConfirmed: checks.minors } : {}),
       });
       sending.current = false;
       p.onDone(next);
@@ -206,7 +208,7 @@ function TransitionSheet(p: {
     >
       <div className={styles.sheetStack}>
         <p className={styles.sheetText}>{transitionText(sheet, p.to)}</p>
-        {leavesDraft ? (
+        {entersReview ? (
           <div className={styles.sheetStack}>
             <label className={styles.check}>
               <input

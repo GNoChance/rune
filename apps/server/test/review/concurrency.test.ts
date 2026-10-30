@@ -76,15 +76,16 @@ describe('écritures simultanées (spec brique 2 §3.5, Review Focus 3)', () => 
     expect(row.revision).toBe(5);
     expect(row.status).toBe(winner === 0 ? 'retired' : 'published');
 
+    // Réactivation (retired → reviewed) avec ses deux cases cochées, ou retrait.
+    const next = {
+      to: winner === 0 ? 'reviewed' : 'retired',
+      baseRevision: 5,
+      reviewChecked: true,
+      minorsConfirmed: true,
+    } as const;
     const again = await race([
-      postTransition(ctx, tabs[0], 'goblet-squat', {
-        to: winner === 0 ? 'reviewed' : 'retired',
-        baseRevision: 5,
-      }),
-      postTransition(ctx, tabs[1], 'goblet-squat', {
-        to: winner === 0 ? 'reviewed' : 'retired',
-        baseRevision: 5,
-      }),
+      postTransition(ctx, tabs[0], 'goblet-squat', next),
+      postTransition(ctx, tabs[1], 'goblet-squat', next),
     ]);
     expect(again.conflict.current).toMatchObject({ revision: 6 });
     expect(await revisionRows('goblet-squat')).toHaveLength(3);

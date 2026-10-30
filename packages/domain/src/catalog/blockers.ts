@@ -28,7 +28,8 @@ export function missingRequiredKeys(record: Readonly<Record<string, unknown>>): 
  * - `to` : statut visé ; égal au statut actuel pour un enregistrement (`PUT`).
  * - `comments` : commentaires de la fiche, toutes révisions confondues.
  * - `greenLight` : `healthGreenLight` de la fiche.
- * - `reviewChecked`, `minorsConfirmed` : cases cochées par l'admin pour `draft → reviewed`.
+ * - `reviewChecked`, `minorsConfirmed` : cases cochées par l'admin pour l'entrée en `reviewed` (depuis `draft`
+ *   ou `retired`).
  * - `manifestIds` : `id` des illustrations du manifeste.
  * - `templateRefs` : `id` des fiches que citent les modèles de programmes chargés, directement (liste de slot) ou
  *   par leur chaîne : l'appelant développe les chaînes.
@@ -98,7 +99,6 @@ const savesCheckedSheet = ({ from, to }: Move) =>
   from === to && (from === 'reviewed' || from === 'published');
 /** Entrée en `reviewed` : depuis `draft`, ou réactivation depuis `retired`. */
 const entersReview = ({ from, to }: Move) => to === 'reviewed' && (from === 'draft' || from === 'retired');
-const leavesDraft = ({ from, to }: Move) => from === 'draft' && to === 'reviewed';
 const publishes = ({ from, to }: Move) => from === 'reviewed' && to === 'published';
 const retires = ({ from, to }: Move) => from !== 'retired' && to === 'retired';
 const reactivates = ({ from, to }: Move) => from === 'retired' && to === 'reviewed';
@@ -132,7 +132,9 @@ type Rule = (input: TransitionInput, move: Move, check: () => SheetCheck) => boo
  * Interprétation : `incomplete` et `invalid_sheet` s'appliquent aussi à `retired → reviewed`. Le tableau du §3.6
  * ne les cite que pour `draft → reviewed`, mais R-FIC-1 (04 §4) rend les champs IA obligatoires à partir de
  * `reviewed`, et 04 §13 (critère 1) refuse une fiche `reviewed` incomplète : sans eux, un brouillon retiré
- * reviendrait en `reviewed` incomplet ou invalide.
+ * reviendrait en `reviewed` incomplet ou invalide. De même pour `review_unchecked` et `minors_unconfirmed` : une
+ * fiche retirée s'enregistre sans contrôle, et sans les deux cases elle repartirait vers la publication avec des
+ * consignes que personne n'a revues.
  *
  * Quand `incomplete` s'applique, il porte seul les champs absents ; `invalid_sheet` ne signale que le reste. À
  * l'enregistrement d'une fiche `reviewed` ou `published`, où `incomplete` ne s'applique pas, un champ absent rend
@@ -143,8 +145,8 @@ const RULES: { readonly [B in PublishBlocker]: Rule } = {
   invalid_sheet: (_, move, check) =>
     (entersReview(move) && check().invalidField) ||
     (savesCheckedSheet(move) && (check().missing.length > 0 || check().invalidField)),
-  review_unchecked: (input, move) => leavesDraft(move) && !input.reviewChecked,
-  minors_unconfirmed: (input, move) => leavesDraft(move) && !input.minorsConfirmed,
+  review_unchecked: (input, move) => entersReview(move) && !input.reviewChecked,
+  minors_unconfirmed: (input, move) => entersReview(move) && !input.minorsConfirmed,
   open_comments: (input, move) => publishes(move) && input.comments.some((c) => c.resolvedAt === null),
   health_validation_missing: (input, move) =>
     publishes(move) && isSensitive(input.sheet) && !input.greenLight,

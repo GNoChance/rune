@@ -267,11 +267,11 @@ export const SaveSheetRequest = z.object({
 export type SaveSheetRequest = z.infer<typeof SaveSheetRequest>;
 
 /**
- * `POST /api/admin/exercises/:id/transition` : statut visé, révision affichée, et pour `draft → reviewed` les cases
- * « Consignes et sécurité vérifiées » (`reviewChecked`) et « Déconseillé aux mineurs » confirmé
- * (`minorsConfirmed`), fausses si absentes. Transition hors du circuit de 04 §8 (`EXERCISE_TRANSITIONS` de
- * `@rune/domain`, même statut compris) : 400 `validation` sur `to`. Blocages du tableau §3.6 : 422
- * `TransitionBlockedBody`.
+ * `POST /api/admin/exercises/:id/transition` : statut visé, révision affichée, et pour l'entrée en `reviewed`
+ * (`draft → reviewed`, réactivation `retired → reviewed`) les cases « Consignes et sécurité vérifiées »
+ * (`reviewChecked`) et « Déconseillé aux mineurs » confirmé (`minorsConfirmed`), fausses si absentes. Transition
+ * hors du circuit de 04 §8 (`EXERCISE_TRANSITIONS` de `@rune/domain`, même statut compris) : 400 `validation` sur
+ * `to`. Blocages du tableau §3.6 : 422 `TransitionBlockedBody`.
  */
 export const TransitionRequest = z.object({
   to: ExerciseStatusSchema,

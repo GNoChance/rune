@@ -302,9 +302,9 @@ describe('→ retired', () => {
 });
 
 describe('retired → reviewed (réactivation)', () => {
-  it('fiche complète : relue, retired_at effacé, published_at gardé, sans les cases de draft → reviewed', async () => {
+  it('fiche complète, les deux cases cochées : relue, retired_at effacé, published_at gardé', async () => {
     const { admin, cookies } = await setup();
-    const body = await ok(await move(cookies.admin, 'retiree', 'reviewed'));
+    const body = await ok(await move(cookies.admin, 'retiree', 'reviewed', BOTH));
     expect(body.sheet).toMatchObject({
       status: 'reviewed',
       revision: 5,
@@ -315,9 +315,22 @@ describe('retired → reviewed (réactivation)', () => {
     expect(body.sheet).not.toHaveProperty('retired_at');
   });
 
+  it('les deux cases de draft → reviewed sont demandées : une fiche retirée a pu être modifiée', async () => {
+    const { cookies } = await setup();
+    await blocked(move(cookies.admin, 'retiree', 'reviewed'), 'retiree', [
+      'review_unchecked',
+      'minors_unconfirmed',
+    ]);
+    await blocked(move(cookies.admin, 'retiree', 'reviewed', { reviewChecked: true }), 'retiree', [
+      'minors_unconfirmed',
+    ]);
+  });
+
   it('brouillon retiré incomplet : incomplete', async () => {
     const { cookies } = await setup();
-    await blocked(move(cookies.admin, 'brouillon-retire', 'reviewed'), 'brouillon-retire', ['incomplete']);
+    await blocked(move(cookies.admin, 'brouillon-retire', 'reviewed', BOTH), 'brouillon-retire', [
+      'incomplete',
+    ]);
   });
 
   it(`catalog_full à ${CATALOG_MAX_SHEETS} fiches non retirées, permise à ${CATALOG_MAX_SHEETS - 1}`, async () => {
@@ -325,8 +338,8 @@ describe('retired → reviewed (réactivation)', () => {
     await seedAll(
       Array.from({ length: CATALOG_MAX_SHEETS - ACTIVE }, (_, i) => skeletonFixture(`remplissage-${i}`)),
     );
-    await blocked(move(cookies.admin, 'retiree', 'reviewed'), 'retiree', ['catalog_full']);
+    await blocked(move(cookies.admin, 'retiree', 'reviewed', BOTH), 'retiree', ['catalog_full']);
     await ok(await move(cookies.admin, 'brouillon', 'retired'));
-    await ok(await move(cookies.admin, 'retiree', 'reviewed'));
+    await ok(await move(cookies.admin, 'retiree', 'reviewed', BOTH));
   });
 });

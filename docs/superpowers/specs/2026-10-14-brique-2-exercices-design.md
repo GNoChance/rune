@@ -103,10 +103,10 @@ Les transitions de 04 §8 restent ; voici leurs blocages, dans cet ordre fixe (t
 
 | Code | Message affiché | S'applique à |
 |---|---|---|
-| `incomplete` | Des champs obligatoires sont vides. | `draft → reviewed` |
-| `invalid_sheet` | La fiche ne passe pas la validation complète (04 §13, critère 1). | `draft → reviewed`, et `PUT` sur une fiche `reviewed` ou `published` |
-| `review_unchecked` | Coche « Consignes et sécurité vérifiées ». | `draft → reviewed` |
-| `minors_unconfirmed` | Confirme le réglage « Déconseillé aux mineurs ». | `draft → reviewed` |
+| `incomplete` | Des champs obligatoires sont vides. | `draft → reviewed`, `retired → reviewed` |
+| `invalid_sheet` | La fiche ne passe pas la validation complète (04 §13, critère 1). | `draft → reviewed`, `retired → reviewed`, et `PUT` sur une fiche `reviewed` ou `published` |
+| `review_unchecked` | Coche « Consignes et sécurité vérifiées ». | `draft → reviewed`, `retired → reviewed` |
+| `minors_unconfirmed` | Confirme le réglage « Déconseillé aux mineurs ». | `draft → reviewed`, `retired → reviewed` |
 | `open_comments` | N commentaires ne sont pas traités. | `reviewed → published` |
 | `health_validation_missing` | Il manque le feu vert santé sur cette version. | `reviewed → published` (fiche sensible) |
 | `illustrations_missing` | Une illustration n'est pas dans le manifeste. | `reviewed → published` |
@@ -114,6 +114,7 @@ Les transitions de 04 §8 restent ; voici leurs blocages, dans cet ordre fixe (t
 | `chain_break` | Retirer cette fiche couperait sa chaîne. | `→ retired` |
 | `catalog_full` | Le catalogue a atteint 300 fiches. | `retired → reviewed` |
 
+- **Réactivation** (`retired → reviewed`) : mêmes contrôles qu'à la sortie du brouillon, car une fiche retirée s'enregistre sans contrôle et a pu changer depuis sa dernière relecture (ajout du 2026-10-31).
 - Refus : **422** `{error: 'transition_blocked', blockers: [codes dans l'ordre ci-dessus]}` (un `PUT` refusé par `invalid_sheet` répond de même). Les codes de blocage forment une énumération à part, `PublishBlocker`, dans `packages/contracts` ; ils ne sont jamais renvoyés comme `error`.
 - Codes ajoutés à `ApiErrorCode`, avec leur statut : `revision_conflict` 409, `transition_blocked` 422, `not_reviewable` 409, `self_health_flag` 403.
 - **Modifier une fiche `published`** : elle reste publiée (les programmes y renvoient) et les téléphones reçoivent le nouveau contenu. Si elle est sensible et que son feu vert n'est plus à jour, elle entre dans la file « À revalider » et l'admin voit le bandeau « Publiée, feu vert santé à refaire ». Le même cas s'applique à une fiche publiée qui devient sensible après une modification (passage du niveau 1 au niveau 2, par exemple).

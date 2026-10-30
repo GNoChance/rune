@@ -155,16 +155,22 @@ describe('transitionBlockers : un test par code (tableau §3.6)', () => {
     });
   });
 
-  it('review_unchecked : draft → reviewed sans la case « Consignes et sécurité vérifiées »', () => {
-    expect(blockers(at('draft'), 'reviewed', { reviewChecked: false })).toEqual(['review_unchecked']);
-  });
+  it.each<ExerciseStatus>(['draft', 'retired'])(
+    'review_unchecked : %s → reviewed sans la case « Consignes et sécurité vérifiées »',
+    (from) => {
+      expect(blockers(at(from), 'reviewed', { reviewChecked: false })).toEqual(['review_unchecked']);
+    },
+  );
 
-  it('minors_unconfirmed : draft → reviewed sans confirmer « Déconseillé aux mineurs »', () => {
-    expect(blockers(at('draft'), 'reviewed', { minorsConfirmed: false })).toEqual(['minors_unconfirmed']);
-  });
+  it.each<ExerciseStatus>(['draft', 'retired'])(
+    'minors_unconfirmed : %s → reviewed sans confirmer « Déconseillé aux mineurs »',
+    (from) => {
+      expect(blockers(at(from), 'reviewed', { minorsConfirmed: false })).toEqual(['minors_unconfirmed']);
+    },
+  );
 
-  it('retired → reviewed (réactivation) : ni la case de relecture ni la confirmation mineurs ne sont demandées', () => {
-    expect(blockers(at('retired'), 'reviewed', { reviewChecked: false, minorsConfirmed: false })).toEqual([]);
+  it('retired → reviewed (réactivation) : les deux cases cochées, rien ne bloque', () => {
+    expect(blockers(at('retired'), 'reviewed', { reviewChecked: true, minorsConfirmed: true })).toEqual([]);
   });
 
   describe('open_comments', () => {
@@ -326,8 +332,8 @@ describe("transitionBlockers : ordre fixe quand plusieurs codes s'appliquent", (
     invalid_sheet: (f, t) =>
       (t === 'reviewed' && (f === 'draft' || f === 'retired')) ||
       (f === t && (f === 'reviewed' || f === 'published')),
-    review_unchecked: (f, t) => f === 'draft' && t === 'reviewed',
-    minors_unconfirmed: (f, t) => f === 'draft' && t === 'reviewed',
+    review_unchecked: (f, t) => t === 'reviewed' && (f === 'draft' || f === 'retired'),
+    minors_unconfirmed: (f, t) => t === 'reviewed' && (f === 'draft' || f === 'retired'),
     open_comments: (f, t) => f === 'reviewed' && t === 'published',
     health_validation_missing: (f, t) => f === 'reviewed' && t === 'published',
     illustrations_missing: (f, t) => f === 'reviewed' && t === 'published',

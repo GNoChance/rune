@@ -301,9 +301,31 @@ describe('changements de statut du circuit (04 §8, EXERCISE_TRANSITIONS)', () =
     });
     await openAsAdmin(adminView({ sheet: { status: 'retired' }, queues: [] }), { api });
     fireEvent.click(within(adminRegion()).getByRole('button', { name: 'Réactiver' }));
+    for (const box of within(dialog()).getAllByRole('checkbox')) fireEvent.click(box);
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Réactiver' }));
     await until(() => within(dialog()).queryByRole('list', { name: 'Blocages' }) !== null);
     expect(blockers(dialog(), 'Blocages')).toEqual(['Le catalogue a atteint 300 fiches.']);
+  });
+
+  it('« Réactiver » : les deux cases de « Marquer relue » (la fiche a pu changer), puis envoyées', async () => {
+    const reviewed = adminView({ sheet: { status: 'reviewed', revision: 5 }, queues: ['to_review'] });
+    const api = reviewApi({}).on('POST', TRANSITION_API, ok(reviewed));
+    await openAsAdmin(adminView({ sheet: { status: 'retired' }, queues: [] }), { api });
+    fireEvent.click(within(adminRegion()).getByRole('button', { name: 'Réactiver' }));
+    expect(screen.getByRole('dialog', { name: 'Réactiver « Squat goblet »' })).toBeTruthy();
+    const confirm = within(dialog()).getByRole('button', { name: 'Réactiver' }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    expect(blockers(dialog(), 'Blocages')).toEqual([
+      'Coche « Consignes et sécurité vérifiées ».',
+      'Confirme le réglage « Déconseillé aux mineurs ».',
+    ]);
+    for (const box of within(dialog()).getAllByRole('checkbox')) fireEvent.click(box);
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
+    await until(() => screen.queryByRole('dialog') === null);
+    expect(callsTo(api, TRANSITION_API, 'POST').map((c) => c.body)).toEqual([
+      { to: 'reviewed', baseRevision: 4, reviewChecked: true, minorsConfirmed: true },
+    ]);
   });
 });
 
