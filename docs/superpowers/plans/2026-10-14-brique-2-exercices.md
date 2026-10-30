@@ -64,7 +64,7 @@
 - Produces (exercise.ts) : `EXERCISE_STATUSES = ['draft','reviewed','published','retired']`, `BatchSchema` (`/^(A|B|E([1-9][0-9]?))$/`), `ExerciseSheetSchema` (Zod, champs et bornes de 04 §4 + `batch` ; `safety` : entrées ≤ 120 caractères), `DraftSheetSchema` (champs IA facultatifs, R-FIC-1), `type ExerciseSheet`, `CONTENT_EXCLUDED_KEYS` (spec §3.2), `COMMENT_PARTS` (15 valeurs, spec §3.3), `PUBLISH_BLOCKERS` dans l'ordre du tableau §3.6 (`incomplete`, `invalid_sheet`, `review_unchecked`, `minors_unconfirmed`, `open_comments`, `health_validation_missing`, `illustrations_missing`, `referenced_by_template`, `chain_break`, `catalog_full`), `type PublishBlocker`, `exerciseJsonSchema()` (via `z.toJSONSchema`).
 - Produces (errors.ts) : codes `revision_conflict` 409, `transition_blocked` 422, `not_reviewable` 409, `self_health_flag` 403 (ajouter 422 à `ERROR_STATUS` s'il n'y est pas).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // taxonomy.test.ts
@@ -87,10 +87,10 @@ it('PUBLISH_BLOCKERS suit l\'ordre de la spec', () => expect(PUBLISH_BLOCKERS[0]
 
 `sheet()` est une fabrique locale au test qui rend une fiche publiée valide (squat goblet, valeurs de la maquette de fiche).
 
-- [ ] **Step 2: Run** `pnpm --filter @rune/contracts test` — FAIL (exports absents).
-- [ ] **Step 3: Implement** les constantes, `ExerciseSheetSchema` (ordre des clés = ordre de 04 §4, utilisé ensuite par la forme canonique) et les codes d'erreur.
-- [ ] **Step 4: Run** `pnpm --filter @rune/contracts test` puis `pnpm typecheck` — PASS.
-- [ ] **Step 5: Commit** `feat(contracts): taxonomie complète, schéma des fiches et codes de la relecture`.
+- [x] **Step 2: Run** `pnpm --filter @rune/contracts test` — FAIL (exports absents).
+- [x] **Step 3: Implement** les constantes, `ExerciseSheetSchema` (ordre des clés = ordre de 04 §4, utilisé ensuite par la forme canonique) et les codes d'erreur.
+- [x] **Step 4: Run** `pnpm --filter @rune/contracts test` puis `pnpm typecheck` — PASS.
+- [x] **Step 5: Commit** `feat(contracts): taxonomie complète, schéma des fiches et codes de la relecture`.
 
 ### Task 2: Fonctions partagées du catalogue
 

@@ -1,13 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { HOME_DEFAULT_PRESET, PRESET_IDS, PRESETS, PresetIdSchema } from '../src/presets';
 import {
+  CATALOG_MAX_SHEETS,
   EQUIPMENT,
   EQUIPMENT_CATEGORIES,
   EQUIPMENT_CATEGORY_LABELS,
   EQUIPMENT_IMPLIES,
   EQUIPMENT_LABELS,
   EquipmentCodeSchema,
+  EXERCISE_LEVELS,
+  JOINT_LABELS,
+  JOINTS,
+  JointSchema,
+  LOAD_MODES,
+  LoadModeSchema,
+  MOVEMENT_PATTERN_LABELS,
+  MOVEMENT_PATTERNS,
+  MovementPatternSchema,
+  MUSCLE_GROUPS,
+  MUSCLE_LABELS,
+  MUSCLES,
+  MuscleSchema,
+  maxExerciseLevel,
+  PATTERN_GROUPS,
+  patternGroup,
   REFERENCE_PROFILES,
+  SENSITIVE_JOINTS,
+  SUBSTITUTE_LIMIT,
 } from '../src/taxonomy';
 
 describe('taxonomy', () => {
@@ -111,6 +130,168 @@ describe('taxonomy', () => {
   it('refuse un code inconnu', () => {
     expect(EquipmentCodeSchema.safeParse('cardio').success).toBe(false);
     expect(EquipmentCodeSchema.safeParse('barbell').success).toBe(true);
+  });
+});
+
+describe('types de mouvement (04 §3.4)', () => {
+  it('fige les 20 codes, leur ordre et leurs libellés', () => {
+    expect(MOVEMENT_PATTERNS).toEqual([
+      'squat',
+      'lunge',
+      'hip_hinge',
+      'glute_bridge',
+      'knee_flexion',
+      'knee_extension',
+      'calf_raise',
+      'hip_adduction_abduction',
+      'horizontal_push',
+      'vertical_push',
+      'horizontal_pull',
+      'vertical_pull',
+      'shoulder_isolation',
+      'elbow_flexion',
+      'elbow_extension',
+      'core_anti_extension',
+      'core_anti_rotation',
+      'trunk_flexion',
+      'loaded_carry',
+      'plyometrics',
+    ]);
+    expect(Object.keys(MOVEMENT_PATTERN_LABELS)).toEqual([...MOVEMENT_PATTERNS]);
+    expect(MOVEMENT_PATTERN_LABELS.lunge).toBe('Fente (fentes, bulgare, step-up, pistol)');
+    expect(MOVEMENT_PATTERN_LABELS.shoulder_isolation).toBe(
+      "Isolation d'épaule (élévations, oiseau, face pull, rotations)",
+    );
+    expect(MOVEMENT_PATTERN_LABELS.core_anti_rotation).toBe('Gainage anti-rotation, y compris latéral');
+    expect(MovementPatternSchema.safeParse('deadlift').success).toBe(false);
+  });
+
+  it('fige les 5 groupes de couverture', () => {
+    expect(PATTERN_GROUPS).toEqual({
+      lower_body: ['squat', 'lunge'],
+      hinge: ['hip_hinge', 'glute_bridge'],
+      push: ['horizontal_push', 'vertical_push'],
+      pull: ['horizontal_pull', 'vertical_pull'],
+      core: ['core_anti_extension', 'core_anti_rotation'],
+    });
+  });
+
+  it('patternGroup rend son groupe ou le pattern lui-même', () => {
+    expect(patternGroup('lunge')).toBe('lower_body');
+    expect(patternGroup('calf_raise')).toBe('calf_raise');
+    for (const [group, patterns] of Object.entries(PATTERN_GROUPS)) {
+      for (const p of patterns) expect(patternGroup(p)).toBe(group);
+    }
+    const grouped: readonly string[] = Object.values(PATTERN_GROUPS).flat();
+    for (const p of MOVEMENT_PATTERNS) if (!grouped.includes(p)) expect(patternGroup(p)).toBe(p);
+  });
+});
+
+describe('muscles, articulations, niveaux et modes de charge (04 §3.5, §3.6)', () => {
+  it('fige les 18 muscles et leurs libellés', () => {
+    expect(MUSCLES).toEqual([
+      'chest',
+      'front_delts',
+      'side_delts',
+      'rear_delts',
+      'rotator_cuff',
+      'traps',
+      'lats',
+      'biceps',
+      'triceps',
+      'forearms',
+      'abs',
+      'obliques',
+      'lower_back',
+      'glutes',
+      'quadriceps',
+      'hamstrings',
+      'adductors',
+      'calves',
+    ]);
+    expect(Object.keys(MUSCLE_LABELS)).toEqual([...MUSCLES]);
+    expect(MUSCLE_LABELS.lats).toBe('Dorsaux');
+    expect(MuscleSchema.safeParse('delts').success).toBe(false);
+  });
+
+  it('fige les 8 articulations et leurs libellés', () => {
+    expect(JOINTS).toEqual([
+      'neck',
+      'shoulders',
+      'elbows',
+      'wrists',
+      'lower_back',
+      'hips',
+      'knees',
+      'ankles',
+    ]);
+    expect(Object.keys(JOINT_LABELS)).toEqual([...JOINTS]);
+    expect(JointSchema.safeParse('spine').success).toBe(false);
+  });
+
+  it('fige les niveaux et les 6 modes de charge', () => {
+    expect(EXERCISE_LEVELS).toEqual([1, 2, 3]);
+    expect(LOAD_MODES).toEqual(['barbell', 'dumbbell', 'machine', 'weighted', 'bodyweight', 'band']);
+    expect(LoadModeSchema.safeParse('duration').success).toBe(false);
+  });
+
+  it('SENSITIVE_JOINTS est inclus dans JOINTS', () => {
+    expect(SENSITIVE_JOINTS).toEqual(['lower_back', 'knees', 'shoulders', 'neck']);
+    expect(SENSITIVE_JOINTS.every((j) => JOINTS.includes(j))).toBe(true);
+  });
+
+  it("MUSCLE_GROUPS couvre chacun des 18 muscles une seule fois, dans l'ordre de la refonte", () => {
+    expect(MUSCLE_GROUPS.map((g) => g.code)).toEqual([
+      'chest',
+      'back',
+      'shoulders',
+      'arms',
+      'core',
+      'glutes',
+      'quads',
+      'hamstrings',
+      'calves',
+    ]);
+    expect(MUSCLE_GROUPS.map((g) => g.label)).toEqual([
+      'Pectoraux',
+      'Dos',
+      'Épaules',
+      'Bras',
+      'Abdos',
+      'Fessiers',
+      'Quadriceps',
+      'Ischios',
+      'Mollets',
+    ]);
+    expect(MUSCLE_GROUPS.flatMap((g) => g.muscles).sort()).toEqual([...MUSCLES].sort());
+  });
+
+  it('range les muscles comme le tableau de la spec (§4.3)', () => {
+    expect(Object.fromEntries(MUSCLE_GROUPS.map((g) => [g.code, g.muscles]))).toEqual({
+      chest: ['chest'],
+      back: ['lats', 'traps', 'lower_back'],
+      shoulders: ['front_delts', 'side_delts', 'rear_delts', 'rotator_cuff'],
+      arms: ['biceps', 'triceps', 'forearms'],
+      core: ['abs', 'obliques'],
+      glutes: ['glutes'],
+      quads: ['quadriceps', 'adductors'],
+      hamstrings: ['hamstrings'],
+      calves: ['calves'],
+    });
+  });
+
+  it("maxExerciseLevel suit le niveau de programme (02 R-REC-2), 2 si l'expérience est inconnue", () => {
+    expect(maxExerciseLevel('none')).toBe(1);
+    expect(maxExerciseLevel('lt_6_months')).toBe(1);
+    expect(maxExerciseLevel('6_to_24_months')).toBe(2);
+    expect(maxExerciseLevel('gt_24_months')).toBe(2);
+    expect(maxExerciseLevel(null)).toBe(2);
+    expect(maxExerciseLevel(undefined)).toBe(2);
+  });
+
+  it('fige les limites du catalogue', () => {
+    expect(SUBSTITUTE_LIMIT).toBe(5);
+    expect(CATALOG_MAX_SHEETS).toBe(300);
   });
 });
 

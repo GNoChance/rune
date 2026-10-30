@@ -13,6 +13,7 @@ export * from './coach';
 export * from './constants';
 export * from './entity-rules';
 export * from './equipment-short-labels';
+export * from './exercise';
 export * from './help-resources';
 export * from './load-settings';
 export * from './ops';

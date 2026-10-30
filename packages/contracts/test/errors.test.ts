@@ -21,6 +21,7 @@ const GROUPS: Record<number, string[]> = {
     'password_change_required',
     'health_consent_required',
     'reset_self_forbidden',
+    'self_health_flag',
   ],
   404: ['not_found'],
   409: [
@@ -33,17 +34,27 @@ const GROUPS: Record<number, string[]> = {
     'last_place',
     'primary_required',
     'onboarding_incomplete',
+    'revision_conflict',
+    'not_reviewable',
   ],
   410: ['account_deleted', 'watermark_expired'],
   415: ['unsupported_media_type'],
+  422: ['transition_blocked'],
   426: ['protocol_unsupported'],
   429: ['rate_limited'],
   500: ['internal'],
 };
 
 describe('ApiErrorCode et ERROR_STATUS', () => {
-  it('compte 33 codes', () => {
-    expect(ApiErrorCode.options).toHaveLength(33);
+  it('compte 37 codes', () => {
+    expect(ApiErrorCode.options).toHaveLength(37);
+  });
+
+  it('porte les codes de la relecture avec leur statut (spec brique 2 §3.6)', () => {
+    expect(ERROR_STATUS.revision_conflict).toBe(409);
+    expect(ERROR_STATUS.transition_blocked).toBe(422);
+    expect(ERROR_STATUS.not_reviewable).toBe(409);
+    expect(ERROR_STATUS.self_health_flag).toBe(403);
   });
 
   it('associe chaque code au statut de son groupe', () => {
