@@ -232,6 +232,38 @@ export const CONTENT_EXCLUDED_KEYS = [
   'batch',
 ] as const;
 
+/**
+ * Clés de la fiche jamais servies aux téléphones (spec brique 2 §7, critère 9 modifié) : `batch` (spec brique 2
+ * §2) et les colonnes éditoriales de 04 « Modèle de données », réservées à l'admin. `exported_revision`, colonne
+ * de base sans champ de fichier, ne l'est pas non plus.
+ */
+export const SERVED_EXCLUDED_KEYS = [
+  'batch',
+  'review_notes',
+  'drafting',
+  'reviewed_by',
+  'reviewed_at',
+  'published_at',
+  'retired_at',
+  'updated_at',
+] as const satisfies readonly (keyof typeof SheetObject.shape)[];
+
+/** Statuts servis par `GET /api/catalog` : une fiche `retired` ne l'est que si elle a été publiée (spec §3.6). */
+export const SERVED_STATUSES = ['published', 'retired'] as const;
+
+/**
+ * Fiche servie aux téléphones (`CatalogBundle.exercises`, 04 §11) : la fiche complète, sans `SERVED_EXCLUDED_KEYS`,
+ * au statut `published` ou `retired`. Les fonctions du catalogue de `packages/domain` l'acceptent telle quelle.
+ */
+export const ServedSheetSchema = SheetObject.omit(
+  Object.fromEntries(SERVED_EXCLUDED_KEYS.map((k) => [k, true])) as {
+    [K in (typeof SERVED_EXCLUDED_KEYS)[number]]: true;
+  },
+)
+  .extend({ status: z.enum(SERVED_STATUSES) })
+  .superRefine(checkMuscles);
+export type ServedSheet = z.infer<typeof ServedSheetSchema>;
+
 /** Parties d'une fiche qu'on peut commenter (spec brique 2 §3.3), dans l'ordre d'affichage des commentaires. */
 export const COMMENT_PARTS = [
   'general',

@@ -9,6 +9,9 @@ import {
   ExerciseSheetSchema,
   exerciseJsonSchema,
   PUBLISH_BLOCKERS,
+  SERVED_EXCLUDED_KEYS,
+  SERVED_STATUSES,
+  ServedSheetSchema,
 } from '../src/exercise';
 
 /** Fiche publiée valide : un squat goblet plausible, aux bornes de 04 §4. */
@@ -422,6 +425,56 @@ describe('constantes de la relecture', () => {
       'chain_break',
       'catalog_full',
     ]);
+  });
+});
+
+describe('ServedSheetSchema (fiche servie aux téléphones)', () => {
+  /** La fiche de référence sans ses colonnes éditoriales ni son lot. */
+  const served = (overrides: Record<string, unknown> = {}) => {
+    const s = sheet(overrides);
+    for (const key of SERVED_EXCLUDED_KEYS) delete s[key];
+    return s;
+  };
+
+  it('fige les clés jamais servies : colonnes éditoriales de 04 et batch (spec §7, critère 9 modifié)', () => {
+    expect(SERVED_EXCLUDED_KEYS).toEqual([
+      'batch',
+      'review_notes',
+      'drafting',
+      'reviewed_by',
+      'reviewed_at',
+      'published_at',
+      'retired_at',
+      'updated_at',
+    ]);
+    expect(SERVED_STATUSES).toEqual(['published', 'retired']);
+  });
+
+  it("accepte une fiche publiée ou retirée sans colonne éditoriale, clés dans l'ordre de 04 §4", () => {
+    expect(ServedSheetSchema.parse(served())).toEqual(served());
+    expect(ServedSheetSchema.safeParse(served({ status: 'retired' })).success).toBe(true);
+    const order = Object.keys(ExerciseSheetSchema.shape).filter(
+      (k) => !(SERVED_EXCLUDED_KEYS as readonly string[]).includes(k),
+    );
+    expect(Object.keys(ServedSheetSchema.shape)).toEqual(order);
+  });
+
+  it.each(SERVED_EXCLUDED_KEYS)('refuse la clé %s', (key) => {
+    const value = sheet({ retired_at: '2026-10-23T08:00:00.000Z' })[key];
+    expect(value).toBeDefined();
+    expect(ServedSheetSchema.safeParse({ ...served(), [key]: value }).success).toBe(false);
+  });
+
+  it('refuse exported_revision, un brouillon, une fiche relue et une fiche incomplète', () => {
+    expect(ServedSheetSchema.safeParse({ ...served(), exported_revision: 4 }).success).toBe(false);
+    expect(ServedSheetSchema.safeParse(served({ status: 'draft' })).success).toBe(false);
+    expect(ServedSheetSchema.safeParse(served({ status: 'reviewed' })).success).toBe(false);
+    const { safety: _, ...incomplete } = served();
+    expect(ServedSheetSchema.safeParse(incomplete).success).toBe(false);
+  });
+
+  it('garde les règles de la fiche complète (muscles disjoints)', () => {
+    expect(ServedSheetSchema.safeParse(served({ secondary_muscles: ['glutes'] })).success).toBe(false);
   });
 });
 

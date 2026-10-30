@@ -99,8 +99,19 @@ describe('IllustrationRef', () => {
 });
 
 describe('CatalogBundle', () => {
+  const empty = { version: 'v', exercises: [], illustrations: [], programTemplates: [], adviceSheets: [] };
+
   it('décrit un catalogue vide', () => {
-    const empty = { version: 'v', exercises: [], illustrations: [], programTemplates: [], adviceSheets: [] };
     expect(CatalogBundle.safeParse(empty).success).toBe(true);
+  });
+
+  it('porte les entrées complètes du manifeste (crédits hors ligne, 04 §11 et §12)', () => {
+    expect(CatalogBundle.safeParse({ ...empty, illustrations: [entry()] }).success).toBe(true);
+    const ref = { id: 'squat', file: 'squat.0a1b2c3d.svg' };
+    expect(CatalogBundle.safeParse({ ...empty, illustrations: [ref] }).success).toBe(false);
+  });
+
+  it("refuse ce qui n'est pas une fiche servie", () => {
+    expect(CatalogBundle.safeParse({ ...empty, exercises: [{ id: 'squat' }] }).success).toBe(false);
   });
 });

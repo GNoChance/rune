@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ServedSheetSchema } from './exercise';
 
 /** Nom d'un fichier d'illustration : `<id>.<empreinte 8 hex>.<ext>`, sans chemin. */
 export const ILLUSTRATION_FILE_RE = /^([a-z0-9][a-z0-9-]*)\.([0-9a-f]{8})\.(svg|png|webp|jpg)$/;
@@ -82,10 +83,17 @@ export type IllustrationEntry = z.infer<typeof IllustrationEntry>;
 export const IllustrationManifest = z.array(IllustrationEntry);
 export type IllustrationManifest = z.infer<typeof IllustrationManifest>;
 
+/**
+ * Bloc servi par `GET /api/catalog` (04 §11), reconstruit depuis la base à chaque écriture (spec brique 2 §3.7) :
+ * - `version` : `catalog_version`, sha256 de la forme canonique des quatre autres clés ; c'est aussi l'ETag ;
+ * - `exercises` : fiches `published`, et `retired` déjà publiées, triées par `id` ;
+ * - `illustrations` : manifeste complet (table `illustration`), trié par `id`, pour les crédits hors ligne ;
+ * - `programTemplates` : modèles de `data/programs/*.json`, triés par nom de fichier ; `adviceSheets` : vide.
+ */
 export const CatalogBundle = z.object({
   version: z.string(),
-  exercises: z.array(z.unknown()),
-  illustrations: z.array(IllustrationRef),
+  exercises: z.array(ServedSheetSchema),
+  illustrations: IllustrationManifest,
   programTemplates: z.array(z.unknown()),
   adviceSheets: z.array(z.unknown()),
 });

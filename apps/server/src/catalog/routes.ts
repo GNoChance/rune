@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../app-env';
 import { requireUser } from '../auth/session';
 import type { AppDeps } from '../deps';
-import { getLoadedCatalog, loadCatalog } from './loader';
+import { currentCatalog } from './bundle';
 
 const etagMatches = (header: string | undefined, etag: string): boolean =>
   (header ?? '')
@@ -10,13 +10,13 @@ const etagMatches = (header: string | undefined, etag: string): boolean =>
     .map((v) => v.trim().replace(/^W\//, ''))
     .includes(etag);
 
-/** Monté sous /api/catalog : le catalogue complet, validé par ETag = version. */
+/** Monté sous /api/catalog : le catalogue servi, reconstruit depuis la base, validé par ETag = version. */
 export function catalogRoutes(deps: AppDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
   routes.use('*', requireUser);
 
   routes.get('/', async (c) => {
-    const bundle = getLoadedCatalog(deps) ?? (await loadCatalog(deps));
+    const bundle = await currentCatalog(deps);
     const etag = `"${bundle.version}"`;
     c.header('ETag', etag);
     c.header('Cache-Control', 'no-cache');

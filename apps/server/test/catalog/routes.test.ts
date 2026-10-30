@@ -1,21 +1,40 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { rebuildCatalog } from '../../src/catalog/bundle';
+import { CATALOG_STARTUP_TASK } from '../../src/catalog/loader';
 import { getServerMeta } from '../../src/db/server-meta';
-import { createTestContext, createUserAndLogin, type TestContext } from '../support';
+import { createTestContext, createUser, createUserAndLogin, type TestContext } from '../support';
+import { retiredDraft, sheetFixture, skeletonFixture, tempDataDirs, writeDataDir } from '../support/catalog';
 
 const REPO_DATA = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../data');
 
 let ctx: TestContext;
-afterEach(() => ctx?.close());
+const dirs = tempDataDirs();
+afterEach(() => {
+  ctx?.close();
+  dirs.cleanup();
+});
 
 async function setup(contentDir = REPO_DATA): Promise<string> {
   ctx = await createTestContext({ config: { contentDir } });
+  await CATALOG_STARTUP_TASK.run(ctx.deps);
   const { cookie } = await createUserAndLogin(ctx);
   return cookie;
 }
+
+/** Colonnes éditoriales de 04 « Modèle de données » et `batch` : jamais servies (spec §7, critère 9 modifié). */
+const EDITORIAL = [
+  'review_notes',
+  'drafting',
+  'reviewed_by',
+  'reviewed_at',
+  'published_at',
+  'retired_at',
+  'updated_at',
+  'exported_revision',
+  'batch',
+];
 
 describe('GET /api/catalog', () => {
   it('sans session : 401', async () => {
@@ -32,6 +51,50 @@ describe('GET /api/catalog', () => {
     expect(body.exercises).toEqual([]);
     expect(res.headers.get('ETag')).toBe(`"${body.version}"`);
     expect(res.headers.get('Cache-Control')).toBe('no-cache');
+  });
+
+  it('ne sert ni draft, ni reviewed, ni brouillon retiré, ni colonne éditoriale, ni batch (critère 9)', async () => {
+    const contentDir = dirs.create();
+    ctx = await createTestContext({ config: { contentDir } });
+    const reviewer = await createUser(ctx);
+    writeDataDir(contentDir, {
+      sheets: [
+        skeletonFixture('draft-sheet', { review_notes: 'REPERE-BROUILLON' }),
+        sheetFixture('reviewed-sheet', { status: 'reviewed', published_at: undefined }),
+        sheetFixture('published-sheet', { batch: 'E7', reviewed_by: reviewer.id }),
+        sheetFixture('retired-published', { status: 'retired', retired_at: '2026-10-28T08:00:00.000Z' }),
+        retiredDraft(),
+      ],
+    });
+    await CATALOG_STARTUP_TASK.run(ctx.deps);
+    expect(
+      await ctx.deps.db
+        .selectFrom('exercise')
+        .select('reviewedBy')
+        .where('id', '=', 'published-sheet')
+        .execute(),
+    ).toEqual([{ reviewedBy: reviewer.id }]);
+    const { cookie } = await createUserAndLogin(ctx);
+    const res = await ctx.request('/api/catalog', { cookie });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    const body = JSON.parse(text) as { exercises: Record<string, unknown>[] };
+    expect(body.exercises.map((s) => [s.id, s.status])).toEqual([
+      ['published-sheet', 'published'],
+      ['retired-published', 'retired'],
+    ]);
+    for (const sheet of body.exercises) for (const key of EDITORIAL) expect(sheet).not.toHaveProperty(key);
+    for (const key of EDITORIAL) expect(text).not.toContain(`"${key}"`);
+    const markers = [
+      'REPERE-NOTES',
+      'REPERE-BROUILLON',
+      'REPERE-RETIRE',
+      'draft-sheet',
+      'reviewed-sheet',
+      'retired-draft',
+      'E7',
+    ];
+    for (const marker of [...markers, reviewer.id]) expect(text).not.toContain(marker);
   });
 
   it('If-None-Match identique, faible ou dans une liste : 304 sans corps', async () => {
@@ -51,17 +114,27 @@ describe('GET /api/catalog', () => {
     expect(res.status).toBe(200);
   });
 
-  it('catalogue invalide jamais chargé : 500 internal', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'rune-catalog-'));
-    try {
-      mkdirSync(join(dir, 'illustrations'));
-      writeFileSync(join(dir, 'illustrations/manifest.json'), '[');
-      const cookie = await setup(dir);
-      const res = await ctx.request('/api/catalog', { cookie });
-      expect(res.status).toBe(500);
-      expect(await res.json()).toEqual({ error: 'internal' });
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+  it('ETag = version : une fiche publiée corrigée change la version, le téléphone retélécharge', async () => {
+    const cookie = await setup(dirs.create({ sheets: [sheetFixture('goblet-squat')] }));
+    const etag = (await ctx.request('/api/catalog', { cookie })).headers.get('ETag') as string;
+    await ctx.deps.db.transaction().execute(async (trx) => {
+      await trx.updateTable('exercise').set({ name: 'Squat goblet corrigé', revision: 5 }).execute();
+      await rebuildCatalog(trx, ctx.deps);
+    });
+    const res = await ctx.request('/api/catalog', { cookie, headers: { 'If-None-Match': etag } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('ETag')).not.toBe(etag);
+    const body = (await res.json()) as { version: string; exercises: { name: string }[] };
+    expect(body.exercises[0]?.name).toBe('Squat goblet corrigé');
+    expect((await getServerMeta(ctx.deps.db)).catalogVersion).toBe(body.version);
+  });
+
+  it('sans chargement au démarrage : bloc reconstruit depuis la base', async () => {
+    ctx = await createTestContext({ config: { contentDir: REPO_DATA } });
+    const { cookie } = await createUserAndLogin(ctx);
+    const res = await ctx.request('/api/catalog', { cookie });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { version: string };
+    expect(body.version).toBe((await getServerMeta(ctx.deps.db)).catalogVersion);
   });
 });
