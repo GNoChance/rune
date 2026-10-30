@@ -2,6 +2,7 @@ export * from './age';
 export * from './auth/password';
 export * from './auth/secret-code';
 export * from './auth/username';
+export * from './catalog';
 export * from './cautious';
 export * from './ids';
 export * from './onboarding';
