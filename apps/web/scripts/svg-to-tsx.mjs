@@ -7,6 +7,8 @@
 //   aucun identifiant, et chaque dégradé ou filtre reste celui de son dessin ;
 // - les groupes de premier niveau des coachs (`sys-visor`, `per-eyes`, `emb-glyph`, `emb-glow`…) gardent leur
 //   nom dans `data-g`, que visent les animations de repos (art.module.css) ;
+// - pierres de rang en deux fichiers : RankStoneE.tsx (rang E, bundle initial) et RankStoneUpper.tsx (D à S,
+//   chargé à la demande par RankBadge, ≈ 30 ko gzip de moins au démarrage) ;
 // - CSP `default-src 'self'` : jamais d'élément ni d'attribut `style`, d'attribut d'événement, de lien ni de
 //   HTML injecté. Une source qui en contient fait échouer la génération au lieu de passer en silence.
 import { execFileSync } from 'node:child_process';
@@ -188,31 +190,58 @@ function coachFile({ coach, component, direction }) {
   ].join('\n');
 }
 
-const RANKS = ['E', 'D', 'C', 'B', 'A', 'S'];
+/** Rangs au-dessus de E : pas encore atteints au socle, leurs pierres sont chargées à la demande. */
+const UPPER_RANKS = ['D', 'C', 'B', 'A', 'S'];
 
-function rankFile() {
-  const full = RANKS.map((r) => renderVariant(`rank${r}`, r, join(brand, 'rangs', `rank-${r}.svg`)));
-  const mini = RANKS.map((r) =>
-    renderVariant(`mini${r}`, `${r}-mini`, join(brand, 'rangs', 'mini', `rank-${r}.svg`)),
-  );
+const fullStone = (r) => renderVariant(`rank${r}`, r, join(brand, 'rangs', `rank-${r}.svg`));
+const miniStone = (r) =>
+  renderVariant(`mini${r}`, `${r}-mini`, join(brand, 'rangs', 'mini', `rank-${r}.svg`));
+
+/** Rang E, le seul affiché au socle (tout commence au rang E) : dans le bundle initial. */
+function rankEFile() {
   return [
     HEADER,
-    "// Pierres de rang « Pierre runique » (E galet griffé … S monolithe éveillé), d'après docs/brand/rangs/ ;",
-    "// versions mini (24–32 px) d'après docs/brand/rangs/mini/.",
+    "// Pierre runique du rang E (galet griffé), d'après docs/brand/rangs/rank-E.svg ; version mini (24–32 px)",
+    "// d'après docs/brand/rangs/mini/. Dans le bundle initial ; les rangs D à S sont dans RankStoneUpper.tsx.",
+    "import type { ArtSvgProps, RankStoneProps } from './art-types';",
+    '',
+    fullStone('E'),
+    '',
+    miniStone('E'),
+    '',
+    '/** Pierre du rang E, en grand ou en mini ; ids préfixés par idPrefix. */',
+    "export function RankStoneE({ mini = false, idPrefix, ...svg }: Omit<RankStoneProps, 'rank'>) {",
+    '  return (mini ? miniE : rankE)(idPrefix, svg);',
+    '}',
+    '',
+  ].join('\n');
+}
+
+/** Rangs D à S : hors du bundle initial, RankBadge charge ce fichier au premier affichage de l'un d'eux. */
+function upperRankFile() {
+  return [
+    HEADER,
+    "// Pierres runiques des rangs D à S (jusqu'au monolithe éveillé du rang S), d'après docs/brand/rangs/ ;",
+    "// versions mini (24–32 px) d'après docs/brand/rangs/mini/. Chargé à la demande par RankBadge.",
     "import type { JSX } from 'react';",
-    "import type { ArtSvgProps, Rank, RankStoneProps } from './art-types';",
+    "import type { ArtSvgProps, RankStoneProps, UpperRank } from './art-types';",
     '',
-    ...[...full, ...mini].flatMap((v) => [v, '']),
-    'const FULL: Record<Rank, (p: string, svg: ArtSvgProps) => JSX.Element> = {',
-    ...RANKS.map((r) => `  ${r}: rank${r},`),
+    ...[...UPPER_RANKS.map(fullStone), ...UPPER_RANKS.map(miniStone)].flatMap((v) => [v, '']),
+    'const FULL: Record<UpperRank, (p: string, svg: ArtSvgProps) => JSX.Element> = {',
+    ...UPPER_RANKS.map((r) => `  ${r}: rank${r},`),
     '};',
     '',
-    'const MINI: Record<Rank, (p: string, svg: ArtSvgProps) => JSX.Element> = {',
-    ...RANKS.map((r) => `  ${r}: mini${r},`),
+    'const MINI: Record<UpperRank, (p: string, svg: ArtSvgProps) => JSX.Element> = {',
+    ...UPPER_RANKS.map((r) => `  ${r}: mini${r},`),
     '};',
     '',
-    '/** Pierre du rang, en grand ou en mini ; ids préfixés par idPrefix. */',
-    'export function RankStone({ rank, mini = false, idPrefix, ...svg }: RankStoneProps) {',
+    "/** Pierre d'un rang D à S, en grand ou en mini ; ids préfixés par idPrefix. */",
+    'export function RankStoneUpper({',
+    '  rank,',
+    '  mini = false,',
+    '  idPrefix,',
+    '  ...svg',
+    '}: RankStoneProps & { rank: UpperRank }) {',
     '  return (mini ? MINI : FULL)[rank](idPrefix, svg);',
     '}',
     '',
@@ -223,7 +252,8 @@ function rankFile() {
 function generate() {
   return [
     ...COACHES.map((c) => [join(outDir, `${c.component}.tsx`), coachFile(c)]),
-    [join(outDir, 'RankStone.tsx'), rankFile()],
+    [join(outDir, 'RankStoneE.tsx'), rankEFile()],
+    [join(outDir, 'RankStoneUpper.tsx'), upperRankFile()],
   ];
 }
 

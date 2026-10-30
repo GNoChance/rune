@@ -39,6 +39,10 @@ const voiceClass = (name: string) => moduleClass(voiceStyles, 'voice.module.css'
 
 const allIds = (root: ParentNode) => [...root.querySelectorAll('[id]')].map((el) => el.id);
 
+/** Pierres D à S chargées (RankStoneUpper, à la demande) : plus aucune image sans son dessin dans `root`. */
+const stonesLoaded = (root: ParentNode) =>
+  waitFor(() => expect(root.querySelector('svg[role="img"]:not([data-variant])')).toBeNull());
+
 /**
  * Dessin autonome : ids sans caractère spécial (deux-points, guillemets), et chaque `url(#…)` vise un id du
  * même `<svg>`, jamais celui d'un autre dessin de la page. Rend le nombre d'ids et de références vus.
@@ -299,25 +303,27 @@ describe('Dialog : même API, rendu en feuille du bas', () => {
 });
 
 describe('RankBadge (pierres runiques, spec refonte §9)', () => {
-  it('une image nommée « Rang E »', () => {
+  it('une image nommée « Rang E », dessinée dès le premier rendu (bundle initial)', () => {
     render(<RankBadge rank="E" size={48} />);
     const badge = screen.getByRole('img', { name: 'Rang E' });
     expect(badge.getAttribute('width')).toBe('48');
     expect(badge.getAttribute('data-variant')).toBe('E');
   });
 
-  it('mini : la version 24–32 px dessinée pour les petites tailles', () => {
-    render(<RankBadge rank="S" size={24} mini />);
+  it('mini : la version 24–32 px dessinée pour les petites tailles', async () => {
+    const { container } = render(<RankBadge rank="S" size={24} mini />);
+    await stonesLoaded(container);
     expect(screen.getByRole('img', { name: 'Rang S' }).getAttribute('data-variant')).toBe('S-mini');
   });
 
-  it('verrouillé : toujours visible et nommé, mais atténué par la classe .locked', () => {
-    render(
+  it('verrouillé : toujours visible et nommé, mais atténué par la classe .locked', async () => {
+    const { container } = render(
       <>
         <RankBadge rank="A" size={32} locked />
         <RankBadge rank="B" size={32} />
       </>,
     );
+    await stonesLoaded(container);
     const locked = screen.getByRole('img', { name: 'Rang A' });
     const reached = screen.getByRole('img', { name: 'Rang B' });
     expect(locked.classList.contains(artClass('locked'))).toBe(true);
@@ -327,7 +333,7 @@ describe('RankBadge (pierres runiques, spec refonte §9)', () => {
     expect(Number(muted?.get('opacity'))).toBeLessThan(1);
   });
 
-  it('deux pierres du même rang et sa mini sur la même page : aucun id en double', () => {
+  it('deux pierres du même rang et sa mini sur la même page : aucun id en double', async () => {
     const { container } = render(
       <>
         <RankBadge rank="B" size={48} />
@@ -335,6 +341,7 @@ describe('RankBadge (pierres runiques, spec refonte §9)', () => {
         <RankBadge rank="B" size={24} mini />
       </>,
     );
+    await stonesLoaded(container);
     const ids = allIds(container);
     expect(ids.length).toBeGreaterThan(3);
     expect(new Set(ids).size).toBe(ids.length);
@@ -346,13 +353,14 @@ describe('RankBadge (pierres runiques, spec refonte §9)', () => {
 
   it.each(STONES)(
     'rang $rank (mini : $mini), deux fois sur la page : chaque url(#…) reste dans sa pierre',
-    ({ rank, mini }) => {
+    async ({ rank, mini }) => {
       const { container } = render(
         <>
           <RankBadge rank={rank} size={48} mini={mini} />
           <RankBadge rank={rank} size={48} mini={mini} />
         </>,
       );
+      await stonesLoaded(container);
       const svgs = container.querySelectorAll(':scope > svg');
       expect(svgs).toHaveLength(2);
       for (const svg of svgs) {
@@ -738,7 +746,13 @@ describe('SystemPanel (la voix du Système)', () => {
 
 describe('art généré (svg-to-tsx.mjs, CSP default-src self)', () => {
   const ART = resolve(UI, 'art');
-  const generated = ['CoachOmbre.tsx', 'CoachSkald.tsx', 'CoachScribe.tsx', 'RankStone.tsx'];
+  const generated = [
+    'CoachOmbre.tsx',
+    'CoachSkald.tsx',
+    'CoachScribe.tsx',
+    'RankStoneE.tsx',
+    'RankStoneUpper.tsx',
+  ];
 
   it('les fichiers générés existent et portent leur en-tête', () => {
     const files = readdirSync(ART);
@@ -758,16 +772,18 @@ describe('art généré (svg-to-tsx.mjs, CSP default-src self)', () => {
     }
   });
 
-  it('rendu : aucun élément style dans le DOM des avatars et des rangs', () => {
+  it('rendu : aucun élément style dans le DOM des avatars et des rangs', async () => {
     const { container } = render(
       <>
         <CoachAvatar coach="ombre" mode="nutrition" size={40} />
         <CoachAvatar coach="skald" size={40} />
         <CoachAvatar coach="scribe" size={40} />
+        <RankBadge rank="E" size={48} />
         <RankBadge rank="B" size={48} />
         <RankBadge rank="S" size={24} mini />
       </>,
     );
+    await stonesLoaded(container);
     expect(container.querySelector('style')).toBeNull();
     // Aucun attribut style du tout : la CSP (style-src sans 'unsafe-inline') les refuserait.
     expect(container.querySelector('[style]')).toBeNull();

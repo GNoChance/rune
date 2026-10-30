@@ -22,6 +22,9 @@ export type CoachArtProps = ArtSvgProps & {
 /** Rangs « Pierre runique », du galet griffé au monolithe éveillé (spec refonte §9). */
 export type Rank = 'E' | 'D' | 'C' | 'B' | 'A' | 'S';
 
+/** Rangs au-dessus de E, pas encore atteints au socle : pierres chargées à la demande (RankStoneUpper). */
+export type UpperRank = Exclude<Rank, 'E'>;
+
 export type RankStoneProps = ArtSvgProps & {
   rank: Rank;
   /** Version dessinée pour 24–32 px. */

@@ -36,6 +36,16 @@ const specifiers = (text: string): string[] =>
 
 const imports = (file: string): string[] => specifiers(withoutComments(readFileSync(file, 'utf8')));
 
+/** Imports gardés dans le bundle du fichier : `import … from`, `export … from`, effet de bord ; ni `import type` ni `import()`. */
+const STATIC_IMPORT =
+  /(?:import|export)\s+(?!type\s)[^'"]*?from\s+['"]([^'"]+)['"]|import\s+['"]([^'"]+)['"]/g;
+
+const staticSpecifiers = (text: string): string[] =>
+  [...withoutComments(text).matchAll(STATIC_IMPORT)].map((m) => m[1] ?? m[2] ?? '');
+
+/** Pierres des rangs D à S (≈ 30 ko gzip), hors du bundle initial. */
+const UPPER_STONES = /(^|\/)art\/RankStoneUpper$/;
+
 describe('architecture', () => {
   const files = [...walk(SRC)].filter(code);
 
@@ -67,6 +77,31 @@ describe('architecture', () => {
     }
     expect(withoutComments('// navigator.onLine\n/* navigator.onLine */ x')).not.toMatch(ON_LINE);
     expect('const online = true; window.ononline = f;').not.toMatch(ON_LINE);
+  });
+
+  it('pierres D à S (ui/art/RankStoneUpper) : seulement par import(), jamais dans le bundle initial', () => {
+    const dynamic = files.filter((f) => imports(f).some((spec) => UPPER_STONES.test(spec)));
+    expect(dynamic.map(rel)).toEqual(['ui/RankBadge.tsx']);
+    for (const file of files) {
+      for (const spec of staticSpecifiers(readFileSync(file, 'utf8'))) {
+        expect(spec, rel(file)).not.toMatch(UPPER_STONES);
+      }
+    }
+  });
+
+  it('le motif des imports statiques laisse import() et import type, garde le reste', () => {
+    const sample = [
+      "import { RankStoneUpper } from './art/RankStoneUpper';",
+      "import type { UpperRank } from './art/RankStoneUpper';",
+      "export { RankStoneUpper } from './art/RankStoneUpper';",
+      "import './art/RankStoneUpper';",
+      "const m = import('./art/RankStoneUpper');",
+    ].join('\n');
+    expect(staticSpecifiers(sample)).toEqual([
+      './art/RankStoneUpper',
+      './art/RankStoneUpper',
+      './art/RankStoneUpper',
+    ]);
   });
 
   it('le motif détecte bien un import interdit, effet de bord compris', () => {
