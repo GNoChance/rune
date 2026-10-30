@@ -243,11 +243,11 @@ it('PUBLISH_BLOCKERS suit l\'ordre de la spec', () => expect(PUBLISH_BLOCKERS[0]
 **Interfaces:**
 - Produces : `interface AiClient { complete<T>(req: {model: string; effort: 'low'|'medium'|'high'; system: CachedBlock[]; user: string; schema: object}): Promise<{value: T; stopReason: string; costUsd: number}> }` ; `createAnthropicClient({apiKey, model})` ; `createFakeAiClient(responses)` (déterministe) ; `pnpm exercises:draft [--ids a,b]` (04 §9 : seulement des `draft` aux champs IA vides ou les ids donnés, 4 appels en parallèle au plus, 2 essais, ne touche qu'aux champs IA, renseigne `drafting`, `revision` + 1, statut laissé à `draft`, écrit en forme canonique).
 
-- [ ] **Step 1: Write the failing tests** — avec le faux client : refuse une fiche qui n'est pas `draft` ; ne modifie que les champs IA (les champs squelette sont octet pour octet identiques) ; rejette une sortie invalide après 2 essais et laisse le fichier intact ; lit `stop_reason` (`max_tokens` → erreur claire) ; aucun appel réseau en CI (le test échoue si `fetch` est appelé).
-- [ ] **Step 2: Run** `pnpm vitest run --project scripts exercises` — FAIL.
-- [ ] **Step 3: Implement** ; avant d'écrire le client, vérifier sur la documentation officielle d'Anthropic le modèle par défaut (`claude-opus-5-5` dans 04 §9), l'effort, la sortie structurée, le cache et les prix ; noter les valeurs et la date dans `scripts/exercises/NOTES.md`.
-- [ ] **Step 4: Run** — PASS.
-- [ ] **Step 5: Commit** `feat(scripts): client IA et rédaction des brouillons de fiches`.
+- [x] **Step 1: Write the failing tests** — avec le faux client : refuse une fiche qui n'est pas `draft` ; ne modifie que les champs IA (les champs squelette sont octet pour octet identiques) ; rejette une sortie invalide après 2 essais et laisse le fichier intact ; lit `stop_reason` (`max_tokens` → erreur claire) ; aucun appel réseau en CI (le test échoue si `fetch` est appelé).
+- [x] **Step 2: Run** `pnpm vitest run --project scripts exercises` — FAIL.
+- [x] **Step 3: Implement** ; avant d'écrire le client, vérifier sur la documentation officielle d'Anthropic le modèle par défaut (`claude-opus-5-5` dans 04 §9), l'effort, la sortie structurée, le cache et les prix ; noter les valeurs et la date dans `scripts/exercises/NOTES.md`.
+- [x] **Step 4: Run** — PASS.
+- [x] **Step 5: Commit** `feat(scripts): client IA et rédaction des brouillons de fiches`.
 
 ### Task 11: Illustrations, nettoyage des SVG et Crédits
 

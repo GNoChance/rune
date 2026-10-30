@@ -15,7 +15,8 @@
     "test:infra": "env LC_ALL=C.UTF-8 bats infra/host/test",
     "build": "pnpm --filter @rune/web build && pnpm build:server",
     "build:server": "pnpm --filter @rune/server build",
-    "data:validate": "node --import tsx scripts/data/validate.ts"
+    "data:validate": "node --import tsx scripts/data/validate.ts",
+    "exercises:draft": "node --import tsx scripts/exercises/draft.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2",
