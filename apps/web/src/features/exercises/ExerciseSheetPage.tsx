@@ -6,17 +6,28 @@ import { type SheetView, useCatalog, useRepos } from '../../repos';
 import { Badge, Banner, ListGroup, ListRow, Page } from '../../ui';
 import { CatalogMissing } from './CatalogMissing';
 import { levelText } from './exercise-labels';
+import { BACK_IN_HISTORY, currentHistoryState, useBack } from './exercise-nav';
 import styles from './exercises.module.css';
 import { SheetIllustrations, SheetPills, type SheetTab, SheetTabs, sheetTabOf } from './SheetContent';
 
-/** Retour de la fiche : la liste de l'onglet Exercices (Task 14). */
+/**
+ * Retour de la fiche : l'écran d'où on l'a ouverte, par l'historique (liste avec sa recherche et son défilement,
+ * fiche d'où part une variante) ; ouverte par son adresse, l'onglet Exercices.
+ */
 const BACK = '/exercises';
 
 const sheetPath = (id: string) => `/exercises/${id}`;
 
-/** Une fiche de la liste des variantes : son nom (nom du lien), son niveau en valeur. */
+/** Une fiche de la liste des variantes : son nom (nom du lien), son niveau en valeur ; Retour revient ici. */
 function SheetLink(p: { sheet: ServedSheet }) {
-  return <ListRow label={p.sheet.name} value={levelText(p.sheet.level)} href={sheetPath(p.sheet.id)} />;
+  return (
+    <ListRow
+      label={p.sheet.name}
+      value={levelText(p.sheet.level)}
+      href={sheetPath(p.sheet.id)}
+      state={BACK_IN_HISTORY}
+    />
+  );
 }
 
 /**
@@ -84,7 +95,7 @@ function VariantsPanel(p: { view: SheetView; nearbyRef: Ref<HTMLHeadingElement> 
  * puis les onglets. L'onglet vit dans l'URL (`?tab=`) et en change par remplacement : Retour ramène à la liste,
  * pas à l'onglet précédent.
  */
-function SheetScreen(p: { view: SheetView }) {
+function SheetScreen(p: { view: SheetView; back(): void }) {
   const { sheet, place } = p.view;
   const [params, setParams] = useSearchParams();
   const tab = sheetTabOf(params.get('tab'));
@@ -97,6 +108,7 @@ function SheetScreen(p: { view: SheetView }) {
     setFocusNearby(false);
   }, [focusNearby, tab]);
 
+  // Remplacement de l'entrée, son état d'historique gardé : Retour revient toujours à l'écran d'avant.
   const changeTab = (next: SheetTab) =>
     setParams(
       (prev) => {
@@ -104,11 +116,11 @@ function SheetScreen(p: { view: SheetView }) {
         out.set('tab', next);
         return out;
       },
-      { replace: true },
+      { replace: true, state: currentHistoryState() },
     );
 
   return (
-    <Page title={sheet.name} back={BACK}>
+    <Page title={sheet.name} back={p.back}>
       {sheet.status === 'retired' ? (
         <Banner tone="info">
           <p className={styles.bannerText}>Cet exercice n'est plus proposé.</p>
@@ -116,6 +128,7 @@ function SheetScreen(p: { view: SheetView }) {
             <Link
               href={`${sheetPath(sheet.id)}?tab=variants`}
               replace
+              state={currentHistoryState()}
               onClick={() => setFocusNearby(true)}
               className={styles.bannerLink}
             >
@@ -149,9 +162,9 @@ function SheetScreen(p: { view: SheetView }) {
  * Fiche non utilisable (profil prudent et `not_for_minors`), ouverte par son URL : le bandeau et les exercices
  * proches utilisables, jamais le contenu de la fiche (Review Focus 2), quel que soit son statut ou l'onglet.
  */
-function NotUsableScreen(p: { view: SheetView }) {
+function NotUsableScreen(p: { view: SheetView; back(): void }) {
   return (
-    <Page title={p.view.sheet.name} back={BACK}>
+    <Page title={p.view.sheet.name} back={p.back}>
       <Banner tone="warning">
         <p className={styles.bannerText}>Cet exercice n'est pas proposé avec tes réglages actuels.</p>
       </Banner>
@@ -172,10 +185,11 @@ export function ExerciseSheetPage(p: { params: { id: string } }) {
   const catalog = useCatalog();
   const id = p.params.id;
   const view = useLive(() => repos.catalog.getSheetView(id), [repos, id]);
+  const back = useBack(BACK);
   if (catalog.state === 'loading') return null;
   if (catalog.state === 'missing') {
     return (
-      <Page title="Exercice" back={BACK}>
+      <Page title="Exercice" back={back}>
         <CatalogMissing />
       </Page>
     );
@@ -184,12 +198,12 @@ export function ExerciseSheetPage(p: { params: { id: string } }) {
   if (view === undefined || (view !== null && view.sheet.id !== id)) return null;
   if (view === null) {
     return (
-      <Page title="Exercice" back={BACK}>
+      <Page title="Exercice" back={back}>
         <p>Exercice introuvable.</p>
       </Page>
     );
   }
   // Une clé par fiche : d'une fiche à l'autre (variantes), images en échec et focus demandé repartent de zéro.
-  if (!view.usable) return <NotUsableScreen key={view.sheet.id} view={view} />;
-  return <SheetScreen key={view.sheet.id} view={view} />;
+  if (!view.usable) return <NotUsableScreen key={view.sheet.id} view={view} back={back} />;
+  return <SheetScreen key={view.sheet.id} view={view} back={back} />;
 }

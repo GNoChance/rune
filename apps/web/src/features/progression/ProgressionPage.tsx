@@ -1,19 +1,9 @@
+import { MUSCLE_GROUPS } from '@rune/contracts';
 import { type CSSProperties, useId } from 'react';
+import { Link } from 'wouter';
 import { CountUp, Page, RankBadge } from '../../ui';
+import { BACK_IN_HISTORY } from '../exercises/exercise-nav';
 import styles from './progression.module.css';
-
-/** Les 9 groupes musculaires de l'avant-goût, dans l'ordre de la maquette (constante d'affichage). */
-export const MUSCLE_GROUPS_LABELS = [
-  'Pectoraux',
-  'Dos',
-  'Épaules',
-  'Bras',
-  'Abdos',
-  'Fessiers',
-  'Quadriceps',
-  'Ischios',
-  'Mollets',
-] as const;
 
 /**
  * Onglet Progression en avant-goût (spec refonte §9, maquettes ProgressionSombre / ProgressionClair, prototype
@@ -21,6 +11,8 @@ export const MUSCLE_GROUPS_LABELS = [
  * kg soulevés, semaines d'assiduité), les 9 groupes musculaires au rang E, puis la note du Système. Aucune
  * valeur inventée : le calcul réel arrive avec la brique 3. Les cartes entrent en cascade, les compteurs
  * défilent (`CountUp`, à leur valeur finale tout de suite sous mouvement réduit).
+ * Les groupes sont ceux de `MUSCLE_GROUPS` (spec brique 2 §4.3) : toucher un rang ouvre la liste de son groupe,
+ * dont Retour revient ici par l'historique.
  */
 export function ProgressionPage() {
   const rankTitle = useId();
@@ -78,13 +70,20 @@ export function ProgressionPage() {
             <h2 id={musclesTitle} className={styles.sectionTitle}>
               Rangs par muscle
             </h2>
-            <span className={styles.sectionCount}>{`${MUSCLE_GROUPS_LABELS.length} groupes`}</span>
+            <span className={styles.sectionCount}>{`${MUSCLE_GROUPS.length} groupes`}</span>
           </div>
           <ul className={styles.muscleGrid}>
-            {MUSCLE_GROUPS_LABELS.map((label, index) => (
-              <li key={label} className={styles.muscle} style={{ '--i': index } as CSSProperties}>
-                <RankBadge rank="E" size={32} mini />
-                <span className={styles.muscleLabel}>{label}</span>
+            {MUSCLE_GROUPS.map((group, index) => (
+              <li key={group.code} className={styles.muscle} style={{ '--i': index } as CSSProperties}>
+                <Link
+                  href={`/exercises/group/${group.code}`}
+                  state={BACK_IN_HISTORY}
+                  aria-label={`${group.label}, rang E`}
+                  className={styles.muscleLink}
+                >
+                  <RankBadge rank="E" size={32} mini />
+                  <span className={styles.muscleLabel}>{group.label}</span>
+                </Link>
               </li>
             ))}
           </ul>

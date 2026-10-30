@@ -53,6 +53,7 @@ function Chevron() {
  *   C01). Le nom et la description ne changent pas.
  * - `tone="accent"` : ligne d'action qui ouvre un formulaire sur place (« Ajouter une limitation », maquette C04),
  *   libellé en accent et sans chevron.
+ * - `state` : état d'historique de l'entrée ouverte par le lien (Retour par l'historique des Exercices).
  */
 export function ListRow(p: {
   icon?: ReactNode;
@@ -64,6 +65,7 @@ export function ListRow(p: {
   badge?: ReactNode;
   tone?: 'danger' | 'accent';
   emphasis?: 'value';
+  state?: unknown;
 }) {
   const id = useId();
   const labelId = `${id}-label`;
@@ -108,7 +110,7 @@ export function ListRow(p: {
   return (
     <li className={styles.listItem}>
       {p.href !== undefined ? (
-        <Link href={p.href} onClick={p.onClick} {...named}>
+        <Link href={p.href} state={p.state} onClick={p.onClick} {...named}>
           {content}
         </Link>
       ) : p.onClick !== undefined ? (

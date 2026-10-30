@@ -158,11 +158,11 @@ const current = () =>
     .map((a) => a.textContent);
 
 describe('TAB_ITEMS', () => {
-  it('Accueil, Progression, Salles, Profil, dans cet ordre', () => {
+  it('Accueil, Exercices, Progression, Profil, dans cet ordre (spec brique 2 §4.1)', () => {
     expect(TAB_ITEMS).toEqual([
       { href: '/', label: 'Accueil' },
+      { href: '/exercises', label: 'Exercices' },
       { href: '/progression', label: 'Progression' },
-      { href: '/places', label: 'Salles' },
       { href: '/profile', label: 'Profil' },
     ]);
   });
@@ -172,17 +172,24 @@ describe('activeTab : onglet actif selon le préfixe de l’adresse', () => {
   it.each([
     ['/', '/'],
     ['/progression', '/progression'],
-    ['/places', '/places'],
-    ['/places/p-1', '/places'],
-    ['/places/', '/places'],
-    ['/gyms/g-1', '/places'],
+    ['/exercises', '/exercises'],
+    ['/exercises/', '/exercises'],
+    ['/exercises/push-up', '/exercises'],
+    ['/exercises/group/quads', '/exercises'],
+    ['/Exercises/Group/Quads', '/exercises'],
+    ['/exercisesx', null],
+    // Les lieux sont rangés sous Profil (spec brique 2 §4.1, Profil › Mes lieux).
+    ['/places', '/profile'],
+    ['/places/p-1', '/profile'],
+    ['/places/', '/profile'],
+    ['/gyms/g-1', '/profile'],
     ['/profile', '/profile'],
     ['/profile/health', '/profile'],
     ['/profile/privacy', '/profile'],
     ['/settings', '/profile'],
     ['/rejections', '/profile'],
     ['/admin/members', '/profile'],
-    ['/Places/P-1', '/places'],
+    ['/Places/P-1', '/profile'],
     ['/placesx', null],
     ['/profiles', null],
     ['/inconnu', null],
@@ -197,16 +204,27 @@ describe('TabBar', () => {
     const links = within(mainNav()).getAllByRole('link');
     expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
       ['Accueil', '/'],
+      ['Exercices', '/exercises'],
       ['Progression', '/progression'],
-      ['Salles', '/places'],
       ['Profil', '/profile'],
     ]);
   });
 
-  it('sur /places/… l’onglet « Salles » porte aria-current="page", lui seul', async () => {
-    await renderWithServices(<TabBar />, { path: '/places/p-1' });
-    expect(current()).toEqual(['Salles']);
-  });
+  it.each(['/exercises', '/exercises/group/hamstrings', '/exercises/push-up'])(
+    'sur %s l’onglet « Exercices » porte aria-current="page", lui seul',
+    async (path) => {
+      await renderWithServices(<TabBar />, { path });
+      expect(current()).toEqual(['Exercices']);
+    },
+  );
+
+  it.each(['/places', '/places/p-1', '/gyms/g-1'])(
+    'sur %s c’est « Profil » (Profil › Mes lieux)',
+    async (path) => {
+      await renderWithServices(<TabBar />, { path });
+      expect(current()).toEqual(['Profil']);
+    },
+  );
 
   it('sur /profile/health c’est « Profil »', async () => {
     await renderWithServices(<TabBar />, { path: '/profile/health' });
@@ -225,9 +243,9 @@ describe('TabBar', () => {
     const view = await renderWithServices(<TabBar />, { path: '/' });
     const pill = view.container.querySelector('[data-tab-pill]');
     expect(pill?.getAttribute('data-index')).toBe('0');
-    fireEvent.click(tab('Salles'));
-    expect(view.location()).toBe('/places');
-    expect(current()).toEqual(['Salles']);
+    fireEvent.click(tab('Progression'));
+    expect(view.location()).toBe('/progression');
+    expect(current()).toEqual(['Progression']);
     expect(pill?.getAttribute('data-index')).toBe('2');
   });
 
@@ -276,7 +294,7 @@ describe('TabBar : un contrôle qui prend le focus sous la barre défile au-dess
     const scroll = vi.fn();
     const save = screen.getByRole('button', { name: 'Enregistrer' });
     const cancel = screen.getByRole('button', { name: 'Annuler' });
-    for (const el of [save, cancel, tab('Salles')]) el.scrollIntoView = scroll;
+    for (const el of [save, cancel, tab('Exercices')]) el.scrollIntoView = scroll;
     /** Ce que touche le centre du contrôle : la barre, le contrôle lui-même, la feuille par-dessus… */
     const pointHits = (el: Element | null) => vi.spyOn(document, 'elementFromPoint').mockReturnValue(el);
     return { save, cancel, scroll, pointHits };
@@ -284,7 +302,7 @@ describe('TabBar : un contrôle qui prend le focus sous la barre défile au-dess
 
   it('la barre recouvre le centre du contrôle : il défile au plus près, juste au-dessus d’elle', async () => {
     const { save, scroll, pointHits } = await setup();
-    pointHits(tab('Salles'));
+    pointHits(tab('Exercices'));
     act(() => save.focus());
     expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: 'nearest' });
   });
@@ -303,8 +321,8 @@ describe('TabBar : un contrôle qui prend le focus sous la barre défile au-dess
     const { cancel, scroll, pointHits } = await setup();
     pointHits(cancel);
     act(() => cancel.focus());
-    pointHits(tab('Salles'));
-    act(() => tab('Salles').focus());
+    pointHits(tab('Exercices'));
+    act(() => tab('Exercices').focus());
     expect(scroll).not.toHaveBeenCalled();
   });
 });
@@ -316,8 +334,8 @@ describe('SideNav (≥ 900 px)', () => {
       within(mainNav())
         .getAllByRole('link')
         .map((a) => a.getAttribute('href')),
-    ).toEqual(['/', '/progression', '/places', '/profile']);
-    expect(current()).toEqual(['Salles']);
+    ).toEqual(['/', '/exercises', '/progression', '/profile']);
+    expect(current()).toEqual(['Profil']);
   });
 });
 
@@ -501,11 +519,18 @@ describe('coquille', () => {
     expect(current()).toEqual(['Progression']);
   });
 
-  it('/places : la liste des lieux, onglet « Salles »', async () => {
+  it('/places : la liste des lieux, onglet « Profil » (Profil › Mes lieux)', async () => {
     media();
     await renderApp({ path: '/places' });
     expect(await screen.findByRole('heading', { level: 1, name: 'Salles' })).toBeTruthy();
-    expect(current()).toEqual(['Salles']);
+    expect(current()).toEqual(['Profil']);
+  });
+
+  it('/exercises : l’onglet Exercices, titre « Exercices », onglet actif', async () => {
+    media();
+    await renderApp({ path: '/exercises' });
+    expect(await screen.findByRole('heading', { level: 1, name: 'Exercices' })).toBeTruthy();
+    expect(current()).toEqual(['Exercices']);
   });
 
   it('/profile/places redirige vers /places', async () => {
@@ -659,7 +684,17 @@ describe('screenTransition', () => {
   it.each([
     ['/', '/', [], 'none'],
     ['/', '/profile', ['/'], 'tab'],
-    ['/places/p-1', '/profile', ['/places', '/places/p-1'], 'tab'],
+    ['/places/p-1', '/progression', ['/places', '/places/p-1'], 'tab'],
+    ['/exercises/push-up', '/progression', ['/exercises', '/exercises/push-up'], 'tab'],
+    // Fiche ouverte depuis un groupe : retour au groupe, puis à l'onglet.
+    ['/exercises/group/quads', '/exercises/push-up', ['/exercises', '/exercises/group/quads'], 'forward'],
+    [
+      '/exercises/push-up',
+      '/exercises/group/quads',
+      ['/exercises', '/exercises/group/quads', '/exercises/push-up'],
+      'back',
+    ],
+    ['/exercises/group/quads', '/exercises', ['/exercises/group/quads'], 'back'],
     ['/profile', '/profile/health', ['/profile'], 'forward'],
     ['/places', '/places/p-1', ['/places'], 'forward'],
     ['/profile/health', '/profile', ['/profile', '/profile/health'], 'back'],
@@ -672,7 +707,7 @@ describe('screenTransition', () => {
     ['/admin/gyms', '/settings', ['/profile', '/settings', '/admin', '/admin/gyms'], 'back'],
     // Racine de l'onglet depuis un écran plus profond, sans historique (lien direct, rechargement).
     ['/settings', '/profile', ['/settings'], 'back'],
-    ['/gyms/g-1', '/places', ['/gyms/g-1'], 'back'],
+    ['/gyms/g-1', '/profile', ['/gyms/g-1'], 'back'],
     // Un écran jamais visité, hors de l'adresse courante, reste un écran suivant.
     ['/gyms/g-1', '/places/p-1', ['/gyms/g-1'], 'forward'],
   ] as const)('%s → %s', (from, to, history, expected) => {

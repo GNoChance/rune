@@ -2,21 +2,27 @@ import { type CSSProperties, type ReactNode, type RefObject, useEffect, useRef }
 import { Link, useLocation } from 'wouter';
 import styles from './shell.module.css';
 
-export type TabHref = '/' | '/progression' | '/places' | '/profile';
+export type TabHref = '/' | '/exercises' | '/progression' | '/profile';
 
-/** Onglets du socle (spec refonte §5) ; à la brique 5, Nutrition prend la place de Salles. */
+/**
+ * Onglets (spec brique 2 §4.1) : Exercices prend la place de Salles, dont les lieux passent dans Profil › Mes
+ * lieux. À la brique 3, un bouton central « Séance » s'ajoute.
+ */
 export const TAB_ITEMS: readonly { href: TabHref; label: string }[] = [
   { href: '/', label: 'Accueil' },
+  { href: '/exercises', label: 'Exercices' },
   { href: '/progression', label: 'Progression' },
-  { href: '/places', label: 'Salles' },
   { href: '/profile', label: 'Profil' },
 ];
 
-/** Préfixes rangés sous chaque onglet : les salles sous Salles, les réglages et l'administration sous Profil. */
+/**
+ * Préfixes rangés sous chaque onglet : le catalogue sous Exercices ; les lieux et les salles (`/places…` canonique,
+ * `/gyms…`), les réglages et l'administration sous Profil.
+ */
 const SECTIONS: readonly { tab: TabHref; prefixes: readonly string[] }[] = [
+  { tab: '/exercises', prefixes: ['/exercises'] },
   { tab: '/progression', prefixes: ['/progression'] },
-  { tab: '/places', prefixes: ['/places', '/gyms'] },
-  { tab: '/profile', prefixes: ['/profile', '/settings', '/rejections', '/admin'] },
+  { tab: '/profile', prefixes: ['/profile', '/places', '/gyms', '/settings', '/rejections', '/admin'] },
 ];
 
 /**
@@ -57,15 +63,15 @@ export const TAB_ICONS: Record<TabHref, ReactNode> = {
       <path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" />
     </Icon>
   ),
+  '/exercises': (
+    <Icon>
+      <path d="M6 7v10M3 9v6M18 7v10M21 9v6M6 12h12" />
+    </Icon>
+  ),
   '/progression': (
     <Icon>
       <path d="M3 17l6-6 4 4 8-8" />
       <path d="M14 7h7v7" />
-    </Icon>
-  ),
-  '/places': (
-    <Icon>
-      <path d="M6 7v10M3 9v6M18 7v10M21 9v6M6 12h12" />
     </Icon>
   ),
   '/profile': (

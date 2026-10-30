@@ -265,14 +265,32 @@
 /* Chaque groupe surgit à son tour (--i : son rang dans la grille), après l'entrée de sa section. */
 .muscle {
   display: flex;
+  border-radius: var(--radius-control);
+  animation: muscle-pop 250ms var(--ease) backwards;
+  animation-delay: calc(var(--i, 0) * 45ms + 360ms);
+}
+
+/* Le rang est un lien vers la liste du groupe (spec brique 2 §4.3) : toute la case, au moins 44 px. */
+.muscleLink {
+  flex: 1;
+  display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-1);
+  min-width: 0;
+  min-height: 44px;
   padding: 10px 6px;
   border-radius: var(--radius-control);
+  color: inherit;
   text-align: center;
-  animation: muscle-pop 250ms var(--ease) backwards;
-  animation-delay: calc(var(--i, 0) * 45ms + 360ms);
+  text-decoration: none;
+  transition: background-color 150ms var(--ease);
+}
+
+@media (hover: hover) {
+  .muscleLink:hover {
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+  }
 }
 
 .muscle svg {

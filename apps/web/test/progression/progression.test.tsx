@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { screen, within } from '@testing-library/react';
+import { MUSCLE_GROUPS } from '@rune/contracts';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { MUSCLE_GROUPS_LABELS, ProgressionPage } from '../../src/features/progression/ProgressionPage';
+import { ProgressionPage } from '../../src/features/progression/ProgressionPage';
 import styles from '../../src/features/progression/progression.module.css';
 import { type CssBlock, declarationsOf, parseCssBlocks } from '../support/css-blocks';
 import { renderApp, renderWithServices } from '../support/render';
@@ -111,8 +112,13 @@ describe('Progression en avant-goût (spec refonte §9)', () => {
     }
   });
 
-  it('les 9 groupes musculaires au rang E, dans l’ordre', async () => {
-    expect(MUSCLE_GROUPS_LABELS).toEqual([
+  it('les 9 groupes musculaires de MUSCLE_GROUPS au rang E, dans l’ordre', async () => {
+    await open();
+    const section = screen.getByRole('region', { name: 'Rangs par muscle' });
+    expect(within(section).getByRole('heading', { level: 2, name: 'Rangs par muscle' })).toBeTruthy();
+    expect(within(section).getByText('9 groupes')).toBeTruthy();
+    const items = within(section).getAllByRole('listitem');
+    expect(items.map((li) => li.textContent)).toEqual([
       'Pectoraux',
       'Dos',
       'Épaules',
@@ -123,16 +129,31 @@ describe('Progression en avant-goût (spec refonte §9)', () => {
       'Ischios',
       'Mollets',
     ]);
-    await open();
-    const section = screen.getByRole('region', { name: 'Rangs par muscle' });
-    expect(within(section).getByRole('heading', { level: 2, name: 'Rangs par muscle' })).toBeTruthy();
-    expect(within(section).getByText('9 groupes')).toBeTruthy();
-    const items = within(section).getAllByRole('listitem');
-    expect(items.map((li) => li.textContent)).toEqual([...MUSCLE_GROUPS_LABELS]);
+    expect(items.map((li) => li.textContent)).toEqual(MUSCLE_GROUPS.map((g) => g.label));
     for (const li of items) {
       expect(within(li).getByRole('img', { name: 'Rang E' }), li.textContent ?? '').toBeTruthy();
     }
     expect(within(section).getAllByRole('img', { name: 'Rang E' })).toHaveLength(9);
+  });
+
+  it('chaque rang mène à la liste de son groupe (spec brique 2 §4.3), nommé « <groupe>, rang E »', async () => {
+    await open();
+    const section = screen.getByRole('region', { name: 'Rangs par muscle' });
+    const links = within(section).getAllByRole('link');
+    expect(links.map((a) => a.getAttribute('href'))).toEqual(
+      MUSCLE_GROUPS.map((g) => `/exercises/group/${g.code}`),
+    );
+    expect(links.map((a) => a.getAttribute('aria-label'))).toEqual(
+      MUSCLE_GROUPS.map((g) => `${g.label}, rang E`),
+    );
+  });
+
+  it('toucher « Ischios » ouvre /exercises/group/hamstrings', async () => {
+    const view = await renderApp({ path: '/progression' });
+    await screen.findByRole('heading', { level: 1, name: 'Progression' });
+    fireEvent.click(screen.getByRole('link', { name: 'Ischios, rang E' }));
+    await screen.findByRole('heading', { level: 1, name: 'Ischios' });
+    expect(view.location()).toBe('/exercises/group/hamstrings');
   });
 
   it('fenêtre du Système, texte mot pour mot', async () => {

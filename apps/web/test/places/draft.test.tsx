@@ -240,12 +240,13 @@ describe('matériel en brouillon (spec refonte §10.3)', () => {
     await openEditor();
     expect(checkbox('Kettlebell').checked).toBe(false);
     expect(draftBar()).toBeNull();
-    // Brouillon de nouveau, puis départ de la fiche par l'onglet Salles.
+    // Brouillon de nouveau, puis départ de la fiche par l'onglet Profil, et Profil › Mes lieux.
     fireEvent.click(checkbox('Kettlebell'));
     expect(checkbox('Kettlebell').checked).toBe(true);
     expect(summary()).toBe('1 changement · 1 ajout');
     const tabs = within(screen.getByRole('navigation', { name: 'Navigation principale' }));
-    fireEvent.click(tabs.getByRole('link', { name: 'Salles' }));
+    fireEvent.click(tabs.getByRole('link', { name: 'Profil' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Mes lieux' }));
     await until(() => view.location() === '/places');
     // Pendant l'absence, un autre membre ajoute la box sur le serveur : le retour la relit.
     server.add('box');

@@ -296,3 +296,232 @@
 .fixIcon {
   color: var(--success);
 }
+
+/* ——— Accueil de l'onglet : recherche, interrupteur, tuiles des groupes ——— */
+
+/* Recherche : loupe à gauche dans le champ de 52 px (comme celle des salles). */
+.search {
+  position: relative;
+}
+
+.search input[type="search"] {
+  width: 100%;
+  padding-inline-start: 46px;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 15px;
+  bottom: 16px;
+  display: flex;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+/*
+ * 9 tuiles, 3 par ligne sur téléphone, moins quand le texte grandit. Une tuile à 0 garde le même contraste :
+ * rien ne l'atténue (spec brique 2 §4.1).
+ */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(
+      auto-fill,
+      minmax(min(100%, max(6.5rem, calc((100% - 16px) / 3 - 1px))), 1fr)
+    );
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tiles > li {
+  display: flex;
+}
+
+.tile {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: 44px;
+  padding: var(--space-3) 6px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  text-align: center;
+  text-decoration: none;
+  transition: background-color 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (hover: hover) {
+  .tile:hover {
+    background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  }
+}
+
+.tile svg {
+  display: block;
+  flex: none;
+}
+
+.tileLabel {
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.tileCount {
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+/* ——— Résultats et états vides ——— */
+
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.emptyLine {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* « Les voir » : un bouton qui se lit comme un lien, souligné (pas la couleur seule), cible de 44 px. */
+.textButton {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* ——— Lignes d'exercices (liste d'un groupe, résultats) ——— */
+
+.exerciseList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.exerciseItem + .exerciseItem {
+  border-top: 1px solid var(--border);
+}
+
+.exerciseRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 72px;
+  padding: var(--space-2) 14px var(--space-2) var(--space-2);
+  color: var(--text);
+  text-decoration: none;
+  transition: background-color 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.exerciseRow:focus-visible {
+  outline-offset: -2px;
+}
+
+@media (hover: hover) {
+  .exerciseRow:hover {
+    background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  }
+}
+
+/* Vignette : la pose sur la carte claire des illustrations, sinon le pictogramme sur une teinte d'accent. */
+.thumbnail {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--accent);
+}
+
+.thumbnail[data-illustrated] {
+  border: 1px solid var(--border);
+  background: var(--illustration-bg);
+}
+
+.thumbnailImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.exerciseText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.exerciseName {
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.exerciseDetails {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--space-2);
+}
+
+.exerciseMeta {
+  flex-basis: 100%;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.exerciseWarning {
+  display: inline-flex;
+}
+
+.exerciseLevel {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+}
