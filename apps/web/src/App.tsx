@@ -30,7 +30,8 @@ import { HelpPage } from './features/public/HelpPage';
 import { NotFound } from './features/public/NotFound';
 import { PrivacyPage } from './features/public/PrivacyPage';
 import { HowToReviewFirstPass } from './features/review/HowToReview';
-import { ReviewPlaceholder } from './features/review/ReviewPlaceholder';
+import { ReviewList } from './features/review/ReviewList';
+import { ReviewSheet } from './features/review/ReviewSheet';
 import { RejectionsPage } from './features/status/RejectionsPage';
 import { SettingsPage } from './features/status/SettingsPage';
 import { useRepos } from './repos';
@@ -154,7 +155,8 @@ function ConnectedRoutes() {
       <Route path="/review">
         <Redirect to="/review/exercises" replace />
       </Route>
-      <Route path="/review/exercises" component={ReviewPlaceholder} />
+      <Route path="/review/exercises" component={ReviewList} />
+      <Route path="/review/exercises/:id" component={ReviewSheet} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -1,4 +1,5 @@
 import {
+  type CommentPart,
   type DraftSheet,
   type EquipmentCode,
   type ExerciseLevel,
@@ -15,8 +16,9 @@ import styles from './exercises.module.css';
 
 /*
  * Rendu d'une fiche d'exercice (spec brique 2 §4.2), commun à la fiche du membre et à l'aperçu de la relecture
- * (Task 16) : pastilles, illustrations et crédits, onglets Comment faire · Erreurs · Variantes, encadré Sécurité.
- * Les composants lisent une fiche servie comme un brouillon de relecture, dont les champs IA peuvent manquer.
+ * (spec brique 2 §4.5) : pastilles, illustrations et crédits, onglets Comment faire · Erreurs · Variantes, encadré
+ * Sécurité. Les composants lisent une fiche servie comme un brouillon de relecture, dont les champs IA peuvent
+ * manquer. `partAction` (relecture seulement) pose un contenu sous chaque partie ; sans elle, rien ne change.
  */
 
 /** Onglets de la fiche, dans l'ordre ; leur code est la valeur de `?tab=`. */
@@ -32,6 +34,12 @@ export type SheetTab = (typeof SHEET_TABS)[number]['id'];
 export function sheetTabOf(value: string | null | undefined): SheetTab {
   return SHEET_TABS.find((t) => t.id === value)?.id ?? 'how';
 }
+
+/**
+ * Contenu posé sous une partie de la fiche (aperçu de relecture : ses commentaires et « Commenter »), ou rien
+ * (`null`). Absente (fiche du membre), le rendu reste exactement celui de la vue membre.
+ */
+export type PartAction = (part: CommentPart) => ReactNode;
 
 /** Ce que le rendu lit d'une fiche : une `ServedSheet` convient, un `DraftSheet` de la relecture aussi. */
 export type SheetFields = Pick<
@@ -205,8 +213,11 @@ export function SafetyBox(p: { safety: readonly string[] | undefined }) {
   );
 }
 
-/** Section titrée d'un onglet (titre de niveau 2 sous le nom de la fiche). */
-function Part(p: { title: string; children(titleId: string): ReactNode }) {
+/**
+ * Section titrée d'un onglet (titre de niveau 2 sous le nom de la fiche), puis `action` s'il y en a une
+ * (relecture : les commentaires de la partie et « Commenter »).
+ */
+export function SheetPart(p: { title: string; action?: ReactNode; children(titleId: string): ReactNode }) {
   const titleId = useId();
   return (
     <section aria-labelledby={titleId} className={styles.part}>
@@ -214,18 +225,23 @@ function Part(p: { title: string; children(titleId: string): ReactNode }) {
         {p.title}
       </h2>
       {p.children(titleId)}
+      {p.action}
     </section>
   );
 }
 
-/** Comment faire (spec brique 2 §4.2) : étapes numérotées, points clés, respiration, puis le réglage s'il existe. */
+/**
+ * Comment faire (spec brique 2 §4.2) : étapes numérotées, points clés, respiration, puis le réglage s'il existe ;
+ * `partAction` sous chacune de ces parties (`instructions`, `key_points`, `breathing`, `setup`).
+ */
 export function HowToPanel(p: {
   sheet: Pick<DraftSheet, 'instructions' | 'key_points' | 'breathing' | 'setup'>;
+  partAction?: PartAction;
 }) {
-  const { sheet } = p;
+  const { sheet, partAction } = p;
   return (
     <>
-      <Part title="Étapes">
+      <SheetPart title="Étapes" action={partAction?.('instructions')}>
         {(id) => (
           <ol aria-labelledby={id} className={styles.steps}>
             {(sheet.instructions ?? []).map((step, i) => (
@@ -234,8 +250,8 @@ export function HowToPanel(p: {
             ))}
           </ol>
         )}
-      </Part>
-      <Part title="Points clés">
+      </SheetPart>
+      <SheetPart title="Points clés" action={partAction?.('key_points')}>
         {(id) => (
           <ul aria-labelledby={id} className={styles.keyPoints}>
             {(sheet.key_points ?? []).map((point, i) => (
@@ -244,12 +260,16 @@ export function HowToPanel(p: {
             ))}
           </ul>
         )}
-      </Part>
+      </SheetPart>
       {sheet.breathing !== undefined ? (
-        <Part title="Respiration">{() => <p className={styles.partText}>{sheet.breathing}</p>}</Part>
+        <SheetPart title="Respiration" action={partAction?.('breathing')}>
+          {() => <p className={styles.partText}>{sheet.breathing}</p>}
+        </SheetPart>
       ) : null}
       {sheet.setup !== undefined ? (
-        <Part title="Réglage">{() => <p className={styles.partText}>{sheet.setup}</p>}</Part>
+        <SheetPart title="Réglage" action={partAction?.('setup')}>
+          {() => <p className={styles.partText}>{sheet.setup}</p>}
+        </SheetPart>
       ) : null}
     </>
   );
@@ -292,7 +312,9 @@ export function MistakesPanel(p: { mistakes: DraftSheet['mistakes'] }) {
 /**
  * Onglets de la fiche (motif de l'ARIA APG, `Tabs`) : l'encadré Sécurité en tête de chaque panneau, puis Comment
  * faire, Erreurs, ou `variants` (les variantes du membre, ou celles de l'aperçu de relecture). `tabLabels`
- * remplace un libellé (« Erreurs · 1 commentaire » en relecture).
+ * remplace un libellé (« Erreurs · 1 commentaire » en relecture). `partAction` (relecture) : contenu posé sous
+ * l'encadré Sécurité (`safety`), sous chaque partie de Comment faire et sous les erreurs (`mistakes`) ; celui des
+ * variantes (`variants`) revient à l'appelant, dans `variants`.
  */
 export function SheetTabs(p: {
   sheet: SheetFields;
@@ -300,6 +322,7 @@ export function SheetTabs(p: {
   onTabChange(tab: SheetTab): void;
   variants: ReactNode;
   tabLabels?: Partial<Record<SheetTab, string>>;
+  partAction?: PartAction;
 }) {
   const tabs = SHEET_TABS.map((t) => ({ id: t.id, label: p.tabLabels?.[t.id] ?? t.label }));
   return (
@@ -312,8 +335,14 @@ export function SheetTabs(p: {
       {(id) => (
         <div className={styles.panel}>
           <SafetyBox safety={p.sheet.safety} />
-          {id === 'how' ? <HowToPanel sheet={p.sheet} /> : null}
-          {id === 'mistakes' ? <MistakesPanel mistakes={p.sheet.mistakes} /> : null}
+          {p.partAction?.('safety')}
+          {id === 'how' ? <HowToPanel sheet={p.sheet} partAction={p.partAction} /> : null}
+          {id === 'mistakes' ? (
+            <>
+              <MistakesPanel mistakes={p.sheet.mistakes} />
+              {p.partAction?.('mistakes')}
+            </>
+          ) : null}
           {id === 'variants' ? p.variants : null}
         </div>
       )}

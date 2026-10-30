@@ -287,7 +287,7 @@ describe('garde web de /review… (comme /admin)', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('relectrice : page « Relecture » (provisoire, en attendant l’écran de relecture)', async () => {
+  it('relectrice : /review mène à la liste « Relecture »', async () => {
     const db = createTestLocalDb();
     await setMeta(db, 'reviewIntroSeen', 'u-1');
     const api = reviewApi({ status: 200, body: listBody([]) });

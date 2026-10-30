@@ -1,6 +1,7 @@
 /*
- * Relecture des exercices (spec brique 2 §4.4) : carte de l'accueil et feuille « Comment relire ». Couleurs : jetons
- * seulement, donc justes dans les 5 thèmes ; l'ombre de la carte, presque noire, est celle des cartes de l'accueil.
+ * Relecture des exercices (spec brique 2 §4.4 et §4.5) : carte de l'accueil, feuille « Comment relire », puis
+ * l'écran de relecture (liste, fiche, commentaires, validation). Couleurs : jetons seulement, donc justes dans les
+ * 5 thèmes ; l'ombre de la carte, presque noire, est celle des cartes de l'accueil.
  */
 
 /* Carte de l'accueil : même allure que les cartes voisines ; un lien entier, touché n'importe où. */
@@ -92,5 +93,398 @@
 
   .homeCard:active {
     transform: none;
+  }
+}
+
+/* ——— Écran de relecture (spec brique 2 §4.5) : liste, fiche, commentaires, validation ——— */
+
+.muted {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+/* Lecture impossible : le bandeau, puis « Réessayer » à sa largeur propre. */
+.failure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.failure > button {
+  align-self: flex-start;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+/* Avancement par lot : une ligne de texte, une barre décorative dessous (le texte dit tout). */
+.progressList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progressRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--text-muted) 18%, var(--surface));
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+/* Liste des fiches : une carte, une ligne par fiche, lien entier de 56 px au moins. */
+.sheetList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.sheetList > li + li {
+  border-top: 1px solid var(--border);
+}
+
+.sheetRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 56px;
+  padding: var(--space-3) 14px var(--space-3) var(--space-4);
+  color: var(--text);
+  text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.sheetRow:focus-visible {
+  outline-offset: -2px;
+}
+
+@media (hover: hover) {
+  .sheetRow:hover {
+    background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  }
+}
+
+.sheetRowText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sheetName {
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* Pastilles d'état : en ligne, retour à la ligne si besoin ; une pastille longue se coupe. */
+.pillRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pillRow > * > span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.bannerText {
+  margin: 0;
+}
+
+.notes {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* Faits écrits en clair (sensibilité, caractéristiques) : une carte, chaque fait avec ses commentaires dessous. */
+.factList {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+
+.fact + .fact {
+  border-top: 1px solid var(--border);
+}
+
+.factText {
+  margin: 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.partText {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.textLink {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: 44px;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+
+/* Différentiel : chaque clé changée, avant puis maintenant. */
+.diffList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.diffItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.diffKey {
+  margin: 0;
+  font-weight: 700;
+}
+
+.diffLine {
+  margin: 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* Commentaires d'une partie, puis « Commenter » ; un commentaire traité passe en retrait (et le dit). */
+.partComments {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.commentList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.comment {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  border-inline-start: 3px solid var(--accent);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.comment[data-resolved] {
+  border-inline-start-color: var(--border);
+  background: color-mix(in srgb, var(--text-muted) 6%, var(--surface));
+}
+
+/* Texte brut : retours à la ligne gardés, mots longs coupés. */
+.commentBody {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.commentMeta {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.commentState {
+  display: inline-flex;
+}
+
+/* « Commenter », « Traité » : boutons discrets de 44 px de haut. */
+.smallButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--surface);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.smallButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+@media (hover: hover) {
+  .smallButton:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  }
+}
+
+.validate {
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--space-2);
+}
+
+/* Feuilles du bas : commentaire et validation. */
+.sheetText {
+  margin: 0;
+}
+
+.sheetStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.commentForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.commentField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.commentLabel {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/* Même allure que les champs de la boîte à outils (16 px : pas de zoom sur iOS). */
+.commentInput {
+  min-height: 132px;
+  padding: 13px var(--space-4);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-control);
+  background: var(--field-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.commentInput[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.caution,
+.counter {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.counter {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+/* Trop long : en danger et en gras, et le texte le dit (« trop long »). */
+.counter[data-over] {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheetRow {
+    transition: none;
   }
 }
