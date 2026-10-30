@@ -91,6 +91,8 @@ const sessionUser = (u: { id: string; username: string }) => ({
   role: 'member' as const,
   birthDate: '1990-01-01',
   mustChangePassword: false,
+  catalogReviewer: false,
+  healthProfessional: false,
 });
 
 describe('POST /api/gyms', () => {

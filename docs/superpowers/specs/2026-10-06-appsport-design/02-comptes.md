@@ -20,7 +20,7 @@
 
 - **R-ROLE-1** Un admin est aussi un utilisateur ordinaire, avec son propre profil.
 - **R-ROLE-2** Il reste toujours au moins un admin actif : on ne peut ni rétrograder, ni désactiver, ni supprimer le dernier.
-- **R-ROLE-3** Pas de rôle « relecteur » en v1.
+- **R-ROLE-3** Pas de rôle « relecteur » : `role` reste `admin | member`. Depuis la brique 2, l'admin donne à un membre, avec son accord, les drapeaux de relecteur `catalog_reviewer` et `health_professional` ; voir la [spec de la brique 2](../2026-10-14-brique-2-exercices-design.md), §3.1.
 - **R-ROLE-4** Le serveur vérifie les droits à chaque requête ; l'interface ne fait que masquer.
 - **R-ROLE-5 Amorçage.** Commande serveur `admin:bootstrap --birth-date AAAA-MM-JJ` (via Tailscale SSH) : affiche une invitation admin (lien et code) à usage unique, valable 24 h. Refusée s'il existe déjà un admin. Secours : `admin:reset <pseudo>` affiche un lien de réinitialisation, pour un admin qui a perdu son mot de passe.
 

@@ -15,22 +15,35 @@ const DAY_MS = 86_400_000;
 /**
  * Liste des membres (R-ADM-1) : aucune table C1 à C3, sauf `consent_event` (état des accords)
  * et `session` (comptage seul : non révoquées, non expirées, vues depuis moins de 90 jours).
+ * `onlyId` : le seul membre de cet identifiant (liste vide s'il n'existe pas).
  */
-export async function listMembers(db: DbExecutor, deps: AppDeps): Promise<MemberSummary[]> {
+export async function listMembers(db: DbExecutor, deps: AppDeps, onlyId?: string): Promise<MemberSummary[]> {
   const now = deps.clock.now();
-  const users = await db
+  let userQuery = db
     .selectFrom('user')
-    .select(['id', 'username', 'role', 'status', 'birthDate', 'lastLoginAt', 'onboardingCompletedAt'])
-    .orderBy('usernameKey')
-    .execute();
-  const counts = await db
+    .select([
+      'id',
+      'username',
+      'role',
+      'status',
+      'birthDate',
+      'lastLoginAt',
+      'onboardingCompletedAt',
+      'catalogReviewer',
+      'healthProfessional',
+    ])
+    .orderBy('usernameKey');
+  if (onlyId !== undefined) userQuery = userQuery.where('id', '=', onlyId);
+  const users = await userQuery.execute();
+  let countQuery = db
     .selectFrom('session')
     .select(['userId', (eb) => eb.fn.countAll<number>().as('n')])
     .where('revokedAt', 'is', null)
     .where('expiresAt', '>', now.toISOString())
     .where('lastSeenAt', '>', new Date(now.getTime() - SESSION_IDLE_DAYS * DAY_MS).toISOString())
-    .groupBy('userId')
-    .execute();
+    .groupBy('userId');
+  if (onlyId !== undefined) countQuery = countQuery.where('userId', '=', onlyId);
+  const counts = await countQuery.execute();
   const active = new Map(counts.map((c) => [c.userId, Number(c.n)]));
   const today = parisDate(now);
   const members: MemberSummary[] = [];
@@ -46,9 +59,18 @@ export async function listMembers(db: DbExecutor, deps: AppDeps): Promise<Member
       onboardingCompleted: u.onboardingCompletedAt !== null,
       consents: { health: consents.health.active, aiCoach: consents.aiCoach.active },
       activeSessions: active.get(u.id) ?? 0,
+      catalogReviewer: u.catalogReviewer === 1,
+      healthProfessional: u.healthProfessional === 1,
     });
   }
   return members;
+}
+
+/** Résumé d'un seul membre, comme dans la liste ; membre inconnu → `not_found`. */
+export async function memberSummary(db: DbExecutor, deps: AppDeps, id: string): Promise<MemberSummary> {
+  const [member] = await listMembers(db, deps, id);
+  if (!member) throw httpError('not_found');
+  return member;
 }
 
 async function assertExists(db: DbExecutor, id: string): Promise<void> {

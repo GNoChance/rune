@@ -23,6 +23,8 @@ const BASTIEN: MemberSummary = {
   onboardingCompleted: true,
   consents: { health: false, aiCoach: true },
   activeSessions: 2,
+  catalogReviewer: false,
+  healthProfessional: false,
 };
 /** Mineure jamais connectée, onboarding en cours, accord santé donné. */
 const INES: MemberSummary = {
@@ -35,6 +37,8 @@ const INES: MemberSummary = {
   onboardingCompleted: false,
   consents: { health: true, aiCoach: false },
   activeSessions: 1,
+  catalogReviewer: false,
+  healthProfessional: false,
 };
 
 async function renderMembers(o: { api?: FakeApi; members?: MemberSummary[]; now?: number } = {}) {

@@ -186,11 +186,11 @@ it('PUBLISH_BLOCKERS suit l\'ordre de la spec', () => expect(PUBLISH_BLOCKERS[0]
 **Interfaces:**
 - Produces : `SessionUser.catalogReviewer: boolean`, `SessionUser.healthProfessional: boolean` ; `requireReviewer` (middleware : 401 sans session, 403 si ni `catalogReviewer` ni admin) ; `POST /api/admin/members/:id/reviewer-flags` corps `SetReviewerFlagsRequest = {catalogReviewer: boolean; healthProfessional: boolean; password: string}` → 200 `MemberSummary` ; `MemberSummary` et `MeResponse` gagnent `catalogReviewer`, `healthProfessional`.
 
-- [ ] **Step 1: Write the failing tests** — sans mot de passe valide : `invalid_credentials`, rien n'est écrit ; l'admin qui coche `healthProfessional` sur lui-même : 403 `self_health_flag` ; succès : `security_event` `reviewer_flags_changed` avec `details` avant/après ; retirer `catalogReviewer` coupe l'accès à `/api/review/*` dès la requête suivante ; `MeResponse` d'un membre porte ses propres drapeaux ; le `MemberSummary` d'un autre n'apparaît que dans `/api/admin/members`.
-- [ ] **Step 2: Run** `pnpm --filter @rune/server test admin/reviewer-flags` — FAIL.
-- [ ] **Step 3: Implement** sur le modèle de `POST /members/:id/role` (mot de passe vérifié hors transaction, puis transaction).
-- [ ] **Step 4: Run** `pnpm test` — PASS.
-- [ ] **Step 5: Commit** `feat(server): drapeaux de relecteur, garde de la relecture et journal`.
+- [x] **Step 1: Write the failing tests** — sans mot de passe valide : `invalid_credentials`, rien n'est écrit ; l'admin qui coche `healthProfessional` sur lui-même : 403 `self_health_flag` ; succès : `security_event` `reviewer_flags_changed` avec `details` avant/après ; retirer `catalogReviewer` coupe l'accès à `/api/review/*` dès la requête suivante ; `MeResponse` d'un membre porte ses propres drapeaux ; le `MemberSummary` d'un autre n'apparaît que dans `/api/admin/members`.
+- [x] **Step 2: Run** `pnpm --filter @rune/server test admin/reviewer-flags` — FAIL.
+- [x] **Step 3: Implement** sur le modèle de `POST /members/:id/role` (mot de passe vérifié hors transaction, puis transaction).
+- [x] **Step 4: Run** `pnpm test` — PASS.
+- [x] **Step 5: Commit** `feat(server): drapeaux de relecteur, garde de la relecture et journal`.
 
 ### Task 8: API de relecture (commentaires, validations, files)
 

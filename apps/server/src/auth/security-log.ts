@@ -22,7 +22,8 @@ export type SecurityEventType =
   | 'consent_revoked'
   | 'data_exported'
   | 'account_deleted'
-  | 'gym_deleted';
+  | 'gym_deleted'
+  | 'reviewer_flags_changed';
 
 export type SecurityDetails = { [key: string]: string | number | boolean };
 

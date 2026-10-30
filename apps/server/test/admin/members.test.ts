@@ -47,6 +47,8 @@ describe('GET /api/admin/members', () => {
       onboardingCompleted: true,
       consents: { health: true, aiCoach: false },
       activeSessions: 2,
+      catalogReviewer: false,
+      healthProfessional: false,
     });
     expect(list.map((x) => x.username)).toEqual(['lea', 'porteur']);
   });

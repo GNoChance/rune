@@ -44,6 +44,8 @@ export function buildPrivacySections(rawOwner: string | undefined): readonly Pri
         "Données personnelles : profil d'entraînement, lieux et matériel, mode prudent, séances et réglages, historique de tes accords. Elles servent à construire et suivre ton entraînement, et toi seul y accèdes.",
         'Données de santé, seulement avec ton accord santé : indicateur de prudence issu du questionnaire, limitations et zones sensibles, douleurs signalées, mesures et nutrition. Elles servent uniquement à adapter tes séances et tes repères.',
         'Échanges avec le coach, seulement avec ton accord coach (brique 4) : conversations et signalements.',
+        "Relecture des exercices, seulement si tu l'acceptes : l'administrateur active pour toi la relecture des fiches et, si tu le déclares, ta qualification de professionnel de santé. Ce n'est pas une donnée de santé. Tes commentaires et tes validations servent à corriger et publier les fiches.",
+        "Les membres qui ne relisent pas n'en voient rien ; les autres relecteurs voient tes commentaires, mais ne savent pas si tu es professionnel de santé.",
         "Commun au cercle : salles partagées et leur historique, pseudos rendus visibles, fiches d'exercices.",
         "Aucune statistique, aucun traceur ni service tiers dans l'appli : pas de bandeau cookies.",
       ],
@@ -76,7 +78,8 @@ export function buildPrivacySections(rawOwner: string | undefined): readonly Pri
     {
       title: "Ce que l'administrateur voit et ne voit pas",
       items: [
-        'Il voit les informations de compte : pseudo, rôle, statut, date de naissance, mineur ou non, création et dernière connexion, état des accords, nombre de sessions actives. Il gère les invitations et les salles, et consulte le journal de sécurité.',
+        'Il voit les informations de compte : pseudo, rôle, statut, date de naissance, mineur ou non, création et dernière connexion, état des accords, nombre de sessions actives, réglages de relecture. Il gère les invitations et les salles, et consulte le journal de sécurité.',
+        "Pour les fiches d'exercices, il voit qui les a commentées et qui les a validées.",
         "Il ne voit pas dans l'appli ton profil, tes séances, tes lieux, tes données de santé ni tes conversations avec le coach. Il ne peut ni se connecter à ta place, ni exporter tes données, ni connaître ton mot de passe.",
         'Il lit un échange avec le coach seulement si tu le signales toi-même.',
         "L'administrateur a la main sur le serveur et peut techniquement lire la base. Il s'engage à ne faire aucune requête manuelle sur les données d'une personne sans son accord.",
@@ -90,6 +93,7 @@ export function buildPrivacySections(rawOwner: string | undefined): readonly Pri
         "Rectification : tout ce que tu saisis est modifiable, sauf ta date de naissance, que l'administrateur corrige à ta demande.",
         "Retrait d'un accord : à tout moment, depuis ton profil ; les données concernées sont effacées immédiatement.",
         "Suppression du compte : depuis ton profil, ou par l'administrateur à ta demande ; tout est effacé en une fois.",
+        'Relecture des exercices : ton export contient tes réglages de relecture, tes commentaires et tes validations. Un commentaire envoyé ne se modifie plus. À la suppression du compte, tes réglages sont effacés ; tes commentaires et tes validations restent sur les fiches, sans ton pseudo.',
         `Pour toute autre demande, ${contact}.`,
       ],
     },

@@ -62,6 +62,12 @@ export const MeResponse = z.object({
   onboardingCompletedAt: z.string().nullable(),
   termsVersion: z.string().nullable(),
   consents: ConsentState,
+  /**
+   * Drapeaux bruts du compte courant (spec brique 2 §3.1). Relecteur effectif : `catalogReviewer` ou admin ;
+   * relecteur santé : les deux drapeaux et le rôle `member` (`isReviewer`, `isHealthReviewer` de `@rune/domain`).
+   */
+  catalogReviewer: z.boolean(),
+  healthProfessional: z.boolean(),
 });
 export type MeResponse = z.infer<typeof MeResponse>;
 

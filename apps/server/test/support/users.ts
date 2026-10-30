@@ -18,6 +18,9 @@ export interface CreateUserOptions {
   onboarded?: boolean;
   passwordChangedAt?: string | null;
   createdAt?: string;
+  /** Drapeaux de relecteur (spec brique 2 §3.1), faux par défaut. */
+  catalogReviewer?: boolean;
+  healthProfessional?: boolean;
 }
 
 let counter = 0;
@@ -47,6 +50,8 @@ export async function createUser(ctx: TestContext, o: CreateUserOptions = {}): P
       passwordChangedAt: o.passwordChangedAt ?? null,
       onboardingStep: o.onboarded ? 'ready' : null,
       onboardingCompletedAt: o.onboarded ? now : null,
+      catalogReviewer: o.catalogReviewer ? 1 : 0,
+      healthProfessional: o.healthProfessional ? 1 : 0,
       rev: stamp.rev,
       createdAt: o.createdAt ?? now,
       updatedAt: stamp.updatedAt,

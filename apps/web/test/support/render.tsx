@@ -16,7 +16,7 @@ import { createTestLocalDb } from './local-db';
 
 export const DEFAULT_NOW = Date.parse('2026-10-06T12:00:00.000Z');
 
-/** Membre adulte actif, onboardé, sans consentement actif. */
+/** Membre adulte actif, onboardé, sans consentement actif, sans drapeau de relecteur. */
 export function makeMe(o: Partial<MeResponse> = {}): MeResponse {
   return {
     id: 'u-1',
@@ -35,6 +35,8 @@ export function makeMe(o: Partial<MeResponse> = {}): MeResponse {
       health: { active: false, textVersion: null, at: null },
       aiCoach: { active: false, textVersion: null, at: null },
     },
+    catalogReviewer: false,
+    healthProfessional: false,
     ...o,
   };
 }

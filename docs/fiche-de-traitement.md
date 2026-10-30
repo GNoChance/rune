@@ -13,6 +13,7 @@ Le porteur du projet, personne physique, qui héberge le serveur chez lui, en Fr
 - Suivi d'entraînement entre proches : comptes sur invitation, profil, lieux et matériel, programmes, séances et progression.
 - Adaptation des séances et des repères aux données de santé, seulement avec l'accord santé.
 - Coach IA (brique 4), seulement avec l'accord coach.
+- Relecture des fiches d'exercices (brique 2) : des membres volontaires, que l'admin désigne comme relectrices, commentent et valident les fiches ; une relectrice qui se déclare professionnelle de santé donne le feu vert santé des fiches sensibles. Base légale : l'accord de la personne, recueilli par l'admin avant de cocher un drapeau de relecteur.
 - Sécurité du service : journal de sécurité, sessions, sauvegardes, supervision.
 
 ## Personnes concernées
@@ -23,18 +24,23 @@ De 2 à 5 personnes : le porteur et 1 à 4 proches, invités par lui. L'âge min
 
 | Cat. | Nom | Contenu | Accès dans l'appli |
 |---|---|---|---|
-| C0 | Interne | pour tout le cercle : référentiels (fiches d'exercices publiées, illustrations, matériel, modèles de programmes), salles partagées et leur historique, pseudos rendus visibles ; pour l'admin seulement : métadonnées de compte (pseudo, rôle, statut, date de naissance, mineur ou non, création, dernière connexion, état des accords, nombre de sessions actives, coût IA du mois à partir de la brique 4), invitations, liens de réinitialisation, journal de sécurité (date, type, acteur, sujet, IP du tailnet, résultat ; aucune donnée C1 à C3) | le cercle ou l'admin, selon la ligne |
+| C0 | Interne | pour tout le cercle : référentiels (fiches d'exercices publiées, illustrations, matériel, modèles de programmes), salles partagées et leur historique, pseudos rendus visibles ; pour les relectrices et l'admin : fiches d'exercices en relecture, commentaires et validations de relecture, versions successives des fiches ; pour l'admin seulement : métadonnées de compte (pseudo, rôle, statut, date de naissance, mineur ou non, création, dernière connexion, état des accords, nombre de sessions actives, drapeaux de relecteur, coût IA du mois à partir de la brique 4), invitations, liens de réinitialisation, journal de sécurité (date, type, acteur, sujet, IP du tailnet, résultat ; aucune donnée C1 à C3) | le cercle, les relectrices ou l'admin, selon la ligne |
 | C1 | Personnel | profil d'entraînement, lieux de type maison, visibilité par lieu, mode prudent manuel, programmes et modifications de programme, séances, séries, records, réglages, rejets de synchro, détail des sessions, historique des accords | le propriétaire seul |
 | C2 | Santé | indicateur de prudence issu du questionnaire, limitations et zones sensibles, douleur, motif d'une modification de programme, taille, pesées, sexe utilisé par les formules, profil, cibles et bilans nutritionnels | le propriétaire seul, avec l'accord santé |
 | C3 | Sensible | fils et messages du coach, signalements | le propriétaire seul, avec l'accord coach ; un échange signalé devient lisible par l'admin |
 
 C0 ne veut pas dire « non personnel » : C0 regroupe ce que le cercle ou l'admin voit par conception. Exception : les sessions sont C1 mais ne sont pas exportées (R-EXP-2) ; à la suppression du compte, elles sont anonymisées, puis purgées à leur expiration absolue (P-DRT-3).
 
+Drapeaux de relecteur (spec de la brique 2, §3.1) : « relectrice » (`catalog_reviewer`) et « professionnelle de santé » (`health_professional`) sont C0 pour l'admin, comme le rôle. Ce ne sont pas des données de santé mais une qualification professionnelle déclarée. La personne voit ses propres drapeaux ; les autres membres ne les voient jamais ; les autres relectrices ne savent pas qui est professionnelle de santé et voient seulement si le feu vert santé d'une fiche est à jour ; seul l'admin voit qui a donné un feu vert santé. Chaque changement de drapeau exige le mot de passe de l'admin et s'inscrit au journal de sécurité, avec les valeurs avant et après.
+
+Exception à P-CAT-3 : les commentaires et les validations de relecture sont C0, mais l'export d'une personne contient ceux qu'elle a écrits (spec de la brique 2, §3.9) ; les versions successives des fiches ne sont pas exportées, car elles ne contiennent aucune donnée de la personne. Ses drapeaux sont dans son export et effacés avec son compte ; ses commentaires et validations restent attachés aux fiches, sans auteur. Un commentaire envoyé ne se modifie ni ne se supprime (spec de la brique 2, §3.3).
+
 Aucun e-mail n'est collecté : l'identifiant est un pseudo. Les empreintes de mot de passe et de jetons sont hors catégorie : elles ne sont jamais exportées, synchronisées, journalisées ni renvoyées par l'API. Le porteur voit l'adresse du compte Tailscale de chaque proche, une information gérée par Tailscale. L'admin a la main sur le serveur et peut techniquement lire la base : il s'engage à ne faire aucune requête manuelle sur les données d'une personne sans son accord (P-ADM-3).
 
 ## Destinataires
 
 - Dans le cercle : les données C0 seulement (salles partagées, pseudos rendus visibles) ; l'admin voit les métadonnées de compte, jamais les données C1 à C3 d'un autre dans l'appli, sauf un échange signalé (`coach_report`, P-ADM-1).
+- Relecture des fiches d'exercices : les relectrices et l'admin voient les fiches en relecture et les commentaires, avec leur auteur ; seul l'admin voit les drapeaux de relecteur et qui a validé une fiche.
 - Anthropic (coach, brique 4) : avec l'accord coach, les messages et le dossier du coach : tranche d'âge (`age_band`, jamais l'âge exact), niveau, objectif, contexte, matériel, programme, historique récent ; C2 seulement si les accords santé et coach sont actifs (P-COA-1). Jamais : pseudo, date de naissance, identifiant interne, nom ou enseigne de la salle, autres membres, adresse IP.
 - Backblaze (B2) : sauvegardes chiffrées côté client avant de quitter le serveur ; Backblaze ne voit que des données chiffrées.
 - Tailscale (réseau) : comptes Tailscale des proches et métadonnées de leurs appareils ; le trafic de l'appli reste chiffré de bout en bout.

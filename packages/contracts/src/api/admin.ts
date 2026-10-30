@@ -40,6 +40,9 @@ export const MemberSummary = z
     onboardingCompleted: z.boolean(),
     consents: z.object({ health: z.boolean(), aiCoach: z.boolean() }),
     activeSessions: z.number().int(),
+    /** Drapeaux bruts de relecteur (spec brique 2 §3.1), vus de l'admin seulement. */
+    catalogReviewer: z.boolean(),
+    healthProfessional: z.boolean(),
   })
   .strict();
 export type MemberSummary = z.infer<typeof MemberSummary>;
@@ -52,6 +55,18 @@ export type SetStatusRequest = z.infer<typeof SetStatusRequest>;
 
 export const SetRoleRequest = z.object({ role: RoleSchema, password: z.string().min(1).max(1024) });
 export type SetRoleRequest = z.infer<typeof SetRoleRequest>;
+
+/**
+ * Drapeaux de relecteur d'un membre (spec brique 2 §3.1) : valeurs voulues des deux drapeaux et mot de passe de
+ * l'admin (P-AUT-5) ; faux → 401 `invalid_credentials`. `healthProfessional` à vrai sur son propre compte → 403
+ * `self_health_flag`. Réponse : le `MemberSummary` du membre.
+ */
+export const SetReviewerFlagsRequest = z.object({
+  catalogReviewer: z.boolean(),
+  healthProfessional: z.boolean(),
+  password: z.string().min(1).max(1024),
+});
+export type SetReviewerFlagsRequest = z.infer<typeof SetReviewerFlagsRequest>;
 
 export const SetBirthDateRequest = z.object({ birthDate: CivilDate });
 export type SetBirthDateRequest = z.infer<typeof SetBirthDateRequest>;

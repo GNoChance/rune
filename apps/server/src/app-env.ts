@@ -6,6 +6,9 @@ export interface SessionUser {
   role: Role;
   birthDate: string;
   mustChangePassword: boolean;
+  /** Drapeaux de relecteur (spec brique 2 §3.1), relus en base à chaque requête : un retrait vaut tout de suite. */
+  catalogReviewer: boolean;
+  healthProfessional: boolean;
 }
 
 export type AppEnv = {

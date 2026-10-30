@@ -1,6 +1,7 @@
 import {
   AdminDeleteMemberRequest,
   SetBirthDateRequest,
+  SetReviewerFlagsRequest,
   SetRoleRequest,
   SetStatusRequest,
 } from '@rune/contracts';
@@ -18,6 +19,7 @@ import { deleteGymAsAdmin } from '../places/gyms';
 import { deleteAccount } from '../privacy/delete-account';
 import { listMembers, revokeMemberSessions, setBirthDate, setRole, setStatus } from './members';
 import { readOpsStatus } from './ops-status';
+import { setReviewerFlags } from './reviewer-flags';
 
 export function adminRoutes(deps: AppDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
@@ -64,6 +66,19 @@ export function adminRoutes(deps: AppDeps): Hono<AppEnv> {
     await verifyUserPassword(deps.db, deps, admin, body.password, actor.ip);
     await deps.db.transaction().execute((trx) => setRole(trx, deps, actor, id, body.role));
     return c.body(null, 204);
+  });
+
+  // Drapeaux de relecteur (spec brique 2 §3.1) : même ressaisie du mot de passe que pour le rôle.
+  routes.post('/members/:id/reviewer-flags', async (c) => {
+    const { admin, actor } = actorOf(c);
+    const body = await parseJson(c, SetReviewerFlagsRequest);
+    const id = c.req.param('id');
+    await verifyUserPassword(deps.db, deps, admin, body.password, actor.ip);
+    const flags = { catalogReviewer: body.catalogReviewer, healthProfessional: body.healthProfessional };
+    const member = await deps.db
+      .transaction()
+      .execute((trx) => setReviewerFlags(trx, deps, actor, id, flags));
+    return c.json(member);
   });
 
   routes.post('/members/:id/birth-date', async (c) => {

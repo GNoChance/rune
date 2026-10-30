@@ -81,6 +81,8 @@ export async function buildMe(
     onboardingCompletedAt: user.onboardingCompletedAt,
     termsVersion: user.termsVersion,
     consents: await getConsentState(db, userId),
+    catalogReviewer: user.catalogReviewer === 1,
+    healthProfessional: user.healthProfessional === 1,
   };
 }
 

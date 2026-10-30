@@ -125,7 +125,7 @@ async function resolveSession(c: Context<AppEnv>, deps: AppDeps, token: string):
   if (lastSeenMs + SESSION_IDLE_DAYS * DAY_MS <= nowMs) return;
   const user = await deps.db
     .selectFrom('user')
-    .select(['id', 'username', 'role', 'birthDate', 'status'])
+    .select(['id', 'username', 'role', 'birthDate', 'status', 'catalogReviewer', 'healthProfessional'])
     .where('id', '=', session.userId)
     .executeTakeFirst();
   if (!user || user.status === 'disabled') return;
@@ -143,6 +143,8 @@ async function resolveSession(c: Context<AppEnv>, deps: AppDeps, token: string):
     role: user.role,
     birthDate: user.birthDate,
     mustChangePassword: session.mustChangePassword === 1,
+    catalogReviewer: user.catalogReviewer === 1,
+    healthProfessional: user.healthProfessional === 1,
   });
 }
 

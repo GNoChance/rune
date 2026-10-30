@@ -30,6 +30,8 @@ Les empreintes de mot de passe et de jetons (`*_hash`) sont hors catégorie, lis
 
 Exception : les sessions sont C1 mais ne sont pas exportées (section Comptes, R-EXP-2, qui prime). Le registre les déclare non exportées et anonymisées à la suppression du compte (P-DRT-3), et le test de P-CAT-2 admet cette exception.
 
+Exception inverse, depuis la brique 2 : les commentaires et les validations de relecture des fiches d'exercices sont C0, mais l'export d'une personne contient ceux qu'elle a écrits, par un traitement explicite ; les drapeaux de relecteur sont C0 pour l'admin, comme le rôle ([spec de la brique 2](../2026-10-14-brique-2-exercices-design.md), §3.1 et §3.9).
+
 - **P-CAT-1** Un registre unique `entityRules`, dans `packages/contracts`, associe chaque table à sa catégorie (`category`), et liste les champs C2 placés dans une table C1 (`c2Columns`, par exemple `performed_exercise.pain_level`) et les secrets (`secretColumns`).
 - **P-CAT-2** Un test parcourt le schéma : il échoue si une table n'est pas dans le registre, ou si une table liée à un `user_id` n'est pas couverte à la fois par l'export et par la suppression.
 - **P-CAT-3** La catégorie décide de tout ce qui suit : l'export, la suppression, l'interdiction dans les journaux, l'interdiction d'accès pour l'admin, la condition de consentement et l'envoi au coach.
@@ -89,7 +91,8 @@ Exception : les sessions sont C1 mais ne sont pas exportées (section Comptes, R
 | promouvoir ou rétrograder (il reste toujours au moins un admin) | connaître ou choisir un mot de passe |
 | voir les métadonnées C0 des comptes et le journal de sécurité | voir les rejets de synchro (`sync_rejection`, C1) d'un autre utilisateur |
 | lire un échange que l'utilisateur a lui-même signalé (P-COA-4) | |
-| relire les fiches d'exercices ; gérer les salles | |
+| relire les fiches d'exercices ; gérer les salles | cocher le drapeau « professionnelle de santé » sur son propre compte |
+| donner ou retirer les drapeaux de relecteur d'un membre, avec son accord et son propre mot de passe ; voir qui a validé une fiche ([spec de la brique 2](../2026-10-14-brique-2-exercices-design.md), §3.1) | |
 
 - **P-ADM-1** Toute lecture d'une donnée C1 à C3 est filtrée côté serveur par l'utilisateur de la session. Le rôle admin n'ouvre aucune route vers ces tables, sauf `coach_report`.
 - **P-ADM-2** Une session admin qui demande une ressource C1, C2 ou C3 d'un autre utilisateur reçoit `404`, jamais `403`, pour ne pas révéler son existence.
@@ -230,7 +233,7 @@ Les pages Confidentialité, Crédits et Aide sont accessibles **sans connexion**
    - Un bandeau fixe en tête de chaque conversation : « Vous échangez avec une IA (Claude, d'Anthropic), pas avec un humain. Elle peut se tromper et ne remplace pas un professionnel de santé. En cas d'urgence : 15 ou 112. »
    - Une étiquette « IA » sur chaque message ; `ai_generated` et `effective_model` sont enregistrés et exportés.
    - Les propositions portent la mention « proposé par l'IA, vérifié par l'appli ».
-4. **Fiches d'exercices :** « Rédigé avec l'aide d'une IA, relu par l'administrateur ».
+4. **Fiches d'exercices :** « Rédigé avec l'aide d'une IA, relu par l'administrateur ». Remplacé à la brique 2 par « rédigés avec l'aide d'une IA (Claude), relus par l'administrateur et des relectrices, dont une professionnelle de santé pour les exercices sensibles » ([spec de la brique 2](../2026-10-14-brique-2-exercices-design.md), §5).
 5. **Page Confidentialité**, versionnée et tirée de la fiche de traitement. Elle indique :
    - qui est responsable ;
    - les données collectées (C0 à C3) et pourquoi ;

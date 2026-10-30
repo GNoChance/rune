@@ -199,15 +199,21 @@ function durations(text: string): string[] {
   );
 }
 
-/** Phrases de la section « Durées de conservation » de la page Confidentialité (T28). */
-function pageRetention(): string {
+/**
+ * Phrases d'une section de la page Confidentialité (`privacy-content.ts`) : ses littéraux entre guillemets
+ * simples ou doubles, une ligne chacun (les gabarits `…${…}…` sont ignorés).
+ */
+function pageItems(title: string): string {
   const source = read('apps/web/src/features/public/privacy-content.ts');
-  const start = source.indexOf("title: 'Durées de conservation'");
-  expect(start, 'section « Durées de conservation » de privacy-content.ts').toBeGreaterThanOrEqual(0);
+  const start = source.indexOf(title.includes("'") ? `title: "${title}"` : `title: '${title}'`);
+  expect(start, `section « ${title} » de privacy-content.ts`).toBeGreaterThanOrEqual(0);
   const end = source.indexOf('title:', start + 1);
   const block = source.slice(source.indexOf('items:', start), end < 0 ? undefined : end);
   return [...block.matchAll(/'([^']*)'|"([^"]*)"/g)].map((m) => m[1] ?? m[2]).join('\n');
 }
+
+/** Phrases de la section « Durées de conservation » de la page Confidentialité (T28). */
+const pageRetention = (): string => pageItems('Durées de conservation');
 
 const INCIDENTS_HEADER = '| Date | Faits | Données exposées | Mesures | Personnes prévenues |';
 
@@ -1728,5 +1734,68 @@ describe('décisions de confidentialité du 2026-10-12 (refonte Rune, §11.1)', 
     expect(section(p[8] as string, 'Mot de passe admin oublié')).toContain(
       '« Compte administrateur <pseudo> réactivé. »',
     );
+  });
+});
+
+describe('relecture des exercices : drapeaux, commentaires et validations (spec brique 2 §3.1, §3.9)', () => {
+  it("fiche : finalité et base légale (accord de la personne), drapeaux C0 pour l'admin, visibilité", () => {
+    expect(section(fiche, 'Finalités')).toMatch(
+      /^- Relecture des fiches d'exercices \(brique 2\) :[^\n]*professionnelle de santé donne le feu vert santé des fiches sensibles\. Base légale : l'accord de la personne, recueilli par l'admin avant de cocher un drapeau de relecteur\.$/m,
+    );
+    const categories = section(fiche, 'Catégories de données');
+    for (const needle of [
+      'nombre de sessions actives, drapeaux de relecteur',
+      "pour les relectrices et l'admin : fiches d'exercices en relecture, commentaires et validations de relecture, versions successives des fiches",
+      "sont C0 pour l'admin, comme le rôle",
+      'Ce ne sont pas des données de santé mais une qualification professionnelle déclarée.',
+      'La personne voit ses propres drapeaux ; les autres membres ne les voient jamais',
+      'les autres relectrices ne savent pas qui est professionnelle de santé',
+      "seul l'admin voit qui a donné un feu vert santé",
+      "Chaque changement de drapeau exige le mot de passe de l'admin et s'inscrit au journal de sécurité, avec les valeurs avant et après.",
+    ]) {
+      expect(categories, needle).toContain(needle);
+    }
+    expect(section(fiche, 'Destinataires')).toMatch(
+      /^- Relecture des fiches d'exercices :[^\n]*seul l'admin voit les drapeaux de relecteur et qui a validé une fiche\.$/m,
+    );
+  });
+
+  it("fiche : commentaires et validations dans l'export de leur auteur, exception déclarée à P-CAT-3", () => {
+    const categories = section(fiche, 'Catégories de données');
+    for (const needle of [
+      "Exception à P-CAT-3 : les commentaires et les validations de relecture sont C0, mais l'export d'une personne contient ceux qu'elle a écrits",
+      'les versions successives des fiches ne sont pas exportées, car elles ne contiennent aucune donnée de la personne',
+      'Ses drapeaux sont dans son export et effacés avec son compte',
+      'ses commentaires et validations restent attachés aux fiches, sans auteur',
+      'Un commentaire envoyé ne se modifie ni ne se supprime',
+    ]) {
+      expect(categories, needle).toContain(needle);
+    }
+  });
+
+  it("page Confidentialité : relecture acceptée, visibilité, ce que voit l'admin, export et suppression", () => {
+    const collected = pageItems('Données collectées et pourquoi');
+    for (const needle of [
+      "Relecture des exercices, seulement si tu l'acceptes",
+      'si tu le déclares, ta qualification de professionnel de santé',
+      "Ce n'est pas une donnée de santé.",
+      "Les membres qui ne relisent pas n'en voient rien",
+      'ne savent pas si tu es professionnel de santé',
+    ]) {
+      expect(collected, needle).toContain(needle);
+    }
+    const admin = pageItems("Ce que l'administrateur voit et ne voit pas");
+    expect(admin).toContain('nombre de sessions actives, réglages de relecture.');
+    expect(admin).toContain(
+      "Pour les fiches d'exercices, il voit qui les a commentées et qui les a validées.",
+    );
+    const rights = pageItems('Tes droits et comment les exercer');
+    for (const needle of [
+      'ton export contient tes réglages de relecture, tes commentaires et tes validations',
+      'Un commentaire envoyé ne se modifie plus.',
+      'tes commentaires et tes validations restent sur les fiches, sans ton pseudo',
+    ]) {
+      expect(rights, needle).toContain(needle);
+    }
   });
 });
