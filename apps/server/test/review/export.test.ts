@@ -64,4 +64,21 @@ describe('GET /api/admin/exercises/export (04 §10)', () => {
     const cookie = await setup([]);
     expect(await (await exportCatalog(cookie)).text()).toBe('[]\n');
   });
+
+  it('navigation venue d’un autre site (Sec-Fetch-Site) : 403 origin_mismatch, le compteur reste', async () => {
+    const sheet = sheetFixture('push-up');
+    const cookie = await setup([sheet]);
+    expect((await putSheet(ctx, cookie, 'push-up', { ...sheet, breathing: 'Souffle.' }, 4)).status).toBe(200);
+    const fetchFrom = (site: string) =>
+      ctx.request('/api/admin/exercises/export', { cookie, headers: { 'Sec-Fetch-Site': site } });
+    for (const site of ['cross-site', 'same-site']) {
+      const res = await fetchFrom(site);
+      expect(res.status, site).toBe(403);
+      expect(await res.json(), site).toEqual({ error: 'origin_mismatch' });
+    }
+    expect(await toExport(cookie)).toBe(1);
+    // la page elle-même, puis l'adresse tapée ou un favori
+    for (const site of ['same-origin', 'none']) expect((await fetchFrom(site)).status, site).toBe(200);
+    expect(await toExport(cookie)).toBe(0);
+  });
 });

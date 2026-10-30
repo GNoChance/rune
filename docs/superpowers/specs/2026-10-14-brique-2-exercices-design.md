@@ -146,7 +146,7 @@ Tout enregistrement ou transition d'une fiche recalcule `catalog_version` dans l
 | `POST /api/review/exercises/:id/comments` | relecteur | `{part, body, base_revision}` |
 | `POST /api/review/comments/:cid/resolve` | auteur relecteur ou admin | marque traité |
 | `POST /api/review/exercises/:id/validations` | relecteur | `{base_revision}` |
-| `GET /api/admin/exercises/export` | admin | export du catalogue (04 §10) |
+| `GET /api/admin/exercises/export` | admin | export du catalogue (04 §10) ; met à jour `exported_revision`, donc refusé (403 `origin_mismatch`) quand `Sec-Fetch-Site` vaut `cross-site` ou `same-site` |
 | `PUT /api/admin/exercises/:id` | admin | enregistrement avec `base_revision` |
 | `POST /api/admin/exercises/:id/transition` | admin | `{to, base_revision}` |
 | `POST /api/admin/members/:id/reviewer-flags` | admin | §3.1 |

@@ -24,6 +24,11 @@ export function adminExerciseRoutes(deps: AppDeps): Hono<AppEnv> {
   };
 
   routes.get('/export', async (c) => {
+    // GET à effet de bord (compteur « à exporter ») : avec SameSite=Lax, le cookie part aussi sur une navigation
+    // venue d'un autre site. Fetch Metadata : seuls la page elle-même et l'adresse tapée (`none`) passent ; un
+    // navigateur qui n'envoie pas l'en-tête passe aussi.
+    const site = c.req.header('Sec-Fetch-Site');
+    if (site !== undefined && site !== 'same-origin' && site !== 'none') throw httpError('origin_mismatch');
     const text = await deps.db.transaction().execute((trx) => exportCatalog(trx));
     c.header('Content-Type', 'application/json; charset=utf-8');
     c.header('Content-Disposition', `attachment; filename="${EXERCISES_EXPORT_FILE}"`);
