@@ -24,6 +24,11 @@ const resolveBash = (): string => {
   return join(execPath, '..', '..', '..', 'bin', 'bash.exe');
 };
 const BASH = resolveBash();
+/**
+ * Délai des tests qui lancent bash plusieurs fois : sous Windows, chaque bash de Git for Windows coûte
+ * plusieurs centaines de millisecondes, et une suite complète chargée dépassait les 5 s par défaut.
+ */
+const GUARD_TIMEOUT_MS = 30_000;
 
 /**
  * Faux git et gh, en fonctions shell : elles passent avant le PATH, donc aucun vrai git ni gh n'est appelé.
@@ -110,7 +115,7 @@ describe('.github/workflows/release.yml', () => {
     expect(steps[0]?.with).toEqual({ 'fetch-depth': 0 });
   });
 
-  it('garde du tag : vX.Y.Z strict, sinon « Tag invalide »', () => {
+  it('garde du tag : vX.Y.Z strict, sinon « Tag invalide »', { timeout: GUARD_TIMEOUT_MS }, () => {
     const run = stepNamed('Garde du tag').run ?? '';
     expect(run).toContain('^v[0-9]+\\.[0-9]+\\.[0-9]+$');
     expect(run).toContain('Tag invalide : $GITHUB_REF_NAME');
@@ -126,7 +131,9 @@ describe('.github/workflows/release.yml', () => {
     }
   });
 
-  it('garde de main : le commit tagué doit être un ancêtre de origin/main', () => {
+  it('garde de main : le commit tagué doit être un ancêtre de origin/main', {
+    timeout: GUARD_TIMEOUT_MS,
+  }, () => {
     const run = stepNamed('Garde de main').run ?? '';
     expect(run).toContain('git merge-base --is-ancestor "$GITHUB_SHA" origin/main');
     expect(run).toContain("Le commit n'est pas sur main : publication refusée.");
@@ -139,7 +146,9 @@ describe('.github/workflows/release.yml', () => {
     });
   });
 
-  it('garde CI : au moins un run vert de ci.yml pour ce commit, avant toute construction', () => {
+  it('garde CI : au moins un run vert de ci.yml pour ce commit, avant toute construction', {
+    timeout: GUARD_TIMEOUT_MS,
+  }, () => {
     const ciGuard = stepNamed('Garde CI');
     expect(ciGuard.env).toEqual({ GH_TOKEN: '${{ github.token }}' });
     const run = ciGuard.run ?? '';
