@@ -4,6 +4,7 @@ import { formatDate, Page } from '../../ui';
 import { InstallSteps } from '../auth/InstallSteps';
 import { installHelp } from '../auth/install-help';
 import { CreditsContent } from './CreditsPage';
+import { ExternalLink, Glyph } from './ExternalLink';
 import styles from './public.module.css';
 import { usePublicBack } from './use-public-back';
 
@@ -16,24 +17,6 @@ const EMERGENCY_NAMES: Record<string, { shown: string; spoken: string }> = {
   '15': { shown: 'SAMU', spoken: 'SAMU' },
   '112': { shown: 'Numéro européen', spoken: 'numéro européen' },
 };
-
-function Glyph(p: { size: number; children: ReactNode }) {
-  return (
-    <svg
-      aria-hidden="true"
-      width={p.size}
-      height={p.size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {p.children}
-    </svg>
-  );
-}
 
 const PHONE_PATH = (
   <path d="M5 4h3.5l2 5-2.5 1.5a11 11 0 0 0 5.5 5.5l1.5-2.5 5 2V19a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" />
@@ -73,20 +56,6 @@ function Emergency(p: { resource: HelpResource | undefined }) {
   );
 }
 
-function SourceLink(p: { href: string }) {
-  return (
-    <a href={p.href} target="_blank" rel="noreferrer" className={styles.source}>
-      Source
-      <Glyph size={14}>
-        <path d="M14 4h6v6" />
-        <path d="M20 4 11 13" />
-        <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
-      </Glyph>
-      <span className={styles.srOnly}> (nouvel onglet)</span>
-    </a>
-  );
-}
-
 /** Numéros utiles (A05) : un libellé, puis l'appel et la source sur une ligne, les horaires dessous. */
 function UsefulNumbers(p: { resources: readonly HelpResource[]; verifiedOn: string | undefined }) {
   const id = useId();
@@ -113,7 +82,7 @@ function UsefulNumbers(p: { resources: readonly HelpResource[]; verifiedOn: stri
                     ))}
                   </span>
                 ) : null}
-                {r.sourceUrl ? <SourceLink href={r.sourceUrl} /> : null}
+                {r.sourceUrl ? <ExternalLink href={r.sourceUrl}>Source</ExternalLink> : null}
               </span>
             ) : null}
             {r.hours ? <span className={styles.muted}>Horaires : {r.hours}</span> : null}
@@ -156,7 +125,7 @@ export function HelpPage() {
         </HelpSection>
         <UsefulNumbers resources={useful} verifiedOn={verifiedOn} />
         <HelpSection title="Crédits">
-          <CreditsContent />
+          <CreditsContent headingLevel={3} />
         </HelpSection>
       </div>
     </Page>

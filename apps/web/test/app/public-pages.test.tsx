@@ -1,11 +1,22 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import type { IllustrationEntry } from '@rune/contracts';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildPrivacySections } from '../../src/features/public/privacy-content';
+import type { AppDb } from '../../src/local-db/db';
+import { setMeta } from '../../src/local-db/meta';
 import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
 import { createFakeApi, createFakeSyncEngine } from '../support/fake-api';
+import { createTestLocalDb } from '../support/local-db';
 import { makeMe, renderApp } from '../support/render';
+
+/** Mention des textes (spec brique 2 §5.7), sur la page Crédits. */
+const CREDITS_TEXTS =
+  "Rédigés avec l'aide d'une IA (Claude), relus par l'administrateur et des relectrices, dont une professionnelle de santé pour les exercices sensibles.";
+/** Catalogue jamais téléchargé sur l'appareil : les crédits des illustrations viennent avec lui. */
+const CREDITS_MISSING =
+  "Les crédits des illustrations arrivent avec le catalogue d'exercices : connecte-toi une fois pour le récupérer.";
 
 /** Feuille des pages publiques, lue à plat. */
 const publicCss = () =>
@@ -136,10 +147,11 @@ describe('pages publiques', () => {
     await screen.findByRole('heading', { level: 1, name: 'Confidentialité et règles' });
   });
 
-  it('/credits statique, sans requête', async () => {
+  it('/credits sans requête : catalogue jamais téléchargé, la mention des textes et une invitation', async () => {
     const { api } = await renderApp({ path: '/credits', me: null });
     await screen.findByRole('heading', { level: 1, name: 'Crédits' });
-    expect(screen.getByText('Aucune illustration pour le moment.')).toBeTruthy();
+    expect(await screen.findByText(CREDITS_MISSING)).toBeTruthy();
+    expect(screen.getByText(CREDITS_TEXTS)).toBeTruthy();
     expect(api.calls).toEqual([]);
   });
 
@@ -240,14 +252,174 @@ describe('Aide (maquette A05, spec refonte §10.6)', () => {
   it('Crédits dans Aide (P10), /credits reste servi avec le même contenu', async () => {
     const help = await renderApp({ path: '/help', me: null });
     const credits = await screen.findByRole('region', { name: 'Crédits' });
+    await within(credits).findByText(CREDITS_MISSING);
     const inHelp = shownAfter(within(credits).getByRole('heading', { level: 2, name: 'Crédits' }));
-    expect(inHelp).toBe(
-      'Aucune illustration pour le moment. Chaque illustration ajoutée portera ici son auteur, sa licence, sa source et la mention « modifié » le cas échéant.',
-    );
+    expect(inHelp).toBe(`Textes des exercices ${CREDITS_TEXTS} Illustrations ${CREDITS_MISSING}`);
+    // Sous le h2 d'Aide, les titres des crédits descendent d'un niveau.
+    expect(
+      within(credits)
+        .getAllByRole('heading', { level: 3 })
+        .map((h) => h.textContent),
+    ).toEqual(['Textes des exercices', 'Illustrations']);
     help.unmount();
     await renderApp({ path: '/credits', me: null });
     const title = await screen.findByRole('heading', { level: 1, name: 'Crédits' });
+    await screen.findByText(CREDITS_MISSING);
     expect(shownAfter(title)).toBe(inHelp);
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      'Textes des exercices',
+      'Illustrations',
+    ]);
+  });
+});
+
+describe('Crédits générés depuis le manifeste (04 §12, §13 critère 12)', () => {
+  const COMMIT = '0123456789abcdef0123456789abcdef01234567';
+  const url = (repo: string, path: string) => `https://github.com/${repo}/blob/${COMMIT}/${path}`;
+  const entry = (id: string, o: Partial<IllustrationEntry> = {}): IllustrationEntry => ({
+    id,
+    file: `${id}.0a1b2c3d.svg`,
+    sha256: `0a1b2c3d${'e'.repeat(56)}`,
+    bytes: 2048,
+    media_type: 'image/svg+xml',
+    source: 'everkinetic',
+    source_url: url('everkinetic/data', `svg/${id}.svg`),
+    creators: ['Greg Priday'],
+    license: 'CC-BY-SA-4.0',
+    license_url: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    modifications: 'Rune : nettoyage du SVG.',
+    replace_before_public: false,
+    ...o,
+  });
+  const { modifications: _, ...pikeBase } = entry('pike-start', {
+    source: 'workout_guide',
+    source_url: url('bryllim/workout-guide', 'images/pike-1.png'),
+    file: 'pike-start.0a1b2c3d.png',
+    media_type: 'image/png',
+    creators: ['Bryl Lim'],
+    replace_before_public: true,
+  });
+  const manifest = [entry('squat-start'), entry('squat-end'), pikeBase, entry('unused-start')];
+  const exercises = [
+    {
+      id: 'goblet-squat',
+      name: 'Squat goblet',
+      status: 'published',
+      illustrations: [
+        { illustration_id: 'squat-start', role: 'start' },
+        { illustration_id: 'squat-end', role: 'end' },
+      ],
+    },
+    {
+      id: 'pike-push-up',
+      name: 'Pompe pike',
+      status: 'published',
+      illustrations: [{ illustration_id: 'pike-start', role: 'start' }],
+    },
+    { id: 'plank', name: 'Gainage', status: 'published', illustrations: [] },
+  ];
+
+  async function seededDb(sheets: unknown[] = exercises, entries: unknown[] = manifest): Promise<AppDb> {
+    const db = createTestLocalDb();
+    await db.table('exercises').bulkPut(sheets);
+    await db.table('illustrations').bulkPut(entries);
+    await setMeta(db, 'catalogVersion', 'cat-1');
+    return db;
+  }
+
+  /** Bloc d'une source : son titre h3 (sur /credits), puis ce qui suit jusqu'à la source suivante. */
+  const sourceBlock = (name: string) => {
+    const block = screen.getByRole('heading', { level: 3, name }).closest('section');
+    if (!block) throw new Error(`bloc ${name} introuvable`);
+    return block as HTMLElement;
+  };
+
+  it('hors ligne, sans session : chaque illustration de chaque fiche publiée, la mention des textes', async () => {
+    const api = createFakeApi();
+    api.setOffline('reject');
+    await renderApp({ path: '/credits', me: null, api, db: await seededDb() });
+    await screen.findByRole('heading', { level: 3, name: 'Everkinetic' });
+    expect(screen.getByText(CREDITS_TEXTS)).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Rune modifie les fichiers repris (nettoyage, optimisation, renommage) ; ces versions modifiées sont sous licence CC BY-SA 4.0.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([
+      'Everkinetic',
+      'workout-guide',
+    ]);
+
+    // Chaque fichier d'une fiche publiée : son usage et son lien source figé, rien de plus.
+    const listed: [string, string | null][] = [];
+    for (const summary of document.querySelectorAll('summary')) {
+      fireEvent.click(summary);
+      const files = summary.closest('details')?.querySelectorAll('li') ?? [];
+      for (const li of files) {
+        const use = li.querySelector('p')?.textContent ?? '';
+        listed.push([use, li.querySelector('a')?.getAttribute('href') ?? null]);
+      }
+    }
+    expect(listed).toEqual([
+      ['Squat goblet : position de départ', url('everkinetic/data', 'svg/squat-start.svg')],
+      ['Squat goblet : position de fin', url('everkinetic/data', 'svg/squat-end.svg')],
+      ['Pompe pike : position de départ', url('bryllim/workout-guide', 'images/pike-1.png')],
+    ]);
+    expect(document.body.textContent).not.toContain('unused-start');
+    expect(api.calls).toEqual([]);
+  });
+
+  it('par source : créateurs, licence (lien), copie figée au commit ; par fichier : crédit, modifications, marquage', async () => {
+    await renderApp({ path: '/credits', me: null, db: await seededDb() });
+    await screen.findByRole('heading', { level: 3, name: 'Everkinetic' });
+
+    const everkinetic = sourceBlock('Everkinetic');
+    expect(everkinetic.textContent).toContain('Créateurs : Greg Priday');
+    const license = within(everkinetic).getByRole('link', { name: 'CC BY-SA 4.0 (nouvel onglet)' });
+    expect(license.getAttribute('href')).toBe('https://creativecommons.org/licenses/by-sa/4.0/');
+    expect(license.getAttribute('target')).toBe('_blank');
+    const frozen = within(everkinetic).getByRole('link', {
+      name: 'github.com/everkinetic/data, commit 0123456 (nouvel onglet)',
+    });
+    expect(frozen.getAttribute('href')).toBe(`https://github.com/everkinetic/data/tree/${COMMIT}`);
+    expect(within(everkinetic).getByText('2 illustrations')).toBeTruthy();
+    const [squatStart] = within(everkinetic).getAllByRole('listitem', { hidden: true });
+    expect(squatStart?.textContent).toContain('Illustration : Greg Priday · CC BY-SA 4.0 · modifiée');
+    expect(squatStart?.textContent).toContain('Modifications : Rune : nettoyage du SVG.');
+    expect(
+      within(squatStart as HTMLElement)
+        .getByRole('link', {
+          hidden: true,
+          name: 'Source (Squat goblet : position de départ, nouvel onglet)',
+        })
+        .getAttribute('target'),
+    ).toBe('_blank');
+
+    const workoutGuide = sourceBlock('workout-guide');
+    expect(workoutGuide.textContent).toContain('Créateurs : Bryl Lim');
+    expect(within(workoutGuide).getByText('1 illustration')).toBeTruthy();
+    const [pike] = within(workoutGuide).getAllByRole('listitem', { hidden: true });
+    expect(pike?.textContent).toContain('Illustration : Bryl Lim · CC BY-SA 4.0');
+    expect(pike?.textContent).not.toContain('modifiée');
+    expect(pike?.textContent).toContain('À remplacer avant publication : provenance non documentée.');
+  });
+
+  it('catalogue sans illustration : « Aucune illustration pour le moment. »', async () => {
+    await renderApp({ path: '/credits', me: null, db: await seededDb([exercises[2]], []) });
+    expect(await screen.findByText('Aucune illustration pour le moment.')).toBeTruthy();
+    expect(screen.getByText(CREDITS_TEXTS)).toBeTruthy();
+    expect(screen.queryByText(CREDITS_MISSING)).toBeNull();
+  });
+
+  it('Aide : les mêmes crédits, titres un niveau plus bas (h3 puis h4)', async () => {
+    await renderApp({ path: '/help', me: null, db: await seededDb() });
+    const credits = await screen.findByRole('region', { name: 'Crédits' });
+    await within(credits).findByRole('heading', { level: 4, name: 'Everkinetic' });
+    expect(
+      within(credits)
+        .getAllByRole('heading', { level: 4 })
+        .map((h) => h.textContent),
+    ).toEqual(['Everkinetic', 'workout-guide']);
   });
 });
 

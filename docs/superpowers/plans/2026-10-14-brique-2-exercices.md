@@ -258,11 +258,11 @@ it('PUBLISH_BLOCKERS suit l\'ordre de la spec', () => expect(PUBLISH_BLOCKERS[0]
 **Interfaces:**
 - Produces : `sanitizeSvg(input: string): string` (liste blanche d'éléments ; retire `script`, `foreignObject`, attributs `on*`, liens externes ; ajoute le commentaire de crédit et de licence) ; `pnpm illustrations:import --source <dossier figé> --ids …` (copie seulement les fichiers utilisés, nom `<id>.<hash8>.<ext>`, empreinte sha256, entrée de manifeste avec `replace_before_public` selon 04 §12 règle 3) ; `pnpm svg:check` (40 Ko au plus par fichier, type des fichiers matriciels vérifié par leurs octets).
 
-- [ ] **Step 1: Write the failing tests** — un SVG piégé (`<script>`, `onload`, `href` externe) ressort propre (04 §13 critère 11) ; 41 Ko → refus ; un PNG renommé en `.svg` → refus ; la page Crédits liste chaque illustration de chaque fiche publiée et la mention des textes de la spec §5.7, et reste lisible hors ligne.
-- [ ] **Step 2: Run** — FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** `pnpm test` et `pnpm svg:check` — PASS.
-- [ ] **Step 5: Commit** `feat(scripts): import et nettoyage des illustrations, page Crédits générée`.
+- [x] **Step 1: Write the failing tests** — un SVG piégé (`<script>`, `onload`, `href` externe) ressort propre (04 §13 critère 11) ; 41 Ko → refus ; un PNG renommé en `.svg` → refus ; la page Crédits liste chaque illustration de chaque fiche publiée et la mention des textes de la spec §5.7, et reste lisible hors ligne.
+- [x] **Step 2: Run** — FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** `pnpm test` et `pnpm svg:check` — PASS.
+- [x] **Step 5: Commit** `feat(scripts): import et nettoyage des illustrations, page Crédits générée`.
 
 ### Task 12: Dépôt du catalogue côté web et composant d'onglets
 

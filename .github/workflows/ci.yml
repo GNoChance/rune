@@ -55,6 +55,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Catalogue d'exercices (04 §13, critère 1). Passer à --strict (R-EQ-5) une fois le lot A publié.
       - run: pnpm data:validate
+      # Fichiers d'illustrations : 40 Ko au plus, type vérifié par les octets, SVG nettoyés et crédités (04 §12).
+      - run: pnpm svg:check
       - run: pnpm test
 
   # R-TST-1 : E2E Chromium (Pixel 7) et WebKit (iPhone 14), bloquant ; WebKit avec service worker fait foi ici.

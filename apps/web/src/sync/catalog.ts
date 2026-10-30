@@ -1,4 +1,4 @@
-import { IllustrationRef } from '@rune/contracts';
+import { IllustrationManifest } from '@rune/contracts';
 import { z } from 'zod';
 import type { AppDb } from '../local-db/db';
 import { getMeta, setMeta } from '../local-db/meta';
@@ -9,10 +9,14 @@ import { fetchJsonWithTimeout, type SyncTransport } from './transport';
 export const CATALOG_TIMEOUT_MS = 30_000;
 
 const Item = z.looseObject({ id: z.string() });
+/**
+ * Bloc reçu : les illustrations sont les entrées complètes du manifeste (`IllustrationEntry`), crédits compris,
+ * stockées telles quelles : la page Crédits les lit hors ligne (04 §12).
+ */
 const LocalCatalog = z.object({
   version: z.string(),
   exercises: z.array(Item),
-  illustrations: z.array(IllustrationRef),
+  illustrations: IllustrationManifest,
   programTemplates: z.array(Item),
   adviceSheets: z.array(Item),
 });

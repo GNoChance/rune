@@ -17,7 +17,9 @@
     "build:server": "pnpm --filter @rune/server build",
     "data:validate": "node --import tsx scripts/data/validate.ts",
     "data:pull": "node --import tsx scripts/data/pull.ts",
-    "exercises:draft": "node --import tsx scripts/exercises/draft.ts"
+    "exercises:draft": "node --import tsx scripts/exercises/draft.ts",
+    "illustrations:import": "node --import tsx scripts/exercises/import-illustrations.ts",
+    "svg:check": "node --import tsx scripts/svg/check.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2",

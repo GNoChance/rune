@@ -2,12 +2,18 @@ import { describe, expect, it } from 'vitest';
 import {
   CatalogBundle,
   ILLUSTRATION_FILE_RE,
+  ILLUSTRATION_LICENSE_LABELS,
+  ILLUSTRATION_LICENSES,
   ILLUSTRATION_MEDIA_TYPE_BY_EXTENSION,
   ILLUSTRATION_MEDIA_TYPES,
+  ILLUSTRATION_ROLE_LABELS,
+  ILLUSTRATION_SOURCE_LABELS,
+  ILLUSTRATION_SOURCES,
   IllustrationEntry,
   IllustrationManifest,
   IllustrationRef,
 } from '../src/catalog';
+import { ILLUSTRATION_ROLES } from '../src/exercise';
 
 const SHA = `0a1b2c3d${'e'.repeat(56)}`;
 
@@ -113,5 +119,33 @@ describe('CatalogBundle', () => {
 
   it("refuse ce qui n'est pas une fiche servie", () => {
     expect(CatalogBundle.safeParse({ ...empty, exercises: [{ id: 'squat' }] }).success).toBe(false);
+  });
+});
+
+describe('libellés des illustrations (crédits, texte alternatif)', () => {
+  it('un libellé par source, par licence et par pose, et rien de plus', () => {
+    expect(Object.keys(ILLUSTRATION_SOURCE_LABELS)).toEqual([...ILLUSTRATION_SOURCES]);
+    expect(Object.keys(ILLUSTRATION_LICENSE_LABELS)).toEqual([...ILLUSTRATION_LICENSES]);
+    expect(Object.keys(ILLUSTRATION_ROLE_LABELS)).toEqual([...ILLUSTRATION_ROLES]);
+  });
+
+  it('sources et licences écrites comme leurs auteurs (04 §12)', () => {
+    expect(ILLUSTRATION_SOURCE_LABELS).toEqual({
+      everkinetic: 'Everkinetic',
+      workout_guide: 'workout-guide',
+    });
+    expect(ILLUSTRATION_LICENSE_LABELS).toEqual({
+      'CC-BY-SA-4.0': 'CC BY-SA 4.0',
+      'CC-BY-4.0': 'CC BY 4.0',
+      'CC0-1.0': 'CC0 1.0',
+    });
+  });
+
+  it('poses : « <nom> : position de départ » (ou « de milieu », « de fin »), 04 §12', () => {
+    expect(ILLUSTRATION_ROLE_LABELS).toEqual({
+      start: 'position de départ',
+      mid: 'position de milieu',
+      end: 'position de fin',
+    });
   });
 });

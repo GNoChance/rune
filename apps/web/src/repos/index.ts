@@ -3,6 +3,7 @@ import { type AppServices, useServices } from '../app-services';
 import { type AdminRepo, createAdminRepo } from './admin-repo';
 import { type CatalogRepo, catalogRepoFor } from './catalog-repo';
 import { type ConsentRepo, createConsentRepo } from './consent-repo';
+import { type CreditsRepo, createCreditsRepo } from './credits-repo';
 import { createGymsRepo, type GymsRepo } from './gyms-repo';
 import { createMeRepo, type MeRepo } from './me-repo';
 import { createPlacesRepo, type PlacesRepo } from './places-repo';
@@ -26,6 +27,7 @@ export {
   useExerciseView,
 } from './catalog-repo';
 export type { ConsentRepo, LimitationView } from './consent-repo';
+export type { CreditsRepo, CreditsView } from './credits-repo';
 export type { GymsRepo } from './gyms-repo';
 export type { DeviceOwner, MeRepo } from './me-repo';
 export type { PlacesRepo, PlaceView } from './places-repo';
@@ -45,6 +47,7 @@ export interface Repos {
   rejections: RejectionsRepo;
   status: StatusRepo;
   catalog: CatalogRepo;
+  credits: CreditsRepo;
 }
 
 export function createRepos(s: AppServices): Repos {
@@ -59,6 +62,7 @@ export function createRepos(s: AppServices): Repos {
     status: createStatusRepo(s),
     // Le même que celui des hooks du catalogue (`useCatalog`, `useExerciseView`).
     catalog: catalogRepoFor(s),
+    credits: createCreditsRepo(s),
   };
 }
 

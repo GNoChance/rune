@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { join, type PlatformPath, posix, resolve, sep } from 'node:path';
-import { ILLUSTRATION_FILE_RE } from '@rune/contracts';
+import { ILLUSTRATION_FILE_RE, ILLUSTRATION_MEDIA_TYPE_BY_EXTENSION } from '@rune/contracts';
 import type { Context, Hono } from 'hono';
 import { compress } from 'hono/compress';
 import { getMimeType } from 'hono/utils/mime';
@@ -16,8 +16,6 @@ export const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 export function cacheControlFor(pathname: string): string {
   return pathname.startsWith('/assets/') ? IMMUTABLE_CACHE : 'no-cache';
 }
-
-const ILLUSTRATION_TYPES = { svg: 'image/svg+xml', png: 'image/png', webp: 'image/webp', jpg: 'image/jpeg' };
 
 /** Octets d'un fichier lu en entier (`readFile`), tels que `c.body` les accepte. */
 type Bytes = Uint8Array<ArrayBuffer>;
@@ -75,11 +73,13 @@ export function mountWebApp(app: Hono<AppEnv>, deps: AppDeps): void {
   // Empreinte et octets lus une seule fois par fichier : une URL immuable sert toujours les mêmes octets.
   const illustrations = new Map<string, { hash8: string; body: Bytes }>();
 
+  // Sur disque, le fichier porte le nom servi `<id>.<hash8>.<ext>` : celui du manifeste, du validateur, du
+  // chargeur et de `illustrations:import` (04 §12). Un nom validé par ILLUSTRATION_FILE_RE n'a ni `/`, ni `\`.
   app.get('/illustrations/:file', compress(), async (c) => {
-    const match = ILLUSTRATION_FILE_RE.exec(c.req.param('file'));
+    const name = c.req.param('file');
+    const match = ILLUSTRATION_FILE_RE.exec(name);
     if (!match) return c.notFound();
-    const [, id, hash8, ext] = match;
-    const name = `${id}.${ext}`;
+    const [, , hash8, ext] = match;
     let known = illustrations.get(name);
     if (!known) {
       const body = await readIfFile(join(filesDir, name));
@@ -87,9 +87,11 @@ export function mountWebApp(app: Hono<AppEnv>, deps: AppDeps): void {
       known = { hash8: createHash('sha256').update(body).digest('hex').slice(0, 8), body };
       illustrations.set(name, known);
     }
+    // Des octets qui ne portent pas l'empreinte de leur nom ne sont jamais servis sous une URL immuable.
     if (known.hash8 !== hash8) return c.notFound();
     return c.body(known.body, 200, {
-      'Content-Type': ILLUSTRATION_TYPES[ext as keyof typeof ILLUSTRATION_TYPES],
+      'Content-Type':
+        ILLUSTRATION_MEDIA_TYPE_BY_EXTENSION[ext as keyof typeof ILLUSTRATION_MEDIA_TYPE_BY_EXTENSION],
       'Content-Length': String(known.body.byteLength),
       'Cache-Control': IMMUTABLE_CACHE,
       'Content-Security-Policy': ILLUSTRATION_CSP,

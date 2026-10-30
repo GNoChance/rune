@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ServedSheetSchema } from './exercise';
+import { type ILLUSTRATION_ROLES, ServedSheetSchema } from './exercise';
 
 /** Nom d'un fichier d'illustration : `<id>.<empreinte 8 hex>.<ext>`, sans chemin. */
 export const ILLUSTRATION_FILE_RE = /^([a-z0-9][a-z0-9-]*)\.([0-9a-f]{8})\.(svg|png|webp|jpg)$/;
@@ -12,6 +12,30 @@ export const ILLUSTRATION_SOURCES = ['everkinetic', 'workout_guide'] as const;
 
 /** Licences admises (04 §12, règle 1) ; recoupées par le CHECK de `illustration.license`. */
 export const ILLUSTRATION_LICENSES = ['CC-BY-SA-4.0', 'CC-BY-4.0', 'CC0-1.0'] as const;
+
+export type IllustrationSource = (typeof ILLUSTRATION_SOURCES)[number];
+export type IllustrationLicense = (typeof ILLUSTRATION_LICENSES)[number];
+export type IllustrationRole = (typeof ILLUSTRATION_ROLES)[number];
+
+/** Nom affiché de chaque source (page Crédits), tel que ses auteurs l'écrivent (04 §12). */
+export const ILLUSTRATION_SOURCE_LABELS = {
+  everkinetic: 'Everkinetic',
+  workout_guide: 'workout-guide',
+} as const satisfies Record<IllustrationSource, string>;
+
+/** Nom affiché de chaque licence (ligne de crédit, page Crédits, commentaire des SVG). */
+export const ILLUSTRATION_LICENSE_LABELS = {
+  'CC-BY-SA-4.0': 'CC BY-SA 4.0',
+  'CC-BY-4.0': 'CC BY 4.0',
+  'CC0-1.0': 'CC0 1.0',
+} as const satisfies Record<IllustrationLicense, string>;
+
+/** Pose d'une illustration, pour le texte alternatif « <nom> : position de départ » (04 §12). */
+export const ILLUSTRATION_ROLE_LABELS = {
+  start: 'position de départ',
+  mid: 'position de milieu',
+  end: 'position de fin',
+} as const satisfies Record<IllustrationRole, string>;
 
 /** Type de fichier de chaque extension de `ILLUSTRATION_FILE_RE`. */
 export const ILLUSTRATION_MEDIA_TYPE_BY_EXTENSION = {

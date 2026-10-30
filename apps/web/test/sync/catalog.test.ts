@@ -9,10 +9,27 @@ import { createSyncEngine } from '../../src/sync/engine';
 import { createFakeSyncServer, type FakeSyncServer } from '../support/fake-sync-server';
 import { createFixtureLocalDb } from '../support/local-db';
 
+/** Entrée complète du manifeste : ses crédits doivent arriver jusqu'à Dexie (page Crédits hors ligne). */
+const squatIllustration = {
+  id: 'squat',
+  file: 'squat.0123abcd.svg',
+  sha256: `0123abcd${'0'.repeat(56)}`,
+  bytes: 1234,
+  media_type: 'image/svg+xml',
+  source: 'everkinetic',
+  source_url:
+    'https://github.com/everkinetic/data/blob/0123456789abcdef0123456789abcdef01234567/svg/squat-1.svg',
+  creators: ['Greg Priday'],
+  license: 'CC-BY-SA-4.0',
+  license_url: 'https://creativecommons.org/licenses/by-sa/4.0/',
+  modifications: 'Rune : nettoyage du SVG.',
+  replace_before_public: false,
+};
+
 const bundle = {
   version: 'cat-2',
   exercises: [{ id: 'squat', name: 'Squat' }],
-  illustrations: [{ id: 'squat', file: 'squat.0123abcd.svg' }],
+  illustrations: [squatIllustration],
   programTemplates: [{ id: 'full-body' }],
   adviceSheets: [{ id: 'echauffement' }],
 };
@@ -61,6 +78,21 @@ describe('refreshCatalog', () => {
     server.on('GET /api/catalog', () => server.json(200, bundle));
     await refreshCatalog(db, server);
     expect(postMessage).toHaveBeenCalledWith({ type: 'SYNC_ILLUSTRATIONS', files: ['squat.0123abcd.svg'] });
+  });
+
+  it('illustrations : entrées complètes du manifeste, crédits compris, gardées telles quelles', async () => {
+    server.on('GET /api/catalog', () => server.json(200, bundle));
+    await refreshCatalog(db, server);
+    expect(await db.table('illustrations').toArray()).toEqual([squatIllustration]);
+  });
+
+  it('illustration sans ses crédits ({id, file} seulement) → rejet, rien remplacé', async () => {
+    await db.table('illustrations').put(squatIllustration);
+    const bare = { id: 'squat', file: 'squat.0123abcd.svg' };
+    server.on('GET /api/catalog', () => server.json(200, { ...bundle, illustrations: [bare] }));
+    await expect(refreshCatalog(db, server)).rejects.toThrow();
+    expect(await db.table('illustrations').toArray()).toEqual([squatIllustration]);
+    expect(await getMeta(db, 'catalogVersion')).toBeUndefined();
   });
 
   it('élément sans id → rejet, rien remplacé', async () => {

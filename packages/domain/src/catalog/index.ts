@@ -7,6 +7,16 @@ export {
 } from './blockers';
 export { canonicalJson } from './canonical';
 export { buildChains, chainRank, usableChainSteps } from './chains';
+export {
+  type CreditSheet,
+  type FrozenSource,
+  frozenSource,
+  type IllustrationCredit,
+  type IllustrationUse,
+  illustrationCreditLine,
+  illustrationCredits,
+  type SourceCredit,
+} from './credits';
 export { expandEquipment, feasible } from './equipment';
 export {
   type BatchProgress,

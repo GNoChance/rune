@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { SECURITY_HEADERS } from '../../src/http/security-headers';
 import { cacheControlFor, ILLUSTRATION_CSP, IMMUTABLE_CACHE, resolveUnder } from '../../src/static';
 import { createTestContext, type TestContext, type TestRequestInit } from '../support';
+import { illustrationFixture, writeDataDir } from '../support/catalog';
 
 const INDEX = '<!doctype html><html lang="fr"><head><title>Rune</title></head></html>';
 const SW = 'self.__RUNE_PRECACHE__ = {};\n';
@@ -31,10 +32,13 @@ beforeAll(() => {
   writeFileSync(join(publicDir, 'sw.js'), SW);
   writeFileSync(join(publicDir, 'manifest.webmanifest'), '{"name":"Rune"}');
   writeFileSync(join(publicDir, 'assets', 'index-abc123.js'), 'console.log(1);');
-  writeFileSync(join(contentDir, 'illustrations', 'files', 'squat-start.svg'), SVG);
+  // Sur disque, le nom servi : `<id>.<hash8>.<ext>`, celui du manifeste (04 §12).
+  writeFileSync(join(contentDir, 'illustrations', 'files', `squat-start.${HASH8}.svg`), SVG);
+  // Ancien nommage sans empreinte : jamais servi.
+  writeFileSync(join(contentDir, 'illustrations', 'files', 'legacy.svg'), SVG);
   // Cibles des tentatives de traversée : servies si le chemin sortait de publicDir ou du dossier des fichiers.
   writeFileSync(join(root, 'package.json'), '{"secret":true}');
-  writeFileSync(join(contentDir, 'secret.svg'), SVG);
+  writeFileSync(join(contentDir, `secret.${HASH8}.svg`), SVG);
 });
 
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -164,7 +168,7 @@ describe('mountWebApp : illustrations', () => {
 
   it('404 : empreinte fausse, fichier absent, traversée, nom sans empreinte', async () => {
     // La cible des traversées a bien l'empreinte HASH8 : seule la validation du nom peut la refuser.
-    const secret = readFileSync(join(contentDir, 'secret.svg'));
+    const secret = readFileSync(join(contentDir, `secret.${HASH8}.svg`));
     expect(createHash('sha256').update(secret).digest('hex').slice(0, 8)).toBe(HASH8);
     for (const path of [
       '/illustrations/squat-start.00000000.svg',
@@ -179,10 +183,33 @@ describe('mountWebApp : illustrations', () => {
     }
   });
 
+  it("nom du disque = nom servi : un fichier sans empreinte (ancien nommage) n'est jamais servi", async () => {
+    await expectNotFound(await get(`/illustrations/legacy.${HASH8}.svg`), 'legacy');
+  });
+
+  it('dossier data/ du chargeur et de data:validate : chaque fichier du manifeste est servi sous son nom', async () => {
+    const illustrations = [illustrationFixture('push-up-start'), illustrationFixture('push-up-end')];
+    const dir = writeDataDir(join(root, 'content-data'), { illustrations });
+    await open({ contentDir: dir });
+    for (const { entry, body } of illustrations) {
+      const res = await get(`/illustrations/${entry.file}`);
+      expect(res.status, entry.file).toBe(200);
+      expect(await res.text()).toBe(body);
+    }
+  });
+
+  it("octets qui ne portent pas l'empreinte de leur nom : 404", async () => {
+    const dir = join(root, 'content-liar');
+    mkdirSync(join(dir, 'illustrations', 'files'), { recursive: true });
+    writeFileSync(join(dir, 'illustrations', 'files', `squat-start.${HASH8}.svg`), `${SVG}<!-- autre -->`);
+    await open({ contentDir: dir });
+    await expectNotFound(await get(ILLUSTRATION), 'liar');
+  });
+
   it('une URL d’illustration sert toujours les octets de son empreinte (empreintes en mémoire)', async () => {
     const dir = join(root, 'content-mutable');
     mkdirSync(join(dir, 'illustrations', 'files'), { recursive: true });
-    const file = join(dir, 'illustrations', 'files', 'squat-start.svg');
+    const file = join(dir, 'illustrations', 'files', `squat-start.${HASH8}.svg`);
     writeFileSync(file, SVG);
     await open({ contentDir: dir });
     expect(await (await get(ILLUSTRATION)).text()).toBe(SVG);
