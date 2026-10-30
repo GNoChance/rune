@@ -1,6 +1,7 @@
 import { entityRules } from '@rune/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestContext, createUser, insertFixtureRow, login, type TestContext } from '../support';
+import { fillPath as fill, listRoutes as listAppRoutes } from '../support/routes';
 
 // Planchers du nombre de routes énumérées : T19 a monté MIN_ID_ROUTES à 6 (PATCH, DELETE /api/me/limitations/:id).
 const MIN_ADMIN_ROUTES = 10;
@@ -11,27 +12,7 @@ afterEach(() => ctx?.close());
 
 const WITNESSES = ['TEMOIN_TP', 'TEMOIN_HS', 'TEMOIN_LIM'];
 
-interface Route {
-  method: string;
-  path: string;
-}
-
-function listRoutes(): Route[] {
-  const seen = new Set<string>();
-  const out: Route[] = [];
-  for (const r of ctx.app.routes) {
-    if (r.method === 'ALL') continue;
-    const key = `${r.method} ${r.path}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({ method: r.method, path: r.path });
-  }
-  return out;
-}
-
-/** `:id` reçoit l'identifiant donné, tout autre paramètre reçoit « x ». */
-const fill = (path: string, id: string): string =>
-  path.replace(/:([A-Za-z]+)(\{[^}]*\})?/g, (_m, name: string) => (name === 'id' ? id : 'x'));
+const listRoutes = () => listAppRoutes(ctx.app);
 
 async function setup() {
   ctx = await createTestContext();

@@ -113,6 +113,69 @@ describe('GET /api/me/export (R-EXP-1, R-EXP-2, P-DRT-1)', () => {
     expect(exp.gyms[0]?.loadSettings).toBe('{}');
   });
 
+  it('contient les commentaires et validations de relecture de la personne, pas ceux des autres ni les révisions (spec brique 2 §3.9)', async () => {
+    ctx = await createTestContext();
+    const zoe = await createUser(ctx, { username: 'zoe', catalogReviewer: true });
+    const ines = await createUser(ctx, { username: 'ines', catalogReviewer: true });
+    const cookie = await login(ctx, 'zoe', zoe.password);
+    const { db } = ctx.deps;
+    const exercise = await insertFixtureRow(db, 'exercise');
+    await insertFixtureRow(db, 'exercise_revision', {
+      exerciseId: exercise.id,
+      content: '{"name":"REPERE_REVISION"}',
+      savedBy: zoe.id,
+    });
+    const mine = await insertFixtureRow(db, 'exercise_comment', {
+      exerciseId: exercise.id,
+      authorId: zoe.id,
+      body: 'REPERE_ZOE',
+      resolvedAt: '2026-10-06T11:00:00.000Z',
+      resolvedBy: ines.id,
+    });
+    await insertFixtureRow(db, 'exercise_comment', {
+      exerciseId: exercise.id,
+      authorId: ines.id,
+      body: 'REPERE_INES',
+    });
+    const validated = await insertFixtureRow(db, 'exercise_validation', {
+      exerciseId: exercise.id,
+      reviewerId: zoe.id,
+      revision: 1,
+    });
+    await insertFixtureRow(db, 'exercise_validation', {
+      exerciseId: exercise.id,
+      reviewerId: ines.id,
+      revision: 1,
+    });
+
+    const text = await (await ctx.request('/api/me/export', { cookie })).text();
+    const exp = JSON.parse(text);
+    expect(exp.reviewComments).toEqual([
+      {
+        id: mine.id,
+        exerciseId: exercise.id,
+        part: 'general',
+        body: 'REPERE_ZOE',
+        revision: 1,
+        createdAt: '2026-10-06T10:00:00.000Z',
+        resolvedAt: '2026-10-06T11:00:00.000Z',
+      },
+    ]);
+    expect(exp.reviewValidations).toEqual([
+      {
+        id: validated.id,
+        exerciseId: exercise.id,
+        revision: 1,
+        health: 0,
+        createdAt: '2026-10-06T10:00:00.000Z',
+      },
+    ]);
+    for (const leak of ['REPERE_INES', 'REPERE_REVISION', ines.id]) expect(text).not.toContain(leak);
+    for (const table of ['exercise', 'exercise_comment', 'exercise_validation', 'exercise_revision']) {
+      expect(exp.tables).not.toHaveProperty(table);
+    }
+  });
+
   it('journalise data_exported sans détail', async () => {
     ctx = await createTestContext();
     const u = await createUser(ctx, { username: 'lea' });

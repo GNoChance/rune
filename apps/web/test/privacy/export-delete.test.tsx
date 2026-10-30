@@ -20,6 +20,8 @@ const EXPORTED = {
   tables: { place: [] },
   gyms: [],
   gymHistory: [],
+  reviewComments: [],
+  reviewValidations: [],
 };
 const DELETE_LIST =
   "Ton compte, ton profil, tes lieux, tes données de santé et l'historique de tes accords seront supprimés. Les salles restent : tu y apparaîtras comme « ancien membre ». Le journal de sécurité est gardé 12 mois et les sauvegardes 30 jours au plus.";

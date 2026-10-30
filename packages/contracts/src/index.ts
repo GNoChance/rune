@@ -6,6 +6,7 @@ export * from './api/export';
 export * from './api/health';
 export * from './api/places';
 export * from './api/profile';
+export * from './api/review';
 export * from './auth-constants';
 export * from './case';
 export * from './catalog';

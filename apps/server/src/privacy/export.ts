@@ -26,7 +26,7 @@ async function select(
  * Export `rune-export/1` (R-EXP-1) : le compte, puis chaque table `exported` du registre dont la
  * colonne propriétaire est `owner_id` ou `user_id`, sans colonne secrète ; les sessions n'en font
  * pas partie (R-EXP-2). Les salles sont celles d'un lieu de l'utilisateur (supprimé compris), créées
- * par lui ou dont il a écrit l'historique.
+ * par lui ou dont il a écrit l'historique. S'y ajoutent ses commentaires et validations de relecture.
  */
 export async function buildExport(db: DbExecutor, deps: AppDeps, userId: string): Promise<ExportV1> {
   const rules = deps.entityRules;
@@ -55,6 +55,23 @@ export async function buildExport(db: DbExecutor, deps: AppDeps, userId: string)
   );
   const gymHistory = await select(db, 'gym_history', historyRule, sql`author_id = ${userId}`);
 
+  // Relecture (spec brique 2 §3.9, exception déclarée à P-CAT-3) : les commentaires et validations écrits par la
+  // personne, sans `resolved_by` (l'identifiant d'un autre compte) ; les révisions ne la concernent pas.
+  const reviewComments = await db
+    .selectFrom('exerciseComment')
+    .select(['id', 'exerciseId', 'part', 'body', 'revision', 'createdAt', 'resolvedAt'])
+    .where('authorId', '=', userId)
+    .orderBy('createdAt')
+    .orderBy('id')
+    .execute();
+  const reviewValidations = await db
+    .selectFrom('exerciseValidation')
+    .select(['id', 'exerciseId', 'revision', 'health', 'createdAt'])
+    .where('reviewerId', '=', userId)
+    .orderBy('createdAt')
+    .orderBy('id')
+    .execute();
+
   return {
     format: EXPORT_FORMAT,
     exportedAt: deps.clock.now().toISOString(),
@@ -62,5 +79,7 @@ export async function buildExport(db: DbExecutor, deps: AppDeps, userId: string)
     tables,
     gyms,
     gymHistory,
+    reviewComments,
+    reviewValidations,
   };
 }
