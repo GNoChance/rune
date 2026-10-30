@@ -57,7 +57,8 @@ function useGymDetails(gymIds: readonly string[]): ReadonlyMap<string, GymDetail
  * sa fiche, une maison la sienne (spec refonte §10.3), où vivent leurs actions. Dessous, l'ajout d'une salle
  * ou d'une maison (écrans ouverts sur place, focus rendu au bouton au retour), puis les dernières
  * modifications de la salle principale quand elles sont lisibles en ligne. Après la suppression d'un lieu,
- * « Mes lieux » prend le focus une fois (le bouton qui l'avait est parti avec la fiche).
+ * « Mes lieux » prend le focus une fois (le bouton qui l'avait est parti avec la fiche). Ouverte depuis le
+ * Profil (ligne « Mes lieux »), elle y ramène par son Retour.
  */
 export function PlacesPage() {
   const repos = useRepos();
@@ -103,7 +104,7 @@ export function PlacesPage() {
 
   return (
     <div className={sub.back ? styles.screenBack : undefined}>
-      <Page title="Salles">
+      <Page title="Salles" back="/profile">
         <section aria-labelledby={listId} className={styles.group}>
           <div className={styles.groupHead}>
             <h2 id={listId} ref={focusOnArrival} tabIndex={-1} className={styles.groupTitle}>

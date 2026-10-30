@@ -69,8 +69,9 @@ export const isReviewPath = (path: string) => {
 };
 
 /**
- * Anciennes adresses des lieux, passés sous l'onglet Salles : `/profile/places…` mène au même chemin sous
- * `/places` (la suite, un identifiant par exemple, est gardée telle quelle).
+ * Anciennes adresses des lieux : `/profile/places…` mène au même chemin sous `/places` (la suite, un identifiant
+ * par exemple, est gardée telle quelle). Les lieux s'ouvrent depuis Profil › Mes lieux (spec brique 2, D5 :
+ * l'onglet Salles devient Exercices) et gardent leurs adresses `/places…`.
  */
 const MOVED_PLACES = /^\/profile\/places(\/.*)?$/i;
 

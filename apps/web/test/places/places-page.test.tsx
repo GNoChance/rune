@@ -127,6 +127,8 @@ describe('PlacesPage : Salles › Mes lieux (maquette D01)', () => {
     // « Garage » principale vient après « Basic Fit » par l'id, le nom et l'ordre d'écriture.
     await renderPlaces({ garagePrimary: true });
     expect(screen.getByRole('heading', { level: 1, name: 'Salles' })).toBeTruthy();
+    // Ouverte depuis Profil › Mes lieux (spec brique 2, D5) : son Retour y ramène.
+    expect(screen.getByRole('link', { name: 'Retour' }).getAttribute('href')).toBe('/profile');
     const places = region('Mes lieux');
     expect(places.getByText('2 lieux')).toBeTruthy();
     const names = places.getAllByRole('link').map((a) => a.getAttribute('href'));
