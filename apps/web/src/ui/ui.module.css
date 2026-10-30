@@ -752,6 +752,79 @@
   }
 }
 
+/*
+ * Onglets (fiche d'exercice, motif de l'ARIA APG) : barre soulignée, onglets de largeur égale et d'au moins
+ * 44 × 44 px. L'actif passe en texte courant et en gras, souligné d'un trait d'accent de 3 px : jamais la couleur
+ * seule. Fond transparent : sur --bg comme sur --surface, les paires de contraste sont celles des jetons.
+ */
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.tabList {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 44px;
+  min-height: 44px;
+  padding: var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.96875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Le trait recouvre la ligne de la barre (1 px plus bas). */
+.tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: var(--space-2);
+  bottom: -1px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--accent);
+}
+
+/* Contour du focus à l'intérieur : la barre peut être bordée par la page. */
+.tab:focus-visible {
+  outline-offset: -2px;
+}
+
+.tabPanel {
+  min-width: 0;
+}
+
+@media (hover: hover) {
+  .tab:hover:not([aria-selected="true"]) {
+    color: var(--text);
+  }
+}
+
+/* Couleurs forcées : le fond du trait disparaîtrait, on le redessine en couleur système. */
+@media (forced-colors: active) {
+  .tab[aria-selected="true"]::after {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+}
+
 /* Progression de l'onboarding : segments de 6 px, dégradé d'accent étalé sur toute la barre. */
 .progress {
   display: flex;

@@ -27,5 +27,6 @@ export * from './RankBadge';
 export * from './SegmentedProgress';
 export * from './Switch';
 export * from './SystemPanel';
+export * from './Tabs';
 export * from './use-action';
 export * from './use-reduced-motion';

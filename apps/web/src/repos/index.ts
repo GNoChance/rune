@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { type AppServices, useServices } from '../app-services';
 import { type AdminRepo, createAdminRepo } from './admin-repo';
+import { type CatalogRepo, catalogRepoFor } from './catalog-repo';
 import { type ConsentRepo, createConsentRepo } from './consent-repo';
 import { createGymsRepo, type GymsRepo } from './gyms-repo';
 import { createMeRepo, type MeRepo } from './me-repo';
@@ -10,6 +11,20 @@ import { createRejectionsRepo, type RejectionsRepo } from './rejections-repo';
 import { createStatusRepo, type StatusRepo } from './status-repo';
 
 export type { AdminRepo } from './admin-repo';
+export {
+  type CatalogPlace,
+  type CatalogRepo,
+  type CatalogSnapshot,
+  type CatalogState,
+  type ExerciseFilter,
+  type ExerciseGroupCount,
+  type ExerciseSearch,
+  type ExerciseView,
+  type MemberCatalogContext,
+  type SheetView,
+  useCatalog,
+  useExerciseView,
+} from './catalog-repo';
 export type { ConsentRepo, LimitationView } from './consent-repo';
 export type { GymsRepo } from './gyms-repo';
 export type { DeviceOwner, MeRepo } from './me-repo';
@@ -29,6 +44,7 @@ export interface Repos {
   admin: AdminRepo;
   rejections: RejectionsRepo;
   status: StatusRepo;
+  catalog: CatalogRepo;
 }
 
 export function createRepos(s: AppServices): Repos {
@@ -41,6 +57,8 @@ export function createRepos(s: AppServices): Repos {
     admin: createAdminRepo(s),
     rejections: createRejectionsRepo(s),
     status: createStatusRepo(s),
+    // Le même que celui des hooks du catalogue (`useCatalog`, `useExerciseView`).
+    catalog: catalogRepoFor(s),
   };
 }
 
