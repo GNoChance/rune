@@ -251,7 +251,7 @@ export function blockerMessage(code: PublishBlocker, openComments: number): stri
     case 'incomplete':
       return 'Des champs obligatoires sont vides.';
     case 'invalid_sheet':
-      return 'La fiche ne passe pas la validation complète.';
+      return 'La fiche ne passe pas la validation complète (04 §13, critère 1).';
     case 'review_unchecked':
       return 'Coche « Consignes et sécurité vérifiées ».';
     case 'minors_unconfirmed':

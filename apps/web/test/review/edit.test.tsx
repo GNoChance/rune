@@ -286,7 +286,9 @@ describe('enregistrer (§3.5, 04 §8)', () => {
     await openEditor(adminView(), { api });
     type(field('Autre nom 3'), 'Squat barre');
     save();
-    expect(await screen.findByText('La fiche ne passe pas la validation complète.')).toBeTruthy();
+    expect(
+      await screen.findByText('La fiche ne passe pas la validation complète (04 §13, critère 1).'),
+    ).toBeTruthy();
     expect(field('Autre nom 3').value).toBe('Squat barre');
   });
 
