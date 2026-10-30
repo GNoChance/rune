@@ -89,6 +89,23 @@ describe('data:pull : découpe de l’export (04 §10)', () => {
     expect(JSON.parse(await read('fente-avant'))).toMatchObject({ revision: 2, name: 'Fente' });
   });
 
+  it('export téléchargé par l’écran (réindenté par `downloadJson`, sans LF final) : mêmes fichiers', async () => {
+    const sheets = [skeleton('squat-sumo'), skeleton('fente-avant', { movement_pattern: 'lunge' })];
+    const served = exportOf(sheets);
+    // « Exporter le catalogue » (plan brique 2, Task 17) relit le JSON reçu puis le réécrit avec `downloadJson`.
+    const downloaded = JSON.stringify(JSON.parse(served), null, 2);
+    expect(downloaded).not.toBe(served);
+    await pullExport(served, dir);
+    const report = await pullExport(downloaded, dir);
+    expect(report).toMatchObject({
+      errors: [],
+      created: [],
+      updated: [],
+      unchanged: ['fente-avant', 'squat-sumo'],
+    });
+    expect(await read('squat-sumo')).toBe(canonicalJson(skeleton('squat-sumo')));
+  });
+
   it('une fiche du dépôt absente de l’export est gardée et signalée', async () => {
     await mkdir(join(dir, 'exercises'), { recursive: true });
     const local = canonicalJson(skeleton('pas-encore-chargee'));

@@ -9,7 +9,17 @@ import { usernameKey } from '@rune/domain';
 import { type RefObject, useCallback, useRef, useState } from 'react';
 import { useMe } from '../../app-services';
 import { useRepos } from '../../repos';
-import { Banner, Button, CopyButton, Dialog, Field, formatDateTime, plural, useAction } from '../../ui';
+import {
+  Banner,
+  Button,
+  CopyButton,
+  Dialog,
+  Field,
+  formatDateTime,
+  plural,
+  Switch,
+  useAction,
+} from '../../ui';
 import styles from './admin.module.css';
 import {
   ActionDialog,
@@ -29,6 +39,10 @@ type DialogProps = {
   member: MemberSummary;
   /** Relit la liste après une réussite ; le dialogue se ferme ensuite. */
   reload(): Promise<void>;
+  /** Remplace la carte du membre par sa version à jour rendue par l'API, sans relire la liste. */
+  onUpdated(member: MemberSummary): void;
+  /** Compte de l'admin connecté (`null` : profil pas encore lu). */
+  meId: string | null;
   onClose(): void;
   /** Focus à la fermeture quand l'élément d'origine a disparu (feuille fermée, membre supprimé). */
   fallbackFocus: RefObject<HTMLElement | null>;
@@ -48,6 +62,8 @@ export function MemberDialog(p: DialogProps & { kind: MemberAction }) {
       return <StatusDialog {...p} />;
     case 'role':
       return <RoleDialog {...p} />;
+    case 'reviewer':
+      return <ReviewerFlagsDialog {...p} />;
     case 'birthDate':
       return <BirthDateDialog {...p} />;
     case 'delete':
@@ -241,6 +257,66 @@ function RoleDialog(p: DialogProps) {
         </p>
       ) : (
         <p>{name} perdra les droits d'administration et redeviendra membre.</p>
+      )}
+      <AdminPasswordField value={password} onChange={setPassword} />
+    </ActionDialog>
+  );
+}
+
+/**
+ * Drapeaux de relecteur (spec brique 2 §3.1) : « Relecture des exercices » (`catalog_reviewer`) et « Feu vert
+ * santé » (`health_professional`), mot de passe de l'admin ressaisi (P-AUT-5). Sur son propre compte, l'admin n'a
+ * pas l'interrupteur santé (refus `self_health_flag`) : le drapeau part à faux. Réussite : la carte prend le
+ * `MemberSummary` rendu, sans relire la liste. `setReviewerFlags` est dans le dépôt de la relecture.
+ */
+function ReviewerFlagsDialog(p: DialogProps) {
+  const repos = useRepos();
+  const [reviewer, setReviewer] = useState(p.member.catalogReviewer);
+  const [health, setHealth] = useState(p.member.healthProfessional);
+  const [password, setPassword] = useState('');
+  const name = p.member.username;
+  // Profil pas encore lu : prudence, comme sur son propre compte.
+  const self = p.meId === null || p.member.id === p.meId;
+  const healthSent = self ? false : health;
+  const changed = reviewer !== p.member.catalogReviewer || healthSent !== p.member.healthProfessional;
+  return (
+    <ActionDialog
+      title={`Relecture de ${name}`}
+      confirmLabel="Enregistrer"
+      canConfirm={changed && password !== ''}
+      overrides={PASSWORD_OVERRIDES}
+      fallbackFocus={p.fallbackFocus}
+      reload={p.reload}
+      onClose={p.onClose}
+      onConfirm={async () => {
+        p.onUpdated(
+          await repos.review.setReviewerFlags(p.member.id, {
+            catalogReviewer: reviewer,
+            healthProfessional: healthSent,
+            password,
+          }),
+        );
+      }}
+    >
+      <Switch
+        id={`reviewer-${p.member.id}`}
+        label="Relecture des exercices"
+        help="Commenter et valider les fiches d'exercices."
+        checked={reviewer}
+        onChange={setReviewer}
+      />
+      {self ? null : (
+        <Switch
+          id={`health-${p.member.id}`}
+          label="Feu vert santé"
+          help={
+            p.member.role === 'admin'
+              ? "Sans effet sur un administrateur : il n'est jamais relecteur santé."
+              : 'Professionnel ou professionnelle de santé : sa validation compte comme feu vert santé.'
+          }
+          checked={health}
+          onChange={setHealth}
+        />
       )}
       <AdminPasswordField value={password} onChange={setPassword} />
     </ActionDialog>

@@ -7,13 +7,20 @@ import {
   CloseIcon,
   KeyIcon,
   LogoutIcon,
+  ReviewIcon,
   ShieldIcon,
   TrashIcon,
   UserCheckIcon,
   UserOffIcon,
 } from './icons';
 
-export type MemberAction = 'reset' | 'sessions' | 'status' | 'role' | 'birthDate' | 'delete';
+export type MemberAction = 'reset' | 'sessions' | 'status' | 'role' | 'reviewer' | 'birthDate' | 'delete';
+
+/** Drapeaux de relecteur d'un membre (spec brique 2 §3.1), en clair : la valeur de la ligne « Relecture des exercices ». */
+export function reviewerFlagsText(m: Pick<MemberSummary, 'catalogReviewer' | 'healthProfessional'>): string {
+  if (!m.catalogReviewer) return 'Désactivée';
+  return m.healthProfessional ? 'Activée, feu vert santé' : 'Activée';
+}
 
 function sessionsSummary(n: number): string {
   return n === 0 ? 'aucune session ouverte' : `${n} ${plural(n, 'session ouverte', 'sessions ouvertes')}`;
@@ -71,6 +78,12 @@ export function MemberSheet(p: {
             icon={<ShieldIcon />}
             label={m.role === 'admin' ? 'Rétrograder' : 'Promouvoir administrateur'}
             onClick={() => p.onChoose('role')}
+          />
+          <ListRow
+            icon={<ReviewIcon />}
+            label="Relecture des exercices"
+            value={reviewerFlagsText(m)}
+            onClick={() => p.onChoose('reviewer')}
           />
           <ListRow
             icon={<CalendarIcon />}

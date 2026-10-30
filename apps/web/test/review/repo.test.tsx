@@ -8,8 +8,10 @@ import type {
   ReviewListResponse,
   ReviewQueue,
   ReviewSheetResponse,
+  SaveSheetRequest,
+  TransitionRequest,
 } from '@rune/contracts';
-import { REVIEW_QUEUES } from '@rune/contracts';
+import { EXERCISES_EXPORT_FILE, REVIEW_QUEUES } from '@rune/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, NetworkRequiredError } from '../../src/api/client';
 import { getMeta } from '../../src/local-db/meta';
@@ -22,6 +24,7 @@ import {
   revisionConflictOf,
   transitionBlockersOf,
 } from '../../src/repos';
+import { illustrationEntry } from '../support/catalog';
 import { createFakeApi, type FakeApi, type FakeRequest } from '../support/fake-api';
 import { createTestServices, makeMe } from '../support/render';
 
@@ -272,26 +275,49 @@ describe('reviewRepo : écritures de relecture (POST, toujours un corps JSON)', 
   });
 });
 
-describe('reviewRepo : outils de l’admin (types provisoires, routes de la Task 9)', () => {
-  it('save : PUT /api/admin/exercises/:id {sheet, baseRevision}, fiche rendue, puis un pull', async () => {
-    const saved = { ...SHEET, revision: 4 };
+describe('reviewRepo : outils de l’admin (contrats de la Task 9)', () => {
+  /** Réponse d'une écriture réussie : la fiche vue par l'admin après l'écriture (`ReviewSheetResponse`). */
+  const adminView = (sheet: DraftSheet): ReviewSheetResponse => ({
+    ...SHEET_VIEW,
+    sheet,
+    validations: [],
+    exportedRevision: 1,
+  });
+
+  it('save : PUT /api/admin/exercises/:id {sheet, baseRevision}, ReviewSheetResponse rendue, puis un pull', async () => {
+    const saved = adminView({ ...SHEET, revision: 4 });
     const api = createFakeApi().on('PUT', '/api/admin/exercises/:id', { status: 200, body: saved });
     const { repos, sync } = await setup({ me: makeMe({ role: 'admin' }), api });
-    expect(await repos.review.save('push-up', { sheet: SHEET, baseRevision: 3 })).toEqual(saved);
+    const req: SaveSheetRequest = { sheet: SHEET, baseRevision: 3 };
+    expect(await repos.review.save('push-up', req)).toEqual(saved);
     const call = only(callsTo(api, '/api/admin/exercises/push-up'));
     expect(call.method).toBe('PUT');
     expect(call.body).toEqual({ sheet: SHEET, baseRevision: 3 });
     expect(sync.pullCount).toBe(1);
   });
 
-  it('transition : POST …/transition {to, baseRevision, reviewChecked, minorsConfirmed}, puis un pull', async () => {
-    const reviewed = { ...SHEET, revision: 4, status: 'draft' as const };
+  it('save : réponse hors contrat (la fiche seule, forme provisoire d’avant la Task 9) refusée', async () => {
+    const api = createFakeApi().on('PUT', '/api/admin/exercises/:id', {
+      status: 200,
+      body: { ...SHEET, revision: 4 },
+    });
+    const { repos } = await setup({ me: makeMe({ role: 'admin' }), api });
+    await expect(repos.review.save('push-up', { sheet: SHEET, baseRevision: 3 })).rejects.toThrow();
+  });
+
+  it('transition : POST …/transition {to, baseRevision, reviewChecked, minorsConfirmed}, ReviewSheetResponse rendue, puis un pull', async () => {
+    const reviewed = adminView({ ...SHEET, revision: 4, status: 'draft' });
     const api = createFakeApi().on('POST', '/api/admin/exercises/:id/transition', {
       status: 200,
       body: reviewed,
     });
     const { repos, sync } = await setup({ me: makeMe({ role: 'admin' }), api });
-    const req = { to: 'draft' as const, baseRevision: 3, reviewChecked: true, minorsConfirmed: true };
+    const req: TransitionRequest = {
+      to: 'draft',
+      baseRevision: 3,
+      reviewChecked: true,
+      minorsConfirmed: true,
+    };
     expect(await repos.review.transition('push-up', req)).toEqual(reviewed);
     expect(only(callsTo(api, '/api/admin/exercises/push-up/transition')).body).toEqual(req);
     expect(sync.pullCount).toBe(1);
@@ -306,14 +332,48 @@ describe('reviewRepo : outils de l’admin (types provisoires, routes de la Task
     const error = await caught(repos.review.transition('push-up', { to: 'reviewed', baseRevision: 3 }));
     expect(transitionBlockersOf(error)).toEqual(['incomplete', 'review_unchecked']);
     expect(transitionBlockersOf(new ApiError(409, 'revision_conflict', {}))).toBeNull();
+    // Corps hors contrat (`TransitionBlockedBody` : au moins un blocage connu) : aucun blocage lu.
+    const empty = new ApiError(422, 'transition_blocked', { error: 'transition_blocked', blockers: [] });
+    expect(transitionBlockersOf(empty)).toBeNull();
     expect(sync.pullCount).toBe(0);
   });
 
-  it('exportCatalog : GET /api/admin/exercises/export, fichier rendu tel quel', async () => {
-    const file = { exercises: [SHEET] };
+  it('409 revision_conflict au PUT : revisionConflictOf rend la fiche courante, aucun pull', async () => {
+    const current = { ...SHEET, revision: 5, name: 'Pompes larges' };
+    const api = createFakeApi().on('PUT', '/api/admin/exercises/:id', {
+      status: 409,
+      body: { error: 'revision_conflict', current },
+    });
+    const { repos, sync } = await setup({ me: makeMe({ role: 'admin' }), api });
+    const error = await caught(repos.review.save('push-up', { sheet: SHEET, baseRevision: 3 }));
+    expect(revisionConflictOf(error)).toEqual(current);
+    expect(sync.pullCount).toBe(0);
+  });
+
+  it('exportCatalog : GET /api/admin/exercises/export, tableau de fiches rendu tel quel', async () => {
+    const file = [SHEET, { ...SHEET, id: 'squat' }];
     const api = createFakeApi().on('GET', '/api/admin/exercises/export', { status: 200, body: file });
     const { repos } = await setup({ me: makeMe({ role: 'admin' }), api });
     expect(await repos.review.exportCatalog()).toEqual(file);
+    expect(EXERCISES_EXPORT_FILE).toBe('exercises-export.json');
+  });
+
+  it('illustrationManifest : entrées du manifeste gardé avec le catalogue local, lignes illisibles écartées, sans réseau', async () => {
+    const { repos, db, api } = await setup({ me: makeMe({ role: 'admin' }) });
+    expect(await repos.review.illustrationManifest()).toEqual([]);
+    const entry = illustrationEntry('goblet-squat-start');
+    await db.table('illustrations').bulkPut([entry, { id: 'cassée', file: 42 }]);
+    api.setOffline('reject');
+    expect(await repos.review.illustrationManifest()).toEqual([entry]);
+  });
+
+  it('exportCatalog : autre chose qu’un tableau refusé (rien à télécharger)', async () => {
+    const api = createFakeApi().on('GET', '/api/admin/exercises/export', {
+      status: 200,
+      body: { exercises: [SHEET] },
+    });
+    const { repos } = await setup({ me: makeMe({ role: 'admin' }), api });
+    await expect(repos.review.exportCatalog()).rejects.toThrow();
   });
 
   it('setReviewerFlags : POST /api/admin/members/:id/reviewer-flags, MemberSummary à jour rendu', async () => {

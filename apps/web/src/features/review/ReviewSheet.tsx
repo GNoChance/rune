@@ -23,16 +23,21 @@ import {
   SheetTabs,
   sheetTabOf,
 } from '../exercises/SheetContent';
+import { AdminSheetTools, ValidationsSection } from './AdminSheetTools';
 import { CommentSheet } from './CommentSheet';
+import { EditSheetForm } from './EditSheetForm';
 import { PartComments } from './PartComments';
 import styles from './review.module.css';
 import { LoadFailure, Loading, useReviewData } from './review-data';
 import {
+  type AdminFilters,
+  adminFiltersOf,
   fieldLabel,
   fieldValueText,
   GREEN_LIGHT_LABELS,
   type ListFilter,
   listFilterOf,
+  NO_ADMIN_FILTERS,
   type Pill,
   reviewListPath,
   reviewSheetPath,
@@ -138,7 +143,13 @@ function Changes(p: { data: ReviewSheetResponse; admin: boolean }) {
 }
 
 /** Variante plus facile ou plus dure de l'aperçu : le conseil, puis la fiche voisine de la chaîne (sa relecture). */
-function VariantStep(p: { title: string; tip?: string; neighborId?: string; filter: ListFilter }) {
+function VariantStep(p: {
+  title: string;
+  tip?: string;
+  neighborId?: string;
+  filter: ListFilter;
+  adminFilters: AdminFilters;
+}) {
   if (p.tip === undefined && p.neighborId === undefined) return null;
   return (
     <SheetPart title={p.title}>
@@ -146,7 +157,7 @@ function VariantStep(p: { title: string; tip?: string; neighborId?: string; filt
         <>
           {p.tip !== undefined ? <p className={styles.partText}>{p.tip}</p> : null}
           {p.neighborId !== undefined ? (
-            <Link href={reviewSheetPath(p.neighborId, p.filter)} className={styles.textLink}>
+            <Link href={reviewSheetPath(p.neighborId, p.filter, p.adminFilters)} className={styles.textLink}>
               {`Voir la fiche ${p.neighborId}`}
             </Link>
           ) : null}
@@ -157,7 +168,12 @@ function VariantStep(p: { title: string; tip?: string; neighborId?: string; filt
 }
 
 /** Onglet Variantes de l'aperçu : conseils et voisins de chaîne de la fiche, puis les commentaires `variants`. */
-function ReviewVariants(p: { sheet: DraftSheet; filter: ListFilter; action: ReactNode }) {
+function ReviewVariants(p: {
+  sheet: DraftSheet;
+  filter: ListFilter;
+  adminFilters: AdminFilters;
+  action: ReactNode;
+}) {
   const { sheet } = p;
   const empty =
     sheet.easier_tip === undefined &&
@@ -171,12 +187,14 @@ function ReviewVariants(p: { sheet: DraftSheet; filter: ListFilter; action: Reac
         tip={sheet.easier_tip}
         neighborId={sheet.easier_id}
         filter={p.filter}
+        adminFilters={p.adminFilters}
       />
       <VariantStep
         title="Plus difficile"
         tip={sheet.harder_tip}
         neighborId={sheet.harder_id}
         filter={p.filter}
+        adminFilters={p.adminFilters}
       />
       {empty ? <p className={styles.partText}>Aucune variante pour l'instant.</p> : null}
       {p.action}
@@ -195,10 +213,17 @@ function SheetScreen(p: {
   admin: boolean;
   health: boolean;
   filter: ListFilter;
+  adminFilters: AdminFilters;
   reload(): Promise<void>;
   reloadError: unknown;
+  /** Réponse d'une écriture de l'admin : elle devient la fiche affichée. */
+  onUpdate(next: ReviewSheetResponse): void;
+  /** Message d'une écriture réussie (« Version 5 enregistrée. »), affiché en tête. */
+  notice: string | null;
+  onNotice(text: string | null): void;
+  onEdit(): void;
 }) {
-  const { data, filter } = p;
+  const { data, filter, adminFilters } = p;
   const { sheet } = data;
   const repos = useRepos();
   const onLostAccess = useOnLostAccess();
@@ -206,7 +231,8 @@ function SheetScreen(p: {
   const tab = sheetTabOf(params.get('tab'));
   const [commenting, setCommenting] = useState<CommentPart | null>(null);
   const [validating, setValidating] = useState(false);
-  const [conflict, setConflict] = useState(false);
+  /** Fiche changée entre-temps (409), pendant une validation ou un changement de statut de l'admin. */
+  const [conflict, setConflict] = useState<'validate' | 'transition' | null>(null);
   const [resolving, setResolving] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [draftPart, setDraftPart] = useState<CommentPart | null>(
@@ -261,10 +287,11 @@ function SheetScreen(p: {
   );
 
   const sensitivity = sheet.stressed_joints?.map((j) => JOINT_LABELS[j]);
+  const manifestIds = entries ? new Set(entries.keys()) : undefined;
   const generalComments = data.comments.filter((c) => c.part === 'general');
 
   return (
-    <Page title={sheet.name} back={reviewListPath(filter)}>
+    <Page title={sheet.name} back={reviewListPath(filter, adminFilters)}>
       <ul aria-label="État de la fiche" className={styles.pillRow}>
         {statePills(data).map((pill) => (
           <li key={pill.text}>
@@ -272,12 +299,19 @@ function SheetScreen(p: {
           </li>
         ))}
       </ul>
+      {p.notice ? <Banner tone="info">{p.notice}</Banner> : null}
+      {p.admin && data.queues.includes('revalidate') ? (
+        // Spec brique 2 §3.6 : fiche publiée sensible dont le feu vert santé n'est plus à jour.
+        <Banner tone="warning">Publiée, feu vert santé à refaire</Banner>
+      ) : null}
       {conflict ? (
         <Banner tone="warning">
           <p className={styles.bannerText}>La fiche a changé depuis que tu l'as ouverte.</p>
-          <p
-            className={styles.bannerText}
-          >{`Version ${sheet.revision} affichée : relis-la avant de valider.`}</p>
+          <p className={styles.bannerText}>
+            {conflict === 'validate'
+              ? `Version ${sheet.revision} affichée : relis-la avant de valider.`
+              : `Version ${sheet.revision} affichée : relis-la avant de changer son statut.`}
+          </p>
         </Banner>
       ) : null}
       {p.reloadError !== null ? (
@@ -358,7 +392,14 @@ function SheetScreen(p: {
         onTabChange={changeTab}
         tabLabels={tabLabelsOf(data.comments)}
         partAction={partAction}
-        variants={<ReviewVariants sheet={sheet} filter={filter} action={partAction('variants')} />}
+        variants={
+          <ReviewVariants
+            sheet={sheet}
+            filter={filter}
+            adminFilters={adminFilters}
+            action={partAction('variants')}
+          />
+        }
       />
       {canComment || generalComments.length > 0 ? (
         <Section title="Toute la fiche">{partAction('general')}</Section>
@@ -368,7 +409,7 @@ function SheetScreen(p: {
           <Button
             block
             onClick={() => {
-              setConflict(false);
+              setConflict(null);
               setValidating(true);
             }}
           >
@@ -376,6 +417,25 @@ function SheetScreen(p: {
           </Button>
         </div>
       ) : null}
+      {p.admin ? (
+        <AdminSheetTools
+          data={data}
+          manifestIds={manifestIds}
+          onEdit={p.onEdit}
+          onDone={(next, to) => {
+            setConflict(null);
+            p.onUpdate(next);
+            p.onNotice(`Statut enregistré : ${STATUS_LABELS[to]}.`);
+          }}
+          onConflict={() => {
+            p.onNotice(null);
+            setConflict('transition');
+            void p.reload();
+          }}
+          reload={p.reload}
+        />
+      ) : null}
+      {p.admin && data.validations ? <ValidationsSection validations={data.validations} /> : null}
       {commenting ? (
         <CommentSheet
           key={commenting}
@@ -398,13 +458,14 @@ function SheetScreen(p: {
           label={validateLabel}
           health={p.health}
           filter={filter}
+          adminFilters={adminFilters}
           onClose={(validated) => {
             setValidating(false);
             if (validated) void p.reload();
           }}
           onConflict={() => {
             setValidating(false);
-            setConflict(true);
+            setConflict('validate');
             void p.reload();
           }}
         />
@@ -417,8 +478,9 @@ function SheetScreen(p: {
  * Fiche de la relecture (`/review/exercises/:id`, spec brique 2 §4.5), lue en ligne : « Chargement… », échec avec
  * « Réessayer » (hors ligne : « Nécessite le réseau »), « Fiche introuvable. », accès perdu → Profil. Le filtre de
  * la liste suit dans `?queue=` (Retour, « Fiche suivante »), l'onglet dans `?tab=` par remplacement. Une clé par
- * fiche : d'une fiche à l'autre, feuilles et saisies repartent de zéro. Outils de l'admin (« Modifier »,
- * « Publier », validations nominatives) : plan brique 2, Task 17.
+ * fiche : d'une fiche à l'autre, feuilles et saisies repartent de zéro. L'admin a en plus (Task 17) « Modifier »
+ * (formulaire à la place de la fiche, `?edit=1` par remplacement), « Publier » et les autres changements de
+ * statut, la version exportée et les validations nominatives ; ses filtres de liste suivent dans l'adresse.
  */
 export function ReviewSheet(p: { params: { id: string } }) {
   return <ReviewSheetPage key={p.params.id} id={p.params.id} />;
@@ -427,28 +489,64 @@ export function ReviewSheet(p: { params: { id: string } }) {
 function ReviewSheetPage(p: { id: string }) {
   const repos = useRepos();
   const { me } = useMeState();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const filter = listFilterOf(params.get('queue'));
+  const admin = me?.role === 'admin';
+  const adminFilters = admin ? adminFiltersOf(params) : NO_ADMIN_FILTERS;
+  const editing = admin && params.get('edit') === '1';
   const load = useCallback(() => repos.review.get(p.id), [repos, p.id]);
-  const { data, error, loading, reload } = useReviewData(load);
+  const { data, error, loading, reload, replace } = useReviewData(load);
+  const [notice, setNotice] = useState<string | null>(null);
+  // Le formulaire remplace l'adresse de la fiche (`?edit=1`) : Retour depuis la fiche ne le rouvre pas.
+  const setEditing = (on: boolean) =>
+    setParams(
+      (prev) => {
+        const out = new URLSearchParams(prev);
+        if (on) out.set('edit', '1');
+        else out.delete('edit');
+        return out;
+      },
+      { replace: true },
+    );
   if (!me) return null;
+  if (data && editing) {
+    return (
+      <EditSheetForm
+        data={data}
+        onCancel={() => setEditing(false)}
+        onSaved={(next) => {
+          replace(next);
+          setNotice(`Version ${next.sheet.revision} enregistrée.`);
+          setEditing(false);
+        }}
+      />
+    );
+  }
   if (data) {
     return (
       <SheetScreen
         data={data}
         meId={me.id}
-        admin={me.role === 'admin'}
+        admin={admin}
         // Profil gardé par une version d'avant la brique 2 : drapeaux absents, donc faux.
         health={isHealthReviewer(me) === true}
         filter={filter}
+        adminFilters={adminFilters}
         reload={reload}
         reloadError={error}
+        onUpdate={replace}
+        notice={notice}
+        onNotice={setNotice}
+        onEdit={() => {
+          setNotice(null);
+          setEditing(true);
+        }}
       />
     );
   }
   const notFound = error instanceof ApiError && error.code === 'not_found';
   return (
-    <Page title={LOADING_TITLE} back={reviewListPath(filter)}>
+    <Page title={LOADING_TITLE} back={reviewListPath(filter, adminFilters)}>
       {loading ? <Loading /> : null}
       {notFound ? <p>Fiche introuvable.</p> : null}
       {error !== null && !notFound ? (

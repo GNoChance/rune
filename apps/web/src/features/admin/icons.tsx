@@ -78,6 +78,14 @@ export const ShieldIcon = () => (
   </Icon>
 );
 
+/** Fiche cochée : relecture des exercices. */
+export const ReviewIcon = () => (
+  <Icon>
+    <path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10.5A.5.5 0 0 1 6.5 20V4a.5.5 0 0 1 .5-.5z" />
+    <path d="m9.5 13.5 2 2 3.5-4" />
+  </Icon>
+);
+
 export const MailIcon = () => (
   <Icon>
     <rect x="3" y="5" width="18" height="14" rx="2" />

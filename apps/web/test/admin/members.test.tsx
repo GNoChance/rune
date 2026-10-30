@@ -262,6 +262,7 @@ describe('MembersPage : feuille des actions (spec refonte §10.5)', () => {
       'Lien de réinitialisation',
       'Fermer les sessions',
       'Promouvoir administrateur',
+      'Relecture des exercices',
       'Corriger la date de naissance',
       'Désactiver',
       'Supprimer le compte',
@@ -319,6 +320,7 @@ describe('MembersPage : feuille des actions (spec refonte §10.5)', () => {
       'Lien de réinitialisation',
       'Fermer les sessions',
       'Promouvoir administrateur',
+      'Relecture des exercices',
       'Corriger la date de naissance',
       'Supprimer le compte',
     ]);

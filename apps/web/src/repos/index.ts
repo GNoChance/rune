@@ -37,7 +37,6 @@ export type { PlacesRepo, PlaceView } from './places-repo';
 export type { ProfileRepo, TrainingProfileView } from './profile-repo';
 export type { RejectionsRepo, RejectionView } from './rejections-repo';
 export {
-  CATALOG_EXPORT_FILE_NAME,
   type CatalogExport,
   type CommentDraft,
   commentDraft,
@@ -46,8 +45,6 @@ export {
   type ReviewListFilters,
   type ReviewRepo,
   revisionConflictOf,
-  type SaveSheetRequest,
-  type TransitionRequest,
   transitionBlockersOf,
 } from './review-repo';
 export { isLive, parseJsonColumn } from './rows';

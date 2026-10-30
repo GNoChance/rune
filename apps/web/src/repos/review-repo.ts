@@ -1,19 +1,20 @@
 import {
   type CreateCommentRequest,
   type DraftSheet,
-  DraftSheetSchema,
-  type ExerciseStatus,
+  IllustrationEntry,
   MemberSummary,
   MeResponse,
   type PublishBlocker,
-  PublishBlockerSchema,
   ReviewCommentView,
   type ReviewListQuery,
   ReviewListResponse,
   type ReviewQueue,
   ReviewSheetResponse,
   RevisionConflictBody,
+  type SaveSheetRequest,
   type SetReviewerFlagsRequest,
+  TransitionBlockedBody,
+  type TransitionRequest,
   type ValidateRequest,
   ValidationResponse,
 } from '@rune/contracts';
@@ -32,35 +33,12 @@ import { sendThenPull } from './rows';
 
 export type { CommentDraft } from '../local-db/comment-drafts';
 
-/*
- * Provisoire : formes des routes d'édition de l'admin (plan brique 2, Task 9 : `PUT /api/admin/exercises/:id`,
- * `POST /api/admin/exercises/:id/transition`, `GET /api/admin/exercises/export`), dont les contrats ne sont pas
- * encore dans `packages/contracts`. À remplacer par ceux de la Task 9 à la fusion.
- */
-
-/** `PUT /api/admin/exercises/:id` : la fiche entière et la révision affichée (spec brique 2 §3.5). */
-export interface SaveSheetRequest {
-  sheet: DraftSheet;
-  baseRevision: number;
-}
-
 /**
- * `POST /api/admin/exercises/:id/transition` (spec brique 2 §3.6) : `reviewChecked` (« Consignes et sécurité
- * vérifiées ») et `minorsConfirmed` (« Déconseillé aux mineurs » confirmé) pour `draft → reviewed`.
+ * Contenu du fichier `exercises-export.json` (04 §10, `EXERCISES_EXPORT_FILE`) : le tableau des fiches, tous statuts,
+ * tel que le serveur le rend. L'écran le télécharge sans le relire (`pnpm data:pull` valide chaque fiche).
  */
-export interface TransitionRequest {
-  to: ExerciseStatus;
-  baseRevision: number;
-  reviewChecked?: boolean;
-  minorsConfirmed?: boolean;
-}
-
-/** Réponse supposée d'un enregistrement ou d'une transition : la fiche telle qu'enregistrée. */
-const SavedSheet = DraftSheetSchema;
-
-/** Contenu du fichier `exercises-export.json` (04 §10), rendu tel que servi : l'écran le télécharge. */
-export type CatalogExport = unknown;
-export const CATALOG_EXPORT_FILE_NAME = 'exercises-export.json';
+export type CatalogExport = unknown[];
+const CatalogExportFile = z.array(z.unknown());
 
 /** Filtres de la liste en plus de la file (`GET /api/review/exercises`). */
 export type ReviewListFilters = Omit<ReviewListQuery, 'queue'>;
@@ -87,12 +65,10 @@ export function revisionConflictOf(e: unknown): DraftSheet | null {
   return parsed.success ? parsed.data.current : null;
 }
 
-const BlockedBody = z.object({ blockers: z.array(PublishBlockerSchema) });
-
 /** Blocages d'un 422 `transition_blocked`, dans l'ordre reçu (`PUBLISH_BLOCKERS`) ; null sinon. */
 export function transitionBlockersOf(e: unknown): PublishBlocker[] | null {
   if (!(e instanceof ApiError) || e.code !== 'transition_blocked') return null;
-  const parsed = BlockedBody.safeParse(e.body);
+  const parsed = TransitionBlockedBody.safeParse(e.body);
   return parsed.success ? parsed.data.blockers : null;
 }
 
@@ -120,12 +96,20 @@ export interface ReviewRepo {
   /** « Traité » (idempotent) : le commentaire mis à jour. */
   resolve(commentId: string): Promise<ReviewCommentView>;
   validate(id: string, req: ValidateRequest): Promise<ValidationResponse>;
-  /** Admin : enregistrement (409 `revision_conflict` : `revisionConflictOf`), puis un pull du catalogue. */
-  save(id: string, req: SaveSheetRequest): Promise<DraftSheet>;
-  /** Admin : changement de statut (422 : `transitionBlockersOf`), puis un pull du catalogue. */
-  transition(id: string, req: TransitionRequest): Promise<DraftSheet>;
-  /** Admin : le fichier `exercises-export.json`. */
+  /**
+   * Admin : enregistrement (409 `revision_conflict` : `revisionConflictOf` ; 422 `invalid_sheet` :
+   * `transitionBlockersOf`), puis un pull du catalogue ; la fiche vue par l'admin après l'écriture.
+   */
+  save(id: string, req: SaveSheetRequest): Promise<ReviewSheetResponse>;
+  /** Admin : changement de statut (422 : `transitionBlockersOf`), puis un pull du catalogue ; comme `save`. */
+  transition(id: string, req: TransitionRequest): Promise<ReviewSheetResponse>;
+  /** Admin : le contenu du fichier `exercises-export.json` ; le serveur met `exported_revision` à jour. */
   exportCatalog(): Promise<CatalogExport>;
+  /**
+   * Admin : entrées du manifeste des illustrations gardé avec le catalogue de l'appareil (classe C, `GET
+   * /api/catalog`), pour choisir les illustrations d'une fiche ; une entrée illisible est écartée.
+   */
+  illustrationManifest(): Promise<IllustrationEntry[]>;
   /** Admin : drapeaux d'un membre et mot de passe de l'admin (P-AUT-5) ; le `MemberSummary` à jour. */
   setReviewerFlags(memberId: string, req: SetReviewerFlagsRequest): Promise<MemberSummary>;
   /** « Comment relire » déjà vu par le compte de l'appareil. */
@@ -194,12 +178,22 @@ export function createReviewRepo(s: AppServices): ReviewRepo {
     validate: (id, req) =>
       guarded(() => api.send('POST', exercise(id, 'validations'), req, ValidationResponse)),
     save: (id, req) =>
-      guarded(() => sendThenPull(s, 'PUT', adminExercise(id), { body: req, schema: SavedSheet })),
+      guarded(() => sendThenPull(s, 'PUT', adminExercise(id), { body: req, schema: ReviewSheetResponse })),
     transition: (id, req) =>
       guarded(() =>
-        sendThenPull(s, 'POST', adminExercise(id, 'transition'), { body: req, schema: SavedSheet }),
+        sendThenPull(s, 'POST', adminExercise(id, 'transition'), {
+          body: req,
+          schema: ReviewSheetResponse,
+        }),
       ),
-    exportCatalog: () => guarded(() => api.get('/api/admin/exercises/export', z.unknown())),
+    exportCatalog: () => guarded(() => api.get('/api/admin/exercises/export', CatalogExportFile)),
+    async illustrationManifest() {
+      const rows: unknown[] = await db.table('illustrations').toArray();
+      return rows.flatMap((row) => {
+        const parsed = IllustrationEntry.safeParse(row);
+        return parsed.success ? [parsed.data] : [];
+      });
+    },
     setReviewerFlags: (memberId, req) =>
       guarded(() =>
         sendThenPull(s, 'POST', `/api/admin/members/${encodeURIComponent(memberId)}/reviewer-flags`, {

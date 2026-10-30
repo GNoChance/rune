@@ -45,13 +45,15 @@ export function adminErrorMessage(e: unknown, overrides?: Overrides): string {
  * données déjà affichées, sauf un refus (403) : les droits d'administration ont été retirés
  * (R-ROLE-4), rien de l'ancienne liste ne reste et le profil est relu pour que la garde des routes
  * réponde « Page introuvable ». `loading` : première lecture en cours, ni données ni échec.
- * `load` doit être stable (`useCallback`) : la lecture repart quand il change.
+ * `update` : données changées par une réponse déjà reçue (un membre à jour), sans relire ; une lecture encore en
+ * cours est ignorée. `load` doit être stable (`useCallback`) : la lecture repart quand il change.
  */
 export function useServerData<T>(load: () => Promise<T>): {
   data: T | null;
   error: string | null;
   loading: boolean;
   reload(): Promise<void>;
+  update(change: (data: T) => T): void;
 } {
   const repos = useRepos();
   const [state, setState] = useState<{ data: T | null; error: string | null }>({ data: null, error: null });
@@ -73,6 +75,11 @@ export function useServerData<T>(load: () => Promise<T>): {
     }
   }, [load, repos]);
 
+  const update = useCallback((change: (data: T) => T) => {
+    latest.current += 1;
+    setState((s) => (s.data === null ? s : { data: change(s.data), error: null }));
+  }, []);
+
   useEffect(() => {
     void reload();
     return () => {
@@ -81,7 +88,7 @@ export function useServerData<T>(load: () => Promise<T>): {
     };
   }, [reload]);
 
-  return { ...state, loading: state.data === null && state.error === null, reload };
+  return { ...state, loading: state.data === null && state.error === null, reload, update };
 }
 
 /** Lecture en cours, annoncée poliment (rien d'autre à l'écran ne le dirait). */

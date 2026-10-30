@@ -483,6 +483,164 @@
   font-weight: 600;
 }
 
+/* ——— Outils de l'admin (spec brique 2 §4.5) : statut, blocages, validations, formulaire d'édition ——— */
+
+.adminActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.publish {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Blocages écrits sous « Publier » (et dans la feuille) : texte en danger, une puce par message. */
+.blockers {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  color: var(--danger);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+
+.blockers > li + li {
+  margin-top: var(--space-1);
+}
+
+.validationList {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  line-height: 1.45;
+}
+
+.adminCount {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.editForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.formLegend {
+  padding: 0 var(--space-1);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.formHelp,
+.formError {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.formHelp {
+  color: var(--text-muted);
+}
+
+.formError {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* Case à cocher libellée : toute la ligne est la cible (44 px). */
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+  font-size: 0.9375rem;
+  line-height: 1.35;
+}
+
+.check input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.checkGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  column-gap: var(--space-3);
+}
+
+.equipmentOption,
+.mistakePair {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.equipmentOption + .equipmentOption,
+.mistakePair + .mistakePair {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+/* Après un 409 : la version courante sous le champ (teinte d'avertissement, paire du test de contraste), puis
+   « Reprendre ». */
+.currentNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--warning-bg);
+}
+
+.currentText {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: var(--warning-text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.adopt {
+  align-self: flex-start;
+}
+
+/* Champ simple qui diffère de la version courante : un trait le long du champ, sa note en aide. */
+.formField[data-conflict] {
+  padding-inline-start: var(--space-3);
+  border-inline-start: 4px solid var(--warning-text);
+}
+
+.formActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sheetRow {
     transition: none;

@@ -1,6 +1,6 @@
 import type { MemberSummary } from '@rune/contracts';
 import { type RefObject, useCallback, useEffect, useId, useRef, useState } from 'react';
-import { useServices } from '../../app-services';
+import { useMe, useServices } from '../../app-services';
 import { useRepos } from '../../repos';
 import { plural } from '../../ui';
 import { AdminPage } from './AdminPage';
@@ -27,8 +27,9 @@ export function membersCountText(members: readonly MemberSummary[]): string {
 export function MembersPage() {
   const repos = useRepos();
   const { now } = useServices();
+  const me = useMe();
   const load = useCallback(() => repos.admin.members(), [repos]);
-  const { data: members, error, loading, reload } = useServerData(load);
+  const { data: members, error, loading, reload, update } = useServerData(load);
   const [sheet, setSheet] = useState<MemberSummary | null>(null);
   const [action, setAction] = useState<{ kind: MemberAction; member: MemberSummary } | null>(null);
   const headingId = useId();
@@ -101,6 +102,8 @@ export function MembersPage() {
           kind={action.kind}
           member={action.member}
           reload={reload}
+          meId={me?.id ?? null}
+          onUpdated={(member) => update((list) => list.map((m) => (m.id === member.id ? member : m)))}
           onClose={() => setAction(null)}
           fallbackFocus={returnFocus}
         />

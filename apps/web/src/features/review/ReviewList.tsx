@@ -4,13 +4,18 @@ import { useCallback, useId } from 'react';
 import { Link, useSearchParams } from 'wouter';
 import { useRepos } from '../../repos';
 import { Badge, Chips, EmptyState, errorMessage, Page, plural } from '../../ui';
+import { AdminListTools } from './AdminListTools';
 import styles from './review.module.css';
 import { LoadFailure, Loading, useReviewData } from './review-data';
 import {
+  type AdminFilters,
+  adminFiltersOf,
+  inAdminFilters,
   inFilter,
   LIST_FILTERS,
   type ListFilter,
   listFilterOf,
+  NO_ADMIN_FILTERS,
   type Pill,
   reviewSheetPath,
   STATUS_LABELS,
@@ -103,14 +108,14 @@ function Chevron() {
   );
 }
 
-/** Une fiche de la liste : un lien nommé par la fiche, décrit par ses pastilles, vers sa page (filtre gardé). */
-function ReviewRow(p: { item: ReviewListItem; filter: ListFilter }) {
+/** Une fiche de la liste : un lien nommé par la fiche, décrit par ses pastilles, vers sa page (filtres gardés). */
+function ReviewRow(p: { item: ReviewListItem; filter: ListFilter; adminFilters: AdminFilters }) {
   const id = useId();
   const pills = itemPills(p.item);
   return (
     <li>
       <Link
-        href={reviewSheetPath(p.item.id, p.filter)}
+        href={reviewSheetPath(p.item.id, p.filter, p.adminFilters)}
         className={styles.sheetRow}
         aria-labelledby={`${id}-name`}
         aria-describedby={pills.map((_, i) => `${id}-pill-${i}`).join(' ')}
@@ -151,10 +156,20 @@ function CheckIcon() {
   );
 }
 
-/** Filtres, avec le nombre de fiches de chacun (`counts` du serveur ; « Toutes » : toutes les lignes reçues). */
-function filterOptions(list: ReviewListResponse) {
+/**
+ * Filtres, avec le nombre de fiches de chacun (`counts` du serveur ; « Toutes » : toutes les lignes reçues). Avec
+ * un filtre de l'admin, les nombres sont comptés sur les lignes qui le passent (la liste est lue en entier).
+ */
+function filterOptions(list: ReviewListResponse, adminFilters: AdminFilters) {
+  const narrowed = adminFilters.pattern !== null || adminFilters.withoutIllustration;
+  const items = list.items.filter((item) => inAdminFilters(item, adminFilters));
   return LIST_FILTERS.map((f) => {
-    const n = f.id === 'all' ? list.items.length : (list.counts[f.id] ?? 0);
+    const n =
+      f.id === 'all'
+        ? items.length
+        : narrowed
+          ? items.filter((item) => item.queues.includes(f.id)).length
+          : (list.counts[f.id] ?? 0);
     return { value: f.id, label: `${f.label} · ${n}` };
   });
 }
@@ -163,8 +178,9 @@ function filterOptions(list: ReviewListResponse) {
  * Liste de la relecture (`/review/exercises`, spec brique 2 §4.5), en ligne seulement : avancement par lot, filtres
  * avec compteurs (« À relire » par défaut, gardé dans `?queue=` par remplacement : Retour depuis une fiche le
  * retrouve), puis une ligne par fiche avec ses pastilles, ou « Ta file est vide. Merci ! ». La liste est lue une
- * seule fois, sans file, et filtrée sur place. Outils de l'admin (filtres par type de mouvement et sans
- * illustration, « N fiches à exporter », « Exporter le catalogue ») : plan brique 2, Task 17, sous les filtres.
+ * seule fois, sans file, et filtrée sur place. L'admin (réponse avec `admin`) a sous les filtres ses outils
+ * (`AdminListTools`) : filtres par type de mouvement et sans illustration (`?pattern=`, `?illustrations=none`,
+ * gardés jusqu'aux fiches), compteurs « à exporter » et « à remplacer avant publication », « Exporter le catalogue ».
  */
 export function ReviewList() {
   const repos = useRepos();
@@ -172,6 +188,8 @@ export function ReviewList() {
   const filter = listFilterOf(params.get('queue'));
   const load = useCallback(() => repos.review.list(), [repos]);
   const { data, error, loading, reload } = useReviewData(load);
+  // Filtres de l'admin : seulement si le serveur a répondu en admin (une relectrice ne les a pas).
+  const adminFilters = data?.admin ? adminFiltersOf(params) : NO_ADMIN_FILTERS;
 
   const choose = (next: string) =>
     setParams(
@@ -183,7 +201,20 @@ export function ReviewList() {
       { replace: true },
     );
 
-  const shown = data ? data.items.filter((item) => inFilter(item, filter)) : [];
+  const changeAdminFilters = (next: AdminFilters) =>
+    setParams(
+      (prev) => {
+        const out = new URLSearchParams(prev);
+        if (next.pattern) out.set('pattern', next.pattern);
+        else out.delete('pattern');
+        if (next.withoutIllustration) out.set('illustrations', 'none');
+        else out.delete('illustrations');
+        return out;
+      },
+      { replace: true },
+    );
+
+  const shown = data ? data.items.filter((item) => inFilter(item, filter, adminFilters)) : [];
   return (
     <Page title="Relecture" back="/profile">
       {loading ? <Loading /> : null}
@@ -194,14 +225,23 @@ export function ReviewList() {
           <Chips
             name="review-filter"
             legend="Filtrer les fiches"
-            options={filterOptions(data)}
+            options={filterOptions(data, adminFilters)}
             value={filter}
             onChange={choose}
           />
+          {data.admin ? (
+            <AdminListTools
+              admin={data.admin}
+              items={data.items}
+              filters={adminFilters}
+              onFilters={changeAdminFilters}
+              reload={reload}
+            />
+          ) : null}
           {shown.length > 0 ? (
             <ul aria-label="Fiches" className={styles.sheetList}>
               {shown.map((item) => (
-                <ReviewRow key={item.id} item={item} filter={filter} />
+                <ReviewRow key={item.id} item={item} filter={filter} adminFilters={adminFilters} />
               ))}
             </ul>
           ) : filter === 'all' ? (

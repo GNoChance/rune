@@ -1,4 +1,5 @@
 import {
+  CATALOG_MAX_SHEETS,
   type CommentPart,
   type EquipmentCode,
   type ExerciseStatus,
@@ -7,14 +8,20 @@ import {
   type IllustrationRole,
   JOINT_LABELS,
   type Joint,
+  type LoadMode,
+  type MEASURES,
+  type MECHANICS,
   MOVEMENT_PATTERN_LABELS,
+  MOVEMENT_PATTERNS,
   type MovementPattern,
   MUSCLE_LABELS,
   type Muscle,
+  type PublishBlocker,
   type ReviewListItem,
   type ReviewQueue,
   SENSITIVE_JOINTS,
 } from '@rune/contracts';
+import { plural } from '../../ui/format';
 import { equipmentText } from '../exercises/exercise-labels';
 
 /*
@@ -67,17 +74,60 @@ export function listFilterOf(value: string | null | undefined): ListFilter {
   return LIST_FILTERS.find((f) => f.id === value)?.id ?? 'to_review';
 }
 
-/** La fiche passe le filtre : elle est dans sa file, ou le filtre est « Toutes ». */
-export function inFilter(item: Pick<ReviewListItem, 'queues'>, filter: ListFilter): boolean {
-  return filter === 'all' || item.queues.includes(filter);
+/**
+ * Filtres de la liste réservés à l'admin (spec brique 2 §4.5, 04 §8 étape 4), cumulés avec la file : type de
+ * mouvement (`?pattern=`) et fiches sans illustration (`?illustrations=none`). Gardés dans l'adresse de la liste
+ * et de chaque fiche, pour que Retour et « Fiche suivante » les retrouvent ; ignorés pour une relectrice.
+ */
+export interface AdminFilters {
+  pattern: MovementPattern | null;
+  withoutIllustration: boolean;
 }
 
-/** Liste de la relecture, au filtre donné. */
-export const reviewListPath = (filter: ListFilter): string => `/review/exercises?queue=${filter}`;
+export const NO_ADMIN_FILTERS: AdminFilters = { pattern: null, withoutIllustration: false };
 
-/** Fiche de la relecture ; le filtre suit (Retour, « Fiche suivante »). */
-export const reviewSheetPath = (id: string, filter: ListFilter): string =>
-  `/review/exercises/${encodeURIComponent(id)}?queue=${filter}`;
+/** Filtres de l'admin lus dans l'adresse ; valeur inconnue ignorée. */
+export function adminFiltersOf(params: URLSearchParams): AdminFilters {
+  const pattern = params.get('pattern');
+  const patterns: readonly string[] = MOVEMENT_PATTERNS;
+  return {
+    pattern: pattern !== null && patterns.includes(pattern) ? (pattern as MovementPattern) : null,
+    withoutIllustration: params.get('illustrations') === 'none',
+  };
+}
+
+/** Paramètres d'adresse des filtres de l'admin, à la suite de `?queue=` ; vide sans filtre. */
+function adminQuery(admin: AdminFilters = NO_ADMIN_FILTERS): string {
+  return `${admin.pattern ? `&pattern=${admin.pattern}` : ''}${admin.withoutIllustration ? '&illustrations=none' : ''}`;
+}
+
+/** La fiche passe les filtres de l'admin (aucun par défaut). */
+export function inAdminFilters(
+  item: Pick<ReviewListItem, 'movementPattern' | 'illustrationCount'>,
+  admin: AdminFilters = NO_ADMIN_FILTERS,
+): boolean {
+  return (
+    (admin.pattern === null || item.movementPattern === admin.pattern) &&
+    (!admin.withoutIllustration || item.illustrationCount === 0)
+  );
+}
+
+/** La fiche passe le filtre (elle est dans sa file, ou le filtre est « Toutes ») et ceux de l'admin. */
+export function inFilter(
+  item: Pick<ReviewListItem, 'queues' | 'movementPattern' | 'illustrationCount'>,
+  filter: ListFilter,
+  admin: AdminFilters = NO_ADMIN_FILTERS,
+): boolean {
+  return (filter === 'all' || item.queues.includes(filter)) && inAdminFilters(item, admin);
+}
+
+/** Liste de la relecture, au filtre donné (et aux filtres de l'admin). */
+export const reviewListPath = (filter: ListFilter, admin?: AdminFilters): string =>
+  `/review/exercises?queue=${filter}${adminQuery(admin)}`;
+
+/** Fiche de la relecture ; les filtres suivent (Retour, « Fiche suivante »). */
+export const reviewSheetPath = (id: string, filter: ListFilter, admin?: AdminFilters): string =>
+  `/review/exercises/${encodeURIComponent(id)}?queue=${filter}${adminQuery(admin)}`;
 
 /** Nom de chaque partie commentable (`COMMENT_PARTS`), dans « Commenter : <partie> » et le titre de la feuille. */
 export const PART_LABELS: Record<CommentPart, string> = {
@@ -125,6 +175,7 @@ export function sensitiveReasons(
 /** Nom affiché d'une clé de contenu (différentiel depuis une validation, §3.2) ; une clé inconnue reste telle quelle. */
 const FIELD_LABELS: Record<string, string> = {
   id: 'Identifiant',
+  batch: 'Lot',
   name: 'Nom',
   aliases: 'Autres noms',
   movement_pattern: 'Type de mouvement',
@@ -150,6 +201,7 @@ const FIELD_LABELS: Record<string, string> = {
   easier_tip: 'Conseil plus facile',
   harder_tip: 'Conseil plus difficile',
   illustrations: 'Illustrations',
+  review_notes: 'Notes pour la relecture',
 };
 
 export const fieldLabel = (key: string): string => FIELD_LABELS[key] ?? key;
@@ -189,3 +241,73 @@ export function fieldValueText(key: string, value: unknown): string {
     return value.length === 0 ? 'aucun' : value.map((v) => itemText(key, v)).join(' · ');
   return JSON.stringify(value);
 }
+
+/**
+ * Message de chaque blocage (spec brique 2 §3.6, colonne « Message affiché ») : `open_comments` porte le nombre de
+ * commentaires ouverts (0 : le serveur en a vu que l'écran n'a pas encore relus).
+ */
+export function blockerMessage(code: PublishBlocker, openComments: number): string {
+  switch (code) {
+    case 'incomplete':
+      return 'Des champs obligatoires sont vides.';
+    case 'invalid_sheet':
+      return 'La fiche ne passe pas la validation complète.';
+    case 'review_unchecked':
+      return 'Coche « Consignes et sécurité vérifiées ».';
+    case 'minors_unconfirmed':
+      return 'Confirme le réglage « Déconseillé aux mineurs ».';
+    case 'open_comments':
+      return openComments === 0
+        ? 'Des commentaires ne sont pas traités.'
+        : `${openComments} ${plural(openComments, "commentaire n'est pas traité", 'commentaires ne sont pas traités')}.`;
+    case 'health_validation_missing':
+      return 'Il manque le feu vert santé sur cette version.';
+    case 'illustrations_missing':
+      return "Une illustration n'est pas dans le manifeste.";
+    case 'referenced_by_template':
+      return 'Un modèle de programme utilise cette fiche.';
+    case 'chain_break':
+      return 'Retirer cette fiche couperait sa chaîne.';
+    case 'catalog_full':
+      return `Le catalogue a atteint ${CATALOG_MAX_SHEETS} fiches.`;
+  }
+}
+
+/**
+ * Bouton de chaque changement de statut (04 §8), selon le statut visé et celui de départ : « Marquer relue »
+ * depuis un brouillon, « Réactiver » depuis une fiche retirée.
+ */
+export function transitionLabel(from: ExerciseStatus, to: ExerciseStatus): string {
+  switch (to) {
+    case 'reviewed':
+      return from === 'retired' ? 'Réactiver' : 'Marquer relue';
+    case 'published':
+      return 'Publier';
+    case 'draft':
+      return 'Renvoyer en brouillon';
+    case 'retired':
+      return 'Retirer';
+  }
+}
+
+/** Mécanique d'un exercice (04 §4). */
+export const MECHANICS_LABELS = {
+  compound: 'Polyarticulaire',
+  isolation: 'Isolation',
+} as const satisfies Record<(typeof MECHANICS)[number], string>;
+
+/** Mesure d'une série (04 §4) : des répétitions ou une durée. */
+export const MEASURE_LABELS = {
+  reps: 'Répétitions',
+  duration: 'Durée',
+} as const satisfies Record<(typeof MEASURES)[number], string>;
+
+/** Mode de charge (04 §3.6), par ce que l'on charge. */
+export const LOAD_MODE_LABELS = {
+  barbell: 'Barre',
+  dumbbell: 'Haltère ou kettlebell',
+  machine: 'Machine ou poulie',
+  weighted: 'Lest ajouté',
+  bodyweight: 'Poids du corps',
+  band: 'Élastique',
+} as const satisfies Record<LoadMode, string>;
