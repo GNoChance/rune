@@ -7,6 +7,8 @@ export default defineConfig({
     projects: [
       { test: { name: 'contracts', root: 'packages/contracts', environment: 'node' } },
       { test: { name: 'domain', root: 'packages/domain', environment: 'node' } },
+      // Scripts du poste de dev et de la CI (data:validate…), à la racine du dépôt.
+      { test: { name: 'scripts', root: 'scripts', environment: 'node' } },
       {
         test: {
           name: 'server',

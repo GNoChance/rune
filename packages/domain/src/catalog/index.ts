@@ -26,3 +26,17 @@ export {
 } from './review';
 export { substitutes } from './substitutes';
 export { type CatalogContext, type CatalogSheet, isUsable, visibleWithoutPlace } from './usable';
+export {
+  CATALOG_ERROR_CODES,
+  type CatalogError,
+  type CatalogErrorCode,
+  type CatalogFile,
+  type CatalogInput,
+  type CatalogValidation,
+  type CatalogValidationOptions,
+  EXERCISES_DIR,
+  ILLUSTRATION_FILES_DIR,
+  LOAD_EQUIPMENT,
+  MANIFEST_FILE,
+  validateCatalog,
+} from './validate';

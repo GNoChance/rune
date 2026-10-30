@@ -53,6 +53,8 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Catalogue d'exercices (04 §13, critère 1). Passer à --strict (R-EQ-5) une fois le lot A publié.
+      - run: pnpm data:validate
       - run: pnpm test
 
   # R-TST-1 : E2E Chromium (Pixel 7) et WebKit (iPhone 14), bloquant ; WebKit avec service worker fait foi ici.

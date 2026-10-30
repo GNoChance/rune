@@ -15,6 +15,14 @@ const REQUIRED_KEYS: readonly string[] = Object.entries(ExerciseSheetSchema.shap
   .map(([key]) => key);
 
 /**
+ * Clés obligatoires de la fiche complète absentes de `record`, dans l'ordre de 04 §4 (R-FIC-1). Même règle pour
+ * `incomplete` ici et pour une fiche `reviewed` ou `published` incomplète dans le validateur du catalogue.
+ */
+export function missingRequiredKeys(record: Readonly<Record<string, unknown>>): string[] {
+  return REQUIRED_KEYS.filter((key) => record[key] === undefined);
+}
+
+/**
  * Entrée de `transitionBlockers`, lue par le serveur avant d'écrire.
  * - `sheet` : la fiche telle qu'elle serait enregistrée, encore à son statut actuel (le départ de la transition).
  * - `to` : statut visé ; égal au statut actuel pour un enregistrement (`PUT`).
@@ -59,8 +67,7 @@ type SheetCheck = {
 };
 
 function checkSheet(sheet: DraftSheet): SheetCheck {
-  const record: Readonly<Record<string, unknown>> = sheet;
-  const missing = REQUIRED_KEYS.filter((key) => record[key] === undefined);
+  const missing = missingRequiredKeys(sheet);
   // Au statut `draft`, le schéma des brouillons tolère les champs IA absents : une clé absente n'empêche donc pas
   // les règles entre champs (muscles disjoints) d'être vérifiées. Les erreurs sur les clés absentes sont écartées.
   const result = DraftSheetSchema.safeParse({ ...sheet, status: 'draft' });
