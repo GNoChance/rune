@@ -146,7 +146,11 @@ interface Backend {
 async function startBackend(port: number, env: Env, log: string[]): Promise<Backend> {
   const child = spawnServer([], { ...env, PORT: String(port) });
   const keep = (chunk: string) => {
-    log.push(...maskInvitation(chunk).split('\n').filter((line) => line !== ''));
+    log.push(
+      ...maskInvitation(chunk)
+        .split('\n')
+        .filter((line) => line !== ''),
+    );
     log.splice(0, Math.max(0, log.length - LOG_TAIL_LINES));
   };
   child.stdout?.setEncoding('utf8').on('data', keep);
