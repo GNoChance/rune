@@ -333,7 +333,7 @@ data/
   exercises/<id>.json            une fiche par fichier (copie exportée)
   glossary.json
   illustrations/manifest.json    une entrée par fichier retenu (§12)
-  illustrations/files/<id>.<ext>
+  illustrations/files/<id>.<hash8>.<ext>   nom du fichier servi (§12)
   LICENSE                        textes maison ; illustrations sous leur licence
 scripts/
   exercises/draft.ts, exercises/import-illustrations.ts, exercises/prompt-v<n>.md
