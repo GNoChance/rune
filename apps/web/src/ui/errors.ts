@@ -39,6 +39,14 @@ export const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   watermark_expired: 'Synchronisation à reprendre.',
   protocol_unsupported: "Mets à jour l'appli pour continuer.",
   rate_limited: "Trop d'essais. Réessaie plus tard.",
+  already_enrolled: 'Tu suis déjà un programme.',
+  template_unavailable: "Ce programme n'est pas disponible pour le moment.",
+  days_out_of_range: "Ce nombre de jours n'est pas possible pour ce programme.",
+  stale_revision: 'Ton programme a changé entre-temps. Recharge et réessaie.',
+  expired: 'Cette proposition a expiré.',
+  not_proposed: "Cette proposition n'est plus en attente.",
+  session_in_progress: 'Termine ou abandonne ta séance en cours avant ce changement.',
+  invalid_change: "Ce changement n'est pas possible.",
   internal: 'Le serveur a rencontré une erreur.',
 };
 

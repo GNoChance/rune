@@ -36,18 +36,23 @@ const GROUPS: Record<number, string[]> = {
     'onboarding_incomplete',
     'revision_conflict',
     'not_reviewable',
+    'already_enrolled',
+    'stale_revision',
+    'expired',
+    'not_proposed',
+    'session_in_progress',
   ],
   410: ['account_deleted', 'watermark_expired'],
   415: ['unsupported_media_type'],
-  422: ['transition_blocked'],
+  422: ['transition_blocked', 'template_unavailable', 'days_out_of_range', 'invalid_change'],
   426: ['protocol_unsupported'],
   429: ['rate_limited'],
   500: ['internal'],
 };
 
 describe('ApiErrorCode et ERROR_STATUS', () => {
-  it('compte 37 codes', () => {
-    expect(ApiErrorCode.options).toHaveLength(37);
+  it('compte 45 codes', () => {
+    expect(ApiErrorCode.options).toHaveLength(45);
   });
 
   it('porte les codes de la relecture avec leur statut (spec brique 2 §3.6)', () => {
