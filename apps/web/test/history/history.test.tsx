@@ -1,5 +1,5 @@
 import { REASON_TEXTS } from '@rune/contracts';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { HistoryDetail } from '../../src/features/history/HistoryDetail';
 import { HistoryList } from '../../src/features/history/HistoryList';
@@ -185,6 +185,12 @@ describe('historique : liste', () => {
     expect(link.getAttribute('href')).toBe('/history/s-a');
   });
 
+  it('une séance à 23 h 30 UTC le 31 octobre est du 1er novembre à Paris', async () => {
+    await openList([{ ...SESSION_A, startedAt: '2025-10-31T23:30:00.000Z' }]);
+    expect(await screen.findByRole('heading', { name: 'Novembre 2025' })).toBeTruthy();
+    expect(flat(screen.getByRole('link', { name: /Séance A/ }))).toContain('sam. 1 nov.');
+  });
+
   it('séance libre sans lieu connu : « Séance libre » et « Lieu inconnu »', async () => {
     await openList([SESSION_FREE]);
     const link = await screen.findByRole('link', { name: /Séance libre/ });
@@ -323,6 +329,37 @@ describe('historique : détail', () => {
     expect(within(first).queryByText(REASON_TEXTS.LOAD_UP)).toBeNull();
     const second = screen.getByRole('heading', { name: 'Squat barre' }).closest('section') as HTMLElement;
     expect(within(second).getByText(REASON_TEXTS.LOAD_UP)).toBeTruthy();
+  });
+
+  it('une décision calculée par le téléphone est signalée « provisoire » en toutes lettres', async () => {
+    const one: SessionSpec = {
+      id: 's-v',
+      startedAt: '2025-10-22T08:00:00.000Z',
+      exercises: [{ id: 'pe-v', exerciseId: 'back-squat', sets: [{ loadG: 60_000, reps: 5 }] }],
+    };
+    const decision = (provisional: boolean) => ({
+      id: 'pe-v',
+      ownerId: 'u-1',
+      instanceId: 'i-1',
+      slotId: 'S1',
+      exerciseId: 'back-squat',
+      result: 'PROGRESS',
+      reasonCode: 'LOAD_UP',
+      nextTarget: null,
+      profile: 'adult',
+      rulesVersion: '1',
+      ...(provisional ? { provisional: 1 } : {}),
+    });
+    await openDetail([one], 's-v', (db) => seedMirror(db, 'engine_decision', [decision(true)]));
+    const sentence = await screen.findByText(REASON_TEXTS.LOAD_UP, { exact: false });
+    expect(flat(sentence)).toContain('provisoire');
+    cleanup();
+    await openDetail(
+      [{ ...one, id: 's-v2', exercises: [{ ...(one.exercises[0] as ExerciseSpec), id: 'pe-v' }] }],
+      's-v2',
+      (db) => seedMirror(db, 'engine_decision', [decision(false)]),
+    );
+    expect(flat(await screen.findByText(REASON_TEXTS.LOAD_UP, { exact: false }))).not.toContain('provisoire');
   });
 
   it('séance libre : aucune décision', async () => {
@@ -499,5 +536,6 @@ describe('historique : corrections', () => {
       expect((await view.db.mirror('workout_session').get('s-c'))?.deletedAt).not.toBeNull(),
     );
     await waitFor(() => expect(view.location()).toBe('/history'));
+    expect(screen.queryByText('Séance introuvable')).toBeNull();
   });
 });

@@ -142,7 +142,7 @@ function SetEditor(p: {
 function ExerciseCard(p: {
   exercise: WorkoutExerciseView;
   name: string;
-  decision: string | null;
+  decision: { text: string; provisional: boolean } | null;
   editing: boolean;
   onFix(set: WorkoutSetView, fix: Fix): void;
   onInvalid(): void;
@@ -160,7 +160,7 @@ function ExerciseCard(p: {
       <ul className={styles.sets}>
         {exercise.sets.map((set) => (
           <li key={set.id} className={styles.set}>
-            {p.editing ? (
+            {p.editing && set.loggedAt !== null ? (
               <>
                 <span>{setName(set)}</span>
                 <SetEditor set={set} onFix={p.onFix} onInvalid={p.onInvalid} />
@@ -180,7 +180,8 @@ function ExerciseCard(p: {
       {exercise.note !== null ? <p className={styles.note}>{exercise.note}</p> : null}
       {p.decision !== null ? (
         <p className={styles.decision} data-decision="">
-          {p.decision}
+          {p.decision.text}
+          {p.decision.provisional ? <span className={styles.provisional}> · provisoire</span> : null}
         </p>
       ) : null}
     </section>
@@ -210,7 +211,7 @@ function DeleteDialog(p: { onClose(): void; onConfirm(): void; pending: boolean;
   );
 }
 
-function Loaded(p: { session: WorkoutSessionView }) {
+function Loaded(p: { session: WorkoutSessionView; onDeleted(): void }) {
   const { session } = p;
   const repos = useRepos();
   const [, navigate] = useLocation();
@@ -228,7 +229,12 @@ function Loaded(p: { session: WorkoutSessionView }) {
   if (catalog.state === 'loading' || decisions === undefined || places === undefined) return null;
 
   const sheetNames = new Map(catalog.sheets.map((s) => [s.id, s.name]));
-  const reasons = new Map(decisions.map((d) => [d.performedExerciseId, REASON_TEXTS[d.reasonCode]]));
+  const reasons = new Map(
+    decisions.map((d) => [
+      d.performedExerciseId,
+      { text: REASON_TEXTS[d.reasonCode], provisional: d.provisional },
+    ]),
+  );
   const place = places.find((x) => x.id === session.placeId)?.name ?? 'Lieu inconnu';
   const minutes = minutesOf(session);
   const closed = session.status !== 'in_progress';
@@ -248,7 +254,10 @@ function Loaded(p: { session: WorkoutSessionView }) {
   const confirm = () => {
     setRemoving({ pending: true, error: null });
     repos.workouts.remove(session.id).then(
-      () => navigate(BACK),
+      () => {
+        p.onDeleted();
+        navigate(BACK);
+      },
       () => setRemoving({ pending: false, error: NOT_DELETED }),
     );
   };
@@ -311,7 +320,8 @@ function Loaded(p: { session: WorkoutSessionView }) {
 /** Une séance de l'historique : séries, efforts, décision du moteur ; corrections et suppression (spec §7.6). */
 export function HistoryDetail(p: { id: string }) {
   const session = useSession(p.id);
-  if (session === undefined) return null;
+  const [deleted, setDeleted] = useState(false);
+  if (session === undefined || deleted) return null;
   if (session === null) {
     return (
       <Page title="Historique" back={BACK}>
@@ -319,5 +329,5 @@ export function HistoryDetail(p: { id: string }) {
       </Page>
     );
   }
-  return <Loaded session={session} />;
+  return <Loaded session={session} onDeleted={() => setDeleted(true)} />;
 }

@@ -167,6 +167,8 @@ export interface WorkoutsRepo {
 export interface SessionDecision {
   performedExerciseId: string;
   reasonCode: ReasonCode;
+  /** Copie calculée par le téléphone, pas encore remplacée par la ligne du serveur. */
+  provisional: boolean;
 }
 
 const SESSION = 'workout_session';
@@ -884,7 +886,9 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
       return rows.flatMap((r) => {
         if (!r || !isLive(r) || r.ownerId !== ownerId) return [];
         const reasonCode = oneOf(REASON_CODES, r.reasonCode);
-        return reasonCode === null ? [] : [{ performedExerciseId: r.id, reasonCode }];
+        return reasonCode === null
+          ? []
+          : [{ performedExerciseId: r.id, reasonCode, provisional: r.provisional === 1 }];
       });
     },
 

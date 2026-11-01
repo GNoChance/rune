@@ -185,3 +185,8 @@
 .dangerZone {
   margin-top: var(--space-4);
 }
+
+.provisional {
+  color: var(--text-muted);
+  font-style: italic;
+}
