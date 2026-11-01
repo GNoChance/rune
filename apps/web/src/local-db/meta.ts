@@ -49,3 +49,17 @@ export async function setMeta<K extends keyof MetaValues>(db: AppDb, k: K, v: Me
 export async function deleteMeta(db: AppDb, k: keyof MetaValues): Promise<void> {
   await db.meta.delete(k);
 }
+
+/**
+ * Identifiant de l'appareil (`meta.deviceId`, hors de USER_META_KEYS : il survit à la déconnexion), créé au premier
+ * besoin par `newId` puis gardé.
+ */
+export async function ensureDeviceId(db: AppDb, newId: () => string): Promise<string> {
+  return db.transaction('rw', db.meta, async () => {
+    const known = await getMeta(db, 'deviceId');
+    if (known) return known;
+    const id = newId();
+    await setMeta(db, 'deviceId', id);
+    return id;
+  });
+}

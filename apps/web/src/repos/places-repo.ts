@@ -46,7 +46,8 @@ export async function equipmentOf(
   return EQUIPMENT.filter((c) => codes.has(c));
 }
 
-async function toView(db: AppDb, row: MirrorRow): Promise<PlaceView> {
+/** Vue d'une ligne `place`, supprimée ou non : réglages de charge du lieu, sinon ceux de sa salle. */
+export async function placeView(db: AppDb, row: MirrorRow): Promise<PlaceView> {
   const own = parseJsonColumn(row.loadSettings, LoadSettingsSchema);
   if (row.kind === 'gym') {
     const gymId = text(row.gymId);
@@ -81,7 +82,7 @@ export function createPlacesRepo(s: AppServices): PlacesRepo {
 
   async function list(): Promise<PlaceView[]> {
     const rows = await ownedRows(db, 'place', await currentUserId(db));
-    const views = await Promise.all(rows.map((r) => toView(db, r)));
+    const views = await Promise.all(rows.map((r) => placeView(db, r)));
     return views.sort(
       (a, b) => Number(b.isPrimary) - Number(a.isPrimary) || a.name.localeCompare(b.name, 'fr'),
     );

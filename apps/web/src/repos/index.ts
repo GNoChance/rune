@@ -9,9 +9,11 @@ import { createMeRepo, type MeRepo } from './me-repo';
 import { createPlacesRepo, type PlacesRepo } from './places-repo';
 import { createProfileRepo, type ProfileRepo } from './profile-repo';
 import { createProgramRepo, type ProgramRepo } from './program-repo';
+import { type ProgramViewRepo, programViewFor } from './program-view';
 import { createRejectionsRepo, type RejectionsRepo } from './rejections-repo';
 import { createReviewRepo, type ReviewRepo } from './review-repo';
 import { createStatusRepo, type StatusRepo } from './status-repo';
+import { type WorkoutsRepo, workoutRepoFor } from './workout-repo';
 
 export type { AdminRepo } from './admin-repo';
 export {
@@ -37,6 +39,13 @@ export type { DeviceOwner, MeRepo } from './me-repo';
 export type { PlacesRepo, PlaceView } from './places-repo';
 export type { ProfileRepo, TrainingProfileView } from './profile-repo';
 export { changeErrorsOf, isExpired, isStaleRevision, type ProgramRepo } from './program-repo';
+export {
+  type PlannedSession,
+  type ProgramView,
+  type ProgramViewRepo,
+  usePlannedWorkout,
+  useProgramView,
+} from './program-view';
 export type { RejectionsRepo, RejectionView } from './rejections-repo';
 export {
   type CatalogExport,
@@ -51,6 +60,21 @@ export {
 } from './review-repo';
 export { isLive, parseJsonColumn } from './rows';
 export type { StatusRepo } from './status-repo';
+export {
+  type NoteTarget,
+  type SetInput,
+  type StartInput,
+  useActiveSession,
+  useHistory,
+  useOtherDeviceSession,
+  useSession,
+  WorkoutError,
+  type WorkoutErrorCode,
+  type WorkoutExerciseView,
+  type WorkoutSessionView,
+  type WorkoutSetView,
+  type WorkoutsRepo,
+} from './workout-repo';
 
 /** Seul accès des écrans aux données : Dexie (miroirs, meta, outbox) et API en ligne (01 §2 et §3). */
 export interface Repos {
@@ -66,6 +90,10 @@ export interface Repos {
   credits: CreditsRepo;
   review: ReviewRepo;
   program: ProgramRepo;
+  /** Séances : saisie hors ligne par l'outbox (spec brique 3 D2, D4, D12). */
+  workouts: WorkoutsRepo;
+  /** Programme actif, rejeu local et séance du jour (spec brique 3 §4.4.8). */
+  programView: ProgramViewRepo;
 }
 
 export function createRepos(s: AppServices): Repos {
@@ -83,6 +111,9 @@ export function createRepos(s: AppServices): Repos {
     credits: createCreditsRepo(s),
     review: createReviewRepo(s),
     program: createProgramRepo(s),
+    // Les mêmes que ceux des hooks (`useActiveSession`, `useProgramView`…).
+    workouts: workoutRepoFor(s),
+    programView: programViewFor(s),
   };
 }
 

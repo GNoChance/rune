@@ -13,20 +13,13 @@ import { deleteMeta, getMeta, setMeta } from '../../src/local-db/meta';
 import { createTestLocalDb, FIXTURE_MIRRORS } from '../support/local-db';
 
 /**
- * Tables miroir de la brique 3 déclarées au registre (Task 11) dont les magasins Dexie n'existent pas encore :
- * Task 15 les crée (`version(2)`) et retire cette liste, qui n'exempte que ces sept tables.
+ * Marque locale des copies provisoires de classe D (spec brique 3 §5.4) : seule colonne indexée hors du registre,
+ * et seulement dans ces deux magasins.
  */
-const PENDING_TASK_15: readonly string[] = [
-  'engine_decision',
-  'instance_change',
-  'performed_exercise',
-  'performed_set',
-  'program_instance',
-  'slot_state',
-  'workout_session',
-];
-const mirroredWithStore = (): string[] =>
-  mirroredTables(entityRules).filter((t) => !PENDING_TASK_15.includes(t));
+const LOCAL_INDEXES: Readonly<Record<string, readonly string[]>> = {
+  slot_state: ['provisional'],
+  engine_decision: ['provisional'],
+};
 
 /** 'id, [type+createdAt]' → ['id', 'type', 'createdAt']. */
 const indexedFields = (schema: string): string[] =>
@@ -46,14 +39,14 @@ describe('STORE_SCHEMAS', () => {
       Object.keys(STORE_SCHEMAS)
         .filter((s) => !NON_MIRROR_STORES.includes(s))
         .sort(),
-    ).toEqual(mirroredWithStore());
+    ).toEqual(mirroredTables(entityRules));
     for (const s of NON_MIRROR_STORES) expect(STORE_SCHEMAS).toHaveProperty(s);
   });
 
-  it("n'indexe que des colonnes du registre (camelCase) dans les miroirs", () => {
-    for (const store of mirroredWithStore()) {
+  it("n'indexe que des colonnes du registre (camelCase) dans les miroirs, plus la marque provisoire", () => {
+    for (const store of mirroredTables(entityRules)) {
       const rule = entityRules[store];
-      const columns = (rule?.columns ?? []).map(snakeToCamel);
+      const columns = [...(rule?.columns ?? []).map(snakeToCamel), ...(LOCAL_INDEXES[store] ?? [])];
       for (const field of indexedFields(STORE_SCHEMAS[store] ?? '')) expect(columns, store).toContain(field);
     }
   });
@@ -72,7 +65,9 @@ describe('createAppDb', () => {
   it('ajoute les miroirs supplémentaires et les liste', async () => {
     const db = createAppDb(`extra-${crypto.randomUUID()}`, { extraMirrors: FIXTURE_MIRRORS });
     opened.push(db);
-    expect(mirrorStoreNames(db)).toEqual([...mirroredWithStore(), ...Object.keys(FIXTURE_MIRRORS)].sort());
+    expect(mirrorStoreNames(db)).toEqual(
+      [...mirroredTables(entityRules), ...Object.keys(FIXTURE_MIRRORS)].sort(),
+    );
     await db.mirror('fixture_note').put({ id: 'n1', serverRevSeen: null, deletedAt: null });
     expect(await db.mirror('fixture_note').count()).toBe(1);
   });
