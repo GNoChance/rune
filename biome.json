@@ -13,7 +13,11 @@
   "linter": { "enabled": true, "rules": { "preset": "recommended" } },
   "overrides": [
     {
-      "includes": ["data/exercises/**", "data/illustrations/manifest.json"],
+      "includes": [
+        "data/exercises/**",
+        "data/illustrations/manifest.json",
+        "packages/domain/test/fixtures/parity-history*.json"
+      ],
       "formatter": { "enabled": false }
     }
   ]

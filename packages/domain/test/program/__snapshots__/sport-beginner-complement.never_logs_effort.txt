@@ -1,0 +1,796 @@
+modèle sport-beginner-complement · profil never_logs_effort · 2 séances par semaine · 12 semaines
+
+== Semaine 1 (bloc réactif) ==
+
+-- Séance 1 · A · 2026-01-05 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2, calibration)
+    fait 16/16 (sans effort)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2, calibration)
+    fait 16/16/16/16 (sans effort)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2, calibration)
+    fait 16/16 (sans effort)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2, calibration)
+    fait 16/16 (sans effort)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2, calibration)
+    fait 16/16 (sans effort)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2, calibration)
+    fait 11/11 (sans effort)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2, calibration)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2, calibration)
+    fait 16/16 (sans effort)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2, calibration)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 20 s, 2 séries
+
+-- Séance 2 · A · 2026-01-07 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+== Semaine 2 (bloc réactif) ==
+
+-- Séance 3 · A · 2026-01-09 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+-- Séance 4 · A · 2026-01-11 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_1_LIGHTEN ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> STALL STALL_1_LIGHTEN ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_1_LIGHTEN ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_1_LIGHTEN ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_1_LIGHTEN ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> STALL STALL_RESET_MIN ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> STALL STALL_RESET_MIN ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_RESET_MIN ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> STALL STALL_RESET_MIN ; prochain : 20 s, 2 séries
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+== Semaine 3 (bloc réactif) ==
+
+-- Séance 5 · A · 2026-01-13 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+-- Séance 6 · A · 2026-01-15 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+== Semaine 4 (bloc réactif) ==
+
+-- Séance 7 · A · 2026-01-17 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 s, 2 séries
+   ! propose_replace ENGINE_STALL_REPLACE slot A1 bodyweight-squat [{"op":"replace_exercise","slot":"A1","exercise":"chair-squat"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A2 single-leg-romanian-deadlift [{"op":"replace_exercise","slot":"A2","exercise":"supported-single-leg-romanian-deadlift"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 push-up [{"op":"replace_exercise","slot":"A3","exercise":"incline-push-up"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A4 table-row [{"op":"replace_exercise","slot":"A4","exercise":"door-frame-row"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A5 pike-push-up [{"op":"replace_exercise","slot":"A5","exercise":"kneeling-pike-push-up"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A8 copenhagen-plank-short-lever [{"op":"replace_exercise","slot":"A8","exercise":"adductor-squeeze"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A10 side-plank [{"op":"replace_exercise","slot":"A10","exercise":"knee-side-plank"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+-- Séance 8 · A · 2026-01-19 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+== Semaine 5 (bloc réactif) ==
+
+-- Séance 9 · A · 2026-01-21 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+-- Séance 10 · A · 2026-01-23 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 s, 2 séries
+   ! propose_replace ENGINE_STALL_REPLACE slot A1 bodyweight-squat [{"op":"replace_exercise","slot":"A1","exercise":"chair-squat"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A2 single-leg-romanian-deadlift [{"op":"replace_exercise","slot":"A2","exercise":"supported-single-leg-romanian-deadlift"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 push-up [{"op":"replace_exercise","slot":"A3","exercise":"incline-push-up"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A4 table-row [{"op":"replace_exercise","slot":"A4","exercise":"door-frame-row"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A5 pike-push-up [{"op":"replace_exercise","slot":"A5","exercise":"kneeling-pike-push-up"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A8 copenhagen-plank-short-lever [{"op":"replace_exercise","slot":"A8","exercise":"adductor-squeeze"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A10 side-plank [{"op":"replace_exercise","slot":"A10","exercise":"knee-side-plank"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+== Semaine 6 (bloc réactif) ==
+
+-- Séance 11 · A · 2026-01-25 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+-- Séance 12 · A · 2026-01-27 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+== Semaine 7 (bloc réactif) ==
+
+-- Séance 13 · A · 2026-01-29 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 s, 2 séries
+   ! propose_replace ENGINE_STALL_REPLACE slot A1 bodyweight-squat [{"op":"replace_exercise","slot":"A1","exercise":"chair-squat"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A2 single-leg-romanian-deadlift [{"op":"replace_exercise","slot":"A2","exercise":"supported-single-leg-romanian-deadlift"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 push-up [{"op":"replace_exercise","slot":"A3","exercise":"incline-push-up"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A4 table-row [{"op":"replace_exercise","slot":"A4","exercise":"door-frame-row"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A5 pike-push-up [{"op":"replace_exercise","slot":"A5","exercise":"kneeling-pike-push-up"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A8 copenhagen-plank-short-lever [{"op":"replace_exercise","slot":"A8","exercise":"adductor-squeeze"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A10 side-plank [{"op":"replace_exercise","slot":"A10","exercise":"knee-side-plank"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+-- Séance 14 · A · 2026-01-31 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+== Semaine 8 (bloc réactif) ==
+
+-- Séance 15 · A · 2026-02-02 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+-- Séance 16 · A · 2026-02-04 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 s, 2 séries
+   ! propose_replace ENGINE_STALL_REPLACE slot A1 bodyweight-squat [{"op":"replace_exercise","slot":"A1","exercise":"chair-squat"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A2 single-leg-romanian-deadlift [{"op":"replace_exercise","slot":"A2","exercise":"supported-single-leg-romanian-deadlift"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 push-up [{"op":"replace_exercise","slot":"A3","exercise":"incline-push-up"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A4 table-row [{"op":"replace_exercise","slot":"A4","exercise":"door-frame-row"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A5 pike-push-up [{"op":"replace_exercise","slot":"A5","exercise":"kneeling-pike-push-up"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A8 copenhagen-plank-short-lever [{"op":"replace_exercise","slot":"A8","exercise":"adductor-squeeze"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A10 side-plank [{"op":"replace_exercise","slot":"A10","exercise":"knee-side-plank"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+== Semaine 9 (bloc réactif) ==
+
+-- Séance 17 · A · 2026-02-06 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+-- Séance 18 · A · 2026-02-08 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+== Semaine 10 (bloc réactif) ==
+
+-- Séance 19 · A · 2026-02-10 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 s, 2 séries
+   ! propose_replace ENGINE_STALL_REPLACE slot A1 bodyweight-squat [{"op":"replace_exercise","slot":"A1","exercise":"chair-squat"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A2 single-leg-romanian-deadlift [{"op":"replace_exercise","slot":"A2","exercise":"supported-single-leg-romanian-deadlift"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 push-up [{"op":"replace_exercise","slot":"A3","exercise":"incline-push-up"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A4 table-row [{"op":"replace_exercise","slot":"A4","exercise":"door-frame-row"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A5 pike-push-up [{"op":"replace_exercise","slot":"A5","exercise":"kneeling-pike-push-up"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A8 copenhagen-plank-short-lever [{"op":"replace_exercise","slot":"A8","exercise":"adductor-squeeze"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A10 side-plank [{"op":"replace_exercise","slot":"A10","exercise":"knee-side-plank"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+-- Séance 20 · A · 2026-02-12 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+== Semaine 11 (bloc réactif) ==
+
+-- Séance 21 · A · 2026-02-14 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+-- Séance 22 · A · 2026-02-16 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 s, 2 séries
+   ! propose_replace ENGINE_STALL_REPLACE slot A1 bodyweight-squat [{"op":"replace_exercise","slot":"A1","exercise":"chair-squat"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A2 single-leg-romanian-deadlift [{"op":"replace_exercise","slot":"A2","exercise":"supported-single-leg-romanian-deadlift"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 push-up [{"op":"replace_exercise","slot":"A3","exercise":"incline-push-up"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A4 table-row [{"op":"replace_exercise","slot":"A4","exercise":"door-frame-row"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A5 pike-push-up [{"op":"replace_exercise","slot":"A5","exercise":"kneeling-pike-push-up"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A8 copenhagen-plank-short-lever [{"op":"replace_exercise","slot":"A8","exercise":"adductor-squeeze"}]
+   ! propose_replace ENGINE_STALL_REPLACE slot A10 side-plank [{"op":"replace_exercise","slot":"A10","exercise":"knee-side-plank"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+== Semaine 12 (bloc réactif) ==
+
+-- Séance 23 · A · 2026-02-18 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+-- Séance 24 · A · 2026-02-20 · normale · avis sport_gap
+A1 bodyweight-squat [prévu goblet-squat] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries
+A6 lat-pulldown : not_feasible_here
+A7 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A8 copenhagen-plank-short-lever : 2×15 s par côté (RIR 2)
+    fait 15 s/15 s/15 s/15 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 15 s, 2 séries
+A9 standing-calf-raise : 2×8-15 rép. (RIR 2)
+    fait 16/16 (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 8-15 rép. (cible 8), 2 séries, standing-calf-raise
+A10 side-plank : 2×20 s par côté (RIR 2)
+    fait 20 s/20 s/20 s/20 s (sans effort)
+    -> HOLD EFFORT_MISSING ; prochain : 20 s, 2 séries
+
+état final : semaine 13, séance suivante A, suspendus []

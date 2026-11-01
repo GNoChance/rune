@@ -1,0 +1,1427 @@
+{
+  "slotStates": [
+    {
+      "id": "inst-ref:A1:back-squat",
+      "instanceId": "inst-ref",
+      "slotId": "A1",
+      "exerciseId": "back-squat",
+      "mode": "linear",
+      "loadG": 50000,
+      "targetReps": 6,
+      "variantRank": null,
+      "durationS": null,
+      "machineStepGOverride": null,
+      "calibrationLeft": 0,
+      "noProgressCount": 0,
+      "stallRank": 0,
+      "painStreak": 0,
+      "suspended": false,
+      "lastSessionId": "ses-009",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "inst-ref:A2:bench-press",
+      "instanceId": "inst-ref",
+      "slotId": "A2",
+      "exerciseId": "bench-press",
+      "mode": "linear",
+      "loadG": 40000,
+      "targetReps": 6,
+      "variantRank": null,
+      "durationS": null,
+      "machineStepGOverride": null,
+      "calibrationLeft": 0,
+      "noProgressCount": 0,
+      "stallRank": 0,
+      "painStreak": 0,
+      "suspended": false,
+      "lastSessionId": "ses-009",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "inst-ref:A3:seated-cable-row",
+      "instanceId": "inst-ref",
+      "slotId": "A3",
+      "exerciseId": "seated-cable-row",
+      "mode": "sum",
+      "loadG": 50000,
+      "targetReps": 8,
+      "variantRank": null,
+      "durationS": null,
+      "machineStepGOverride": null,
+      "calibrationLeft": 0,
+      "noProgressCount": 0,
+      "stallRank": 0,
+      "painStreak": 0,
+      "suspended": false,
+      "lastSessionId": "ses-009",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "inst-ref:A4:leg-curl",
+      "instanceId": "inst-ref",
+      "slotId": "A4",
+      "exerciseId": "leg-curl",
+      "mode": "sum",
+      "loadG": 45000,
+      "targetReps": 8,
+      "variantRank": null,
+      "durationS": null,
+      "machineStepGOverride": null,
+      "calibrationLeft": 0,
+      "noProgressCount": 0,
+      "stallRank": 0,
+      "painStreak": 0,
+      "suspended": false,
+      "lastSessionId": "ses-009",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "inst-ref:A5:front-plank",
+      "instanceId": "inst-ref",
+      "slotId": "A5",
+      "exerciseId": "front-plank",
+      "mode": "duration",
+      "loadG": null,
+      "targetReps": null,
+      "variantRank": 1,
+      "durationS": 40,
+      "machineStepGOverride": null,
+      "calibrationLeft": 0,
+      "noProgressCount": 0,
+      "stallRank": 0,
+      "painStreak": 0,
+      "suspended": false,
+      "lastSessionId": "ses-009",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "inst-ref:B1:romanian-deadlift",
+      "instanceId": "inst-ref",
+      "slotId": "B1",
+      "exerciseId": "romanian-deadlift",
+      "mode": "linear",
+      "loadG": 45000,
+      "targetReps": 6,
+      "variantRank": null,
+      "durationS": null,
+      "machineStepGOverride": null,
+      "calibrationLeft": 0,
+      "noProgressCount": 0,
+      "stallRank": 0,
+      "painStreak": 0,
+      "suspended": false,
+      "lastSessionId": "ses-008",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "inst-ref:B2:overhead-press",
+      "instanceId": "inst-ref",
+      "slotId": "B2",
+      "exerciseId": "overhead-press",
+      "mode": "linear",
+      "loadG": 37500,
+      "targetReps": 6,
+      "variantRank": null,
+      "durationS": null,
+      "machineStepGOverride": null,
+      "calibrationLeft": 0,
+      "noProgressCount": 0,
+      "stallRank": 0,
+      "painStreak": 0,
+      "suspended": false,
+      "lastSessionId": "ses-008",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "inst-ref:B3:lat-pulldown",
+      "instanceId": "inst-ref",
+      "slotId": "B3",
+      "exerciseId": "lat-pulldown",
+      "mode": "sum",
+      "loadG": 45000,
+      "targetReps": 8,
+      "variantRank": null,
+      "durationS": null,
+      "machineStepGOverride": null,
+      "calibrationLeft": 0,
+      "noProgressCount": 0,
+      "stallRank": 0,
+      "painStreak": 0,
+      "suspended": false,
+      "lastSessionId": "ses-008",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "inst-ref:B4:dumbbell-reverse-lunge",
+      "instanceId": "inst-ref",
+      "slotId": "B4",
+      "exerciseId": "dumbbell-reverse-lunge",
+      "mode": "sum",
+      "loadG": 16000,
+      "targetReps": 8,
+      "variantRank": null,
+      "durationS": null,
+      "machineStepGOverride": null,
+      "calibrationLeft": 0,
+      "noProgressCount": 0,
+      "stallRank": 0,
+      "painStreak": 0,
+      "suspended": false,
+      "lastSessionId": "ses-008",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "inst-ref:B5:dumbbell-bench-press",
+      "instanceId": "inst-ref",
+      "slotId": "B5",
+      "exerciseId": "dumbbell-bench-press",
+      "mode": "sum",
+      "loadG": 16000,
+      "targetReps": 8,
+      "variantRank": null,
+      "durationS": null,
+      "machineStepGOverride": null,
+      "calibrationLeft": 0,
+      "noProgressCount": 0,
+      "stallRank": 0,
+      "painStreak": 0,
+      "suspended": false,
+      "lastSessionId": "ses-008",
+      "rulesVersion": "1"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "ses-001-A1",
+      "instanceId": "inst-ref",
+      "slotId": "A1",
+      "exerciseId": "back-squat",
+      "result": "CALIBRATION",
+      "reasonCode": "CALIBRATION_DONE",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 30000,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-001-A2",
+      "instanceId": "inst-ref",
+      "slotId": "A2",
+      "exerciseId": "bench-press",
+      "result": "CALIBRATION",
+      "reasonCode": "CALIBRATION_DONE",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 30000,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-001-A3",
+      "instanceId": "inst-ref",
+      "slotId": "A3",
+      "exerciseId": "seated-cable-row",
+      "result": "CALIBRATION",
+      "reasonCode": "CALIBRATION_DONE",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 30000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-001-A4",
+      "instanceId": "inst-ref",
+      "slotId": "A4",
+      "exerciseId": "leg-curl",
+      "result": "CALIBRATION",
+      "reasonCode": "CALIBRATION_DONE",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 30000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 2
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-001-A5",
+      "instanceId": "inst-ref",
+      "slotId": "A5",
+      "exerciseId": "front-plank",
+      "result": "CALIBRATION",
+      "reasonCode": "CALIBRATION_DONE",
+      "nextTarget": {
+        "mode": "duration",
+        "loadG": null,
+        "repsMin": null,
+        "repsMax": null,
+        "targetReps": null,
+        "durationS": 20,
+        "variantId": "knee-plank",
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-002-B1",
+      "instanceId": "inst-ref",
+      "slotId": "B1",
+      "exerciseId": "romanian-deadlift",
+      "result": "CALIBRATION",
+      "reasonCode": "CALIBRATION_DONE",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 30000,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-002-B2",
+      "instanceId": "inst-ref",
+      "slotId": "B2",
+      "exerciseId": "overhead-press",
+      "result": "CALIBRATION",
+      "reasonCode": "CALIBRATION_DONE",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 30000,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-002-B3",
+      "instanceId": "inst-ref",
+      "slotId": "B3",
+      "exerciseId": "lat-pulldown",
+      "result": "CALIBRATION",
+      "reasonCode": "CALIBRATION_DONE",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 30000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-002-B4",
+      "instanceId": "inst-ref",
+      "slotId": "B4",
+      "exerciseId": "dumbbell-reverse-lunge",
+      "result": "CALIBRATION",
+      "reasonCode": "CALIBRATION_DONE",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 10000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 2
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-002-B5",
+      "instanceId": "inst-ref",
+      "slotId": "B5",
+      "exerciseId": "dumbbell-bench-press",
+      "result": "CALIBRATION",
+      "reasonCode": "CALIBRATION_DONE",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 10000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 2
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-003-A1",
+      "instanceId": "inst-ref",
+      "slotId": "A1",
+      "exerciseId": "back-squat",
+      "result": "PROGRESS",
+      "reasonCode": "LOAD_UP",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 35000,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-003-A2",
+      "instanceId": "inst-ref",
+      "slotId": "A2",
+      "exerciseId": "bench-press",
+      "result": "PROGRESS",
+      "reasonCode": "LOAD_UP",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 32500,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-003-A3",
+      "instanceId": "inst-ref",
+      "slotId": "A3",
+      "exerciseId": "seated-cable-row",
+      "result": "PROGRESS",
+      "reasonCode": "SUM_LOAD_UP",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 35000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-003-A4",
+      "instanceId": "inst-ref",
+      "slotId": "A4",
+      "exerciseId": "leg-curl",
+      "result": "PROGRESS",
+      "reasonCode": "SUM_LOAD_UP",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 35000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 2
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-003-A5",
+      "instanceId": "inst-ref",
+      "slotId": "A5",
+      "exerciseId": "front-plank",
+      "result": "PROGRESS",
+      "reasonCode": "DURATION_UP",
+      "nextTarget": {
+        "mode": "duration",
+        "loadG": null,
+        "repsMin": null,
+        "repsMax": null,
+        "targetReps": null,
+        "durationS": 25,
+        "variantId": "knee-plank",
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-004-B1",
+      "instanceId": "inst-ref",
+      "slotId": "B1",
+      "exerciseId": "romanian-deadlift",
+      "result": "PROGRESS",
+      "reasonCode": "LOAD_UP",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 35000,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-004-B2",
+      "instanceId": "inst-ref",
+      "slotId": "B2",
+      "exerciseId": "overhead-press",
+      "result": "PROGRESS",
+      "reasonCode": "LOAD_UP",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 32500,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-004-B3",
+      "instanceId": "inst-ref",
+      "slotId": "B3",
+      "exerciseId": "lat-pulldown",
+      "result": "PROGRESS",
+      "reasonCode": "SUM_LOAD_UP",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 35000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-004-B4",
+      "instanceId": "inst-ref",
+      "slotId": "B4",
+      "exerciseId": "dumbbell-reverse-lunge",
+      "result": "PROGRESS",
+      "reasonCode": "SUM_LOAD_UP",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 12000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 2
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-004-B5",
+      "instanceId": "inst-ref",
+      "slotId": "B5",
+      "exerciseId": "dumbbell-bench-press",
+      "result": "PROGRESS",
+      "reasonCode": "SUM_LOAD_UP",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 12000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 2
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-005-A1",
+      "instanceId": "inst-ref",
+      "slotId": "A1",
+      "exerciseId": "back-squat",
+      "result": "ADJUSTED_LIGHTEN",
+      "reasonCode": "PAIN_LIGHTEN",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 30000,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-005-A2",
+      "instanceId": "inst-ref",
+      "slotId": "A2",
+      "exerciseId": "bench-press",
+      "result": "PROGRESS",
+      "reasonCode": "LOAD_UP",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 35000,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-005-A3",
+      "instanceId": "inst-ref",
+      "slotId": "A3",
+      "exerciseId": "seated-cable-row",
+      "result": "PROGRESS",
+      "reasonCode": "SUM_LOAD_UP",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 40000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-005-A4",
+      "instanceId": "inst-ref",
+      "slotId": "A4",
+      "exerciseId": "leg-curl",
+      "result": "PROGRESS",
+      "reasonCode": "SUM_LOAD_UP",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 40000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 2
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-005-A5",
+      "instanceId": "inst-ref",
+      "slotId": "A5",
+      "exerciseId": "front-plank",
+      "result": "PROGRESS",
+      "reasonCode": "DURATION_UP",
+      "nextTarget": {
+        "mode": "duration",
+        "loadG": null,
+        "repsMin": null,
+        "repsMax": null,
+        "targetReps": null,
+        "durationS": 30,
+        "variantId": "knee-plank",
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-006-B1",
+      "instanceId": "inst-ref",
+      "slotId": "B1",
+      "exerciseId": "romanian-deadlift",
+      "result": "PROGRESS",
+      "reasonCode": "LOAD_UP",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 40000,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-006-B2",
+      "instanceId": "inst-ref",
+      "slotId": "B2",
+      "exerciseId": "overhead-press",
+      "result": "ADJUSTED_HOLD",
+      "reasonCode": "USER_HOLD",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 32500,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-006-B3",
+      "instanceId": "inst-ref",
+      "slotId": "B3",
+      "exerciseId": "lat-pulldown",
+      "result": "PROGRESS",
+      "reasonCode": "SUM_LOAD_UP",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 40000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-006-B4",
+      "instanceId": "inst-ref",
+      "slotId": "B4",
+      "exerciseId": "dumbbell-reverse-lunge",
+      "result": "PROGRESS",
+      "reasonCode": "SUM_LOAD_UP",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 14000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 2
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-006-B5",
+      "instanceId": "inst-ref",
+      "slotId": "B5",
+      "exerciseId": "dumbbell-bench-press",
+      "result": "PROGRESS",
+      "reasonCode": "SUM_LOAD_UP",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 14000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 2
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-007-A1",
+      "instanceId": "inst-ref",
+      "slotId": "A1",
+      "exerciseId": "back-squat",
+      "result": "PROGRESS",
+      "reasonCode": "LOAD_UP",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 45000,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-007-A2",
+      "instanceId": "inst-ref",
+      "slotId": "A2",
+      "exerciseId": "bench-press",
+      "result": "PROGRESS",
+      "reasonCode": "LOAD_UP",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 37500,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-007-A3",
+      "instanceId": "inst-ref",
+      "slotId": "A3",
+      "exerciseId": "seated-cable-row",
+      "result": "PROGRESS",
+      "reasonCode": "SUM_LOAD_UP",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 45000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-007-A4",
+      "instanceId": "inst-ref",
+      "slotId": "A4",
+      "exerciseId": "leg-curl",
+      "result": "HOLD",
+      "reasonCode": "SETS_MISSING",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 40000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-007-A5",
+      "instanceId": "inst-ref",
+      "slotId": "A5",
+      "exerciseId": "front-plank",
+      "result": "PROGRESS",
+      "reasonCode": "DURATION_UP",
+      "nextTarget": {
+        "mode": "duration",
+        "loadG": null,
+        "repsMin": null,
+        "repsMax": null,
+        "targetReps": null,
+        "durationS": 35,
+        "variantId": "knee-plank",
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-008-B1",
+      "instanceId": "inst-ref",
+      "slotId": "B1",
+      "exerciseId": "romanian-deadlift",
+      "result": "PROGRESS",
+      "reasonCode": "LOAD_UP",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 45000,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-008-B2",
+      "instanceId": "inst-ref",
+      "slotId": "B2",
+      "exerciseId": "overhead-press",
+      "result": "PROGRESS",
+      "reasonCode": "LOAD_UP",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 37500,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-008-B3",
+      "instanceId": "inst-ref",
+      "slotId": "B3",
+      "exerciseId": "lat-pulldown",
+      "result": "PROGRESS",
+      "reasonCode": "SUM_LOAD_UP",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 45000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-008-B4",
+      "instanceId": "inst-ref",
+      "slotId": "B4",
+      "exerciseId": "dumbbell-reverse-lunge",
+      "result": "PROGRESS",
+      "reasonCode": "SUM_LOAD_UP",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 16000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 2
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-008-B5",
+      "instanceId": "inst-ref",
+      "slotId": "B5",
+      "exerciseId": "dumbbell-bench-press",
+      "result": "PROGRESS",
+      "reasonCode": "SUM_LOAD_UP",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 16000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 2
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-009-A1",
+      "instanceId": "inst-ref",
+      "slotId": "A1",
+      "exerciseId": "back-squat",
+      "result": "PROGRESS",
+      "reasonCode": "LOAD_UP",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 50000,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-009-A2",
+      "instanceId": "inst-ref",
+      "slotId": "A2",
+      "exerciseId": "bench-press",
+      "result": "PROGRESS",
+      "reasonCode": "LOAD_UP",
+      "nextTarget": {
+        "mode": "linear",
+        "loadG": 40000,
+        "repsMin": 6,
+        "repsMax": 6,
+        "targetReps": 6,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-009-A3",
+      "instanceId": "inst-ref",
+      "slotId": "A3",
+      "exerciseId": "seated-cable-row",
+      "result": "PROGRESS",
+      "reasonCode": "SUM_LOAD_UP",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 50000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-009-A4",
+      "instanceId": "inst-ref",
+      "slotId": "A4",
+      "exerciseId": "leg-curl",
+      "result": "HOLD",
+      "reasonCode": "SETS_MISSING",
+      "nextTarget": {
+        "mode": "sum",
+        "loadG": 45000,
+        "repsMin": 8,
+        "repsMax": 12,
+        "targetReps": 8,
+        "durationS": null,
+        "variantId": null,
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    },
+    {
+      "id": "ses-009-A5",
+      "instanceId": "inst-ref",
+      "slotId": "A5",
+      "exerciseId": "front-plank",
+      "result": "PROGRESS",
+      "reasonCode": "DURATION_UP",
+      "nextTarget": {
+        "mode": "duration",
+        "loadG": null,
+        "repsMin": null,
+        "repsMax": null,
+        "targetReps": null,
+        "durationS": 40,
+        "variantId": "knee-plank",
+        "workSets": 3
+      },
+      "profile": "adult",
+      "rulesVersion": "1"
+    }
+  ],
+  "state": {
+    "weekIndex": 3,
+    "sessionsInWeek": 0,
+    "blockWeek": null,
+    "deloadSessionsLeft": 0,
+    "nextWorkoutId": "B",
+    "lastCompletedStartedAt": "2026-01-21T17:00:00.000Z"
+  },
+  "events": [],
+  "program": {
+    "template": {
+      "schemaVersion": 1,
+      "id": "gym-beginner-full-body-ab",
+      "version": 1,
+      "name": "Salle · Débutant · Corps entier A/B",
+      "description": "Deux séances corps entier qui alternent, 2 ou 3 fois par semaine. Les grands mouvements à la barre en 3 séries de 6 : la charge monte quand toutes les séries passent. Les compléments en 8 à 12 répétitions.",
+      "context": "gym",
+      "level": "beginner",
+      "daysPerWeek": {
+        "min": 2,
+        "max": 3,
+        "default": 3
+      },
+      "estimatedMinutes": 55,
+      "block": {
+        "mode": "reactive"
+      },
+      "workouts": [
+        {
+          "id": "A",
+          "name": "Séance A",
+          "slots": [
+            {
+              "id": "A1",
+              "movementPattern": "squat",
+              "role": "main",
+              "exercises": [
+                "back-squat",
+                "goblet-squat",
+                "leg-press",
+                "bodyweight-squat"
+              ],
+              "sets": [
+                {
+                  "kind": "warmup",
+                  "count": 2,
+                  "reps": {
+                    "min": 5,
+                    "max": 5
+                  },
+                  "pctWorkLoad": 50
+                },
+                {
+                  "kind": "work",
+                  "count": 3,
+                  "reps": {
+                    "min": 6,
+                    "max": 6
+                  },
+                  "targetRir": 2,
+                  "restS": 150
+                }
+              ],
+              "progression": {
+                "type": "linear",
+                "incrementG": 5000
+              }
+            },
+            {
+              "id": "A2",
+              "movementPattern": "horizontal_push",
+              "role": "main",
+              "exercises": [
+                "bench-press",
+                "dumbbell-bench-press",
+                "machine-chest-press",
+                "push-up"
+              ],
+              "sets": [
+                {
+                  "kind": "warmup",
+                  "count": 2,
+                  "reps": {
+                    "min": 5,
+                    "max": 5
+                  },
+                  "pctWorkLoad": 50
+                },
+                {
+                  "kind": "work",
+                  "count": 3,
+                  "reps": {
+                    "min": 6,
+                    "max": 6
+                  },
+                  "targetRir": 2,
+                  "restS": 150
+                }
+              ],
+              "progression": {
+                "type": "linear",
+                "incrementG": 2500
+              }
+            },
+            {
+              "id": "A3",
+              "movementPattern": "horizontal_pull",
+              "role": "secondary",
+              "exercises": [
+                "seated-cable-row",
+                "one-arm-dumbbell-row",
+                "table-row"
+              ],
+              "sets": [
+                {
+                  "kind": "work",
+                  "count": 3,
+                  "reps": {
+                    "min": 8,
+                    "max": 12
+                  },
+                  "targetRir": 2,
+                  "restS": 120
+                }
+              ],
+              "progression": {
+                "type": "double"
+              }
+            },
+            {
+              "id": "A4",
+              "movementPattern": "knee_flexion",
+              "role": "accessory",
+              "exercises": [
+                "leg-curl",
+                "assisted-nordic-curl"
+              ],
+              "sets": [
+                {
+                  "kind": "work",
+                  "count": 3,
+                  "reps": {
+                    "min": 8,
+                    "max": 12
+                  },
+                  "targetRir": 2,
+                  "restS": 90
+                }
+              ],
+              "progression": {
+                "type": "double"
+              }
+            },
+            {
+              "id": "A5",
+              "movementPattern": "core_anti_extension",
+              "role": "accessory",
+              "chain": "front-plank",
+              "sets": [
+                {
+                  "kind": "work",
+                  "count": 3,
+                  "durationS": {
+                    "min": 20,
+                    "max": 60
+                  },
+                  "targetRir": 2,
+                  "restS": 60
+                }
+              ],
+              "progression": {
+                "type": "duration",
+                "stepS": 5
+              }
+            }
+          ]
+        },
+        {
+          "id": "B",
+          "name": "Séance B",
+          "slots": [
+            {
+              "id": "B1",
+              "movementPattern": "hip_hinge",
+              "role": "main",
+              "exercises": [
+                "romanian-deadlift",
+                "dumbbell-romanian-deadlift"
+              ],
+              "sets": [
+                {
+                  "kind": "warmup",
+                  "count": 2,
+                  "reps": {
+                    "min": 5,
+                    "max": 5
+                  },
+                  "pctWorkLoad": 50
+                },
+                {
+                  "kind": "work",
+                  "count": 3,
+                  "reps": {
+                    "min": 6,
+                    "max": 6
+                  },
+                  "targetRir": 2,
+                  "restS": 150
+                }
+              ],
+              "progression": {
+                "type": "linear",
+                "incrementG": 5000
+              }
+            },
+            {
+              "id": "B2",
+              "movementPattern": "vertical_push",
+              "role": "main",
+              "exercises": [
+                "overhead-press",
+                "seated-dumbbell-shoulder-press",
+                "pike-push-up"
+              ],
+              "sets": [
+                {
+                  "kind": "warmup",
+                  "count": 2,
+                  "reps": {
+                    "min": 5,
+                    "max": 5
+                  },
+                  "pctWorkLoad": 50
+                },
+                {
+                  "kind": "work",
+                  "count": 3,
+                  "reps": {
+                    "min": 6,
+                    "max": 6
+                  },
+                  "targetRir": 2,
+                  "restS": 150
+                }
+              ],
+              "progression": {
+                "type": "linear",
+                "incrementG": 2500
+              }
+            },
+            {
+              "id": "B3",
+              "movementPattern": "vertical_pull",
+              "role": "secondary",
+              "exercises": [
+                "lat-pulldown",
+                "band-assisted-pull-up",
+                "negative-pull-up"
+              ],
+              "sets": [
+                {
+                  "kind": "work",
+                  "count": 3,
+                  "reps": {
+                    "min": 8,
+                    "max": 12
+                  },
+                  "targetRir": 2,
+                  "restS": 120
+                }
+              ],
+              "progression": {
+                "type": "double"
+              }
+            },
+            {
+              "id": "B4",
+              "movementPattern": "lunge",
+              "role": "accessory",
+              "exercises": [
+                "dumbbell-reverse-lunge",
+                "reverse-lunge"
+              ],
+              "sets": [
+                {
+                  "kind": "work",
+                  "count": 2,
+                  "reps": {
+                    "min": 8,
+                    "max": 12
+                  },
+                  "targetRir": 2,
+                  "restS": 90
+                }
+              ],
+              "progression": {
+                "type": "double"
+              }
+            },
+            {
+              "id": "B5",
+              "movementPattern": "horizontal_push",
+              "role": "accessory",
+              "exercises": [
+                "dumbbell-bench-press",
+                "machine-chest-press",
+                "push-up"
+              ],
+              "sets": [
+                {
+                  "kind": "work",
+                  "count": 2,
+                  "reps": {
+                    "min": 8,
+                    "max": 12
+                  },
+                  "targetRir": 2,
+                  "restS": 90
+                }
+              ],
+              "progression": {
+                "type": "double"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "daysPerWeek": 3,
+    "suspended": []
+  }
+}

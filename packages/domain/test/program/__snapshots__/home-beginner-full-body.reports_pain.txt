@@ -1,0 +1,740 @@
+modèle home-beginner-full-body · profil reports_pain · 3 séances par semaine · 12 semaines
+
+== Semaine 1 (bloc réactif) ==
+
+-- Séance 1 · A · 2026-01-05 · normale
+A1 chair-squat : 2×8-12 rép. (RIR 2, calibration)
+    fait 13/13 (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 8-12 rép. (cible 8), 2 séries, chair-squat
+A2 wall-push-up : 3×8-12 rép. (RIR 2, calibration)
+    fait 13/13/13 (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 8-12 rép. (cible 8), 3 séries, wall-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2, calibration)
+    fait 13/13/13 (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 glute-bridge : 2×10-15 rép. (RIR 2, calibration)
+    fait 16/16 (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10-15 rép. (cible 10), 2 séries, glute-bridge
+A5 band-assisted-pull-up : not_feasible_here
+A6 assisted-nordic-curl : 2×6-10 rép. (RIR 2, calibration)
+    fait 11/11 (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A7 knee-plank : 3×20 s (RIR 2, calibration)
+    fait 20 s/20 s/20 s (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 20 s, 3 séries, knee-plank
+
+-- Séance 2 · A · 2026-01-07 · normale
+A1 chair-squat : 2×8-12 rép. (RIR 2)
+    fait 13/13 (ok)
+    -> HOLD NO_PROGRESS ; prochain : 8-12 rép. (cible 8), 2 séries, chair-squat
+A2 wall-push-up : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD NO_PROGRESS ; prochain : 8-12 rép. (cible 8), 3 séries, wall-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 glute-bridge : 2×10-15 rép. (RIR 2)
+    fait 16/16 (ok)
+    -> HOLD NO_PROGRESS ; prochain : 10-15 rép. (cible 10), 2 séries, glute-bridge
+A5 band-assisted-pull-up : not_feasible_here
+A6 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (ok)
+    -> HOLD NO_PROGRESS ; prochain : 6-10 rép. (cible 6), 2 séries, assisted-nordic-curl
+A7 knee-plank : 3×20 s (RIR 2)
+    fait 20 s/20 s/20 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 25 s, 3 séries, knee-plank
+
+-- Séance 3 · A · 2026-01-09 · normale
+A1 chair-squat : 2×8-12 rép. (RIR 2)
+    fait 13/13 (ok, douleur pain)
+    -> ADJUSTED_LIGHTEN PAIN_LIGHTEN ; prochain : 8-12 rép. (cible 8), 2 séries, chair-squat
+A2 wall-push-up : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> PROGRESS CHAIN_NEXT ; prochain : 8-12 rép. (cible 8), 3 séries, incline-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 glute-bridge : 2×10-15 rép. (RIR 2)
+    fait 16/16 (ok)
+    -> PROGRESS CHAIN_NEXT ; prochain : 10-15 rép. (cible 10), 2 séries, single-leg-glute-bridge
+A5 band-assisted-pull-up : not_feasible_here
+A6 assisted-nordic-curl : 2×6-10 rép. (RIR 2)
+    fait 11/11 (ok)
+    -> PROGRESS CHAIN_NEXT ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 knee-plank : 3×25 s (RIR 2)
+    fait 25 s/25 s/25 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 30 s, 3 séries, knee-plank
+
+== Semaine 2 (bloc réactif) ==
+
+-- Séance 4 · A · 2026-01-11 · normale
+A1 chair-squat : 2×8-12 rép. (RIR 2)
+    fait 13/13 (ok, douleur pain)
+    -> ADJUSTED_LIGHTEN PAIN_LIGHTEN ; prochain : 8-12 rép. (cible 8), 2 séries, chair-squat
+A2 incline-push-up : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD NO_PROGRESS ; prochain : 8-12 rép. (cible 8), 3 séries, incline-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> STALL STALL_1_LIGHTEN ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> HOLD NO_PROGRESS ; prochain : 10-15 rép. (cible 10), 2 séries, single-leg-glute-bridge
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 knee-plank : 3×30 s (RIR 2)
+    fait 30 s/30 s/30 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 35 s, 3 séries, knee-plank
+   ! pain_suspend PAIN_SUSPEND slot A1 bodyweight-squat [{"op":"suspend_slot","slot":"A1"}]
+
+-- Séance 5 · A · 2026-01-13 · normale
+A1 chair-squat : suspended
+A2 incline-push-up : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> PROGRESS CHAIN_NEXT ; prochain : 8-12 rép. (cible 8), 3 séries, push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> PROGRESS CHAIN_NEXT ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 knee-plank : 3×35 s (RIR 2)
+    fait 35 s/35 s/35 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 40 s, 3 séries, knee-plank
+
+-- Séance 6 · A · 2026-01-15 · normale
+A1 chair-squat : suspended
+A2 push-up : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD NO_PROGRESS ; prochain : 8-12 rép. (cible 8), 3 séries, push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 knee-plank : 3×40 s (RIR 2)
+    fait 40 s/40 s/40 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 45 s, 3 séries, knee-plank
+
+== Semaine 3 (bloc réactif) ==
+
+-- Séance 7 · A · 2026-01-17 · normale
+A1 chair-squat : suspended
+A2 push-up : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> PROGRESS CHAIN_NEXT ; prochain : 8-12 rép. (cible 8), 3 séries, decline-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> STALL STALL_RESET_MIN ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 knee-plank : 3×45 s (RIR 2)
+    fait 45 s/45 s/45 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 50 s, 3 séries, knee-plank
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+-- Séance 8 · A · 2026-01-19 · normale
+A1 chair-squat : suspended
+A2 decline-push-up : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD NO_PROGRESS ; prochain : 8-12 rép. (cible 8), 3 séries, decline-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 knee-plank : 3×50 s (RIR 2)
+    fait 50 s/50 s/50 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 55 s, 3 séries, knee-plank
+
+-- Séance 9 · A · 2026-01-21 · normale
+A1 chair-squat : suspended
+A2 decline-push-up : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> PROGRESS CHAIN_NEXT ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 knee-plank : 3×55 s (RIR 2)
+    fait 55 s/55 s/55 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 60 s, 3 séries, knee-plank
+
+== Semaine 4 (bloc réactif) ==
+
+-- Séance 10 · A · 2026-01-23 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 knee-plank : 3×60 s (RIR 2)
+    fait 60 s/60 s/60 s (ok)
+    -> HOLD NO_PROGRESS ; prochain : 60 s, 3 séries, knee-plank
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+-- Séance 11 · A · 2026-01-25 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 knee-plank : 3×60 s (RIR 2)
+    fait 60 s/60 s/60 s (ok)
+    -> PROGRESS CHAIN_NEXT ; prochain : 20 s, 3 séries, front-plank
+
+-- Séance 12 · A · 2026-01-27 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 front-plank : 3×20 s (RIR 2)
+    fait 20 s/20 s/20 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 25 s, 3 séries, front-plank
+
+== Semaine 5 (bloc réactif) ==
+
+-- Séance 13 · A · 2026-01-29 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> STALL STALL_RESET_MIN ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 front-plank : 3×25 s (RIR 2)
+    fait 25 s/25 s/25 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 30 s, 3 séries, front-plank
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+-- Séance 14 · A · 2026-01-31 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 front-plank : 3×30 s (RIR 2)
+    fait 30 s/30 s/30 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 35 s, 3 séries, front-plank
+
+-- Séance 15 · A · 2026-02-02 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 front-plank : 3×35 s (RIR 2)
+    fait 35 s/35 s/35 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 40 s, 3 séries, front-plank
+
+== Semaine 6 (bloc réactif) ==
+
+-- Séance 16 · A · 2026-02-04 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 front-plank : 3×40 s (RIR 2)
+    fait 40 s/40 s/40 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 45 s, 3 séries, front-plank
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+-- Séance 17 · A · 2026-02-06 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 front-plank : 3×45 s (RIR 2)
+    fait 45 s/45 s/45 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 50 s, 3 séries, front-plank
+
+-- Séance 18 · A · 2026-02-08 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 front-plank : 3×50 s (RIR 2)
+    fait 50 s/50 s/50 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 55 s, 3 séries, front-plank
+
+== Semaine 7 (bloc réactif) ==
+
+-- Séance 19 · A · 2026-02-10 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 front-plank : 3×55 s (RIR 2)
+    fait 55 s/55 s/55 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 60 s, 3 séries, front-plank
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+-- Séance 20 · A · 2026-02-12 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 front-plank : 3×60 s (RIR 2)
+    fait 60 s/60 s/60 s (ok)
+    -> HOLD NO_PROGRESS ; prochain : 60 s, 3 séries, front-plank
+
+-- Séance 21 · A · 2026-02-14 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 front-plank : 3×60 s (RIR 2)
+    fait 60 s/60 s/60 s (ok)
+    -> PROGRESS CHAIN_NEXT ; prochain : 20 s, 3 séries, hollow-body-hold
+
+== Semaine 8 (bloc réactif) ==
+
+-- Séance 22 · A · 2026-02-16 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 hollow-body-hold : 3×20 s (RIR 2)
+    fait 20 s/20 s/20 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 25 s, 3 séries, hollow-body-hold
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+-- Séance 23 · A · 2026-02-18 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 hollow-body-hold : 3×25 s (RIR 2)
+    fait 25 s/25 s/25 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 30 s, 3 séries, hollow-body-hold
+
+-- Séance 24 · A · 2026-02-20 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 hollow-body-hold : 3×30 s (RIR 2)
+    fait 30 s/30 s/30 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 35 s, 3 séries, hollow-body-hold
+
+== Semaine 9 (bloc réactif) ==
+
+-- Séance 25 · A · 2026-02-22 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 hollow-body-hold : 3×35 s (RIR 2)
+    fait 35 s/35 s/35 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 40 s, 3 séries, hollow-body-hold
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+-- Séance 26 · A · 2026-02-24 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 hollow-body-hold : 3×40 s (RIR 2)
+    fait 40 s/40 s/40 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 45 s, 3 séries, hollow-body-hold
+
+-- Séance 27 · A · 2026-02-26 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 hollow-body-hold : 3×45 s (RIR 2)
+    fait 45 s/45 s/45 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 50 s, 3 séries, hollow-body-hold
+
+== Semaine 10 (bloc réactif) ==
+
+-- Séance 28 · A · 2026-02-28 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 hollow-body-hold : 3×50 s (RIR 2)
+    fait 50 s/50 s/50 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 55 s, 3 séries, hollow-body-hold
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+-- Séance 29 · A · 2026-03-02 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 hollow-body-hold : 3×55 s (RIR 2)
+    fait 55 s/55 s/55 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 60 s, 3 séries, hollow-body-hold
+
+-- Séance 30 · A · 2026-03-04 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 hollow-body-hold : 3×60 s (RIR 2)
+    fait 60 s/60 s/60 s (ok)
+    -> HOLD NO_PROGRESS ; prochain : 60 s, 3 séries, hollow-body-hold
+
+== Semaine 11 (bloc réactif) ==
+
+-- Séance 31 · A · 2026-03-06 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 hollow-body-hold : 3×60 s (RIR 2)
+    fait 60 s/60 s/60 s (ok)
+    -> HOLD NO_PROGRESS ; prochain : 60 s, 3 séries, hollow-body-hold
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+-- Séance 32 · A · 2026-03-08 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 hollow-body-hold : 3×60 s (RIR 2)
+    fait 60 s/60 s/60 s (ok)
+    -> HOLD NO_PROGRESS ; prochain : 60 s, 3 séries, hollow-body-hold
+
+-- Séance 33 · A · 2026-03-10 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 hollow-body-hold : 3×60 s (RIR 2)
+    fait 60 s/60 s/60 s (ok)
+    -> STALL STALL_RESET_MIN ; prochain : 20 s, 3 séries, hollow-body-hold
+
+== Semaine 12 (bloc réactif) ==
+
+-- Séance 34 · A · 2026-03-12 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 hollow-body-hold : 3×20 s (RIR 2)
+    fait 20 s/20 s/20 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 25 s, 3 séries, hollow-body-hold
+   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
+   ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
+
+-- Séance 35 · A · 2026-03-14 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 hollow-body-hold : 3×25 s (RIR 2)
+    fait 25 s/25 s/25 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 30 s, 3 séries, hollow-body-hold
+
+-- Séance 36 · A · 2026-03-16 · normale
+A1 chair-squat : suspended
+A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
+    fait 26/26/26/26/26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
+A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+    fait 13/13/13 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 8-12 rép. (cible 8), 3 séries
+A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
+    fait 16/16/16/16 (ok)
+    -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
+A5 band-assisted-pull-up : not_feasible_here
+A6 nordic-curl : 2×6-25 rép. (RIR 2)
+    fait 26/26 (ok)
+    -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
+A7 hollow-body-hold : 3×30 s (RIR 2)
+    fait 30 s/30 s/30 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 35 s, 3 séries, hollow-body-hold
+
+état final : semaine 13, séance suivante A, suspendus [A1]

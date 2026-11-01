@@ -1,0 +1,951 @@
+modèle gym-intermediate-upper-lower · profil cautious · 4 séances par semaine · 12 semaines
+
+== Semaine 1 (semaine 1 du bloc) ==
+
+-- Séance 1 · H1 · 2026-01-05 · normale · avis minor_barbell:bench-press, minor_barbell:barbell-row, minor_barbell:overhead-press
+H1-1 bench-press : 3×6-8 rép. (échauffement 2, RIR 3, calibration)
+    fait 9/9/9 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 6-8 rép. (cible 6), 3 séries
+H1-2 barbell-row : 3×6-8 rép. (échauffement 2, RIR 3, calibration)
+    fait 9/9/9 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 6-8 rép. (cible 6), 3 séries
+H1-3 overhead-press : 3×6-8 rép. (RIR 3, calibration)
+    fait 9/9/9 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 6-8 rép. (cible 6), 3 séries
+H1-4 lat-pulldown : 3×6-8 rép. (RIR 3, calibration)
+    fait 9/9/9 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 6-8 rép. (cible 6), 3 séries
+H1-5 dumbbell-curl : 2×8-12 rép. (RIR 3, calibration)
+    fait 13/13 @ 10 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
+H1-6 cable-triceps-pushdown : 2×8-12 rép. (RIR 3, calibration)
+    fait 13/13 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 8), 2 séries
+
+-- Séance 2 · B1 · 2026-01-07 · normale · avis minor_barbell:back-squat, minor_barbell:deadlift
+B1-1 back-squat : 3×6-8 rép. (échauffement 2, RIR 3, calibration)
+    fait 9/9/9 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 6-8 rép. (cible 6), 3 séries
+B1-2 deadlift : 3×6-8 rép. (échauffement 2, RIR 3, calibration)
+    fait 9/9/9 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 6-8 rép. (cible 6), 3 séries
+B1-3 leg-curl : 3×8-12 rép. (RIR 3, calibration)
+    fait 13/13/13 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
+B1-4 leg-press-calf-raise : 3×8-12 rép. (RIR 3, calibration)
+    fait 13/13/13 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
+B1-5 knee-plank : 3×30 s (RIR 3, calibration)
+    fait 30 s/30 s/30 s (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 s, 3 séries, knee-plank
+
+-- Séance 3 · H2 · 2026-01-09 · normale
+H2-1 incline-dumbbell-bench-press : 3×8-12 rép. (RIR 3, calibration)
+    fait 13/13/13 @ 10 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
+H2-2 seated-cable-row : 3×8-12 rép. (RIR 3, calibration)
+    fait 13/13/13 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
+H2-3 machine-chest-press : 3×10-15 rép. (RIR 3, calibration)
+    fait 16/16/16 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 10-15 rép. (cible 10), 3 séries
+H2-4 lat-pulldown : 3×10-15 rép. (RIR 3, calibration, suggestion 30 kg)
+    fait 16/16/16 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 10-15 rép. (cible 10), 3 séries
+H2-5 dumbbell-lateral-raise : 3×12-15 rép. (RIR 3, calibration)
+    fait 16/16/16 @ 10 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 12-15 rép. (cible 12), 3 séries
+H2-6 face-pull : 2×12-15 rép. (RIR 3, calibration)
+    fait 16/16 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 12-15 rép. (cible 12), 2 séries
+
+-- Séance 4 · B2 · 2026-01-11 · normale · avis minor_barbell:romanian-deadlift
+B2-1 leg-press : 3×10-15 rép. (RIR 3, calibration)
+    fait 16/16/16 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 10-15 rép. (cible 10), 3 séries
+B2-2 romanian-deadlift : 3×8-12 rép. (RIR 3, calibration)
+    fait 13/13/13 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
+B2-3 dumbbell-reverse-lunge : 3×8-12 rép. par côté (RIR 3, calibration)
+    fait 13/13/13/13/13/13 @ 10 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
+B2-4 leg-curl : 3×10-15 rép. (RIR 3, calibration, suggestion 30 kg)
+    fait 16/16/16 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 10-15 rép. (cible 10), 3 séries
+B2-5 leg-extension : 2×12-15 rép. (RIR 3, calibration)
+    fait 16/16 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 12-15 rép. (cible 12), 2 séries
+B2-6 cable-pallof-press : 3×8-12 rép. par côté (RIR 3, calibration)
+    fait 13/13/13/13/13/13 @ 30 kg (ok)
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
+
+== Semaine 2 (semaine 2 du bloc) ==
+
+-- Séance 5 · H1 · 2026-01-13 · normale · avis minor_barbell:bench-press, minor_barbell:barbell-row, minor_barbell:overhead-press
+H1-1 bench-press : 3×6-8 rép. @ 30 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 30 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-2 barbell-row : 3×6-8 rép. @ 30 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 30 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-3 overhead-press : 3×6-8 rép. @ 30 kg (RIR 3)
+    fait 9/9/9 @ 30 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-4 lat-pulldown : 3×6-8 rép. @ 30 kg (RIR 3)
+    fait 9/9/9 @ 30 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 6-8 rép. (cible 6), 3 séries
+H1-5 dumbbell-curl : 2×8-12 rép. @ 10 kg (RIR 3)
+    fait 13/13 @ 10 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 12 kg, 8-12 rép. (cible 8), 2 séries
+H1-6 cable-triceps-pushdown : 2×8-12 rép. @ 30 kg (RIR 3)
+    fait 13/13 @ 30 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 2 séries
+
+-- Séance 6 · B1 · 2026-01-15 · normale · avis minor_barbell:back-squat, minor_barbell:deadlift
+B1-1 back-squat : 3×6-8 rép. @ 30 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 30 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 6-8 rép. (cible 6), 3 séries
+B1-2 deadlift : 3×6-8 rép. @ 30 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 30 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 6-8 rép. (cible 6), 3 séries
+B1-3 leg-curl : 3×8-12 rép. @ 30 kg (RIR 3)
+    fait 13/13/13 @ 30 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 3 séries
+B1-4 leg-press-calf-raise : 3×8-12 rép. @ 30 kg (RIR 3)
+    fait 13/13/13 @ 30 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 3 séries
+B1-5 knee-plank : 3×30 s (RIR 3)
+    fait 30 s/30 s/30 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 35 s, 3 séries, knee-plank
+
+-- Séance 7 · H2 · 2026-01-17 · normale
+H2-1 incline-dumbbell-bench-press : 3×8-12 rép. @ 10 kg (RIR 3)
+    fait 13/13/13 @ 10 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 12 kg, 8-12 rép. (cible 8), 3 séries
+H2-2 seated-cable-row : 3×8-12 rép. @ 30 kg (RIR 3)
+    fait 13/13/13 @ 30 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 3 séries
+H2-3 machine-chest-press : 3×10-15 rép. @ 30 kg (RIR 3)
+    fait 16/16/16 @ 30 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 10-15 rép. (cible 10), 3 séries
+H2-4 lat-pulldown : 3×10-15 rép. @ 30 kg (RIR 3)
+    fait 16/16/16 @ 30 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 10-15 rép. (cible 10), 3 séries
+H2-5 dumbbell-lateral-raise : 3×12-15 rép. @ 10 kg (RIR 3)
+    fait 16/16/16 @ 10 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 12 kg, 12-15 rép. (cible 12), 3 séries
+H2-6 face-pull : 2×12-15 rép. @ 30 kg (RIR 3)
+    fait 16/16 @ 30 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 12-15 rép. (cible 12), 2 séries
+
+-- Séance 8 · B2 · 2026-01-19 · normale · avis minor_barbell:romanian-deadlift
+B2-1 leg-press : 3×10-15 rép. @ 30 kg (RIR 3)
+    fait 16/16/16 @ 30 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 10-15 rép. (cible 10), 3 séries
+B2-2 romanian-deadlift : 3×8-12 rép. @ 30 kg (RIR 3)
+    fait 13/13/13 @ 30 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 8-12 rép. (cible 8), 3 séries
+B2-3 dumbbell-reverse-lunge : 3×8-12 rép. @ 10 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 10 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 12 kg, 8-12 rép. (cible 8), 3 séries
+B2-4 leg-curl : 3×10-15 rép. @ 30 kg (RIR 3)
+    fait 16/16/16 @ 30 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 10-15 rép. (cible 10), 3 séries
+B2-5 leg-extension : 2×12-15 rép. @ 30 kg (RIR 3)
+    fait 16/16 @ 30 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 12-15 rép. (cible 12), 2 séries
+B2-6 cable-pallof-press : 3×8-12 rép. @ 30 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 30 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 3 séries
+
+== Semaine 3 (semaine 3 du bloc) ==
+
+-- Séance 9 · H1 · 2026-01-21 · normale · avis minor_barbell:bench-press, minor_barbell:barbell-row, minor_barbell:overhead-press
+H1-1 bench-press : 3×6-8 rép. @ 32,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 32,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 35 kg, 6-8 rép. (cible 6), 3 séries
+H1-2 barbell-row : 3×6-8 rép. @ 32,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 32,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 35 kg, 6-8 rép. (cible 6), 3 séries
+H1-3 overhead-press : 3×6-8 rép. @ 32,5 kg (RIR 3)
+    fait 9/9/9 @ 32,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 35 kg, 6-8 rép. (cible 6), 3 séries
+H1-4 lat-pulldown : 3×6-8 rép. @ 35 kg (RIR 3)
+    fait 9/9/9 @ 35 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 40 kg, 6-8 rép. (cible 6), 3 séries
+H1-5 dumbbell-curl : 2×8-12 rép. @ 12 kg (RIR 3)
+    fait 13/13 @ 12 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 14 kg, 8-12 rép. (cible 8), 2 séries
+H1-6 cable-triceps-pushdown : 2×8-12 rép. @ 35 kg (RIR 3)
+    fait 13/13 @ 35 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 40 kg, 8-12 rép. (cible 8), 2 séries
+
+-- Séance 10 · B1 · 2026-01-23 · normale · avis minor_barbell:back-squat, minor_barbell:deadlift
+B1-1 back-squat : 3×6-8 rép. @ 32,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 32,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 35 kg, 6-8 rép. (cible 6), 3 séries
+B1-2 deadlift : 3×6-8 rép. @ 32,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 32,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 35 kg, 6-8 rép. (cible 6), 3 séries
+B1-3 leg-curl : 3×8-12 rép. @ 35 kg (RIR 3)
+    fait 13/13/13 @ 35 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 40 kg, 8-12 rép. (cible 8), 3 séries
+B1-4 leg-press-calf-raise : 3×8-12 rép. @ 35 kg (RIR 3)
+    fait 13/13/13 @ 35 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 40 kg, 8-12 rép. (cible 8), 3 séries
+B1-5 knee-plank : 3×35 s (RIR 3)
+    fait 35 s/35 s/35 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 40 s, 3 séries, knee-plank
+
+-- Séance 11 · H2 · 2026-01-25 · normale
+H2-1 incline-dumbbell-bench-press : 3×8-12 rép. @ 12 kg (RIR 3)
+    fait 13/13/13 @ 12 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 14 kg, 8-12 rép. (cible 8), 3 séries
+H2-2 seated-cable-row : 3×8-12 rép. @ 35 kg (RIR 3)
+    fait 13/13/13 @ 35 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 40 kg, 8-12 rép. (cible 8), 3 séries
+H2-3 machine-chest-press : 3×10-15 rép. @ 35 kg (RIR 3)
+    fait 16/16/16 @ 35 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 40 kg, 10-15 rép. (cible 10), 3 séries
+H2-4 lat-pulldown : 3×10-15 rép. @ 35 kg (RIR 3)
+    fait 16/16/16 @ 35 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 40 kg, 10-15 rép. (cible 10), 3 séries
+H2-5 dumbbell-lateral-raise : 3×12-15 rép. @ 12 kg (RIR 3)
+    fait 16/16/16 @ 12 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 14 kg, 12-15 rép. (cible 12), 3 séries
+H2-6 face-pull : 2×12-15 rép. @ 35 kg (RIR 3)
+    fait 16/16 @ 35 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 40 kg, 12-15 rép. (cible 12), 2 séries
+
+-- Séance 12 · B2 · 2026-01-27 · normale · avis minor_barbell:romanian-deadlift
+B2-1 leg-press : 3×10-15 rép. @ 35 kg (RIR 3)
+    fait 16/16/16 @ 35 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 40 kg, 10-15 rép. (cible 10), 3 séries
+B2-2 romanian-deadlift : 3×8-12 rép. @ 32,5 kg (RIR 3)
+    fait 13/13/13 @ 32,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 3 séries
+B2-3 dumbbell-reverse-lunge : 3×8-12 rép. @ 12 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 12 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 14 kg, 8-12 rép. (cible 8), 3 séries
+B2-4 leg-curl : 3×10-15 rép. @ 35 kg (RIR 3)
+    fait 16/16/16 @ 35 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 40 kg, 10-15 rép. (cible 10), 3 séries
+B2-5 leg-extension : 2×12-15 rép. @ 35 kg (RIR 3)
+    fait 16/16 @ 35 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 40 kg, 12-15 rép. (cible 12), 2 séries
+B2-6 cable-pallof-press : 3×8-12 rép. @ 35 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 35 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 40 kg, 8-12 rép. (cible 8), 3 séries
+
+== Semaine 4 (semaine 4 du bloc) ==
+
+-- Séance 13 · H1 · 2026-01-29 · normale · avis minor_barbell:bench-press, minor_barbell:barbell-row, minor_barbell:overhead-press
+H1-1 bench-press : 3×6-8 rép. @ 35 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 35 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 37,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-2 barbell-row : 3×6-8 rép. @ 35 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 35 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 37,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-3 overhead-press : 3×6-8 rép. @ 35 kg (RIR 3)
+    fait 9/9/9 @ 35 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 37,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-4 lat-pulldown : 3×6-8 rép. @ 40 kg (RIR 3)
+    fait 9/9/9 @ 40 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 45 kg, 6-8 rép. (cible 6), 3 séries
+H1-5 dumbbell-curl : 2×8-12 rép. @ 14 kg (RIR 3)
+    fait 13/13 @ 14 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 16 kg, 8-12 rép. (cible 8), 2 séries
+H1-6 cable-triceps-pushdown : 2×8-12 rép. @ 40 kg (RIR 3)
+    fait 13/13 @ 40 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 45 kg, 8-12 rép. (cible 8), 2 séries
+
+-- Séance 14 · B1 · 2026-01-31 · normale · avis minor_barbell:back-squat, minor_barbell:deadlift
+B1-1 back-squat : 3×6-8 rép. @ 35 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 35 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 37,5 kg, 6-8 rép. (cible 6), 3 séries
+B1-2 deadlift : 3×6-8 rép. @ 35 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 35 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 37,5 kg, 6-8 rép. (cible 6), 3 séries
+B1-3 leg-curl : 3×8-12 rép. @ 40 kg (RIR 3)
+    fait 13/13/13 @ 40 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 45 kg, 8-12 rép. (cible 8), 3 séries
+B1-4 leg-press-calf-raise : 3×8-12 rép. @ 40 kg (RIR 3)
+    fait 13/13/13 @ 40 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 45 kg, 8-12 rép. (cible 8), 3 séries
+B1-5 knee-plank : 3×40 s (RIR 3)
+    fait 40 s/40 s/40 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 45 s, 3 séries, knee-plank
+
+-- Séance 15 · H2 · 2026-02-02 · normale
+H2-1 incline-dumbbell-bench-press : 3×8-12 rép. @ 14 kg (RIR 3)
+    fait 13/13/13 @ 14 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 16 kg, 8-12 rép. (cible 8), 3 séries
+H2-2 seated-cable-row : 3×8-12 rép. @ 40 kg (RIR 3)
+    fait 13/13/13 @ 40 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 45 kg, 8-12 rép. (cible 8), 3 séries
+H2-3 machine-chest-press : 3×10-15 rép. @ 40 kg (RIR 3)
+    fait 16/16/16 @ 40 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 45 kg, 10-15 rép. (cible 10), 3 séries
+H2-4 lat-pulldown : 3×10-15 rép. @ 40 kg (RIR 3)
+    fait 16/16/16 @ 40 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 45 kg, 10-15 rép. (cible 10), 3 séries
+H2-5 dumbbell-lateral-raise : 3×12-15 rép. @ 14 kg (RIR 3)
+    fait 16/16/16 @ 14 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 16 kg, 12-15 rép. (cible 12), 3 séries
+H2-6 face-pull : 2×12-15 rép. @ 40 kg (RIR 3)
+    fait 16/16 @ 40 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 45 kg, 12-15 rép. (cible 12), 2 séries
+
+-- Séance 16 · B2 · 2026-02-04 · normale · avis minor_barbell:romanian-deadlift
+B2-1 leg-press : 3×10-15 rép. @ 40 kg (RIR 3)
+    fait 16/16/16 @ 40 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 45 kg, 10-15 rép. (cible 10), 3 séries
+B2-2 romanian-deadlift : 3×8-12 rép. @ 35 kg (RIR 3)
+    fait 13/13/13 @ 35 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 37,5 kg, 8-12 rép. (cible 8), 3 séries
+B2-3 dumbbell-reverse-lunge : 3×8-12 rép. @ 14 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 14 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 16 kg, 8-12 rép. (cible 8), 3 séries
+B2-4 leg-curl : 3×10-15 rép. @ 40 kg (RIR 3)
+    fait 16/16/16 @ 40 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 45 kg, 10-15 rép. (cible 10), 3 séries
+B2-5 leg-extension : 2×12-15 rép. @ 40 kg (RIR 3)
+    fait 16/16 @ 40 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 45 kg, 12-15 rép. (cible 12), 2 séries
+B2-6 cable-pallof-press : 3×8-12 rép. @ 40 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 40 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 45 kg, 8-12 rép. (cible 8), 3 séries
+
+== Semaine 5 (semaine 5 du bloc) ==
+
+-- Séance 17 · H1 · 2026-02-06 · ALLÉGÉE · avis deload, minor_barbell:bench-press, minor_barbell:barbell-row, minor_barbell:overhead-press
+H1-1 bench-press : 2×6-8 rép. @ 37,5 kg (échauffement 2, RIR 5)
+    fait 9/9 @ 37,5 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 37,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-2 barbell-row : 2×6-8 rép. @ 37,5 kg (échauffement 2, RIR 5)
+    fait 9/9 @ 37,5 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 37,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-3 overhead-press : 2×6-8 rép. @ 37,5 kg (RIR 5)
+    fait 9/9 @ 37,5 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 37,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-4 lat-pulldown : 2×6-8 rép. @ 45 kg (RIR 5)
+    fait 9/9 @ 45 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 45 kg, 6-8 rép. (cible 6), 3 séries
+H1-5 dumbbell-curl : 1×8-12 rép. @ 16 kg (RIR 5)
+    fait 13 @ 16 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 16 kg, 8-12 rép. (cible 8), 2 séries
+H1-6 cable-triceps-pushdown : 1×8-12 rép. @ 45 kg (RIR 5)
+    fait 13 @ 45 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 45 kg, 8-12 rép. (cible 8), 2 séries
+
+-- Séance 18 · B1 · 2026-02-08 · ALLÉGÉE · avis deload, minor_barbell:back-squat, minor_barbell:deadlift
+B1-1 back-squat : 2×6-8 rép. @ 37,5 kg (échauffement 2, RIR 5)
+    fait 9/9 @ 37,5 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 37,5 kg, 6-8 rép. (cible 6), 3 séries
+B1-2 deadlift : 2×6-8 rép. @ 37,5 kg (échauffement 2, RIR 5)
+    fait 9/9 @ 37,5 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 37,5 kg, 6-8 rép. (cible 6), 3 séries
+B1-3 leg-curl : 2×8-12 rép. @ 45 kg (RIR 5)
+    fait 13/13 @ 45 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 45 kg, 8-12 rép. (cible 8), 3 séries
+B1-4 leg-press-calf-raise : 2×8-12 rép. @ 45 kg (RIR 5)
+    fait 13/13 @ 45 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 45 kg, 8-12 rép. (cible 8), 3 séries
+B1-5 knee-plank : 2×45 s (RIR 5)
+    fait 45 s/45 s (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 45 s, 3 séries, knee-plank
+
+-- Séance 19 · H2 · 2026-02-10 · ALLÉGÉE · avis deload
+H2-1 incline-dumbbell-bench-press : 2×8-12 rép. @ 16 kg (RIR 5)
+    fait 13/13 @ 16 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 16 kg, 8-12 rép. (cible 8), 3 séries
+H2-2 seated-cable-row : 2×8-12 rép. @ 45 kg (RIR 5)
+    fait 13/13 @ 45 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 45 kg, 8-12 rép. (cible 8), 3 séries
+H2-3 machine-chest-press : 2×10-15 rép. @ 45 kg (RIR 5)
+    fait 16/16 @ 45 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 45 kg, 10-15 rép. (cible 10), 3 séries
+H2-4 lat-pulldown : 2×10-15 rép. @ 45 kg (RIR 5)
+    fait 16/16 @ 45 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 45 kg, 10-15 rép. (cible 10), 3 séries
+H2-5 dumbbell-lateral-raise : 2×12-15 rép. @ 16 kg (RIR 5)
+    fait 16/16 @ 16 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 16 kg, 12-15 rép. (cible 12), 3 séries
+H2-6 face-pull : 1×12-15 rép. @ 45 kg (RIR 5)
+    fait 16 @ 45 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 45 kg, 12-15 rép. (cible 12), 2 séries
+
+-- Séance 20 · B2 · 2026-02-12 · ALLÉGÉE · avis deload, minor_barbell:romanian-deadlift
+B2-1 leg-press : 2×10-15 rép. @ 45 kg (RIR 5)
+    fait 16/16 @ 45 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 45 kg, 10-15 rép. (cible 10), 3 séries
+B2-2 romanian-deadlift : 2×8-12 rép. @ 37,5 kg (RIR 5)
+    fait 13/13 @ 37,5 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 37,5 kg, 8-12 rép. (cible 8), 3 séries
+B2-3 dumbbell-reverse-lunge : 2×8-12 rép. @ 16 kg par côté (RIR 5)
+    fait 13/13/13/13 @ 16 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 16 kg, 8-12 rép. (cible 8), 3 séries
+B2-4 leg-curl : 2×10-15 rép. @ 45 kg (RIR 5)
+    fait 16/16 @ 45 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 45 kg, 10-15 rép. (cible 10), 3 séries
+B2-5 leg-extension : 1×12-15 rép. @ 45 kg (RIR 5)
+    fait 16 @ 45 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 45 kg, 12-15 rép. (cible 12), 2 séries
+B2-6 cable-pallof-press : 2×8-12 rép. @ 45 kg par côté (RIR 5)
+    fait 13/13/13/13 @ 45 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 45 kg, 8-12 rép. (cible 8), 3 séries
+
+== Semaine 6 (semaine 1 du bloc) ==
+
+-- Séance 21 · H1 · 2026-02-14 · normale · avis minor_barbell:bench-press, minor_barbell:barbell-row, minor_barbell:overhead-press
+H1-1 bench-press : 3×6-8 rép. @ 37,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 37,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 40 kg, 6-8 rép. (cible 6), 3 séries
+H1-2 barbell-row : 3×6-8 rép. @ 37,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 37,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 40 kg, 6-8 rép. (cible 6), 3 séries
+H1-3 overhead-press : 3×6-8 rép. @ 37,5 kg (RIR 3)
+    fait 9/9/9 @ 37,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 40 kg, 6-8 rép. (cible 6), 3 séries
+H1-4 lat-pulldown : 3×6-8 rép. @ 45 kg (RIR 3)
+    fait 9/9/9 @ 45 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 50 kg, 6-8 rép. (cible 6), 3 séries
+H1-5 dumbbell-curl : 2×8-12 rép. @ 16 kg (RIR 3)
+    fait 13/13 @ 16 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 18 kg, 8-12 rép. (cible 8), 2 séries
+H1-6 cable-triceps-pushdown : 2×8-12 rép. @ 45 kg (RIR 3)
+    fait 13/13 @ 45 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 50 kg, 8-12 rép. (cible 8), 2 séries
+
+-- Séance 22 · B1 · 2026-02-16 · normale · avis minor_barbell:back-squat, minor_barbell:deadlift
+B1-1 back-squat : 3×6-8 rép. @ 37,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 37,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 40 kg, 6-8 rép. (cible 6), 3 séries
+B1-2 deadlift : 3×6-8 rép. @ 37,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 37,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 40 kg, 6-8 rép. (cible 6), 3 séries
+B1-3 leg-curl : 3×8-12 rép. @ 45 kg (RIR 3)
+    fait 13/13/13 @ 45 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 50 kg, 8-12 rép. (cible 8), 3 séries
+B1-4 leg-press-calf-raise : 3×8-12 rép. @ 45 kg (RIR 3)
+    fait 13/13/13 @ 45 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 50 kg, 8-12 rép. (cible 8), 3 séries
+B1-5 knee-plank : 3×45 s (RIR 3)
+    fait 45 s/45 s/45 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 50 s, 3 séries, knee-plank
+
+-- Séance 23 · H2 · 2026-02-18 · normale
+H2-1 incline-dumbbell-bench-press : 3×8-12 rép. @ 16 kg (RIR 3)
+    fait 13/13/13 @ 16 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 18 kg, 8-12 rép. (cible 8), 3 séries
+H2-2 seated-cable-row : 3×8-12 rép. @ 45 kg (RIR 3)
+    fait 13/13/13 @ 45 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 50 kg, 8-12 rép. (cible 8), 3 séries
+H2-3 machine-chest-press : 3×10-15 rép. @ 45 kg (RIR 3)
+    fait 16/16/16 @ 45 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 50 kg, 10-15 rép. (cible 10), 3 séries
+H2-4 lat-pulldown : 3×10-15 rép. @ 45 kg (RIR 3)
+    fait 16/16/16 @ 45 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 50 kg, 10-15 rép. (cible 10), 3 séries
+H2-5 dumbbell-lateral-raise : 3×12-15 rép. @ 16 kg (RIR 3)
+    fait 16/16/16 @ 16 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 18 kg, 12-15 rép. (cible 12), 3 séries
+H2-6 face-pull : 2×12-15 rép. @ 45 kg (RIR 3)
+    fait 16/16 @ 45 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 50 kg, 12-15 rép. (cible 12), 2 séries
+
+-- Séance 24 · B2 · 2026-02-20 · normale · avis minor_barbell:romanian-deadlift
+B2-1 leg-press : 3×10-15 rép. @ 45 kg (RIR 3)
+    fait 16/16/16 @ 45 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 50 kg, 10-15 rép. (cible 10), 3 séries
+B2-2 romanian-deadlift : 3×8-12 rép. @ 37,5 kg (RIR 3)
+    fait 13/13/13 @ 37,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 40 kg, 8-12 rép. (cible 8), 3 séries
+B2-3 dumbbell-reverse-lunge : 3×8-12 rép. @ 16 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 16 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 18 kg, 8-12 rép. (cible 8), 3 séries
+B2-4 leg-curl : 3×10-15 rép. @ 45 kg (RIR 3)
+    fait 16/16/16 @ 45 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 50 kg, 10-15 rép. (cible 10), 3 séries
+B2-5 leg-extension : 2×12-15 rép. @ 45 kg (RIR 3)
+    fait 16/16 @ 45 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 50 kg, 12-15 rép. (cible 12), 2 séries
+B2-6 cable-pallof-press : 3×8-12 rép. @ 45 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 45 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 50 kg, 8-12 rép. (cible 8), 3 séries
+
+== Semaine 7 (semaine 2 du bloc) ==
+
+-- Séance 25 · H1 · 2026-02-22 · normale · avis minor_barbell:bench-press, minor_barbell:barbell-row, minor_barbell:overhead-press
+H1-1 bench-press : 3×6-8 rép. @ 40 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 40 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 42,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-2 barbell-row : 3×6-8 rép. @ 40 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 40 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 42,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-3 overhead-press : 3×6-8 rép. @ 40 kg (RIR 3)
+    fait 9/9/9 @ 40 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 42,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-4 lat-pulldown : 3×6-8 rép. @ 50 kg (RIR 3)
+    fait 9/9/9 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 55 kg, 6-8 rép. (cible 6), 3 séries
+H1-5 dumbbell-curl : 2×8-12 rép. @ 18 kg (RIR 3)
+    fait 13/13 @ 18 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 20 kg, 8-12 rép. (cible 8), 2 séries
+H1-6 cable-triceps-pushdown : 2×8-12 rép. @ 50 kg (RIR 3)
+    fait 13/13 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 55 kg, 8-12 rép. (cible 8), 2 séries
+
+-- Séance 26 · B1 · 2026-02-24 · normale · avis minor_barbell:back-squat, minor_barbell:deadlift
+B1-1 back-squat : 3×6-8 rép. @ 40 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 40 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 42,5 kg, 6-8 rép. (cible 6), 3 séries
+B1-2 deadlift : 3×6-8 rép. @ 40 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 40 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 42,5 kg, 6-8 rép. (cible 6), 3 séries
+B1-3 leg-curl : 3×8-12 rép. @ 50 kg (RIR 3)
+    fait 13/13/13 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 55 kg, 8-12 rép. (cible 8), 3 séries
+B1-4 leg-press-calf-raise : 3×8-12 rép. @ 50 kg (RIR 3)
+    fait 13/13/13 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 55 kg, 8-12 rép. (cible 8), 3 séries
+B1-5 knee-plank : 3×50 s (RIR 3)
+    fait 50 s/50 s/50 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 55 s, 3 séries, knee-plank
+
+-- Séance 27 · H2 · 2026-02-26 · normale
+H2-1 incline-dumbbell-bench-press : 3×8-12 rép. @ 18 kg (RIR 3)
+    fait 13/13/13 @ 18 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 20 kg, 8-12 rép. (cible 8), 3 séries
+H2-2 seated-cable-row : 3×8-12 rép. @ 50 kg (RIR 3)
+    fait 13/13/13 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 55 kg, 8-12 rép. (cible 8), 3 séries
+H2-3 machine-chest-press : 3×10-15 rép. @ 50 kg (RIR 3)
+    fait 16/16/16 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 55 kg, 10-15 rép. (cible 10), 3 séries
+H2-4 lat-pulldown : 3×10-15 rép. @ 50 kg (RIR 3)
+    fait 16/16/16 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 55 kg, 10-15 rép. (cible 10), 3 séries
+H2-5 dumbbell-lateral-raise : 3×12-15 rép. @ 18 kg (RIR 3)
+    fait 16/16/16 @ 18 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 20 kg, 12-15 rép. (cible 12), 3 séries
+H2-6 face-pull : 2×12-15 rép. @ 50 kg (RIR 3)
+    fait 16/16 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 55 kg, 12-15 rép. (cible 12), 2 séries
+
+-- Séance 28 · B2 · 2026-02-28 · normale · avis minor_barbell:romanian-deadlift
+B2-1 leg-press : 3×10-15 rép. @ 50 kg (RIR 3)
+    fait 16/16/16 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 55 kg, 10-15 rép. (cible 10), 3 séries
+B2-2 romanian-deadlift : 3×8-12 rép. @ 40 kg (RIR 3)
+    fait 13/13/13 @ 40 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 42,5 kg, 8-12 rép. (cible 8), 3 séries
+B2-3 dumbbell-reverse-lunge : 3×8-12 rép. @ 18 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 18 kg (ok)
+    -> PROGRESS SUM_LOAD_UP ; prochain : 20 kg, 8-12 rép. (cible 8), 3 séries
+B2-4 leg-curl : 3×10-15 rép. @ 50 kg (RIR 3)
+    fait 16/16/16 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 55 kg, 10-15 rép. (cible 10), 3 séries
+B2-5 leg-extension : 2×12-15 rép. @ 50 kg (RIR 3)
+    fait 16/16 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 55 kg, 12-15 rép. (cible 12), 2 séries
+B2-6 cable-pallof-press : 3×8-12 rép. @ 50 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 55 kg, 8-12 rép. (cible 8), 3 séries
+
+== Semaine 8 (semaine 3 du bloc) ==
+
+-- Séance 29 · H1 · 2026-03-02 · normale · avis minor_barbell:bench-press, minor_barbell:barbell-row, minor_barbell:overhead-press
+H1-1 bench-press : 3×6-8 rép. @ 42,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 42,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 45 kg, 6-8 rép. (cible 6), 3 séries
+H1-2 barbell-row : 3×6-8 rép. @ 42,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 42,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 45 kg, 6-8 rép. (cible 6), 3 séries
+H1-3 overhead-press : 3×6-8 rép. @ 42,5 kg (RIR 3)
+    fait 9/9/9 @ 42,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 45 kg, 6-8 rép. (cible 6), 3 séries
+H1-4 lat-pulldown : 3×6-8 rép. @ 55 kg (RIR 3)
+    fait 9/9/9 @ 55 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 60 kg, 6-8 rép. (cible 6), 3 séries
+H1-5 dumbbell-curl : 2×8-12 rép. @ 20 kg (RIR 3)
+    fait 13/13 @ 20 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 22 kg, 8-12 rép. (cible 8), 2 séries
+H1-6 cable-triceps-pushdown : 2×8-12 rép. @ 55 kg (RIR 3)
+    fait 13/13 @ 55 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 60 kg, 8-12 rép. (cible 8), 2 séries
+
+-- Séance 30 · B1 · 2026-03-04 · normale · avis minor_barbell:back-squat, minor_barbell:deadlift
+B1-1 back-squat : 3×6-8 rép. @ 42,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 42,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 45 kg, 6-8 rép. (cible 6), 3 séries
+B1-2 deadlift : 3×6-8 rép. @ 42,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 42,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 45 kg, 6-8 rép. (cible 6), 3 séries
+B1-3 leg-curl : 3×8-12 rép. @ 55 kg (RIR 3)
+    fait 13/13/13 @ 55 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 60 kg, 8-12 rép. (cible 8), 3 séries
+B1-4 leg-press-calf-raise : 3×8-12 rép. @ 55 kg (RIR 3)
+    fait 13/13/13 @ 55 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 60 kg, 8-12 rép. (cible 8), 3 séries
+B1-5 knee-plank : 3×55 s (RIR 3)
+    fait 55 s/55 s/55 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 60 s, 3 séries, knee-plank
+
+-- Séance 31 · H2 · 2026-03-06 · normale
+H2-1 incline-dumbbell-bench-press : 3×8-12 rép. @ 20 kg (RIR 3)
+    fait 13/13/13 @ 20 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 22 kg, 8-12 rép. (cible 8), 3 séries
+H2-2 seated-cable-row : 3×8-12 rép. @ 55 kg (RIR 3)
+    fait 13/13/13 @ 55 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 60 kg, 8-12 rép. (cible 8), 3 séries
+H2-3 machine-chest-press : 3×10-15 rép. @ 55 kg (RIR 3)
+    fait 16/16/16 @ 55 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 60 kg, 10-15 rép. (cible 10), 3 séries
+H2-4 lat-pulldown : 3×10-15 rép. @ 55 kg (RIR 3)
+    fait 16/16/16 @ 55 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 60 kg, 10-15 rép. (cible 10), 3 séries
+H2-5 dumbbell-lateral-raise : 3×12-15 rép. @ 20 kg (RIR 3)
+    fait 16/16/16 @ 20 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 22 kg, 12-15 rép. (cible 12), 3 séries
+H2-6 face-pull : 2×12-15 rép. @ 55 kg (RIR 3)
+    fait 16/16 @ 55 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 60 kg, 12-15 rép. (cible 12), 2 séries
+
+-- Séance 32 · B2 · 2026-03-08 · normale · avis minor_barbell:romanian-deadlift
+B2-1 leg-press : 3×10-15 rép. @ 55 kg (RIR 3)
+    fait 16/16/16 @ 55 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 60 kg, 10-15 rép. (cible 10), 3 séries
+B2-2 romanian-deadlift : 3×8-12 rép. @ 42,5 kg (RIR 3)
+    fait 13/13/13 @ 42,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 45 kg, 8-12 rép. (cible 8), 3 séries
+B2-3 dumbbell-reverse-lunge : 3×8-12 rép. @ 20 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 20 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 22 kg, 8-12 rép. (cible 8), 3 séries
+B2-4 leg-curl : 3×10-15 rép. @ 55 kg (RIR 3)
+    fait 16/16/16 @ 55 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 60 kg, 10-15 rép. (cible 10), 3 séries
+B2-5 leg-extension : 2×12-15 rép. @ 55 kg (RIR 3)
+    fait 16/16 @ 55 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 60 kg, 12-15 rép. (cible 12), 2 séries
+B2-6 cable-pallof-press : 3×8-12 rép. @ 55 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 55 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 60 kg, 8-12 rép. (cible 8), 3 séries
+
+== Semaine 9 (semaine 4 du bloc) ==
+
+-- Séance 33 · H1 · 2026-03-10 · normale · avis minor_barbell:bench-press, minor_barbell:barbell-row, minor_barbell:overhead-press
+H1-1 bench-press : 3×6-8 rép. @ 45 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 45 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 47,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-2 barbell-row : 3×6-8 rép. @ 45 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 45 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 47,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-3 overhead-press : 3×6-8 rép. @ 45 kg (RIR 3)
+    fait 9/9/9 @ 45 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 47,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-4 lat-pulldown : 3×6-8 rép. @ 60 kg (RIR 3)
+    fait 9/9/9 @ 60 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 65 kg, 6-8 rép. (cible 6), 3 séries
+H1-5 dumbbell-curl : 2×8-12 rép. @ 22 kg (RIR 3)
+    fait 13/13 @ 22 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 24 kg, 8-12 rép. (cible 8), 2 séries
+H1-6 cable-triceps-pushdown : 2×8-12 rép. @ 60 kg (RIR 3)
+    fait 13/13 @ 60 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 65 kg, 8-12 rép. (cible 8), 2 séries
+
+-- Séance 34 · B1 · 2026-03-12 · normale · avis minor_barbell:back-squat, minor_barbell:deadlift
+B1-1 back-squat : 3×6-8 rép. @ 45 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 45 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 47,5 kg, 6-8 rép. (cible 6), 3 séries
+B1-2 deadlift : 3×6-8 rép. @ 45 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 45 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 47,5 kg, 6-8 rép. (cible 6), 3 séries
+B1-3 leg-curl : 3×8-12 rép. @ 60 kg (RIR 3)
+    fait 13/13/13 @ 60 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 65 kg, 8-12 rép. (cible 8), 3 séries
+B1-4 leg-press-calf-raise : 3×8-12 rép. @ 60 kg (RIR 3)
+    fait 13/13/13 @ 60 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 65 kg, 8-12 rép. (cible 8), 3 séries
+B1-5 knee-plank : 3×60 s (RIR 3)
+    fait 60 s/60 s/60 s (ok)
+    -> HOLD NO_PROGRESS ; prochain : 60 s, 3 séries, knee-plank
+
+-- Séance 35 · H2 · 2026-03-14 · normale
+H2-1 incline-dumbbell-bench-press : 3×8-12 rép. @ 22 kg (RIR 3)
+    fait 13/13/13 @ 22 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 24 kg, 8-12 rép. (cible 8), 3 séries
+H2-2 seated-cable-row : 3×8-12 rép. @ 60 kg (RIR 3)
+    fait 13/13/13 @ 60 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 65 kg, 8-12 rép. (cible 8), 3 séries
+H2-3 machine-chest-press : 3×10-15 rép. @ 60 kg (RIR 3)
+    fait 16/16/16 @ 60 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 65 kg, 10-15 rép. (cible 10), 3 séries
+H2-4 lat-pulldown : 3×10-15 rép. @ 60 kg (RIR 3)
+    fait 16/16/16 @ 60 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 65 kg, 10-15 rép. (cible 10), 3 séries
+H2-5 dumbbell-lateral-raise : 3×12-15 rép. @ 22 kg (RIR 3)
+    fait 16/16/16 @ 22 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 24 kg, 12-15 rép. (cible 12), 3 séries
+H2-6 face-pull : 2×12-15 rép. @ 60 kg (RIR 3)
+    fait 16/16 @ 60 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 65 kg, 12-15 rép. (cible 12), 2 séries
+
+-- Séance 36 · B2 · 2026-03-16 · normale · avis minor_barbell:romanian-deadlift
+B2-1 leg-press : 3×10-15 rép. @ 60 kg (RIR 3)
+    fait 16/16/16 @ 60 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 65 kg, 10-15 rép. (cible 10), 3 séries
+B2-2 romanian-deadlift : 3×8-12 rép. @ 45 kg (RIR 3)
+    fait 13/13/13 @ 45 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 47,5 kg, 8-12 rép. (cible 8), 3 séries
+B2-3 dumbbell-reverse-lunge : 3×8-12 rép. @ 22 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 22 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 24 kg, 8-12 rép. (cible 8), 3 séries
+B2-4 leg-curl : 3×10-15 rép. @ 60 kg (RIR 3)
+    fait 16/16/16 @ 60 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 65 kg, 10-15 rép. (cible 10), 3 séries
+B2-5 leg-extension : 2×12-15 rép. @ 60 kg (RIR 3)
+    fait 16/16 @ 60 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 65 kg, 12-15 rép. (cible 12), 2 séries
+B2-6 cable-pallof-press : 3×8-12 rép. @ 60 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 60 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 65 kg, 8-12 rép. (cible 8), 3 séries
+
+== Semaine 10 (semaine 5 du bloc) ==
+
+-- Séance 37 · H1 · 2026-03-18 · ALLÉGÉE · avis deload, minor_barbell:bench-press, minor_barbell:barbell-row, minor_barbell:overhead-press
+H1-1 bench-press : 2×6-8 rép. @ 47,5 kg (échauffement 2, RIR 5)
+    fait 9/9 @ 47,5 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 47,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-2 barbell-row : 2×6-8 rép. @ 47,5 kg (échauffement 2, RIR 5)
+    fait 9/9 @ 47,5 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 47,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-3 overhead-press : 2×6-8 rép. @ 47,5 kg (RIR 5)
+    fait 9/9 @ 47,5 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 47,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-4 lat-pulldown : 2×6-8 rép. @ 65 kg (RIR 5)
+    fait 9/9 @ 65 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 65 kg, 6-8 rép. (cible 6), 3 séries
+H1-5 dumbbell-curl : 1×8-12 rép. @ 24 kg (RIR 5)
+    fait 13 @ 24 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 24 kg, 8-12 rép. (cible 8), 2 séries
+H1-6 cable-triceps-pushdown : 1×8-12 rép. @ 65 kg (RIR 5)
+    fait 13 @ 65 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 65 kg, 8-12 rép. (cible 8), 2 séries
+
+-- Séance 38 · B1 · 2026-03-20 · ALLÉGÉE · avis deload, minor_barbell:back-squat, minor_barbell:deadlift
+B1-1 back-squat : 2×6-8 rép. @ 47,5 kg (échauffement 2, RIR 5)
+    fait 9/9 @ 47,5 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 47,5 kg, 6-8 rép. (cible 6), 3 séries
+B1-2 deadlift : 2×6-8 rép. @ 47,5 kg (échauffement 2, RIR 5)
+    fait 9/9 @ 47,5 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 47,5 kg, 6-8 rép. (cible 6), 3 séries
+B1-3 leg-curl : 2×8-12 rép. @ 65 kg (RIR 5)
+    fait 13/13 @ 65 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 65 kg, 8-12 rép. (cible 8), 3 séries
+B1-4 leg-press-calf-raise : 2×8-12 rép. @ 65 kg (RIR 5)
+    fait 13/13 @ 65 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 65 kg, 8-12 rép. (cible 8), 3 séries
+B1-5 knee-plank : 2×60 s (RIR 5)
+    fait 60 s/60 s (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 60 s, 3 séries, knee-plank
+
+-- Séance 39 · H2 · 2026-03-22 · ALLÉGÉE · avis deload
+H2-1 incline-dumbbell-bench-press : 2×8-12 rép. @ 24 kg (RIR 5)
+    fait 13/13 @ 24 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 24 kg, 8-12 rép. (cible 8), 3 séries
+H2-2 seated-cable-row : 2×8-12 rép. @ 65 kg (RIR 5)
+    fait 13/13 @ 65 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 65 kg, 8-12 rép. (cible 8), 3 séries
+H2-3 machine-chest-press : 2×10-15 rép. @ 65 kg (RIR 5)
+    fait 16/16 @ 65 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 65 kg, 10-15 rép. (cible 10), 3 séries
+H2-4 lat-pulldown : 2×10-15 rép. @ 65 kg (RIR 5)
+    fait 16/16 @ 65 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 65 kg, 10-15 rép. (cible 10), 3 séries
+H2-5 dumbbell-lateral-raise : 2×12-15 rép. @ 24 kg (RIR 5)
+    fait 16/16 @ 24 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 24 kg, 12-15 rép. (cible 12), 3 séries
+H2-6 face-pull : 1×12-15 rép. @ 65 kg (RIR 5)
+    fait 16 @ 65 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 65 kg, 12-15 rép. (cible 12), 2 séries
+
+-- Séance 40 · B2 · 2026-03-24 · ALLÉGÉE · avis deload, minor_barbell:romanian-deadlift
+B2-1 leg-press : 2×10-15 rép. @ 65 kg (RIR 5)
+    fait 16/16 @ 65 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 65 kg, 10-15 rép. (cible 10), 3 séries
+B2-2 romanian-deadlift : 2×8-12 rép. @ 47,5 kg (RIR 5)
+    fait 13/13 @ 47,5 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 47,5 kg, 8-12 rép. (cible 8), 3 séries
+B2-3 dumbbell-reverse-lunge : 2×8-12 rép. @ 24 kg par côté (RIR 5)
+    fait 13/13/13/13 @ 24 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 24 kg, 8-12 rép. (cible 8), 3 séries
+B2-4 leg-curl : 2×10-15 rép. @ 65 kg (RIR 5)
+    fait 16/16 @ 65 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 65 kg, 10-15 rép. (cible 10), 3 séries
+B2-5 leg-extension : 1×12-15 rép. @ 65 kg (RIR 5)
+    fait 16 @ 65 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 65 kg, 12-15 rép. (cible 12), 2 séries
+B2-6 cable-pallof-press : 2×8-12 rép. @ 65 kg par côté (RIR 5)
+    fait 13/13/13/13 @ 65 kg (ok)
+    -> DELOAD DELOAD_WEEK ; prochain : 65 kg, 8-12 rép. (cible 8), 3 séries
+
+== Semaine 11 (semaine 1 du bloc) ==
+
+-- Séance 41 · H1 · 2026-03-26 · normale · avis minor_barbell:bench-press, minor_barbell:barbell-row, minor_barbell:overhead-press
+H1-1 bench-press : 3×6-8 rép. @ 47,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 47,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 50 kg, 6-8 rép. (cible 6), 3 séries
+H1-2 barbell-row : 3×6-8 rép. @ 47,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 47,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 50 kg, 6-8 rép. (cible 6), 3 séries
+H1-3 overhead-press : 3×6-8 rép. @ 47,5 kg (RIR 3)
+    fait 9/9/9 @ 47,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 50 kg, 6-8 rép. (cible 6), 3 séries
+H1-4 lat-pulldown : 3×6-8 rép. @ 65 kg (RIR 3)
+    fait 9/9/9 @ 65 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 70 kg, 6-8 rép. (cible 6), 3 séries
+H1-5 dumbbell-curl : 2×8-12 rép. @ 24 kg (RIR 3)
+    fait 13/13 @ 24 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 26 kg, 8-12 rép. (cible 8), 2 séries
+H1-6 cable-triceps-pushdown : 2×8-12 rép. @ 65 kg (RIR 3)
+    fait 13/13 @ 65 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 70 kg, 8-12 rép. (cible 8), 2 séries
+
+-- Séance 42 · B1 · 2026-03-28 · normale · avis minor_barbell:back-squat, minor_barbell:deadlift
+B1-1 back-squat : 3×6-8 rép. @ 47,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 47,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 50 kg, 6-8 rép. (cible 6), 3 séries
+B1-2 deadlift : 3×6-8 rép. @ 47,5 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 47,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 50 kg, 6-8 rép. (cible 6), 3 séries
+B1-3 leg-curl : 3×8-12 rép. @ 65 kg (RIR 3)
+    fait 13/13/13 @ 65 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 70 kg, 8-12 rép. (cible 8), 3 séries
+B1-4 leg-press-calf-raise : 3×8-12 rép. @ 65 kg (RIR 3)
+    fait 13/13/13 @ 65 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 70 kg, 8-12 rép. (cible 8), 3 séries
+B1-5 knee-plank : 3×60 s (RIR 3)
+    fait 60 s/60 s/60 s (ok)
+    -> PROGRESS CHAIN_NEXT ; prochain : 30 s, 3 séries, front-plank
+
+-- Séance 43 · H2 · 2026-03-30 · normale
+H2-1 incline-dumbbell-bench-press : 3×8-12 rép. @ 24 kg (RIR 3)
+    fait 13/13/13 @ 24 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 26 kg, 8-12 rép. (cible 8), 3 séries
+H2-2 seated-cable-row : 3×8-12 rép. @ 65 kg (RIR 3)
+    fait 13/13/13 @ 65 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 70 kg, 8-12 rép. (cible 8), 3 séries
+H2-3 machine-chest-press : 3×10-15 rép. @ 65 kg (RIR 3)
+    fait 16/16/16 @ 65 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 70 kg, 10-15 rép. (cible 10), 3 séries
+H2-4 lat-pulldown : 3×10-15 rép. @ 65 kg (RIR 3)
+    fait 16/16/16 @ 65 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 70 kg, 10-15 rép. (cible 10), 3 séries
+H2-5 dumbbell-lateral-raise : 3×12-15 rép. @ 24 kg (RIR 3)
+    fait 16/16/16 @ 24 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 26 kg, 12-15 rép. (cible 12), 3 séries
+H2-6 face-pull : 2×12-15 rép. @ 65 kg (RIR 3)
+    fait 16/16 @ 65 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 70 kg, 12-15 rép. (cible 12), 2 séries
+
+-- Séance 44 · B2 · 2026-04-01 · normale · avis minor_barbell:romanian-deadlift
+B2-1 leg-press : 3×10-15 rép. @ 65 kg (RIR 3)
+    fait 16/16/16 @ 65 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 70 kg, 10-15 rép. (cible 10), 3 séries
+B2-2 romanian-deadlift : 3×8-12 rép. @ 47,5 kg (RIR 3)
+    fait 13/13/13 @ 47,5 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 50 kg, 8-12 rép. (cible 8), 3 séries
+B2-3 dumbbell-reverse-lunge : 3×8-12 rép. @ 24 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 24 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 26 kg, 8-12 rép. (cible 8), 3 séries
+B2-4 leg-curl : 3×10-15 rép. @ 65 kg (RIR 3)
+    fait 16/16/16 @ 65 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 70 kg, 10-15 rép. (cible 10), 3 séries
+B2-5 leg-extension : 2×12-15 rép. @ 65 kg (RIR 3)
+    fait 16/16 @ 65 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 70 kg, 12-15 rép. (cible 12), 2 séries
+B2-6 cable-pallof-press : 3×8-12 rép. @ 65 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 65 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 70 kg, 8-12 rép. (cible 8), 3 séries
+
+== Semaine 12 (semaine 2 du bloc) ==
+
+-- Séance 45 · H1 · 2026-04-03 · normale · avis minor_barbell:bench-press, minor_barbell:barbell-row, minor_barbell:overhead-press
+H1-1 bench-press : 3×6-8 rép. @ 50 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 52,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-2 barbell-row : 3×6-8 rép. @ 50 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 52,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-3 overhead-press : 3×6-8 rép. @ 50 kg (RIR 3)
+    fait 9/9/9 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 52,5 kg, 6-8 rép. (cible 6), 3 séries
+H1-4 lat-pulldown : 3×6-8 rép. @ 70 kg (RIR 3)
+    fait 9/9/9 @ 70 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 75 kg, 6-8 rép. (cible 6), 3 séries
+H1-5 dumbbell-curl : 2×8-12 rép. @ 26 kg (RIR 3)
+    fait 13/13 @ 26 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 28 kg, 8-12 rép. (cible 8), 2 séries
+H1-6 cable-triceps-pushdown : 2×8-12 rép. @ 70 kg (RIR 3)
+    fait 13/13 @ 70 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 75 kg, 8-12 rép. (cible 8), 2 séries
+
+-- Séance 46 · B1 · 2026-04-05 · normale · avis minor_barbell:back-squat, minor_barbell:deadlift
+B1-1 back-squat : 3×6-8 rép. @ 50 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 52,5 kg, 6-8 rép. (cible 6), 3 séries
+B1-2 deadlift : 3×6-8 rép. @ 50 kg (échauffement 2, RIR 3)
+    fait 9/9/9 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 52,5 kg, 6-8 rép. (cible 6), 3 séries
+B1-3 leg-curl : 3×8-12 rép. @ 70 kg (RIR 3)
+    fait 13/13/13 @ 70 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 75 kg, 8-12 rép. (cible 8), 3 séries
+B1-4 leg-press-calf-raise : 3×8-12 rép. @ 70 kg (RIR 3)
+    fait 13/13/13 @ 70 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 75 kg, 8-12 rép. (cible 8), 3 séries
+B1-5 front-plank : 3×30 s (RIR 3)
+    fait 30 s/30 s/30 s (ok)
+    -> PROGRESS DURATION_UP ; prochain : 35 s, 3 séries, front-plank
+
+-- Séance 47 · H2 · 2026-04-07 · normale
+H2-1 incline-dumbbell-bench-press : 3×8-12 rép. @ 26 kg (RIR 3)
+    fait 13/13/13 @ 26 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 28 kg, 8-12 rép. (cible 8), 3 séries
+H2-2 seated-cable-row : 3×8-12 rép. @ 70 kg (RIR 3)
+    fait 13/13/13 @ 70 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 75 kg, 8-12 rép. (cible 8), 3 séries
+H2-3 machine-chest-press : 3×10-15 rép. @ 70 kg (RIR 3)
+    fait 16/16/16 @ 70 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 75 kg, 10-15 rép. (cible 10), 3 séries
+H2-4 lat-pulldown : 3×10-15 rép. @ 70 kg (RIR 3)
+    fait 16/16/16 @ 70 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 75 kg, 10-15 rép. (cible 10), 3 séries
+H2-5 dumbbell-lateral-raise : 3×12-15 rép. @ 26 kg (RIR 3)
+    fait 16/16/16 @ 26 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 28 kg, 12-15 rép. (cible 12), 3 séries
+H2-6 face-pull : 2×12-15 rép. @ 70 kg (RIR 3)
+    fait 16/16 @ 70 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 75 kg, 12-15 rép. (cible 12), 2 séries
+
+-- Séance 48 · B2 · 2026-04-09 · normale · avis minor_barbell:romanian-deadlift
+B2-1 leg-press : 3×10-15 rép. @ 70 kg (RIR 3)
+    fait 16/16/16 @ 70 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 75 kg, 10-15 rép. (cible 10), 3 séries
+B2-2 romanian-deadlift : 3×8-12 rép. @ 50 kg (RIR 3)
+    fait 13/13/13 @ 50 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 52,5 kg, 8-12 rép. (cible 8), 3 séries
+B2-3 dumbbell-reverse-lunge : 3×8-12 rép. @ 26 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 26 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 28 kg, 8-12 rép. (cible 8), 3 séries
+B2-4 leg-curl : 3×10-15 rép. @ 70 kg (RIR 3)
+    fait 16/16/16 @ 70 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 75 kg, 10-15 rép. (cible 10), 3 séries
+B2-5 leg-extension : 2×12-15 rép. @ 70 kg (RIR 3)
+    fait 16/16 @ 70 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 75 kg, 12-15 rép. (cible 12), 2 séries
+B2-6 cable-pallof-press : 3×8-12 rép. @ 70 kg par côté (RIR 3)
+    fait 13/13/13/13/13/13 @ 70 kg (ok)
+    -> PROGRESS LOAD_UP ; prochain : 75 kg, 8-12 rép. (cible 8), 3 séries
+
+état final : semaine 13, séance suivante H1, suspendus []
