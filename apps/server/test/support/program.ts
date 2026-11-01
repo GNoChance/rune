@@ -1,5 +1,7 @@
 import type {
   Effort,
+  ExerciseSheet,
+  MovementPattern,
   NextAdjustment,
   PainLevel,
   ProgramTemplate,
@@ -10,9 +12,11 @@ import type {
   WeekType,
 } from '@rune/contracts';
 import { grantConsent } from '../../src/privacy/consent';
+import { sheetFixture } from './catalog';
 import type { TestContext } from './context';
 import { insertFixtureRow } from './factories';
 import { seqIds } from './ids';
+import { rebuild, seedSheet } from './review';
 import { makeOp } from './sync-fixtures';
 
 /*
@@ -165,4 +169,98 @@ export function sessionOps(
     setIds.push(ids);
   }
   return { ops, sessionId, exerciseIds, setIds };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// API du programme (spec brique 3 §6)
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * Fiches publiées du modèle `programTemplate` : une par groupe de couverture (05 §5, règle 4), dont un tirage à la
+ * machine (pas de machine), plus une presse à cuisses pour les remplacements.
+ */
+export const PROGRAM_SHEETS: readonly ExerciseSheet[] = [
+  sheetFixture('goblet-squat'),
+  sheetFixture('dumbbell-romanian-deadlift', {
+    movement_pattern: 'hip_hinge',
+    primary_muscles: ['hamstrings', 'glutes'],
+    secondary_muscles: ['lower_back'],
+    equipment_options: [['dumbbells']],
+  }),
+  sheetFixture('dumbbell-bench-press', {
+    movement_pattern: 'horizontal_push',
+    primary_muscles: ['chest', 'triceps'],
+    secondary_muscles: ['front_delts'],
+    equipment_options: [['dumbbells', 'flat_bench']],
+  }),
+  sheetFixture('seated-cable-row', {
+    movement_pattern: 'horizontal_pull',
+    primary_muscles: ['lats'],
+    secondary_muscles: ['rear_delts', 'biceps'],
+    equipment_options: [['seated_row']],
+    load_mode: 'machine',
+  }),
+  sheetFixture('dead-bug', {
+    movement_pattern: 'core_anti_extension',
+    mechanics: 'isolation',
+    primary_muscles: ['abs'],
+    secondary_muscles: [],
+    equipment_options: [[]],
+    load_mode: 'bodyweight',
+  }),
+  sheetFixture('leg-press', { equipment_options: [['leg_press']], load_mode: 'machine' }),
+];
+
+const work = { kind: 'work', count: 3, reps: { min: 8, max: 12 }, targetRir: 2, restS: 120 } as const;
+
+/**
+ * Modèle de salle, débutant, une séance `A` qui couvre les 5 groupes : A1 squat, A2 charnière, A3 poussée, A4 tirage
+ * à la machine (progression linéaire), A5 gainage. `days` : jours permis, 2 à 3 (3 par défaut) sinon.
+ */
+export function programTemplate(
+  id = 'test-program',
+  o: { version?: number; days?: { min: number; max: number; default: number }; exercises?: string[] } = {},
+): ProgramTemplate {
+  const slot = (n: number, movementPattern: MovementPattern, exercise: string) => ({
+    id: `A${n}`,
+    movementPattern,
+    role: n <= 2 ? ('main' as const) : ('secondary' as const),
+    exercises: [o.exercises?.[n - 1] ?? exercise],
+    sets: [{ ...work, reps: { ...work.reps } }],
+    progression: n === 4 ? { type: 'linear' as const, incrementG: 5000 } : { type: 'double' as const },
+  });
+  return {
+    schemaVersion: 1,
+    id,
+    version: o.version ?? 1,
+    name: `Modèle ${id}`,
+    description: 'Modèle de test.',
+    context: 'gym',
+    level: 'beginner',
+    daysPerWeek: o.days ?? { min: 2, max: 3, default: 3 },
+    estimatedMinutes: 45,
+    block: { mode: 'reactive' },
+    workouts: [
+      {
+        id: 'A',
+        name: 'Séance A',
+        slots: [
+          slot(1, 'squat', 'goblet-squat'),
+          slot(2, 'hip_hinge', 'dumbbell-romanian-deadlift'),
+          slot(3, 'horizontal_push', 'dumbbell-bench-press'),
+          slot(4, 'horizontal_pull', 'seated-cable-row'),
+          slot(5, 'core_anti_extension', 'dead-bug'),
+        ],
+      },
+    ],
+  };
+}
+
+/** Fiches de `PROGRAM_SHEETS` en base, puis bloc servi reconstruit avec `templates` (comme le chargeur). */
+export async function seedProgramCatalog(
+  ctx: TestContext,
+  templates: readonly ProgramTemplate[],
+): Promise<void> {
+  for (const sheet of PROGRAM_SHEETS) await seedSheet(ctx, sheet);
+  await rebuild(ctx, templates);
 }

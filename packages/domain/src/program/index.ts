@@ -6,10 +6,12 @@ export {
   type EvaluateInput,
   type EvaluateResult,
   evaluateExercise,
+  initialMode,
   stateExerciseId,
 } from './evaluate';
 export * from './loads';
 export * from './plan';
+export { type SlotShape, slotShape } from './primitives';
 export {
   initialProgramState,
   type ProgramState,

@@ -16,7 +16,13 @@ import {
 import type { Selectable, Transaction } from 'kysely';
 import { servedSheets } from '../catalog/bundle';
 import { writeStamp } from '../db/rev';
-import type { Database, EngineDecisionTable, ProgramInstanceTable, SlotStateTable } from '../db/schema';
+import type {
+  Database,
+  DbExecutor,
+  EngineDecisionTable,
+  ProgramInstanceTable,
+  SlotStateTable,
+} from '../db/schema';
 import type { AppDeps } from '../deps';
 import { isHealthConsentActive } from '../privacy/consent-state';
 import { expireProposals } from './expire';
@@ -110,7 +116,8 @@ function skip(deps: AppDeps, code: string): void {
 // Entrée du rejeu
 // ---------------------------------------------------------------------------------------------------------------
 
-function parseSnapshot(text: string): ProgramTemplate | null {
+/** `snapshot` d'une instance relu et validé ; null s'il ne passe pas `ProgramTemplateSchema`. */
+export function parseSnapshot(text: string): ProgramTemplate | null {
   try {
     const parsed = ProgramTemplateSchema.safeParse(JSON.parse(text));
     return parsed.success ? parsed.data : null;
@@ -185,7 +192,10 @@ async function loadInput(
 }
 
 /** Changements acceptés de l'instance (suspensions du moteur et propositions acceptées comprises) ; null si l'un est illisible. */
-async function acceptedChanges(trx: Trx, instance: InstanceRow): Promise<AcceptedChange[] | null> {
+export async function acceptedChanges(
+  trx: DbExecutor,
+  instance: Pick<InstanceRow, 'id' | 'ownerId'>,
+): Promise<AcceptedChange[] | null> {
   const rows = await trx
     .selectFrom('instanceChange')
     .selectAll()
@@ -203,8 +213,15 @@ async function acceptedChanges(trx: Trx, instance: InstanceRow): Promise<Accepte
   return changes;
 }
 
-/** Lieux du membre, supprimés compris (spec §4.4) : réglages du lieu ou de sa salle, matériel vivant. */
-async function placesOf(trx: Trx, ownerId: string): Promise<Map<string, PlaceContext>> {
+/**
+ * Lieux du membre : réglages du lieu ou de sa salle, matériel vivant. Supprimés compris pour le rejeu (spec §4.4) ;
+ * `live` : vivants seulement (« faisable dans au moins un lieu de l'utilisateur », 05 §15).
+ */
+export async function placesOf(
+  trx: DbExecutor,
+  ownerId: string,
+  o: { live?: boolean } = {},
+): Promise<Map<string, PlaceContext>> {
   const places = await trx
     .selectFrom('place')
     .leftJoin('gym', 'gym.id', 'place.gymId')
@@ -216,6 +233,7 @@ async function placesOf(trx: Trx, ownerId: string): Promise<Map<string, PlaceCon
       'gym.loadSettings as gymLoadSettings',
     ])
     .where('place.ownerId', '=', ownerId)
+    .$if(o.live === true, (q) => q.where('place.deletedAt', 'is', null))
     .execute();
   const home = await trx
     .selectFrom('homeEquipment')
