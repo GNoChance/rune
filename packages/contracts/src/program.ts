@@ -143,7 +143,7 @@ export const REASON_TEXTS: Record<ReasonCode | ChangeReasonCode, string> = {
   CALIBRATION_DOWN: 'La charge de départ était lourde : elle baisse pour trouver ton niveau.',
   CALIBRATION_END: 'Ta charge de départ est trouvée : la progression normale commence.',
   LOAD_UP: 'Toutes les séries passées avec de la marge : la charge monte.',
-  REPS_UP: 'Tu as fait plus de répétitions que la dernière fois : on en vise une de plus par série.',
+  REPS_UP: 'Tu as fait plus de répétitions que jamais à ce niveau : on en vise une de plus par série.',
   REPS_MAX_REACHED:
     "Tu es en haut de la fourchette et il n'y a rien de plus lourd ni de plus dur ici : on garde le même repère.",
   SUM_LOAD_UP: 'Le total de répétitions est atteint avec de la marge : la charge monte.',

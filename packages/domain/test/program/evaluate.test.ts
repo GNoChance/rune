@@ -472,7 +472,8 @@ describe('chain [8, 12] (05 §8)', () => {
     const s = ready();
     s.run(sets([12, 12, 12]));
     expect(outcome(s.run(sets([12, 12, 11])))).toEqual(['HOLD', 'NO_PROGRESS']);
-    expect(outcome(s.run(sets([12, 12, 12])))).toEqual(['PROGRESS', 'REPS_UP']);
+    // 36 n'est pas au-dessus du meilleur total du niveau (36) : pas de REPS_UP, mais le sommet compte.
+    expect(outcome(s.run(sets([12, 12, 12])))).toEqual(['HOLD', 'NO_PROGRESS']);
     expect(outcome(s.run(sets([12, 12, 12])))).toEqual(['PROGRESS', 'CHAIN_NEXT']);
   });
 
@@ -991,19 +992,18 @@ describe('stagnation', () => {
   });
 
   describe("progrès au sens de 05 §8, quel que soit le résultat ou l'effort", () => {
-    it('linear 5,5,4 → 5,5,5 → 6,5,5 : échecs, mais total en hausse au même niveau ; pas de stagnation', () => {
+    it('P2 : linear 5,5,4 → 5,5,5 → 6,5,5 → 6,6,5 à 52,5 kg après une stagnation à 60 kg : pas de stagnation', () => {
       const s = calibrated({ slot: LINEAR, exercise: SQUAT, grid: BAR }, sets([6, 6, 6], { load: 60000 }));
+      s.repeat(3, () => sets([6, 6, 5], { load: 60000 }));
+      expect(s.state).toMatchObject({ loadG: 52500, stallRank: 1, noProgressCount: 0 });
       const results = [
         [5, 5, 4],
         [5, 5, 5],
         [6, 5, 5],
-      ].map((r) => outcome(s.run(sets(r, { load: 60000 }))));
-      expect(results).toEqual([
-        ['FAIL', 'REPS_UNDER_MIN'],
-        ['FAIL', 'REPS_UNDER_MIN'],
-        ['FAIL', 'REPS_UNDER_MIN'],
-      ]);
-      expect(s.state).toMatchObject({ noProgressCount: 0, stallRank: 0, loadG: 60000 });
+        [6, 6, 5],
+      ].map((r) => outcome(s.run(sets(r, { load: 52500 }))));
+      expect(results).toEqual(Array.from({ length: 4 }, () => ['FAIL', 'REPS_UNDER_MIN']));
+      expect(s.state).toMatchObject({ noProgressCount: 0, stallRank: 1, loadG: 52500 });
     });
 
     it('duration 36 → 37 → 38 s sous la cible de 40 s : pas de stagnation ; 36 s trois fois, si', () => {
@@ -1018,15 +1018,62 @@ describe('stagnation', () => {
       expect(outcome(flat.repeat(3, () => secs([36, 36, 36])))).toEqual(['STALL', 'STALL_RESET_MIN']);
     });
 
-    it('double au sommet sans effort 33 → 36 → 39 : pas de stagnation', () => {
-      const s = calibrated({ slot: DOUBLE, exercise: SQUAT, grid: BAR }, sets([13, 13, 13], { load: 60000 }));
-      const results = [11, 12, 13].map((r) => outcome(s.run(sets([r, r, r], { load: 60000, effort: null }))));
+    it('P4 : double au sommet sans effort 33 → 36 → 39 à 52,5 kg après une stagnation à 60 kg : pas de stagnation', () => {
+      const s = calibrated({ slot: DOUBLE, exercise: SQUAT, grid: BAR }, sets([9, 9, 9], { load: 60000 }));
+      s.repeat(3, () => sets([9, 9, 9], { load: 60000 }));
+      expect(s.state).toMatchObject({ loadG: 52500, stallRank: 1, noProgressCount: 0 });
+      const results = [11, 12, 13].map((r) => outcome(s.run(sets([r, r, r], { load: 52500, effort: null }))));
       expect(results).toEqual([
         ['HOLD', 'NO_PROGRESS'],
         ['HOLD', 'EFFORT_MISSING'],
         ['HOLD', 'EFFORT_MISSING'],
       ]);
-      expect(s.state).toMatchObject({ noProgressCount: 0, stallRank: 0, loadG: 60000 });
+      expect(s.state).toMatchObject({ noProgressCount: 0, stallRank: 1, loadG: 52500 });
+    });
+
+    it('P3 : gainage 36 → 37 → 38 → 39 s sous une cible de 40 s, après des tenues plus longues à des cibles plus basses', () => {
+      const s = calibrated({ slot: DURATION, exercise: FRONT_PLANK, grid: NONE }, secs([60, 60, 60]));
+      const ups = Array.from({ length: 4 }, () => outcome(s.run(secs([60, 60, 59]))));
+      expect(ups).toEqual(Array.from({ length: 4 }, () => ['PROGRESS', 'DURATION_UP']));
+      expect(s.state.durationS).toBe(40);
+      const results = [36, 37, 38, 39].map((t) => outcome(s.run(secs([t, t, t]))));
+      expect(results).toEqual(Array.from({ length: 4 }, () => ['HOLD', 'DURATION_UNDER']));
+      expect(s.state).toMatchObject({ noProgressCount: 0, stallRank: 0, durationS: 40 });
+    });
+
+    it('Q2 : linear qui alterne 6,6,5 et 6,5,5 à 60 kg stagne (rien au-dessus du meilleur total du niveau)', () => {
+      const s = calibrated({ slot: LINEAR, exercise: SQUAT, grid: BAR }, sets([6, 6, 6], { load: 60000 }));
+      const results = [
+        [6, 6, 5],
+        [6, 5, 5],
+        [6, 6, 5],
+      ].map((r) => outcome(s.run(sets(r, { load: 60000 }))));
+      expect(results).toEqual([
+        ['FAIL', 'REPS_UNDER_MIN'],
+        ['FAIL', 'REPS_UNDER_MIN'],
+        ['STALL', 'STALL_1_LIGHTEN'],
+      ]);
+    });
+
+    it('Q3 : double qui alterne 9,9,8 et 9,9,9 à 60 kg stagne', () => {
+      const s = calibrated({ slot: DOUBLE, exercise: SQUAT, grid: BAR }, sets([9, 9, 9], { load: 60000 }));
+      const results = [
+        [9, 9, 8],
+        [9, 9, 9],
+        [9, 9, 8],
+      ].map((r) => outcome(s.run(sets(r, { load: 60000 }))));
+      expect(results).toEqual([
+        ['HOLD', 'NO_PROGRESS'],
+        ['HOLD', 'NO_PROGRESS'],
+        ['STALL', 'STALL_1_LIGHTEN'],
+      ]);
+    });
+
+    it('le meilleur total du niveau compte la calibration : 10,10,9 après 9,9,9 → REPS_UP', () => {
+      const s = calibrated({ slot: DOUBLE, exercise: SQUAT, grid: BAR }, sets([9, 9, 9], { load: 60000 }));
+      expect(outcome(s.run(sets([10, 10, 9], { load: 60000 })))).toEqual(['PROGRESS', 'REPS_UP']);
+      expect(outcome(s.run(sets([9, 9, 9], { load: 60000 })))).toEqual(['HOLD', 'NO_PROGRESS']);
+      expect(outcome(s.run(sets([10, 10, 9], { load: 60000 })))).toEqual(['HOLD', 'NO_PROGRESS']);
     });
 
     it('une séance incomplète ne sert pas de référence au total', () => {

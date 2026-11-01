@@ -333,8 +333,8 @@ export function progressLinear({ shape, perf, base, validated }: PrimitiveInput)
 
 /**
  * `double` [min, max] et son mode somme : sommet et effort validé → un pas et retour à min ; sinon progrès si le
- * total de répétitions dépasse celui de la dernière séance au même niveau ; une série sous min est un échec (min − 2
- * juste après une hausse en mode somme).
+ * total de répétitions dépasse le meilleur fait au même niveau ; une série sous min est un échec (min − 2 juste après
+ * une hausse en mode somme).
  */
 export function progressDouble({ shape, perf, base, level, validated }: PrimitiveInput): PrimitiveOutcome {
   const sum = base.mode === 'sum';
@@ -350,7 +350,7 @@ export function progressDouble({ shape, perf, base, level, validated }: Primitiv
   }
   if (top && perf.rir === null) return outcome('HOLD', 'EFFORT_MISSING', base);
   if (top && !validated) return outcome('HOLD', 'EFFORT_NOT_VALIDATED', base);
-  if (level.lastTotal !== null && perf.total > level.lastTotal) {
+  if (level.bestTotal !== null && perf.total > level.bestTotal) {
     return outcome('PROGRESS', 'REPS_UP', { ...base, targetReps: clamp(perf.lowest + 1, min, max) });
   }
   return outcome('HOLD', top ? 'REPS_MAX_REACHED' : 'NO_PROGRESS', base);
@@ -378,7 +378,7 @@ export function progressChain({ shape, perf, base, level, validated }: Primitive
   }
   if (perf.values.length < shape.planned) return outcome('HOLD', 'SETS_MISSING', base);
   const top = perf.lowest >= max;
-  const repsUp = level.lastTotal !== null && perf.total > level.lastTotal;
+  const repsUp = level.bestTotal !== null && perf.total > level.bestTotal;
   const aim = { ...base, targetReps: clamp(perf.lowest + 1, min, max) };
   if (top && validated) {
     const atTop = level.atTop + 1;

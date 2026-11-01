@@ -347,7 +347,7 @@ export function evaluateExercise(input: EvaluateInput): EvaluateResult {
   const point = recordPoint(perf, shape.measure);
   const record = isRecord(prev.best, point);
   const best = { ...withRecord(prev.best, point), sessions: sessionNo };
-  const level = enterLevel(prev.best, perf);
+  const level = enterLevel(prev.best, perf, prev.mode === 'duration' ? prev.durationS : null);
   const complete = perf.values.length >= shape.planned;
   const base: SlotTargets = {
     mode: sumOrDouble(prev.mode, perf.loadG, shape),

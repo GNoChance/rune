@@ -13,15 +13,21 @@ import {
  * niveau courant. Cette mémoire n'est jamais stockée ; le rejeu la recalcule séance par séance.
  */
 
-/** Niveau courant d'un état : charge et variante réalisées à sa dernière séance avec données. */
+/**
+ * Niveau courant d'un état : charge et variante réalisées à sa dernière séance avec données, et, pour un slot
+ * `duration`, la durée visée (elle y joue le rôle de la charge, ruling R18).
+ */
 export interface EngineLevel {
   loadG: number | null;
   variantRank: number | null;
+  /** Durée visée pendant la séance, en mode `duration` ; null sinon. */
+  targetS: number | null;
   /**
-   * Total (répétitions ou secondes) de la dernière séance complète à ce niveau, référence de « à charge égale, total
-   * en hausse » (05 §8) ; null avant la première. Ni les séances incomplètes ni les ajustements ne le changent.
+   * Meilleur total (répétitions ou secondes) fait à ce niveau, référence de « à charge égale, total en hausse »
+   * (05 §8, ruling R18) ; null avant la première séance. Calibration comprise ; ni les séances incomplètes ni les
+   * ajustements ne comptent.
    */
-  lastTotal: number | null;
+  bestTotal: number | null;
   /** Séances de suite au sommet, effort validé (`sessionsAtTop`, 05 §8). */
   atTop: number;
   /** Échecs de suite à ce niveau (`chain`, 05 §8). */
@@ -89,33 +95,42 @@ export function withRecord(best: EngineBest, point: RecordPoint): EngineBest {
 
 const above = (a: number | null, b: number | null) => a !== null && b !== null && a > b;
 
-/** Niveau de la séance : le niveau courant si la charge et la variante sont les mêmes, sinon un nouveau. */
-export function enterLevel(best: EngineBest, perf: ExercisePerformance): EngineLevel {
+/**
+ * Niveau de la séance : le niveau courant si la charge, la variante et la durée visée sont les mêmes. Une autre durée
+ * visée seule repart d'un meilleur total vide mais garde les séries de séances (sommet, échecs) ; une autre charge ou
+ * variante donne un nouveau niveau.
+ */
+export function enterLevel(best: EngineBest, perf: ExercisePerformance, targetS: number | null): EngineLevel {
   const l = best.level;
-  if (l !== null && l.loadG === perf.loadG && l.variantRank === perf.variantRank) return l;
+  if (l !== null && l.loadG === perf.loadG && l.variantRank === perf.variantRank) {
+    return l.targetS === targetS ? l : { ...l, targetS, bestTotal: null };
+  }
   return {
     loadG: perf.loadG,
     variantRank: perf.variantRank,
-    lastTotal: null,
+    targetS,
+    bestTotal: null,
     atTop: 0,
     fails: 0,
     raised: l !== null && (above(perf.loadG, l.loadG) || above(perf.variantRank, l.variantRank)),
   };
 }
 
-/** Niveau après la séance : compteurs donnés, et total de la séance s'il sert de référence (`counts`). */
+/** Niveau après la séance : compteurs donnés, et meilleur total mis à jour si la séance compte (`counts`). */
 export function leaveLevel(
   level: EngineLevel,
   perf: ExercisePerformance,
   streaks: Pick<EngineLevel, 'atTop' | 'fails' | 'raised'>,
   counts: boolean,
 ): EngineLevel {
-  return { ...level, ...streaks, lastTotal: counts ? perf.total : level.lastTotal };
+  const bestTotal = counts ? Math.max(level.bestTotal ?? perf.total, perf.total) : level.bestTotal;
+  return { ...level, ...streaks, bestTotal };
 }
 
 /**
  * Progrès au sens de 05 §8, sur ce qui a été fait, quel que soit le résultat de la primitive et l'effort : charge en
- * hausse ; ou, au même niveau, total de répétitions ou de secondes en hausse ; ou variante plus difficile ; ou record.
+ * hausse ; ou, au même niveau, total de répétitions ou de secondes au-dessus du meilleur du niveau (ruling R18) ; ou
+ * variante plus difficile ; ou record.
  */
 export function progressed(
   previous: EngineLevel | null,
@@ -130,7 +145,7 @@ export function progressed(
   ) {
     return true;
   }
-  return level.lastTotal !== null && perf.total > level.lastTotal;
+  return level.bestTotal !== null && perf.total > level.bestTotal;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
