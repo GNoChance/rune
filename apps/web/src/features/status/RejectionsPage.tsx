@@ -28,6 +28,9 @@ export const ENTITY_LABELS: Record<string, string> = {
   gym_equipment: 'Matériel de salle',
   place: 'Lieu',
   home_equipment: 'Matériel à la maison',
+  workout_session: 'Séance',
+  performed_exercise: 'Exercice de séance',
+  performed_set: 'Série',
 };
 
 /** Opération refusée (`kind` du détail). */

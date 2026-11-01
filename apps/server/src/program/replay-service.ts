@@ -61,7 +61,8 @@ export interface ReplayTarget {
  * Rejoue l'instance `instanceId` de `ownerId` dans `trx` : propositions périmées expirées d'abord, puis écriture
  * minimale du résultat. Une instance absente, supprimée ou d'un autre membre n'est pas rejouée (séance gardée hors
  * programme, spec §5.1) ; une entrée illisible ou une séance aux règles inconnues du serveur non plus : l'état écrit
- * reste celui du dernier rejeu, et le journal technique le note.
+ * reste celui du dernier rejeu, et le journal technique le note. Une instance terminée (`ended`) garde ses états et
+ * ses décisions à jour, mais ne reçoit plus aucun événement du moteur (ruling R31).
  */
 export async function replayInstanceInDb(trx: Trx, target: ReplayTarget, deps: AppDeps): Promise<void> {
   const { ownerId, instanceId } = target;
@@ -96,7 +97,9 @@ export async function replayInstanceInDb(trx: Trx, target: ReplayTarget, deps: A
   const w: Writer = { trx, deps, ownerId, instanceId };
   await writeSlotStates(w, slotRows, result.slotStates, consent);
   await writeDecisions(w, result.decisions);
-  await writeEvents(w, instance, result.events, target.touchedSessionIds ?? new Set(), now);
+  if (instance.status === 'active') {
+    await writeEvents(w, instance, result.events, target.touchedSessionIds ?? new Set(), now);
+  }
 }
 
 function skip(deps: AppDeps, code: string): void {

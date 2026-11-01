@@ -239,8 +239,14 @@ async function applyOp(b: Batch, raw: Raw): Promise<Applied> {
   // 6. Propriétaire de la ligne existante.
   const existing = await readRow(trx, op.entity, op.id);
   if (existing && existing.ownerId !== user.id) throw new OpRejection('forbidden', 'owner_mismatch');
-  // 7. Parent (à la création, et pour un patch qui change de parent).
-  if (rule.parent && (clientId || (op.kind === 'patch' && snakeToCamel(rule.parent.column) in op.fields))) {
+  // 7. Parent (à la création, et pour un patch qui change de parent, sauf rattachement immuable).
+  const immutable = op.kind === 'patch' ? (hooks?.immutableColumns ?? []) : [];
+  const reparenting =
+    op.kind === 'patch' &&
+    rule.parent !== undefined &&
+    snakeToCamel(rule.parent.column) in op.fields &&
+    !immutable.includes(rule.parent.column);
+  if (rule.parent && (clientId || reparenting)) {
     await assertParent(b, rule.parent, op.fields);
   }
   // 8. Table C2 sans accord : op écartée, rien d'écrit ; une suppression (delete, ou restore_upsert
@@ -259,6 +265,7 @@ async function applyOp(b: Batch, raw: Raw): Promise<Applied> {
   if (op.kind === 'restore_upsert' && Object.hasOwn(op.fields, 'deletedAt')) {
     fields.deleted_at = restoredDeletedAt(op.fields.deletedAt, deps.clock.now());
   }
+  for (const column of immutable) delete fields[column];
   // 10. Écriture.
   const hookCtx: HookCtx = { trx, deps, userId: user.id, op };
   await hooks?.beforeApply?.(hookCtx, fields);

@@ -113,6 +113,79 @@ describe('rejeu au push', () => {
     expect(rowsOf('engine_decision')).toEqual([]);
   });
 
+  it('lot qui ne touche que des séances en cours vivantes : rejeu évité ; il reprend dès qu’une séance terminée est touchée', async () => {
+    const a = await setup();
+    const instanceId = await enroll(ctx, a.id, TEMPLATE);
+    const stateId = `${instanceId}:A1:goblet-squat`;
+    const done = await push(a, { instanceId, startedAt: dayAt(0), exercises: [{}] });
+    const expected = rowOf('slot_state', stateId)?.load_g;
+    // État altéré à la main : un rejeu le réécrirait aussitôt.
+    ctx.deps.sqlite.prepare('UPDATE slot_state SET load_g = 1234 WHERE id = ?').run(stateId);
+    ctx.deps.sqlite.prepare("UPDATE engine_decision SET reason_code = 'NO_DATA'").run();
+    const before = [revsOf('slot_state'), revsOf('engine_decision')];
+
+    const running = await push(a, {
+      instanceId,
+      startedAt: dayAt(2),
+      status: 'in_progress',
+      endedAt: null,
+      exercises: [{ sets: [{ logged: false }, { logged: false }] }],
+    });
+    const set = running.setIds[0]?.[0] ?? '';
+    await syncPush(ctx, a.cookie, [
+      makeOp({
+        userId: a.id,
+        entity: 'performed_set',
+        id: set,
+        kind: 'patch',
+        fields: { loggedAt: dayAt(2) },
+      }),
+    ]);
+    expect([revsOf('slot_state'), revsOf('engine_decision')]).toEqual(before);
+    expect(rowOf('slot_state', stateId)?.load_g).toBe(1234);
+
+    await noteOn(a, done.sessionId, 'touchée');
+    expect(rowOf('slot_state', stateId)?.load_g).toBe(expected);
+    expect(rowOf('engine_decision', done.exerciseIds[0] ?? '')?.reason_code).not.toBe('NO_DATA');
+  });
+
+  it('séance en cours supprimée : rejeu fait', async () => {
+    const a = await setup();
+    const instanceId = await enroll(ctx, a.id, TEMPLATE);
+    const stateId = `${instanceId}:A1:goblet-squat`;
+    await push(a, { instanceId, startedAt: dayAt(0), exercises: [{}] });
+    const running = await push(a, { instanceId, startedAt: dayAt(2), status: 'in_progress', endedAt: null });
+    ctx.deps.sqlite.prepare('UPDATE slot_state SET load_g = 1234 WHERE id = ?').run(stateId);
+    await deleteSession(a, running.sessionId);
+    expect(rowOf('slot_state', stateId)?.load_g).not.toBe(1234);
+  });
+
+  it('rattachement à l’instance immuable : un patch vers une autre instance ou vers null laisse les décisions intactes', async () => {
+    const a = await setup();
+    const instanceId = await enroll(ctx, a.id, TEMPLATE);
+    const other = await enroll(ctx, a.id, TEMPLATE, { status: 'ended' });
+    const s = await push(a, { instanceId, exercises: [{}] });
+    const before = [revsOf('slot_state'), revsOf('engine_decision')];
+    for (const target of [other, null]) {
+      const res = await syncPush(ctx, a.cookie, [
+        makeOp({
+          userId: a.id,
+          entity: 'workout_session',
+          id: s.sessionId,
+          kind: 'patch',
+          fields: { instanceId: target },
+        }),
+      ]);
+      expect(res.body.results[0].status).toBe('applied');
+      expect(rowOf('workout_session', s.sessionId)?.instance_id).toBe(instanceId);
+    }
+    expect([revsOf('slot_state'), revsOf('engine_decision')]).toEqual(before);
+    expect(rowOf('engine_decision', s.exerciseIds[0] ?? '')).toMatchObject({
+      instance_id: instanceId,
+      deleted_at: null,
+    });
+  });
+
   it('un second push sans changement d’état → aucun nouveau rev', async () => {
     const a = await setup();
     const instanceId = await enroll(ctx, a.id, TEMPLATE);
@@ -288,8 +361,8 @@ describe('rejeu au push', () => {
 
 describe('événements du moteur', () => {
   /** 4 séances identiques sur 2 slots : stagnation des deux à la 4e, proposition d'allègement réactif. */
-  async function stalled(a: Member) {
-    const instanceId = await enroll(ctx, a.id, TWO_SLOTS);
+  async function stalled(a: Member, status: 'active' | 'ended' = 'active') {
+    const instanceId = await enroll(ctx, a.id, TWO_SLOTS, { status });
     const sessions = [0, 2, 4, 6].map((day) =>
       sessionOps(a.id, { instanceId, startedAt: dayAt(day), exercises: both() }),
     );
@@ -321,6 +394,25 @@ describe('événements du moteur', () => {
       }),
     ]);
     expect(JSON.parse(rowsOf('instance_change')[0]?.operations as string)).toEqual([{ op: 'start_deload' }]);
+  });
+
+  it('instance terminée : états et décisions écrits, aucun événement du moteur (ruling R31)', async () => {
+    const a = await setup();
+    await grantHealth(ctx, a.id);
+    const { instanceId, sessions } = await stalled(a, 'ended');
+    await syncPush(
+      ctx,
+      a.cookie,
+      sessions.flatMap((s) => s.ops),
+    );
+    const pain = { painLevel: 'pain', nextAdjustment: 'lighten' } as const;
+    for (const day of [8, 10]) {
+      await push(a, { instanceId, startedAt: dayAt(day), exercises: both(pain) });
+    }
+    expect(rowsOf('instance_change')).toEqual([]);
+    expect(rowOf('program_instance', instanceId)?.revision).toBe(0);
+    expect(rowsOf('slot_state')).toHaveLength(2);
+    expect(rowsOf('engine_decision')).toHaveLength(12);
   });
 
   it('rejeu hors push (API du programme) : aucune proposition, une décidée jamais recréée', async () => {

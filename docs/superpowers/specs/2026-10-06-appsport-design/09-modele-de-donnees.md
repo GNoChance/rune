@@ -84,7 +84,7 @@
 **sync_rejection** — C1, J (le serveur crée la ligne, le pull l'apporte au propriétaire). Seule `dismissed_at` est modifiable par le client.
 - `id TEXT PK`, `+SYNC`
 - `op_id TEXT`, `entity TEXT`, `row_id TEXT`
-- `code TEXT CHECK (validation|forbidden|parent_rejected|stale_revision|unknown_entity|protocol)`
+- `code TEXT CHECK (validation|forbidden|parent_rejected|stale_revision|unknown_entity|protocol|forbidden_reference|invalid_transition|unknown_exercise|out_of_range)` (les quatre derniers : contrôles des séances, spec brique 3 §5.3)
 - `detail_json TEXT` : aucune valeur C2
 - `dismissed_at TEXT NULL`
 - Contenu masqué à l'admin.

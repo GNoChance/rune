@@ -501,6 +501,55 @@ describe('POST /api/sync/push : hooks de synchro', () => {
     expect(own).not.toHaveBeenCalled();
   });
 
+  it('immutableColumns : colonnes retirées d’un patch avant tout contrôle (parent compris), le reste s’applique', async () => {
+    const beforeApply = vi.fn(async (_ctx: unknown, _fields: Record<string, unknown>) => {});
+    const a = await setup({
+      deps: {
+        syncHooks: withHooks({ fixture_note_item: { immutableColumns: ['note_id'], beforeApply } }),
+      },
+    });
+    const b = await createUserAndLogin(ctx);
+    const parent = note(a);
+    const theirs = note(b);
+    await syncPush(ctx, b.cookie, [theirs]);
+    const child = makeOp({
+      userId: a.id,
+      entity: 'fixture_note_item',
+      id: newId(),
+      kind: 'create',
+      fields: { noteId: parent.id, label: 'l' },
+    });
+    await syncPush(ctx, a.cookie, [parent, child]);
+    const res = await syncPush(ctx, a.cookie, [
+      makeOp({
+        userId: a.id,
+        entity: 'fixture_note_item',
+        id: child.id,
+        kind: 'patch',
+        fields: { noteId: theirs.id, label: 'nouveau' },
+      }),
+      makeOp({
+        userId: a.id,
+        entity: 'fixture_note_item',
+        id: child.id,
+        kind: 'patch',
+        fields: { noteId: newId() },
+      }),
+    ]);
+    expect(res.body.results.map((r: Row) => r.status)).toEqual(['applied', 'applied']);
+    expect(rowOf('fixture_note_item', child.id)).toMatchObject({ note_id: parent.id, label: 'nouveau' });
+    expect(beforeApply.mock.calls.at(-1)?.[1]).toEqual({});
+    // À la création, la colonne s'écrit et son parent est contrôlé.
+    const orphan = makeOp({
+      userId: a.id,
+      entity: 'fixture_note_item',
+      id: newId(),
+      kind: 'create',
+      fields: { noteId: theirs.id, label: 'l' },
+    });
+    expect((await syncPush(ctx, a.cookie, [orphan])).body.results[0].code).toBe('parent_rejected');
+  });
+
   it('une erreur SQLite hors contrainte dans beforeApply → 500 et rien d’écrit', async () => {
     const beforeApply = vi.fn(async () => {
       throw Object.assign(new Error('disk I/O'), { code: 'ERR_SQLITE_ERROR', errcode: 13 });

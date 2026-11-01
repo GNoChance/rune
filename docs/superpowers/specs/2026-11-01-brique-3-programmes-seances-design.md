@@ -145,11 +145,12 @@ La table `workout_session` reprend les colonnes que lit déjà `listActiveWorkou
 
 `beforeApply` de chaque table J, en plus des règles génériques :
 
-- `workout_session` : si la ligne visée par `instance_id` ou `place_id` existe, elle appartient à l'appelant (sinon `forbidden_reference`) ; un identifiant inconnu est admis (§5.1, restauration) ; un lieu supprimé reste admis ; `profile` est durci (D3) à la création et ignoré ensuite ; `status` ne revient jamais à `in_progress` depuis `completed` ou `abandoned` (`invalid_transition`) ; `started_at` n'est pas modifiable après création.
-- `performed_exercise` : `exercise_id` existe au catalogue, publié ou retiré (`unknown_exercise` sinon).
-- `performed_set` : bornes `load_g` 0 à 500 000, `reps` 0 à 200, `duration_s` 0 à 7 200, `position` 1 à 99 (`out_of_range`).
+- `workout_session` : si la ligne visée par `instance_id` ou `place_id` existe, elle appartient à l'appelant (sinon `forbidden_reference`) ; un identifiant inconnu est admis (§5.1, restauration) ; un lieu supprimé reste admis ; `profile` est durci (D3) à la création et ignoré ensuite ; `status` ne revient jamais à `in_progress` depuis `completed` ou `abandoned` (`invalid_transition`) ; `started_at` et `instance_id` ne sont pas modifiables après création ; `place_id` reste modifiable.
+- `performed_exercise` : `exercise_id` existe au catalogue, publié ou retiré après publication (`unknown_exercise` sinon) ; `session_id` n'est pas modifiable après création.
+- `performed_set` : bornes `load_g` 0 à 500 000, `reps` 0 à 200, `duration_s` 0 à 7 200, `position` 1 à 99 (`out_of_range`) ; `performed_exercise_id` n'est pas modifiable après création.
+- Rattachements immuables : un patch qui porte `instance_id`, `session_id` ou `performed_exercise_id` (comme `profile` et `started_at`) les ignore, sans rejet, et s'applique pour le reste. Une séance, un exercice ou une série ne changent donc jamais d'instance, de séance ou d'exercice.
 - Colonnes C2 sans consentement : R-SYN-9 (`applied_partial`).
-- `afterBatch` : rejeu des instances touchées (§4.4), une fois par instance et par lot.
+- `afterBatch` : rejeu des instances touchées (§4.4), une fois par instance et par lot. Une instance que le lot ne touche que par des séances `in_progress` vivantes n'est pas rejouée (elles ne sont jamais évaluées) ; une instance `ended` garde ses états et ses décisions à jour mais ne reçoit plus d'événement du moteur.
 
 `SYNC_PROTOCOL` ne change pas : les opérations gardent leur format, seules de nouvelles entités apparaissent.
 

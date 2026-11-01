@@ -7,7 +7,7 @@ import {
   syncPush,
   type TestContext,
 } from '../support';
-import { sheetFixture, templateFixture } from '../support/catalog';
+import { retiredDraft, sheetFixture, templateFixture } from '../support/catalog';
 import { dayAt, enroll, grantHealth, newId, sessionOps } from '../support/program';
 import { seedSheet } from '../support/review';
 
@@ -54,7 +54,7 @@ describe('workout_session au push', () => {
     expect(rowOf('workout_session', sessionId)?.status).toBe('in_progress');
   });
 
-  it("instance ou lieu d'un autre membre → forbidden_reference, à la création comme au patch", async () => {
+  it("instance ou lieu d'un autre membre → forbidden_reference ; au patch, lieu contrôlé et instance ignorée", async () => {
     const a = await setup();
     const b = await createUserAndLogin(ctx);
     const theirInstance = await enroll(ctx, b.id, templateFixture('t'));
@@ -71,10 +71,10 @@ describe('workout_session au push', () => {
       'forbidden_reference',
       'forbidden_reference',
       'applied',
-      'forbidden_reference',
+      'applied',
       'forbidden_reference',
     ]);
-    expect(rowsOf('sync_rejection').map((r) => r.code)).toEqual(Array(4).fill('forbidden_reference'));
+    expect(rowsOf('sync_rejection').map((r) => r.code)).toEqual(Array(3).fill('forbidden_reference'));
     expect(rowOf('workout_session', own.sessionId)).toMatchObject({ instance_id: null, place_id: null });
   });
 
@@ -169,6 +169,28 @@ describe('workout_session au push', () => {
     });
   });
 
+  it('ended_at ramené à maintenant, jamais avant started_at (R24 bis)', async () => {
+    const a = await setup();
+    const future = (ms: number) => new Date(Date.parse(NOW) + ms).toISOString();
+    const created = sessionOps(a.id, { startedAt: future(9 * MINUTE), endedAt: future(60 * MINUTE) });
+    const running = sessionOps(a.id, { startedAt: future(5 * MINUTE), endedAt: null, status: 'in_progress' });
+    await syncPush(ctx, a.cookie, [...created.ops, ...running.ops]);
+    expect(rowOf('workout_session', created.sessionId)).toMatchObject({
+      started_at: future(9 * MINUTE),
+      ended_at: future(9 * MINUTE),
+    });
+    await syncPush(ctx, a.cookie, [
+      patch(a, 'workout_session', running.sessionId, {
+        endedAt: '2026-10-08T10:00:00.000Z',
+        status: 'completed',
+      }),
+    ]);
+    expect(rowOf('workout_session', running.sessionId)).toMatchObject({
+      started_at: future(5 * MINUTE),
+      ended_at: future(5 * MINUTE),
+    });
+  });
+
   it('started_at ou ended_at qui ne sont pas des instants ISO → validation', async () => {
     const a = await setup();
     const bad = sessionOps(a.id, { startedAt: 'hier soir', endedAt: null, status: 'in_progress' });
@@ -197,10 +219,52 @@ describe('workout_session au push', () => {
   });
 });
 
+describe('rattachements immuables après la création (ruling R30)', () => {
+  it("session_id d'un exercice et performed_exercise_id d'une série ignorés d'un patch, sans rejet ; le reste s'applique", async () => {
+    const a = await setup();
+    const b = await createUserAndLogin(ctx);
+    const s1 = sessionOps(a.id, { exercises: [{}] });
+    const s2 = sessionOps(a.id, { exercises: [{}] });
+    const theirs = sessionOps(b.id, { exercises: [{}] });
+    await syncPush(ctx, a.cookie, [...s1.ops, ...s2.ops]);
+    await syncPush(ctx, b.cookie, theirs.ops);
+    const exercise = s1.exerciseIds[0] ?? '';
+    const set = s1.setIds[0]?.[0] ?? '';
+    const res = await syncPush(ctx, a.cookie, [
+      patch(a, 'performed_exercise', exercise, { sessionId: s2.sessionId, note: 'déplacé ?' }),
+      patch(a, 'performed_exercise', exercise, { sessionId: theirs.sessionId }),
+      patch(a, 'performed_exercise', exercise, { sessionId: newId() }),
+      patch(a, 'performed_set', set, { performedExerciseId: s2.exerciseIds[0], reps: 9 }),
+      patch(a, 'performed_set', set, { performedExerciseId: theirs.exerciseIds[0] }),
+    ]);
+    expect(codes(res.body)).toEqual(Array(5).fill('applied'));
+    expect(rowOf('performed_exercise', exercise)).toMatchObject({
+      session_id: s1.sessionId,
+      note: 'déplacé ?',
+    });
+    expect(rowOf('performed_set', set)).toMatchObject({ performed_exercise_id: exercise, reps: 9 });
+    expect(rowsOf('sync_rejection')).toEqual([]);
+  });
+
+  it('instance_id ignoré d’un patch, lieu modifiable', async () => {
+    const a = await setup();
+    const instanceId = await enroll(ctx, a.id, templateFixture('t'));
+    const place = (await insertFixtureRow(ctx.deps.db, 'place', { ownerId: a.id })).id as string;
+    const s = sessionOps(a.id, { instanceId });
+    await syncPush(ctx, a.cookie, s.ops);
+    const res = await syncPush(ctx, a.cookie, [
+      patch(a, 'workout_session', s.sessionId, { instanceId: null, placeId: place }),
+    ]);
+    expect(res.body.results[0].status).toBe('applied');
+    expect(rowOf('workout_session', s.sessionId)).toMatchObject({ instance_id: instanceId, place_id: place });
+  });
+});
+
 describe('performed_exercise au push', () => {
-  it('exercise_id inconnu ou en brouillon → unknown_exercise ; publié ou retiré admis', async () => {
+  it('exercise_id inconnu, en brouillon ou retiré sans avoir été publié → unknown_exercise ; publié ou retiré admis', async () => {
     const a = await setup();
     await insertFixtureRow(ctx.deps.db, 'exercise', { id: 'draft-squat' });
+    await seedSheet(ctx, retiredDraft('ghost-squat'));
     await seedSheet(
       ctx,
       sheetFixture('old-squat', { status: 'retired', retired_at: '2026-10-01T08:00:00.000Z' }),
@@ -211,6 +275,7 @@ describe('performed_exercise au push', () => {
         { exerciseId: 'draft-squat', sets: [] },
         { exerciseId: 'old-squat', sets: [] },
         { exerciseId: 'goblet-squat', sets: [] },
+        { exerciseId: 'ghost-squat', sets: [] },
       ],
     });
     const res = await syncPush(ctx, a.cookie, s.ops);
@@ -220,6 +285,7 @@ describe('performed_exercise au push', () => {
       'unknown_exercise',
       'applied',
       'applied',
+      'unknown_exercise',
     ]);
     const swap = await syncPush(ctx, a.cookie, [
       patch(a, 'performed_exercise', s.exerciseIds[3] ?? '', { exerciseId: 'draft-squat' }),

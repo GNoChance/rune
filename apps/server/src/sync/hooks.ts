@@ -21,6 +21,11 @@ export interface BatchCtx {
 /** Points d'extension d'une table J ; la relation parent est lue dans `EntityRule.parent`. */
 export interface EntitySyncHooks {
   allowedKinds?: readonly SyncOp['kind'][];
+  /**
+   * Colonnes (snake_case) écrites à la création seulement : retirées d'un patch avant tout contrôle, parent compris,
+   * sans rejet ; le reste du patch s'applique.
+   */
+  immutableColumns?: readonly string[];
   /** Dans le point de sauvegarde de l'op, avant l'écriture ; `fields` en snake_case, déjà filtrés. */
   beforeApply?(ctx: HookCtx, fields: Record<string, unknown>): Promise<void>;
   /** Après une écriture effective de l'op. */

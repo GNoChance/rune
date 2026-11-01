@@ -38,19 +38,21 @@ function instantOf(fields: Fields, column: string): number | null | undefined {
 const iso = (ms: number): string => new Date(ms).toISOString();
 
 /**
- * Bornage des dates d'une séance (ruling R24). À la création, un début à plus de 10 min dans le futur du serveur est
- * ramené à maintenant, et la fin décalée d'autant (la durée est gardée). Toute fin écrite qui reste à plus de 10 min
- * dans le futur est ramenée à maintenant : elle date une suspension pour douleur (spec §4.4.4). Les instants gardés
- * sont réécrits au format du serveur.
+ * Bornage des dates d'une séance (rulings R24 et R24 bis). À la création, un début à plus de 10 min dans le futur du
+ * serveur est ramené à maintenant, et la fin décalée d'autant (la durée est gardée). Toute fin écrite qui reste à plus
+ * de 10 min dans le futur est ramenée à maintenant, jamais avant le début : elle date une suspension pour douleur
+ * (spec §4.4.4). Les instants gardés sont réécrits au format du serveur. `storedStart` : début de la ligne existante
+ * (patch) ; absent, le début est lu dans `fields` (création, restore_upsert).
  */
-function boundInstants(fields: Fields, now: number, creating: boolean): void {
-  const started = creating ? instantOf(fields, 'started_at') : undefined;
+function boundInstants(fields: Fields, now: number, storedStart?: number): void {
+  const started = storedStart === undefined ? instantOf(fields, 'started_at') : undefined;
   const ended = instantOf(fields, 'ended_at');
   const shift = typeof started === 'number' && started > now + CLOCK_SKEW_MS ? started - now : 0;
   if (typeof started === 'number') fields.started_at = iso(started - shift);
+  const start = typeof started === 'number' ? started - shift : storedStart;
   if (typeof ended === 'number') {
     const end = ended - shift;
-    fields.ended_at = iso(end > now + CLOCK_SKEW_MS ? now : end);
+    fields.ended_at = iso(end > now + CLOCK_SKEW_MS ? Math.max(now, start ?? now) : end);
   }
 }
 
@@ -71,27 +73,29 @@ async function assertOwnReference(
 }
 
 const workoutSession: Omit<EntitySyncHooks, 'afterBatch'> = {
+  // Écrits à la création seulement (D3, R24, ruling R30) : ignorés d'un patch, qui s'applique pour le reste.
+  immutableColumns: ['instance_id', 'started_at', 'profile'],
+
   async beforeApply({ trx, deps, userId, op }: HookCtx, fields: Fields) {
     if (op.kind === 'delete') return;
     const now = deps.clock.now().getTime();
+    let storedStart: number | undefined;
     if (op.kind === 'patch') {
       const existing = await trx
         .selectFrom('workoutSession')
-        .select(['status', 'deletedAt'])
+        .select(['status', 'startedAt', 'deletedAt'])
         .where('id', '=', op.id)
         .executeTakeFirst();
       // Ligne absente ou supprimée : la synchro générique rejette ou applique sans effet.
       if (!existing || existing.deletedAt !== null) return;
-      // Écrits à la création seulement (D3, R24) : ignorés ensuite.
-      delete fields.profile;
-      delete fields.started_at;
       if (fields.status === 'in_progress' && existing.status !== 'in_progress') {
         throw new OpRejection('invalid_transition', 'status');
       }
+      storedStart = Date.parse(existing.startedAt);
     }
     await assertOwnReference(trx, 'programInstance', fields.instance_id, userId);
     await assertOwnReference(trx, 'place', fields.place_id, userId);
-    boundInstants(fields, now, op.kind !== 'patch');
+    boundInstants(fields, now, storedStart);
     // Profil durci (D3) : passé à `cautious` si le serveur calcule un profil prudent, jamais baissé.
     if (op.kind !== 'patch' && (await userTraits(trx, deps, userId)).cautious) fields.profile = 'cautious';
   },
@@ -154,6 +158,9 @@ const PAIN_ADJUSTMENT: Partial<Record<PainLevel, 'hold' | 'lighten'>> = {
 };
 
 const performedExercise: Omit<EntitySyncHooks, 'afterBatch'> = {
+  // La séance d'un exercice est fixée à sa création (ruling R30).
+  immutableColumns: ['session_id'],
+
   async beforeApply({ trx, op }: HookCtx, fields: Fields) {
     if (op.kind === 'delete') return;
     let existing: { painLevel: PainLevel | null; nextAdjustment: string | null } | undefined;
@@ -166,7 +173,8 @@ const performedExercise: Omit<EntitySyncHooks, 'afterBatch'> = {
       if (!row || row.deletedAt !== null) return;
       existing = row;
     }
-    // Fiche du catalogue, publiée ou retirée (spec §5.3) ; un brouillon n'a jamais quitté le serveur.
+    // Fiche servie aux téléphones (spec §5.3, même règle que `servedSheets`) : publiée, ou retirée après avoir été
+    // publiée ; un brouillon, même retiré, n'a jamais quitté le serveur.
     if (Object.hasOwn(fields, 'exercise_id')) {
       const id = fields.exercise_id;
       const sheet =
@@ -175,7 +183,12 @@ const performedExercise: Omit<EntitySyncHooks, 'afterBatch'> = {
               .selectFrom('exercise')
               .select('id')
               .where('id', '=', id)
-              .where('status', 'in', ['published', 'retired'])
+              .where((eb) =>
+                eb.or([
+                  eb('status', '=', 'published'),
+                  eb.and([eb('status', '=', 'retired'), eb('publishedAt', 'is not', null)]),
+                ]),
+              )
               .executeTakeFirst()
           : undefined;
       if (!sheet) throw new OpRejection('unknown_exercise', 'exercise_id');
@@ -198,6 +211,9 @@ const SET_BOUNDS = Object.entries({
 });
 
 const performedSet: Omit<EntitySyncHooks, 'afterBatch'> = {
+  // L'exercice d'une série est fixé à sa création (ruling R30).
+  immutableColumns: ['performed_exercise_id'],
+
   /** Bornes d'une série (spec §5.3) ; une valeur qui n'est pas un nombre est laissée aux contraintes SQL. */
   async beforeApply({ op }: HookCtx, fields: Fields) {
     if (op.kind === 'delete') return;
@@ -241,7 +257,10 @@ async function sessionsOf(
 
 /**
  * Rejeu des instances touchées par le lot (spec §5.3), une fois chacune, dans l'ordre de leur identifiant : celles des
- * séances écrites, ou dont un exercice ou une série l'a été (lignes supprimées comprises).
+ * séances écrites, ou dont un exercice ou une série l'a été (lignes supprimées comprises). Une séance en cours et
+ * vivante n'est jamais évaluée : une instance que le lot ne touche que par de telles séances n'est pas rejouée (le
+ * téléphone pousse 2 s après chaque série). Les rattachements étant immuables (ruling R30), aucune séance ne quitte
+ * son instance : c'est la seule à rejouer.
  */
 async function replayTouched({ trx, deps, userId, applied }: BatchCtx): Promise<void> {
   const idsOf = (entity: string) => applied.filter((a) => a.entity === entity).map((a) => a.id);
@@ -250,17 +269,18 @@ async function replayTouched({ trx, deps, userId, applied }: BatchCtx): Promise<
     ...(await sessionsOf(trx, userId, idsOf('performed_exercise'), idsOf('performed_set'))),
   ]);
   if (touched.size === 0) return;
-  const instances = await trx
+  const sessions = await trx
     .selectFrom('workoutSession')
-    .select('instanceId')
-    .distinct()
+    .select(['instanceId', 'status', 'deletedAt'])
     .where('id', 'in', [...touched])
     .where('ownerId', '=', userId)
-    .where('instanceId', 'is not', null)
-    .orderBy('instanceId')
     .execute();
-  for (const { instanceId } of instances) {
-    if (instanceId === null) continue;
+  const instances = new Set<string>();
+  for (const s of sessions) {
+    const running = s.status === 'in_progress' && s.deletedAt === null;
+    if (s.instanceId !== null && !running) instances.add(s.instanceId);
+  }
+  for (const instanceId of [...instances].sort()) {
     await replayInstanceInDb(trx, { ownerId: userId, instanceId, touchedSessionIds: touched }, deps);
   }
 }

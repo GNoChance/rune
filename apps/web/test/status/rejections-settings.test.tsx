@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { RejectionCode } from '@rune/contracts';
 import { act, cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { REJECTION_CODE_LABELS } from '../../src/features/status/RejectionsPage';
+import { ENTITY_LABELS, REJECTION_CODE_LABELS } from '../../src/features/status/RejectionsPage';
 import { THEME_PREVIEWS } from '../../src/features/status/theme-previews';
 import type { AppDb, DeadletterEntry } from '../../src/local-db/db';
 import { setMeta } from '../../src/local-db/meta';
@@ -93,6 +93,14 @@ describe('RejectionsPage (R-SYN-18)', () => {
     ['out_of_range', 'Valeur hors limites'],
   ])('REJECTION_CODE_LABELS.%s', (code, label) => {
     expect(REJECTION_CODE_LABELS[code]).toBe(label);
+  });
+
+  it.each([
+    ['workout_session', 'Séance'],
+    ['performed_exercise', 'Exercice de séance'],
+    ['performed_set', 'Série'],
+  ])('ENTITY_LABELS.%s', (entity, label) => {
+    expect(ENTITY_LABELS[entity]).toBe(label);
   });
 
   it('chaque code de rejet du contrat a son libellé', () => {
