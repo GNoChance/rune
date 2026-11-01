@@ -2,6 +2,8 @@ import {
   type ChangeReasonCode,
   defaultLoadSettings,
   type InstanceChangeOperation,
+  type NextAdjustment,
+  type PainLevel,
   type ProgramTemplate,
   type SessionProfile,
   type SlotSpec,
@@ -29,8 +31,10 @@ import {
   type AcceptedChange,
   type EngineDecision,
   type ExerciseRecord,
+  isDone,
   type PlaceContext,
   type SessionRecord,
+  type SetRecord,
   type SlotState,
   slotStateId,
 } from './types';
@@ -279,27 +283,127 @@ interface Evaluated {
   stateId: string;
 }
 
-/**
- * Évalue un exercice contre le slot du programme effectif au début de la séance. Pas de décision sans slot (exercice
- * ajouté), pour un slot absent du programme ou une fiche inconnue. Un slot suspendu donne IGNORED / SLOT_SUSPENDED
- * sans rien évaluer, et sa douleur ne compte pas (la série repart de zéro à la suspension, ruling R25). Rend null
- * sans décision ou sur un slot suspendu : ni stagnation ni douleur à suivre.
- */
-function evaluateOne(
-  ctx: Context,
-  run: Run,
-  s: SessionRecord,
-  ex: ExerciseRecord,
-  rules: RulesSet,
-  gap: number | null,
-): Evaluated | null {
+/** État (slot, exercice) que tient une entrée de séance, contre le slot du programme effectif au début de la séance. */
+interface Target {
+  slot: SlotSpec;
+  sheet: CatalogSheet;
+  steps: readonly CatalogSheet[] | null;
+  exerciseId: string;
+  /** `slotStateId`. */
+  id: string;
+}
+
+/** Pas d'état sans slot (exercice ajouté), pour un slot absent du programme ou une fiche inconnue. */
+function targetOf(ctx: Context, run: Run, s: SessionRecord, ex: ExerciseRecord): Target | null {
   const found = ex.slotId === null ? undefined : findSlot(run.program.template, ex.slotId);
   const sheet = ctx.byId.get(ex.exerciseId);
   if (found === undefined || sheet === undefined) return null;
   const { slot } = found;
   const steps = chainSteps(ctx, slot, s.profile);
   const exerciseId = stateExerciseId(slot, sheet.id, steps);
-  const id = slotStateId(ctx.instanceId, slot.id, exerciseId);
+  return { slot, sheet, steps, exerciseId, id: slotStateId(ctx.instanceId, slot.id, exerciseId) };
+}
+
+const ADJUSTMENT_SEVERITY: Readonly<Record<NextAdjustment, number>> = { hold: 1, lighten: 2 };
+const PAIN_SEVERITY: Readonly<Record<PainLevel, number>> = { none: 0, discomfort: 1, pain: 2 };
+
+/** La valeur la plus forte selon `severity` ; null si toutes le sont. */
+function mostSevere<T extends string>(
+  values: readonly (T | null)[],
+  severity: Readonly<Record<T, number>>,
+): T | null {
+  let out: T | null = null;
+  for (const v of values) if (v !== null && (out === null || severity[v] > severity[out])) out = v;
+  return out;
+}
+
+const KIND_ORDER = { warmup: 0, work: 1 } as const;
+const sideOrder = (side: SetRecord['side']) => (side === 'left' ? 1 : side === 'right' ? 2 : 0);
+const lineOrder = (a: SetRecord, b: SetRecord) =>
+  KIND_ORDER[a.kind] - KIND_ORDER[b.kind] ||
+  a.position - b.position ||
+  sideOrder(a.side) - sideOrder(b.side) ||
+  binary(a.id, b.id);
+
+type Entries = [ExerciseRecord, ...ExerciseRecord[]];
+
+const lastEntry = (entries: Entries): ExerciseRecord => entries[entries.length - 1] ?? entries[0];
+
+/**
+ * Entrées d'une séance qui tiennent le même état (ruling R34 : « Changer d'exercice » après des séries faites, retour
+ * à une fiche déjà faite, autre variante de la chaîne), fondues en une seule évaluation : leurs séries faites dans
+ * l'ordre de la séance, renumérotées par type (les deux côtés d'une série gardent la même position), l'ajustement et la
+ * douleur les plus forts, et l'identité de la dernière entrée, qui reçoit la décision. Une entrée seule est rendue
+ * telle quelle.
+ */
+function mergeEntries(entries: Entries): ExerciseRecord {
+  const last = lastEntry(entries);
+  if (entries.length === 1) return last;
+  const counters = { warmup: 0, work: 0 };
+  const sets: SetRecord[] = [];
+  for (const entry of entries) {
+    const renumbered = new Map<string, number>();
+    for (const set of entry.sets.filter(isDone).sort(lineOrder)) {
+      const key = `${set.kind}:${set.position}`;
+      let position = renumbered.get(key);
+      if (position === undefined) {
+        counters[set.kind] += 1;
+        position = counters[set.kind];
+        renumbered.set(key, position);
+      }
+      sets.push({ ...set, position });
+    }
+  }
+  return {
+    ...last,
+    sets,
+    nextAdjustment: mostSevere(
+      entries.map((e) => e.nextAdjustment),
+      ADJUSTMENT_SEVERITY,
+    ),
+    painLevel: mostSevere(
+      entries.map((e) => e.painLevel),
+      PAIN_SEVERITY,
+    ),
+  };
+}
+
+/**
+ * Entrées de la séance regroupées par état (ruling R34), dans l'ordre de la séance de leur dernière entrée, celle qui
+ * porte la décision ; la fiche d'un groupe est celle de sa dernière entrée. Seule la dernière entrée d'un état a une
+ * décision (`engine_decision` 0-1 par exercice réalisé, D7).
+ */
+function entriesByState(ctx: Context, run: Run, s: SessionRecord): { target: Target; entries: Entries }[] {
+  const groups = new Map<string, { target: Target; entries: Entries }>();
+  for (const ex of [...s.exercises].sort(exerciseOrder)) {
+    const target = targetOf(ctx, run, s, ex);
+    if (target === null) continue;
+    const group = groups.get(target.id);
+    if (group === undefined) {
+      groups.set(target.id, { target, entries: [ex] });
+    } else {
+      group.target = target;
+      group.entries.push(ex);
+    }
+  }
+  return [...groups.values()].sort((a, b) => exerciseOrder(lastEntry(a.entries), lastEntry(b.entries)));
+}
+
+/**
+ * Évalue un état de la séance : `ex` est son entrée, ou ses entrées fondues (`mergeEntries`). Un slot suspendu donne
+ * IGNORED / SLOT_SUSPENDED sans rien évaluer, et sa douleur ne compte pas (la série repart de zéro à la suspension,
+ * ruling R25). Rend null sur un slot suspendu : ni stagnation ni douleur à suivre.
+ */
+function evaluateOne(
+  ctx: Context,
+  run: Run,
+  s: SessionRecord,
+  target: Target,
+  ex: ExerciseRecord,
+  rules: RulesSet,
+  gap: number | null,
+): Evaluated | null {
+  const { slot, sheet, steps, exerciseId, id } = target;
   const override = ctx.overrides.get(id) ?? null;
   const place = s.placeId === null ? undefined : ctx.places.get(s.placeId);
   const grid = loadGrid(sheet.load_mode, place?.loadSettings ?? UNKNOWN_PLACE_SETTINGS, override);
@@ -349,8 +453,8 @@ function processSession(ctx: Context, run: Run, s: SessionRecord, rules: RulesSe
   const week = run.state.weekIndex;
   const deload = s.weekType === 'deload' || upcomingWeekType(run.state, run.program) === 'deload';
   let stalled = false;
-  for (const ex of [...s.exercises].sort(exerciseOrder)) {
-    const e = evaluateOne(ctx, run, s, ex, rules, gap);
+  for (const { target, entries } of entriesByState(ctx, run, s)) {
+    const e = evaluateOne(ctx, run, s, target, mergeEntries(entries), rules, gap);
     if (e === null) continue;
     if (e.result.stalled !== null) {
       stalled = true;

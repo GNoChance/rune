@@ -943,3 +943,85 @@ describe('résultat du rejeu', () => {
     expect({ sessions, changes }).toEqual(before);
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// Plusieurs entrées du même état dans une séance (ruling R34)
+// ---------------------------------------------------------------------------------------------------------------
+
+describe('une seule évaluation par état et par séance (R34)', () => {
+  const plank = (exerciseId: string, seconds: number[], o: { effort?: Effort | null; position: number }) =>
+    done('A5', exerciseId, work(seconds, null, { measure: 'duration', effort: o.effort ?? null }), {
+      position: o.position,
+    });
+  /** Lignes gauche et droite d'une fente de `reps` répétitions à la position `position`. */
+  const pair = (position: number, reps: number, effort: Effort | null = null): SetRecord[] =>
+    (['left', 'right'] as const).map((side) => ({
+      ...firstOf(work([reps], 14000, { effort })),
+      id: `set-${++seq}`,
+      position,
+      side,
+      loadMode: 'dumbbell',
+    }));
+  const withoutId = (d: EngineDecision) => ({ ...d, id: '' });
+
+  it('deux variantes de la chaîne (changer d’exercice en cours) : séries fondues, une décision, sur la dernière entrée', () => {
+    const easier = plank('kneeling-plank', [40, 40], { position: 5 });
+    const harder = plank('front-plank', [30], { effort: 'ok', position: 6 });
+    const split = replay([session('s1', at(0), 'A', [easier, harder])]);
+    const whole = plank('front-plank', [40, 40, 30], { effort: 'ok', position: 5 });
+    const single = replay([session('s1', at(0), 'A', [whole])]);
+
+    expect(split.decisions.filter((d) => d.slotId === 'A5').map((d) => d.id)).toEqual([harder.id]);
+    expect(withoutId(decisionOf(split, harder))).toEqual(withoutId(decisionOf(single, whole)));
+    expect(stateOf(split, 'A5', 'front-plank')).toEqual(stateOf(single, 'A5', 'front-plank'));
+  });
+
+  it('même fiche deux fois : la douleur compte une fois, l’ajustement et la douleur les plus forts sont gardés', () => {
+    const before = squat(60000, { reps: [6], effort: null, painLevel: 'pain', nextAdjustment: 'lighten' });
+    const after = squat(60000, {
+      reps: [6, 6],
+      painLevel: 'discomfort',
+      nextAdjustment: 'hold',
+      position: 2,
+    });
+    const s1 = session('s1', at(0), 'A', [before, after]);
+    const r1 = replay([s1]);
+    const whole = squat(60000, { painLevel: 'pain', nextAdjustment: 'lighten' });
+    const single = replay([session('s1', at(0), 'A', [whole])]);
+
+    expect(r1.decisions.filter((d) => d.slotId === 'A1').map((d) => d.id)).toEqual([after.id]);
+    expect(decisionOf(r1, after)).toMatchObject({ result: 'ADJUSTED_LIGHTEN', reasonCode: 'PAIN_LIGHTEN' });
+    expect(withoutId(decisionOf(r1, after))).toEqual(withoutId(decisionOf(single, whole)));
+    expect(stateOf(r1, 'A1', 'back-squat').painStreak).toBe(1);
+    // Une seule séance en douleur : pas de suspension (il en faut 2 de suite).
+    expect(r1.events).toEqual([]);
+    const r2 = replay([
+      s1,
+      session('s2', at(2), 'A', [squat(55000, { painLevel: 'pain', nextAdjustment: 'lighten' })]),
+    ]);
+    expect(r2.events.map((e) => [e.kind, e.triggerSessionId])).toEqual([['pain_suspend', 's2']]);
+  });
+
+  it('unilatéral : les paires de chaque entrée restent distinctes une fois fondues', () => {
+    const lunge = (sets: SetRecord[], position: number) => done('B4', 'dumbbell-lunge', sets, { position });
+    const first = lunge(pair(1, 10), 4);
+    const second = lunge(pair(1, 10, 'ok'), 5);
+    const split = replay([session('s1', at(0), 'B', [first, second])]);
+    const whole = lunge([...pair(1, 10), ...pair(2, 10, 'ok')], 4);
+    const single = replay([session('s1', at(0), 'B', [whole])]);
+
+    expect(split.decisions.filter((d) => d.slotId === 'B4').map((d) => d.id)).toEqual([second.id]);
+    expect(withoutId(decisionOf(split, second))).toEqual(withoutId(decisionOf(single, whole)));
+    expect(decisionOf(split, second).reasonCode).not.toBe('SETS_MISSING');
+    expect(stateOf(split, 'B4', 'dumbbell-lunge')).toEqual(stateOf(single, 'B4', 'dumbbell-lunge'));
+  });
+
+  it('deux fiches différentes d’une liste : deux états, deux décisions, comme avant', () => {
+    const barbell = squat(60000, { reps: [6], effort: null });
+    const goblet = done('A1', 'goblet-squat', work([10, 10], 20000), { position: 2 });
+    const r = replay([session('s1', at(0), 'A', [barbell, goblet])]);
+    expect(r.decisions.filter((d) => d.slotId === 'A1').map((d) => d.id)).toEqual([barbell.id, goblet.id]);
+    expect(stateOf(r, 'A1', 'back-squat').lastSessionId).toBe('s1');
+    expect(stateOf(r, 'A1', 'goblet-squat').lastSessionId).toBe('s1');
+  });
+});
