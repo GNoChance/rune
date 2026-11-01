@@ -1,6 +1,6 @@
 import type { MeResponse } from '@rune/contracts';
 import { isReviewer } from '@rune/domain';
-import { useEffect, useRef } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { Redirect, Route, Switch, useLocation } from 'wouter';
 import { useMeState, useSyncState } from './app-services';
 import { AdminGymsPage } from './features/admin/AdminGymsPage';
@@ -37,6 +37,14 @@ import { SettingsPage } from './features/status/SettingsPage';
 import { useRepos } from './repos';
 import type { ConnectionState } from './sync/engine';
 import { AppShell, PublicShell } from './ui';
+
+/** Réglages de charge : hors du bundle initial, chargés à la première ouverture (fichier précaché par le SW). */
+const PlaceLoadSettings = lazy(() =>
+  import('./features/places/LoadSettingsPage').then((m) => ({ default: m.PlaceLoadSettings })),
+);
+const GymLoadSettings = lazy(() =>
+  import('./features/places/LoadSettingsPage').then((m) => ({ default: m.GymLoadSettings })),
+);
 
 /** Pages lisibles sans session (03 §13 : Confidentialité, Crédits, Aide) et parcours d'accès. */
 export const PUBLIC_PATHS: readonly string[] = [
@@ -141,6 +149,7 @@ function ConnectedRoutes() {
       <Route path="/exercises/:id" component={ExerciseSheetPage} />
       <Route path="/places" component={PlacesPage} />
       <Route path="/places/:id" component={PlaceDetail} />
+      <Route path="/places/:id/load" component={PlaceLoadSettings} />
       <Route path="/profile" component={ProfileHub} />
       <Route path="/profile/edit" component={ProfilePage} />
       <Route path="/profile/coach" component={MyCoachPage} />
@@ -149,6 +158,7 @@ function ConnectedRoutes() {
       <Route path="/settings" component={SettingsPage} />
       <Route path="/rejections" component={RejectionsPage} />
       <Route path="/gyms/:id" component={GymPage} />
+      <Route path="/gyms/:id/load" component={GymLoadSettings} />
       <Route path="/admin/members" component={MembersPage} />
       <Route path="/admin/invitations" component={InvitationsPage} />
       <Route path="/admin/gyms" component={AdminGymsPage} />
@@ -212,7 +222,9 @@ export function App() {
       // « Comment relire » au premier passage sur n'importe quelle page de la relecture (spec brique 2 §4.4).
       return (
         <AppShell>
-          <ConnectedRoutes />
+          <Suspense fallback={null}>
+            <ConnectedRoutes />
+          </Suspense>
           {isReviewPath(route) ? <HowToReviewFirstPass /> : null}
           <HealthReconsentGate />
         </AppShell>

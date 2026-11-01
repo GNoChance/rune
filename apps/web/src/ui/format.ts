@@ -43,3 +43,15 @@ export function formatAge(iso: string, nowMs: number): string {
 export function plural(n: number, one: string, many: string): string {
   return Math.abs(n) < 2 ? one : many;
 }
+
+const kgFormat = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 3, useGrouping: false });
+
+/** Nombre de kilogrammes à virgule décimale, sans unité (`62,5`), depuis des grammes entiers. */
+export function formatKgValue(grams: number): string {
+  return kgFormat.format(grams / 1000);
+}
+
+/** `62,5 kg`, `60 kg` : une charge en grammes entiers affichée en kilogrammes. */
+export function formatKg(grams: number): string {
+  return `${formatKgValue(grams)} kg`;
+}

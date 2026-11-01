@@ -116,7 +116,7 @@ const BAR_HEIGHT = '--draft-bar-height';
  * d'elle. WebKit ignore scroll-padding pour focus() : quand la barre recouvre le centre du contrôle qui prend le
  * focus, il défile au plus près, ce qui respecte la marge. Une feuille du bas posée par-dessus prend le point.
  */
-function useFocusAboveDraftBar(bar: RefObject<HTMLElement | null>, shown: boolean) {
+export function useFocusAboveDraftBar(bar: RefObject<HTMLElement | null>, shown: boolean) {
   useLayoutEffect(() => {
     const el = bar.current;
     if (!shown || !el) return;

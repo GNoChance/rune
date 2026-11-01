@@ -22,3 +22,14 @@ export function defaultLoadSettings(kind: 'gym' | 'home'): LoadSettings {
     machineStepG: 5000,
   };
 }
+
+/**
+ * Haltères proposés à la coche (écran Réglages de charge) : les paires courantes de 0,5 à 80 kg, strictement
+ * croissantes, toutes dans les bornes de `LoadSettingsSchema` (48 valeurs, sous le plafond de 60).
+ */
+export const DUMBBELL_CHOICES_G: readonly number[] = [
+  500, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 7000, 7500, 8000, 9000, 10000, 12000, 12500, 14000,
+  15000, 16000, 17500, 18000, 20000, 22000, 22500, 24000, 25000, 26000, 27500, 28000, 30000, 32000, 32500,
+  34000, 35000, 36000, 37500, 38000, 40000, 42500, 45000, 47500, 50000, 55000, 60000, 65000, 70000, 75000,
+  80000,
+];

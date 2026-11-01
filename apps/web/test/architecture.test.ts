@@ -46,6 +46,9 @@ const staticSpecifiers = (text: string): string[] =>
 /** Pierres des rangs D à S (≈ 30 ko gzip), hors du bundle initial. */
 const UPPER_STONES = /(^|\/)art\/RankStoneUpper$/;
 
+/** Réglages de charge des lieux et des salles : chargés à la demande (routes /places/:id/load et /gyms/:id/load). */
+const LOAD_SETTINGS_PAGE = /(^|\/)LoadSettingsPage$/;
+
 describe('architecture', () => {
   const files = [...walk(SRC)].filter(code);
 
@@ -85,6 +88,16 @@ describe('architecture', () => {
     for (const file of files) {
       for (const spec of staticSpecifiers(readFileSync(file, 'utf8'))) {
         expect(spec, rel(file)).not.toMatch(UPPER_STONES);
+      }
+    }
+  });
+
+  it('réglages de charge (LoadSettingsPage) : seulement par import() depuis App.tsx, jamais dans le bundle initial', () => {
+    const dynamic = files.filter((f) => imports(f).some((spec) => LOAD_SETTINGS_PAGE.test(spec)));
+    expect(dynamic.map(rel)).toEqual(['App.tsx']);
+    for (const file of files) {
+      for (const spec of staticSpecifiers(readFileSync(file, 'utf8'))) {
+        expect(spec, rel(file)).not.toMatch(LOAD_SETTINGS_PAGE);
       }
     }
   });

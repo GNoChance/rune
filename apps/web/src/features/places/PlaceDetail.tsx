@@ -2,10 +2,11 @@ import { useId } from 'react';
 import { Redirect } from 'wouter';
 import { useLive, useServices } from '../../app-services';
 import { type PlaceView, useRepos } from '../../repos';
-import { Page, plural } from '../../ui';
+import { ListRow, Page, plural } from '../../ui';
 import { EquipmentChips } from './EquipmentChips';
 import { EquipmentEditor } from './EquipmentEditor';
-import { PencilIcon } from './icons';
+import { PencilIcon, SlidersIcon } from './icons';
+import { loadSummary } from './load-summary';
 import { PlaceActions } from './PlaceActions';
 import styles from './places.module.css';
 import { useSubScreen } from './SubScreen';
@@ -87,6 +88,14 @@ function HomeSheet(p: { place: PlaceView; places: readonly PlaceView[] }) {
             </div>
             <EquipmentChips kind="home" value={place.equipment} />
           </section>
+          <ul className={styles.actionsCard}>
+            <ListRow
+              icon={<SlidersIcon />}
+              label="Réglages de charge"
+              value={place.loadSettings ? loadSummary(place.loadSettings) : undefined}
+              href={`/places/${place.id}/load`}
+            />
+          </ul>
           <PlaceActions place={place} places={p.places} />
         </div>
       </Page>

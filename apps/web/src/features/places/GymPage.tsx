@@ -10,13 +10,25 @@ import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 
 import { ApiError } from '../../api/client';
 import { useLive, useMe } from '../../app-services';
 import { type PlaceView, useRepos } from '../../repos';
-import { Banner, Button, Dialog, errorMessage, Field, Page, plural, Switch, useAction } from '../../ui';
+import {
+  Banner,
+  Button,
+  Dialog,
+  errorMessage,
+  Field,
+  ListRow,
+  Page,
+  plural,
+  Switch,
+  useAction,
+} from '../../ui';
 import { EquipmentChips } from './EquipmentChips';
 import { EquipmentEditor } from './EquipmentEditor';
 import { GymHistory } from './GymHistory';
 import { MemberAvatars, membersOrder, membersText } from './GymMembers';
 import { MINOR_VISIBILITY_HINT } from './GymPicker';
-import { PencilIcon, PeopleIcon, PinIcon } from './icons';
+import { PencilIcon, PeopleIcon, PinIcon, SlidersIcon } from './icons';
+import { loadSummary } from './load-summary';
 import { PLACE_ERRORS, PlaceActions } from './PlaceActions';
 import styles from './places.module.css';
 import { useSubScreen } from './SubScreen';
@@ -195,6 +207,16 @@ export function GymPage(p: { params: { id: string } }) {
             </div>
             <EquipmentChips kind="gym" value={detail.equipment} />
           </section>
+          {deleted ? null : (
+            <ul className={styles.actionsCard}>
+              <ListRow
+                icon={<SlidersIcon />}
+                label="Réglages de charge"
+                value={loadSummary(detail.loadSettings)}
+                href={`/gyms/${id}/load`}
+              />
+            </ul>
+          )}
           <section aria-labelledby={historyId} className={styles.card}>
             <h2 id={historyId} className={styles.cardTitle}>
               Dernières modifications
