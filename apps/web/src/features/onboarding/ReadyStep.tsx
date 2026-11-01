@@ -7,7 +7,12 @@ import { useLive, useMe } from '../../app-services';
 import { useProgramTemplates, useRecommendation, useRepos } from '../../repos';
 import { Button, ChoiceCard, CoachBubble, plural, RankBadge, SystemPanel, useAction } from '../../ui';
 import { coachText } from '../coach/coach-lines';
-import { NO_TEMPLATE_TEXT, reasonTexts, START_WITH_PROGRAM } from '../recommendation/recommendation-labels';
+import {
+  ENROL_FAILED_TEXT,
+  NO_TEMPLATE_TEXT,
+  reasonTexts,
+  START_WITH_PROGRAM,
+} from '../recommendation/recommendation-labels';
 import { TemplateCard } from '../recommendation/TemplateCard';
 import { OfflineReadyIndicator } from '../status/OfflineReadyIndicator';
 import { useReadiness } from '../status/use-readiness';
@@ -47,8 +52,10 @@ const SPARKS = [
  *
  * Programme (D15, spec brique 3 §7.8) : la carte du modèle recommandé et la case « Commencer avec ce programme »,
  * cochée par défaut. « Commencer » inscrit alors au modèle (jours de la recommandation) avant de terminer
- * l'onboarding ; une inscription déjà faite (409, nouvel essai) compte comme faite, un autre refus arrête tout.
- * Case décochée : aucune inscription. Sans modèle disponible : la séance libre est annoncée.
+ * l'onboarding ; une inscription déjà faite (409, nouvel essai) compte comme faite. Tout autre échec (refus, serveur,
+ * réseau) arrête là, l'onboarding ne se termine pas, et la case dit quoi faire : réessayer, ou la décocher (ruling
+ * R40) ; « Commencer » reste utilisable. Case décochée : aucune inscription. Sans modèle disponible : la séance libre
+ * est annoncée.
  */
 export function ReadyStep(p: { onBack(): void; onIncomplete(step: OnboardingStep | null): void }) {
   const repos = useRepos();
@@ -60,6 +67,9 @@ export function ReadyStep(p: { onBack(): void; onIncomplete(step: OnboardingStep
   const recommendation = useRecommendation();
   const templates = useProgramTemplates();
   const [withProgram, setWithProgram] = useState(true);
+  // Inscription refusée ou impossible (réseau, serveur) : la case dit quoi faire (ruling R40).
+  const [enrolFailed, setEnrolFailed] = useState(false);
+  const enrolErrorId = useId();
   const [retrying, setRetrying] = useState(false);
   const programId = useId();
   const recapId = useId();
@@ -71,12 +81,16 @@ export function ReadyStep(p: { onBack(): void; onIncomplete(step: OnboardingStep
     ? templates?.find((t) => t.template.id === recommendation.templateId)
     : undefined;
   const start = useAction(async () => {
+    setEnrolFailed(false);
     if (withProgram && recommendation && recommended) {
       const templateId = recommended.template.id;
       try {
         await repos.program.enroll(templateId, recommendation.daysPerWeek);
       } catch (error) {
-        if (!(error instanceof ApiError) || error.code !== 'already_enrolled') throw error;
+        if (!(error instanceof ApiError) || error.code !== 'already_enrolled') {
+          setEnrolFailed(true);
+          return;
+        }
       }
       await repos.program.acknowledgeRecommendation(templateId);
     }
@@ -226,9 +240,18 @@ export function ReadyStep(p: { onBack(): void; onIncomplete(step: OnboardingStep
             name="start-program"
             value={recommended.template.id}
             checked={withProgram}
-            onChange={() => setWithProgram((v) => !v)}
+            onChange={() => {
+              setWithProgram((v) => !v);
+              setEnrolFailed(false);
+            }}
             title={START_WITH_PROGRAM}
+            describedBy={enrolFailed ? enrolErrorId : undefined}
           />
+          {enrolFailed ? (
+            <p id={enrolErrorId} role="alert" className={styles.programError}>
+              {ENROL_FAILED_TEXT}
+            </p>
+          ) : null}
         </section>
       ) : recommendation?.templateId === null ? (
         <p className={styles.programNote}>{NO_TEMPLATE_TEXT}</p>

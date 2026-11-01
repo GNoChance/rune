@@ -5,14 +5,17 @@ import { isExpired, type ProgramEditContext, type ProgramView, useRepos } from '
 import { Button } from '../../ui';
 import { ActionError } from './ActionError';
 import styles from './program.module.css';
-import { expiryLabel, PROPOSAL_TITLES, type ProgramNames } from './program-labels';
+import { expiryLabel, localRefusal, PROPOSAL_TITLES, type ProgramNames } from './program-labels';
 import { changeCheck, changeLines, checkMessage } from './program-model';
 import { useProgramAction } from './use-change';
 
 /**
  * Proposition en attente (spec §7.7) : auteur (« Proposition de Rune » pour le moteur), raison, avant / après de
  * chaque opération calculé par le domaine, date limite, « Accepter » / « Refuser ». 409 `stale_revision` : le
- * programme a changé, la proposition reste ; 409 `expired` : elle a expiré, un pull la range au journal.
+ * programme a changé, la proposition reste ; 409 `expired` : elle a expiré, un pull la range au journal. Le serveur
+ * décide seul (ruling R41) : « Accepter » n'est jamais grisé par le validateur du téléphone, dont le catalogue et les
+ * lieux peuvent être en retard ; un refus local ne s'affiche qu'en avertissement, et la réponse du serveur (422,
+ * 409) s'affiche sous l'action.
  */
 export function ProposalCard(p: {
   proposal: InstanceChangeView;
@@ -67,11 +70,7 @@ export function ProposalCard(p: {
       ))}
       {proposal.expiresAt ? <p className={styles.muted}>{expiryLabel(proposal.expiresAt)}</p> : null}
       <div className={styles.pair}>
-        <Button
-          disabled={busy || refused !== null}
-          aria-describedby={refused ? hintId : undefined}
-          onClick={() => void accept()}
-        >
+        <Button disabled={busy} aria-describedby={refused ? hintId : undefined} onClick={() => void accept()}>
           Accepter
         </Button>
         <Button variant="secondary" disabled={busy} onClick={() => void reject()}>
@@ -79,8 +78,8 @@ export function ProposalCard(p: {
         </Button>
       </div>
       {refused ? (
-        <p id={hintId} className={styles.hint}>
-          {refused}
+        <p id={hintId} className={styles.warning}>
+          {localRefusal(refused)}
         </p>
       ) : null}
       <ActionError message={action.errorOf('accept') ?? action.errorOf('reject')} />

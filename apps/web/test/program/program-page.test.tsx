@@ -127,6 +127,45 @@ describe('Mon programme (/program, spec §7.7)', () => {
     expect(api.calls.find((c) => c.path === `${CHANGES}/c-prop/accept`)?.body).toEqual({ baseRevision: 4 });
   });
 
+  it('proposition que le téléphone refuse : avertissement, « Accepter » reste actif et le serveur décide (R41)', async () => {
+    // Exercice que le catalogue de l'appareil ne connaît pas encore (fiche publiée depuis le dernier téléchargement).
+    const unknown = changeRow('c-new-sheet', {
+      ...PROPOSAL,
+      id: 'c-new-sheet',
+      operations: [{ op: 'replace_exercise', slot: 'A1', exercise: 'hack-squat' }],
+    });
+    const { api } = await openProgram({ seed: (db) => seedMirror(db, 'instance_change', [unknown]) });
+    const proposals = region('Propositions en attente');
+    expect(
+      within(proposals).getByText(
+        "Ton téléphone n'est peut-être pas à jour : Cet exercice n'est faisable dans aucun de tes lieux.",
+      ),
+    ).toBeTruthy();
+    const accept = button('Accepter', proposals);
+    expect(accept.disabled).toBe(false);
+    api.on('POST', `${CHANGES}/:id/accept`, {
+      status: 200,
+      body: { change: { ...CHANGE_VIEW, id: 'c-new-sheet' }, instance: INSTANCE_VIEW },
+    });
+    fireEvent.click(accept);
+    await until(() => api.calls.some((c) => c.path === `${CHANGES}/c-new-sheet/accept`));
+    expect(api.calls.find((c) => c.path === `${CHANGES}/c-new-sheet/accept`)?.body).toEqual({
+      baseRevision: 4,
+    });
+  });
+
+  it('proposition que le serveur refuse (422) : son message s’affiche sous l’action', async () => {
+    const { api } = await openProgram({ seed: (db) => seedMirror(db, 'instance_change', [PROPOSAL]) });
+    api.on('POST', `${CHANGES}/:id/accept`, {
+      status: 422,
+      body: { error: 'invalid_change', errors: [{ op: 0, code: 'exercise_unusable' }] },
+    });
+    fireEvent.click(button('Accepter', region('Propositions en attente')));
+    await within(region('Propositions en attente')).findByText(
+      "Cet exercice n'est faisable dans aucun de tes lieux.",
+    );
+  });
+
   it('« Refuser » envoie le refus', async () => {
     const { api } = await openProgram({ seed: (db) => seedMirror(db, 'instance_change', [PROPOSAL]) });
     api.on('POST', `${CHANGES}/:id/reject`, { status: 200, body: { change: CHANGE_VIEW } });

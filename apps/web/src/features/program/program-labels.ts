@@ -39,6 +39,13 @@ export const CHANGE_ERROR_MESSAGES: Record<ChangeErrorCode, string> = {
 /** 409 `stale_revision` : le programme a changé depuis l'affichage ; une proposition reste en attente. */
 export const STALE_MESSAGE = 'Le programme a changé : vérifie et recommence.';
 
+/**
+ * Proposition que le validateur du téléphone refuse (ruling R41) : avertissement seulement, « Accepter » reste actif et
+ * le serveur décide.
+ */
+export const localRefusal = (reason: string): string =>
+  `Ton téléphone n'est peut-être pas à jour : ${reason}`;
+
 /** Journal : qui a fait le changement. */
 export const AUTHOR_LABELS: Record<ChangeAuthor, string> = {
   user: 'Toi',

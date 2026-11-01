@@ -730,6 +730,15 @@
   color: var(--text-muted);
 }
 
+/* Inscription d'E8 en échec (ruling R40) : la marche à suivre, sous la case qu'elle décrit. */
+.programError {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--danger);
+}
+
 /* Récapitulatif (maquette B08) : une carte, une ligne par réponse. */
 .recap {
   display: flex;

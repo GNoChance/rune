@@ -172,6 +172,8 @@ describe('ReadyStep : programme recommandé (D15, spec §7.8)', () => {
   const ENROLL = '/api/program/enroll';
   const START = 'Commencer avec ce programme';
   const NO_TEMPLATE = 'Pas encore de programme disponible : tu pourras faire des séances libres.';
+  const ENROL_FAILED =
+    "Le programme n'a pas pu être enregistré. Réessaie, ou décoche la case pour continuer sans programme.";
   const posts = (api: { calls: { method: string; path: string }[] }) =>
     api.calls.filter((c) => c.method === 'POST').map((c) => c.path);
 
@@ -214,16 +216,61 @@ describe('ReadyStep : programme recommandé (D15, spec §7.8)', () => {
     expect(posts(api)).toEqual([ENROLL, COMPLETE]);
   });
 
-  it('inscription refusée : l’onboarding ne se termine pas, le message s’affiche', async () => {
+  /** Message d'un échec d'inscription (ruling R40), lu avec la case : texte affiché et description de la case. */
+  async function enrolFailed(): Promise<void> {
+    const message = await screen.findByText(ENROL_FAILED);
+    const box = screen.getByRole('checkbox', { name: START });
+    expect(box.getAttribute('aria-describedby')?.split(' ')).toContain(message.id);
+  }
+
+  it('inscription refusée (422) : l’onboarding ne se termine pas, la marche à suivre s’affiche (R40)', async () => {
     const { api, location } = await openReady(HOUR, { templates: TEMPLATES });
     api.on('POST', ENROLL, { status: 422, body: { error: 'template_unavailable' } });
     await screen.findByRole('checkbox', { name: START });
     await until(offlineReady);
     await until(() => !button('Commencer').disabled);
     fireEvent.click(button('Commencer'));
-    await screen.findByText("Ce programme n'est pas disponible pour le moment.");
+    await enrolFailed();
     expect(posts(api)).toEqual([ENROLL]);
     expect(location()).toBe('/onboarding');
+  });
+
+  it('erreur du serveur (5xx) : message sur la case, « Commencer » reste utilisable et réessaie (R40)', async () => {
+    const { api, location } = await openReady(HOUR, { templates: TEMPLATES });
+    api.on('POST', ENROLL, { status: 500, body: { error: 'internal' } });
+    await screen.findByRole('checkbox', { name: START });
+    await until(offlineReady);
+    await until(() => !button('Commencer').disabled);
+    fireEvent.click(button('Commencer'));
+    await enrolFailed();
+    expect(location()).toBe('/onboarding');
+    await until(() => !button('Commencer').disabled);
+    // Réessayer : le serveur répond cette fois.
+    api.on('POST', ENROLL, { status: 201, body: { instance: INSTANCE_VIEW } });
+    api.on('POST', COMPLETE, { status: 200, body: makeMe() });
+    fireEvent.click(button('Commencer'));
+    await until(() => location() === '/');
+    expect(posts(api)).toEqual([ENROLL, ENROLL, COMPLETE]);
+  });
+
+  it('hors ligne : message sur la case ; décochée, l’onboarding se termine sans programme (R40)', async () => {
+    const { api, location } = await openReady(HOUR, { templates: TEMPLATES });
+    api.on('POST', COMPLETE, { status: 200, body: makeMe() });
+    await screen.findByRole('checkbox', { name: START });
+    await until(offlineReady);
+    await until(() => !button('Commencer').disabled);
+    api.setOffline('reject');
+    fireEvent.click(button('Commencer'));
+    await enrolFailed();
+    expect(location()).toBe('/onboarding');
+    await until(() => !button('Commencer').disabled);
+    // « décoche la case pour continuer sans programme » : le message s'en va, « Commencer » termine.
+    fireEvent.click(screen.getByRole('checkbox', { name: START }));
+    expect(screen.queryByText(ENROL_FAILED)).toBeNull();
+    api.setOffline(false);
+    fireEvent.click(button('Commencer'));
+    await until(() => location() === '/');
+    expect(posts(api)).toEqual([ENROLL, COMPLETE]);
   });
 
   it('case décochée : aucune inscription, l’onboarding se termine', async () => {

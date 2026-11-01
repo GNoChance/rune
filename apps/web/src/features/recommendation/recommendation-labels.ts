@@ -14,6 +14,9 @@ export const CURRENT_PROGRAM_LABEL = 'Ton programme actuel';
 export const NO_TEMPLATE_TEXT = 'Pas encore de programme disponible : tu pourras faire des séances libres.';
 /** Case d'E8 (D15), cochée par défaut. */
 export const START_WITH_PROGRAM = 'Commencer avec ce programme';
+/** Inscription d'E8 en échec (ruling R40) : ce qu'il faut faire, lu avec la case. */
+export const ENROL_FAILED_TEXT =
+  "Le programme n'a pas pu être enregistré. Réessaie, ou décoche la case pour continuer sans programme.";
 /** Bandeau du Profil (R-REC-7), vers `/program/choose`. */
 export const BETTER_PROGRAM = 'Un autre programme te correspond mieux';
 
