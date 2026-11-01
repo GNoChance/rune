@@ -19,7 +19,9 @@ export interface RulesSet {
   /** RIR cible d'un slot dont le modèle n'en donne pas (05 §1.3 : 2 à 3 RIR en réserve). */
   defaultTargetRir: number;
   defaultIncrementG: { upper: number; lower: number };
+  /** Semaine allégée (05 §10.3) : `targetRir` + `deloadRirPlus`, au plus `deloadRirMax` (05 §4 : 1 à 5). */
   deloadRirPlus: number;
+  deloadRirMax: number;
   restS: readonly [number, number];
   calibrationSessions: number;
   /** Séances de suite en douleur sur un état avant la suspension du slot (05 §13.7). */
@@ -90,6 +92,7 @@ const V1: RulesSet = {
   defaultTargetRir: 2,
   defaultIncrementG: { upper: 2500, lower: 5000 },
   deloadRirPlus: 2,
+  deloadRirMax: 5,
   restS: [30, 300],
   calibrationSessions: 3,
   painSuspendStreak: 2,

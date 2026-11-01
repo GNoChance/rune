@@ -43,9 +43,14 @@ export interface SlotShape {
 
 export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-function workSpec(slot: SlotSpec): SetSpec | undefined {
+/** Groupe de séries qui porte les cibles du slot : son premier groupe de travail (à défaut, son premier groupe). */
+export function workSpec(slot: SlotSpec): SetSpec | undefined {
   return slot.sets.find((s) => s.kind === 'work') ?? slot.sets[0];
 }
+
+/** Mesure d'un slot : celle de `workSpec` (05 §4 : un slot n'a qu'un type de séries). */
+export const slotMeasure = (slot: SlotSpec): Measure =>
+  workSpec(slot)?.durationS === undefined ? 'reps' : 'duration';
 
 export function slotShape(
   slot: SlotSpec,
@@ -63,7 +68,7 @@ export function slotShape(
     grid,
     rules,
     cautious,
-    measure: spec?.durationS === undefined ? 'reps' : 'duration',
+    measure: slotMeasure(slot),
     chainLength,
     durations: spec?.durationS ?? { min: 1, max: 1 },
     stepS: slot.progression.type === 'duration' ? slot.progression.stepS : rules.stepS,

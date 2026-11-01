@@ -9,6 +9,7 @@ export {
   stateExerciseId,
 } from './evaluate';
 export * from './loads';
+export * from './plan';
 export {
   initialProgramState,
   type ProgramState,
@@ -24,6 +25,7 @@ export {
   replayInstance,
   UnknownRulesVersionError,
 } from './replay';
+export * from './resolve';
 export * from './rules';
 export type { EngineBest } from './stall';
 export * from './types';

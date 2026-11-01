@@ -31,6 +31,8 @@ describe('règles versionnées', () => {
     expect(r.defaultTargetRir).toBe(2);
     expect(r.painSuspendStreak).toBe(2);
     expect(r.reactiveDeload).toEqual({ stalledSlots: 2, weeks: 2 });
+    expect(r.deloadRirPlus).toBe(2);
+    expect(r.deloadRirMax).toBe(5);
   });
   it('bornes des modèles et des changements (05 §5 règle 3, 05 §15)', () => {
     expect(currentRules()).toBe(RULES_BY_VERSION[RULES_VERSION]);

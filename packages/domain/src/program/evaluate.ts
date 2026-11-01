@@ -164,7 +164,11 @@ function nextTarget(t: SlotTargets, shape: SlotShape, steps: readonly CatalogShe
   };
 }
 
-function initialMode(type: ProgressionSpec['type'], shape: SlotShape, chained: boolean): SlotMode {
+/**
+ * Mode d'un état neuf (spec §4.3.5) : `duration` pour un slot en durée, `chain` pour une variante de la chaîne du
+ * slot, `linear` s'il y a une charge, `double` sinon. `planWorkout` le lit aussi pour un exercice encore sans état.
+ */
+export function initialMode(type: ProgressionSpec['type'], shape: SlotShape, chained: boolean): SlotMode {
   if (shape.measure === 'duration') return 'duration';
   if (type === 'chain' && chained) return 'chain';
   if (type === 'linear' && shape.grid.kind !== 'none') return 'linear';

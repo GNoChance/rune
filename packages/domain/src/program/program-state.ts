@@ -46,6 +46,11 @@ export function parisDaysBetween(fromMs: number, toMs: number): number {
   return dayNumber(parisDate(new Date(toMs))) - dayNumber(parisDate(new Date(fromMs)));
 }
 
+/** Jours civils de Paris d'un instant à la date civile de Paris `today` (`YYYY-MM-DD`), comme `parisDaysBetween`. */
+export function parisDaysUntil(fromMs: number, today: string): number {
+  return dayNumber(today) - dayNumber(parisDate(new Date(fromMs)));
+}
+
 const blockLength = (program: EffectiveProgram): number | null =>
   program.template.block.mode === 'planned' ? program.template.block.weeks : null;
 
