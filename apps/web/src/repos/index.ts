@@ -8,6 +8,7 @@ import { createGymsRepo, type GymsRepo } from './gyms-repo';
 import { createMeRepo, type MeRepo } from './me-repo';
 import { createPlacesRepo, type PlacesRepo } from './places-repo';
 import { createProfileRepo, type ProfileRepo } from './profile-repo';
+import { createProgramRepo, type ProgramRepo } from './program-repo';
 import { createRejectionsRepo, type RejectionsRepo } from './rejections-repo';
 import { createReviewRepo, type ReviewRepo } from './review-repo';
 import { createStatusRepo, type StatusRepo } from './status-repo';
@@ -35,6 +36,7 @@ export type { GymsRepo } from './gyms-repo';
 export type { DeviceOwner, MeRepo } from './me-repo';
 export type { PlacesRepo, PlaceView } from './places-repo';
 export type { ProfileRepo, TrainingProfileView } from './profile-repo';
+export { changeErrorsOf, isExpired, isStaleRevision, type ProgramRepo } from './program-repo';
 export type { RejectionsRepo, RejectionView } from './rejections-repo';
 export {
   type CatalogExport,
@@ -63,6 +65,7 @@ export interface Repos {
   catalog: CatalogRepo;
   credits: CreditsRepo;
   review: ReviewRepo;
+  program: ProgramRepo;
 }
 
 export function createRepos(s: AppServices): Repos {
@@ -79,6 +82,7 @@ export function createRepos(s: AppServices): Repos {
     catalog: catalogRepoFor(s),
     credits: createCreditsRepo(s),
     review: createReviewRepo(s),
+    program: createProgramRepo(s),
   };
 }
 
