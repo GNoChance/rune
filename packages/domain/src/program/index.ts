@@ -9,6 +9,21 @@ export {
   stateExerciseId,
 } from './evaluate';
 export * from './loads';
+export {
+  initialProgramState,
+  type ProgramState,
+  parisDaysBetween,
+  upcomingWeekType,
+} from './program-state';
+export {
+  type EngineEvent,
+  type EngineEventKind,
+  engineEventKey,
+  type ReplayInput,
+  type ReplayResult,
+  replayInstance,
+  UnknownRulesVersionError,
+} from './replay';
 export * from './rules';
 export type { EngineBest } from './stall';
 export * from './types';

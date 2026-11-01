@@ -29,6 +29,8 @@ describe('règles versionnées', () => {
     expect(r.defaultIncrementG).toEqual({ upper: 2500, lower: 5000 });
     expect(r.linearDoubleSpan).toBe(4);
     expect(r.defaultTargetRir).toBe(2);
+    expect(r.painSuspendStreak).toBe(2);
+    expect(r.reactiveDeload).toEqual({ stalledSlots: 2, weeks: 2 });
   });
   it('bornes des modèles et des changements (05 §5 règle 3, 05 §15)', () => {
     expect(currentRules()).toBe(RULES_BY_VERSION[RULES_VERSION]);

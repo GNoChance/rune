@@ -22,6 +22,10 @@ export interface RulesSet {
   deloadRirPlus: number;
   restS: readonly [number, number];
   calibrationSessions: number;
+  /** Séances de suite en douleur sur un état avant la suspension du slot (05 §13.7). */
+  painSuspendStreak: number;
+  /** Allègement réactif (05 §10.1) : au moins `stalledSlots` slots en stagnation sur les `weeks` dernières semaines. */
+  reactiveDeload: { stalledSlots: number; weeks: number };
   resume: {
     days14: { days: number; loadPct: number; variantsBack: number };
     days28: { days: number; loadPct: number; variantsBack: number };
@@ -88,6 +92,8 @@ const V1: RulesSet = {
   deloadRirPlus: 2,
   restS: [30, 300],
   calibrationSessions: 3,
+  painSuspendStreak: 2,
+  reactiveDeload: { stalledSlots: 2, weeks: 2 },
   resume: {
     days14: { days: 14, loadPct: 10, variantsBack: 0 },
     days28: { days: 28, loadPct: 20, variantsBack: 1 },
