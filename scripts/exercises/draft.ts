@@ -4,14 +4,17 @@
  *
  * - Lancé sur le poste de dev seulement, jamais en CI ni sur le serveur. Clé `ANTHROPIC_API_KEY` lue dans
  *   `.env.local` (ignoré par git) : clé d'un workspace Anthropic de développement, jamais affichée.
- * - Fiches traitées : les `draft` dont aucun champ IA n'est rempli, ou les ids passés par `--ids` (une fiche déjà
- *   rédigée est alors réécrite). Toute fiche qui n'est pas `draft` est refusée.
+ * - Fiches traitées : les squelettes (`draft` sans `drafting` dont seuls les muscles peuvent être remplis parmi les
+ *   champs IA), ou les ids passés par `--ids` (une fiche déjà rédigée est alors réécrite). Toute fiche qui n'est
+ *   pas `draft` est refusée.
  * - Appel : modèle `claude-opus-5-5` par défaut, effort `high`, sortie structurée par le JSON Schema des champs IA
  *   (dérivé de Zod), partie fixe en cache (prompt, guide de style, glossaire, taxonomie, fiches étalons), puis le
  *   squelette et les noms des voisines de chaîne ; 4 appels en parallèle au plus, pas d'API Batch.
  * - Réponse : validée comme en CI (`ExerciseSheetSchema` complet, puis `validateCatalog` sur tout le catalogue),
  *   2 essais au plus ; seuls les champs IA changent, avec `drafting` renseigné, `revision` + 1 et le statut laissé
- *   à `draft` ; fichier écrit en forme canonique. Sinon le fichier reste intact.
+ *   à `draft` ; fichier écrit en forme canonique. Sinon le fichier reste intact. Les muscles déjà remplis dans la
+ *   fiche sont gardés, quelle que soit la sortie de l'IA : le volume des modèles de programmes en dépend, et seule
+ *   la relecture les corrige.
  * - Aucune donnée personnelle envoyée : seuls des champs squelette listés ici partent vers l'API.
  *
  * Sortie 0 si tout est rédigé et le catalogue valide ; 1 sinon ; 2 pour une option inconnue.
@@ -108,7 +111,7 @@ export type DraftOptions = {
   client: AiClient;
   /** `DEFAULT_MODEL` à défaut. */
   model?: string;
-  /** Ids demandés ; à défaut, les brouillons aux champs IA vides. */
+  /** Ids demandés ; à défaut, les squelettes (`isSkeleton`). */
   ids?: readonly string[];
   maxTokens?: number;
   now?: () => Date;
@@ -129,7 +132,22 @@ const sheetFile = (id: string) => `${EXERCISES_DIR}/${id}.json`;
 const pick = (record: Json, keys: readonly string[]): Json =>
   Object.fromEntries(keys.filter((k) => record[k] !== undefined).map((k) => [k, record[k]]));
 
-const hasAiField = (json: Json) => EXERCISE_AI_FIELDS.some((k) => json[k] !== undefined);
+/**
+ * Champs IA qu'un squelette peut déjà porter et que la rédaction garde : les muscles, remplis à la main pour le
+ * volume des modèles de programmes (brique 3). Ils vont ensemble : dès que `primary_muscles` est rempli, les deux
+ * champs sont gardés, `secondary_muscles` absent valant « aucun ».
+ */
+const KEPT_AI_FIELDS: ReadonlySet<string> = new Set(['primary_muscles', 'secondary_muscles']);
+
+/**
+ * Squelette à rédiger sans `--ids` : `draft`, jamais rédigé (`drafting` absent, alors qu'une fiche étalon ou un
+ * brouillon IA l'ont), et aucun champ IA rempli hors des muscles. Une fiche rédigée n'est donc jamais réécrite
+ * sans être nommée, même si son `drafting` manque.
+ */
+const isSkeleton = (json: Json) =>
+  json.status === 'draft' &&
+  json.drafting === undefined &&
+  EXERCISE_AI_FIELDS.every((k) => KEPT_AI_FIELDS.has(k) || json[k] === undefined);
 
 const issuesOf = (issues: readonly { path: readonly PropertyKey[]; message: string }[]) =>
   issues.map((issue) => `${issue.path.map(String).join('.') || '(fiche)'} : ${issue.message}`);
@@ -165,7 +183,7 @@ function select(
     a.file < b.file ? -1 : a.file > b.file ? 1 : 0,
   )) {
     const json = entry.json;
-    if (!isRecord(json) || json.status !== 'draft' || hasAiField(json)) continue;
+    if (!isRecord(json) || !isSkeleton(json)) continue;
     const id = entry.file.slice(EXERCISES_DIR.length + 1, -'.json'.length);
     plan.push(asked(id));
   }
@@ -263,11 +281,18 @@ function aiOutputSchema(): object {
   return { type: 'object', properties, required, additionalProperties: false };
 }
 
-/** Fiche rédigée : champs non IA repris tels quels, champs IA remplacés, `revision` + 1, `drafting`. */
+/**
+ * Fiche rédigée : champs non IA repris tels quels, champs IA remplacés sauf les muscles déjà remplis
+ * (`KEPT_AI_FIELDS`, gardés quelle que soit la sortie), `revision` + 1, `drafting`.
+ */
 function mergeDraft(json: Json, ai: Json, drafting: Json): Json {
   const out: Json = {};
+  const keepMuscles = json.primary_muscles !== undefined;
   for (const [key, value] of Object.entries(json)) if (!AI_FIELDS.has(key)) out[key] = value;
-  for (const key of EXERCISE_AI_FIELDS) if (ai[key] !== undefined) out[key] = ai[key];
+  for (const key of EXERCISE_AI_FIELDS) {
+    const value = keepMuscles && KEPT_AI_FIELDS.has(key) ? (json[key] ?? []) : ai[key];
+    if (value !== undefined) out[key] = value;
+  }
   out.revision = (json.revision as number) + 1;
   out.drafting = drafting;
   return out;

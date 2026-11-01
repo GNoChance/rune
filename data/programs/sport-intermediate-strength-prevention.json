@@ -3,7 +3,7 @@
   "id": "sport-intermediate-strength-prevention",
   "version": 1,
   "name": "Complément sport · Intermédiaire · Force et prévention",
-  "description": "Deux séances de 30 à 40 minutes par semaine, en complément de ton sport : force des jambes en séries lourdes, réceptions de sauts, prévention des ischio-jambiers, des adducteurs, des mollets et des épaules, et du gainage. Chaque exercice a sa version à la salle et sa version sans matériel.",
+  "description": "Deux séances de 30 à 40 minutes par semaine, en complément de ton sport : jambes en séries lourdes, réceptions de sauts, prévention (ischio-jambiers, adducteurs, mollets, épaules) et gainage. La plupart des exercices se font aussi sans matériel ; les autres sont remplacés ou sautés sans lui.",
   "context": "sport",
   "level": "intermediate",
   "daysPerWeek": { "min": 2, "max": 2, "default": 2 },
@@ -59,7 +59,7 @@
           "id": "A5",
           "movementPattern": "horizontal_push",
           "role": "secondary",
-          "exercises": ["bench-press", "dumbbell-bench-press", "push-up"],
+          "exercises": ["dumbbell-bench-press", "bench-press", "push-up"],
           "sets": [
             { "kind": "work", "count": 2, "reps": { "min": 6, "max": 10 }, "targetRir": 2, "restS": 90 }
           ],

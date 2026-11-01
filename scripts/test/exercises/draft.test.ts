@@ -176,8 +176,13 @@ describe('exercises:draft, rédaction', () => {
     expect(JSON.parse(after).revision).toBe(5);
   });
 
-  it("remplace tous les champs IA d'une fiche redemandée par --ids", async () => {
-    await writeSheet({ ...skeleton('squat'), ...aiOutput('ancien', { setup: 'Ancien réglage.' }) });
+  it("remplace les champs IA d'une fiche redemandée par --ids, sauf ses muscles", async () => {
+    const old = aiOutput('ancien', {
+      primary_muscles: ['hamstrings'],
+      secondary_muscles: ['calves'],
+      setup: 'Ancien réglage.',
+    });
+    await writeSheet({ ...skeleton('squat'), ...old });
     const fake = createFakeAiClient([{ value: aiOutput('squat') }]);
 
     await draftExercises({ dataDir: dir, client: fake, ids: ['squat'], now: () => NOW });
@@ -185,6 +190,43 @@ describe('exercises:draft, rédaction', () => {
     const written = JSON.parse(await readSheetText('squat'));
     expect(written.aliases).toEqual(['Alias squat']);
     expect(written).not.toHaveProperty('setup');
+    expect([written.primary_muscles, written.secondary_muscles]).toEqual([['hamstrings'], ['calves']]);
+  });
+
+  it("garde les muscles d'un squelette, quelle que soit la sortie de l'IA (volume des modèles)", async () => {
+    // Muscles remplis à la main (brique 3) : la sortie de l'IA en propose d'autres, ils ne changent pas.
+    await writeSheet(
+      skeleton('nordic', {
+        movement_pattern: 'knee_flexion',
+        mechanics: 'isolation',
+        primary_muscles: ['hamstrings'],
+        secondary_muscles: ['calves'],
+      }),
+    );
+    // Principaux seuls : les secondaires absents valent « aucun », pas ceux de l'IA.
+    await writeSheet(
+      skeleton('leg-extension', {
+        movement_pattern: 'knee_extension',
+        mechanics: 'isolation',
+        primary_muscles: ['quadriceps'],
+      }),
+    );
+    const fake = createFakeAiClient((req) => ({ value: aiOutput(requestedId(req)) }));
+
+    const result = await draftExercises({ dataDir: dir, client: fake, now: () => NOW });
+
+    expect(result.outcomes.map((o) => [o.id, o.status])).toEqual([
+      ['leg-extension', 'drafted'],
+      ['nordic', 'drafted'],
+    ]);
+    const nordic = JSON.parse(await readSheetText('nordic'));
+    expect([nordic.primary_muscles, nordic.secondary_muscles]).toEqual([['hamstrings'], ['calves']]);
+    expect(nordic.aliases).toEqual(['Alias nordic']);
+    expect(nordic.revision).toBe(2);
+    expect(nordic.drafting).toMatchObject({ origin: 'ai' });
+    const extension = JSON.parse(await readSheetText('leg-extension'));
+    expect([extension.primary_muscles, extension.secondary_muscles]).toEqual([['quadriceps'], []]);
+    expect((await validateDataDir(dir)).errors).toEqual([]);
   });
 
   it("envoie le modèle, l'effort high, la partie fixe en cache et le schéma des seuls champs IA", async () => {
@@ -280,17 +322,36 @@ describe('exercises:draft, rédaction', () => {
 });
 
 describe('exercises:draft, choix des fiches', () => {
-  it('sans --ids : seulement les brouillons aux champs IA vides', async () => {
+  it('sans --ids : seulement les squelettes, muscles remplis ou non ; jamais une fiche rédigée', async () => {
+    const aiDrafting = {
+      origin: 'ai',
+      model: DEFAULT_MODEL,
+      prompt_version: PROMPT_VERSION,
+      generated_at: '2026-10-29T09:00:00Z',
+    };
     await writeSheet(skeleton('a-vide'));
-    await writeSheet({ ...skeleton('b-deja-redige'), ...aiOutput('b') });
+    await writeSheet(
+      skeleton('a-muscles', { primary_muscles: ['quadriceps', 'glutes'], secondary_muscles: ['adductors'] }),
+    );
+    await writeSheet({ ...skeleton('b-deja-redige'), ...aiOutput('b'), drafting: aiDrafting });
+    await writeSheet({
+      ...skeleton('b-etalon'),
+      ...aiOutput('etalon'),
+      drafting: { origin: 'human', generated_at: '2026-10-30T15:00:00.000Z' },
+    });
+    // Textes sans `drafting` (écrits à la main sans traçabilité) : pas un squelette, jamais réécrits par défaut.
+    await writeSheet({ ...skeleton('b-sans-drafting'), ...aiOutput('sans') });
     await writeSheet({ ...skeleton('c-relu', { status: 'reviewed', illustrations: [] }), ...aiOutput('c') });
     await writeSheet(skeleton('d-retire', { status: 'retired' }));
     const fake = createFakeAiClient((req) => ({ value: aiOutput(requestedId(req)) }));
 
     const result = await draftExercises({ dataDir: dir, client: fake, now: () => NOW });
 
-    expect(fake.calls.map(requestedId)).toEqual(['a-vide']);
-    expect(result.outcomes.map((o) => [o.id, o.status])).toEqual([['a-vide', 'drafted']]);
+    expect(fake.calls.map(requestedId).sort()).toEqual(['a-muscles', 'a-vide']);
+    expect(result.outcomes.map((o) => [o.id, o.status])).toEqual([
+      ['a-muscles', 'drafted'],
+      ['a-vide', 'drafted'],
+    ]);
   });
 
   it("refuse une fiche qui n'est pas draft, sans appel ni écriture", async () => {

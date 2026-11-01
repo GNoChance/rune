@@ -12,7 +12,7 @@ Notes de `pnpm exercises:draft` (04 §9 ; spec de la brique 2, §5). Les valeurs
 
    La clé ne s'écrit nulle part ailleurs : ni fichier versionné, ni journal, ni rapport, ni message de commit. Le script ne l'affiche jamais. Sans `.env.local` (ou sans la ligne), il prend la variable d'environnement `ANTHROPIC_API_KEY` du poste, là où la procédure P5 (`docs/exploitation/P5-rotation-secrets.md`) range la clé de `rune-dev` ; `.env.local` passe en premier.
 2. Les squelettes `data/exercises/<id>.json` existent au statut `draft` et passent `pnpm data:validate`.
-3. `pnpm exercises:draft` rédige tous les `draft` dont aucun champ IA n'est rempli ; `pnpm exercises:draft --ids goblet-squat,lat-pulldown` rédige ces fiches-là (une fiche déjà rédigée est réécrite : ne jamais passer les ids des étalons, `push-up` et `dumbbell-romanian-deadlift`). Depuis la brique 3 (tâche 8), les 64 squelettes du lot A ont leurs muscles (`primary_muscles`, `secondary_muscles`) renseignés à la main pour le volume des modèles : sans `--ids`, le script les saute tous. Il faut les nommer par `--ids` ; la rédaction réécrit alors leurs muscles (le prompt ne les envoie pas), à comparer à la relecture avec ceux de `docs/catalog/lot-a.md`. Options : `--model <id>` (prix connu exigé), `--max-tokens <n>` (16 000 par défaut), `--dir <dossier data>`.
+3. `pnpm exercises:draft` rédige tous les squelettes : `draft` sans `drafting`, dont aucun champ IA n'est rempli hors des muscles ; une fiche étalon ou un brouillon IA (qui ont `drafting`) n'est jamais repris sans être nommé. `pnpm exercises:draft --ids goblet-squat,lat-pulldown` rédige ces fiches-là (une fiche déjà rédigée est réécrite : ne jamais passer les ids des étalons, `push-up` et `dumbbell-romanian-deadlift`). **Muscles gardés** : depuis la brique 3 (tâche 8), les 64 squelettes du lot A ont leurs muscles (`primary_muscles`, `secondary_muscles`) renseignés à la main, parce que le volume des modèles de programmes en dépend (`docs/catalog/lot-a.md`). La rédaction garde les muscles déjà présents dans une fiche, quelle que soit la sortie de l'IA (le modèle en propose quand même, le schéma de sortie étant le même pour tout le lot ; ils sont ignorés) : seule la relecture les corrige. Options : `--model <id>` (prix connu exigé), `--max-tokens <n>` (16 000 par défaut), `--dir <dossier data>`.
 4. Le script affiche une ligne par fiche (rédigée, refusée, échec, non envoyée) avec son coût, le coût total, puis le résultat de `data:validate`. Sortie 0 si tout est rédigé et le catalogue valide, 1 sinon. Il refuse de tourner quand la variable `CI` est définie.
 5. Relire le diff, lancer `pnpm data:validate`, ouvrir la PR (04 §8, étape 2).
 
@@ -30,7 +30,7 @@ Notes de `pnpm exercises:draft` (04 §9 ; spec de la brique 2, §5). Les valeurs
   pnpm exercises:draft --ids back-squat,lat-pulldown,front-plank,incline-push-up,band-external-rotation
   ```
 
-  Toujours passer `--ids` : depuis que les muscles des squelettes sont renseignés à la main (brique 3, tâche 8), le script sans `--ids` n'en rédige plus aucun.
+  Toujours passer `--ids` pendant le pilote : sans, le script rédigerait les 64 squelettes d'un coup.
 
 ## Valeurs vérifiées le 2026-10-30
 

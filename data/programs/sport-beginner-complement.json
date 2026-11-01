@@ -3,7 +3,7 @@
   "id": "sport-beginner-complement",
   "version": 1,
   "name": "Complément sport · Débutant · Corps entier et prévention",
-  "description": "Une séance de 30 à 40 minutes, 2 fois par semaine, en complément de ton sport : les grands mouvements du corps entier en 2 séries, puis la prévention des ischio-jambiers, des adducteurs et des mollets, et du gainage. Chaque exercice a sa version à la salle et sa version sans matériel.",
+  "description": "Une séance de 30 à 40 minutes, 2 fois par semaine, en complément de ton sport : les grands mouvements en 2 séries, puis la prévention (ischio-jambiers, adducteurs, mollets) et le gainage. Tout se fait aussi sans matériel, sauf le tirage vertical (poulie, élastique ou barre), sauté sinon.",
   "context": "sport",
   "level": "beginner",
   "daysPerWeek": { "min": 2, "max": 2, "default": 2 },
