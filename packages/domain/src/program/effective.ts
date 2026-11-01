@@ -42,7 +42,7 @@ export const workSetCount = (slot: SlotSpec): number =>
   slot.sets.reduce((n, s) => (s.kind === 'work' ? n + s.count : n), 0);
 
 /** Vrai si le slot se mesure en durée (un groupe de travail porte `durationS`). */
-export const isDurationSlot = (slot: SlotSpec): boolean =>
+const isDurationSlot = (slot: SlotSpec): boolean =>
   slot.sets.some((s) => s.kind === 'work' && s.durationS !== undefined);
 
 /** Identifiant du slot créé par un `add_slot` (spec brique 3, plan tâche 3). */

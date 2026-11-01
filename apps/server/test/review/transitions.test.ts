@@ -7,7 +7,7 @@ import {
 import { afterEach, describe, expect, it } from 'vitest';
 import { insertSheet } from '../../src/catalog/repo';
 import { createTestContext, createUser, login, type TestContext } from '../support';
-import { sheetFixture, skeletonFixture } from '../support/catalog';
+import { sheetFixture, skeletonFixture, templateFixture } from '../support/catalog';
 import { postTransition, putSheet, rebuild } from '../support/review';
 
 let ctx: TestContext;
@@ -264,18 +264,7 @@ describe('→ retired', () => {
   it('refus de retirer une fiche citée par un modèle, dans une liste de slot ou par sa chaîne', async () => {
     const { cookies } = await setup();
     await rebuild(ctx, [
-      {
-        id: 'gym-beginner-full-body',
-        workouts: [
-          {
-            id: 'A',
-            slots: [
-              { id: 'A1', exercises: ['publiee'] },
-              { id: 'A2', chain: 'rangee' },
-            ],
-          },
-        ],
-      },
+      templateFixture('gym-beginner-full-body', [{ exercises: ['publiee'] }, { chain: 'rangee' }]),
     ]);
     await blocked(move(cookies.admin, 'publiee', 'retired'), 'publiee', ['referenced_by_template']);
     await blocked(move(cookies.admin, 'chain-a', 'retired'), 'chain-a', [

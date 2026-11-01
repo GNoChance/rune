@@ -1,28 +1,38 @@
 /**
- * `pnpm data:validate [--strict] [--dir <dossier>]` : valide le catalogue du dépôt (04 §10 et §13, critère 1).
+ * `pnpm data:validate [--strict] [--dir <dossier>] [--base <ref>]` : valide le catalogue du dépôt (04 §10 et §13,
+ * critère 1) et les modèles de programmes (05 §5).
  *
  * Lit `data/` (ou `--dir`) : les fiches `exercises/*.json` (texte brut et JSON, pour la forme canonique), le
  * manifeste `illustrations/manifest.json` et l'empreinte de chaque fichier de `illustrations/files/`, les modèles
- * `programs/*.json` et le glossaire `glossary.json`, puis appelle `validateCatalog` de `@rune/domain`.
- * Sortie 0 si tout est valide ; sinon 1 et une ligne par erreur (`<fichier> [<code>] <message>`) ; 2 pour une
- * option inconnue.
+ * `programs/*.json` et le glossaire `glossary.json`, puis appelle `validateCatalog` de `@rune/domain`, et
+ * `validateTemplate` sur chaque modèle contre toutes les fiches (tous statuts : la règle 5 vérifie l'existence et
+ * le type, pas la publication). Sortie 0 si tout est valide ; sinon 1 et une ligne par erreur
+ * (`<fichier> [<code>] <message>`) ; 2 pour une option inconnue.
+ *
+ * Règle 8 de 05 §5 (`--base <ref>`, `main` par défaut) : un modèle qui existe dans `<ref>` et dont le contenu a
+ * changé a une `version` plus haute. Le contenu se compare sur le JSON, pas sur la mise en forme. Si `<ref>` est
+ * introuvable (copie sans historique), la règle n'est pas vérifiée et un avertissement le dit.
  *
  * Règle R-EQ-5 (chaque code de matériel utilisé par au moins une fiche non retirée) : elle n'est exigée qu'avec
  * `--strict`. Tant que le lot A n'est pas publié, le catalogue n'utilise pas encore tout le matériel ; la CI
  * passera à `pnpm data:validate --strict` une fois le lot A publié (plan de la brique 2, tâche 4).
  */
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { IllustrationEntry } from '@rune/contracts';
+import { promisify } from 'node:util';
+import { DraftSheetSchema, IllustrationEntry } from '@rune/contracts';
 import {
   type CatalogFile,
   type CatalogInput,
+  type CatalogSheet,
   EXERCISES_DIR,
   ILLUSTRATION_FILES_DIR,
   MANIFEST_FILE,
   validateCatalog,
+  validateTemplate,
 } from '@rune/domain';
 
 /** Dossier `data/` du dépôt, quel que soit le dossier courant. */
@@ -30,15 +40,26 @@ export const DEFAULT_DATA_DIR = fileURLToPath(new URL('../../data/', import.meta
 export const GLOSSARY_FILE = 'glossary.json';
 export const PROGRAMS_DIR = 'programs';
 
-const USAGE = 'Usage : pnpm data:validate [--strict] [--dir <dossier data>]';
+/** Référence de la règle 8 par défaut : la branche principale. */
+export const DEFAULT_BASE = 'main';
 
-/** Erreur rendue par le script : celles de `validateCatalog`, plus les fichiers illisibles et le glossaire. */
+const USAGE = 'Usage : pnpm data:validate [--strict] [--dir <dossier data>] [--base <référence git>]';
+
+/**
+ * Erreur rendue par le script : celles de `validateCatalog` et de `validateTemplate`, plus les fichiers illisibles,
+ * le glossaire, les identifiants de modèles en double et la règle 8 (`version_not_bumped`).
+ */
 export type DataError = { file: string; code: string; message: string };
 
 export type DataValidation = {
   errors: DataError[];
+  /** Ce qui n'a pas pu être vérifié (règle 8 sans référence) : n'empêche pas la sortie 0. */
+  warnings: string[];
   counts: { sheets: number; illustrations: number; templates: number };
 };
+
+/** Modèle lu : chemin relatif à `data/` et contenu. */
+export type TemplateFile = { file: string; json: unknown };
 
 const binary = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
@@ -160,10 +181,13 @@ export function checkGlossary(json: unknown): DataError[] {
   return errors;
 }
 
-/** Lit `dataDir` et rend l'entrée de `validateCatalog`, avec les erreurs de lecture et du glossaire. */
+/**
+ * Lit `dataDir` et rend l'entrée de `validateCatalog`, les modèles avec leur fichier, et les erreurs de lecture et
+ * du glossaire.
+ */
 export async function readCatalogInput(
   dataDir: string,
-): Promise<{ input: CatalogInput; errors: DataError[] }> {
+): Promise<{ input: CatalogInput; templates: TemplateFile[]; errors: DataError[] }> {
   const errors: DataError[] = [];
 
   const sheets: CatalogFile[] = [];
@@ -182,10 +206,11 @@ export async function readCatalogInput(
     illustrationFiles.set(name, createHash('sha256').update(bytes).digest('hex'));
   }
 
-  const templates: unknown[] = [];
+  const templates: TemplateFile[] = [];
   for (const name of await listFiles(dataDir, PROGRAMS_DIR, isJson)) {
-    const read = await readJson(dataDir, `${PROGRAMS_DIR}/${name}`, errors);
-    if (read !== undefined) templates.push(read.json);
+    const file = `${PROGRAMS_DIR}/${name}`;
+    const read = await readJson(dataDir, file, errors);
+    if (read !== undefined) templates.push({ file, json: read.json });
   }
 
   const glossary = await readJson(dataDir, GLOSSARY_FILE, errors);
@@ -199,19 +224,136 @@ export async function readCatalogInput(
     errors.push(...checkGlossary(glossary.json));
   }
 
-  return { input: { sheets, manifest, templates, illustrationFiles }, errors };
+  return {
+    input: { sheets, manifest, templates: templates.map((t) => t.json), illustrationFiles },
+    templates,
+    errors,
+  };
 }
 
-/** Valide le dossier `dataDir` ; erreurs triées par fichier, chemins relatifs à `dataDir`. */
+/** Fiches lisibles par le validateur des modèles, tous statuts ; une fiche invalide (déjà signalée) est sautée. */
+function catalogSheets(sheets: readonly CatalogFile[]): CatalogSheet[] {
+  return sheets.flatMap(({ json }) => {
+    const parsed = DraftSheetSchema.safeParse(json);
+    if (!parsed.success) return [];
+    const sheet = parsed.data;
+    // Un squelette n'a pas encore ses muscles (champs IA) : il ne compte alors pour aucun groupe de volume.
+    return [
+      {
+        ...sheet,
+        primary_muscles: sheet.primary_muscles ?? [],
+        secondary_muscles: sheet.secondary_muscles ?? [],
+      },
+    ];
+  });
+}
+
+/** Règles 1 à 7 de 05 §5 sur chaque modèle, et identifiant de modèle unique entre les fichiers (règle 2). */
+function checkTemplates(templates: readonly TemplateFile[], catalog: readonly CatalogSheet[]): DataError[] {
+  const errors: DataError[] = [];
+  const ids = new Map<string, string>();
+  for (const { file, json } of templates) {
+    for (const issue of validateTemplate(json, catalog)) {
+      const message = issue.path === '' ? issue.message : `${issue.path} : ${issue.message}`;
+      errors.push({ file, code: issue.code, message });
+    }
+    const id = isRecord(json) && typeof json.id === 'string' ? json.id : undefined;
+    if (id === undefined) continue;
+    const first = ids.get(id);
+    if (first === undefined) ids.set(id, file);
+    else errors.push({ file, code: 'duplicate_id', message: `L'id « ${id} » est déjà celui de ${first}.` });
+  }
+  return errors;
+}
+
+const execFileAsync = promisify(execFile);
+
+/** Sortie de `git -C <dataDir> <args>`, ou null si la commande échoue (pas de dépôt, référence ou fichier absents). */
+async function git(dataDir: string, args: readonly string[]): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', dataDir, ...args], { encoding: 'utf8' });
+    return stdout;
+  } catch {
+    return null;
+  }
+}
+
+/** JSON aux clés triées, à toute profondeur : deux contenus égaux ont la même forme, quelle que soit la mise en page. */
+function sortedKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortedKeys);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, sortedKeys(value[key])]),
+  );
+}
+
+const versionOf = (json: unknown): number | null =>
+  isRecord(json) && typeof json.version === 'number' ? json.version : null;
+
+/**
+ * Règle 8 de 05 §5 : un modèle présent dans `base` dont le contenu diffère a une `version` plus haute. Rien à
+ * vérifier sans modèle ; référence introuvable : un avertissement, aucune erreur.
+ */
+export async function checkVersionBumps(
+  dataDir: string,
+  base: string,
+  templates: readonly TemplateFile[],
+): Promise<{ errors: DataError[]; warnings: string[] }> {
+  if (templates.length === 0) return { errors: [], warnings: [] };
+  if ((await git(dataDir, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`])) === null) {
+    return {
+      errors: [],
+      warnings: [`règle 8 non vérifiée (05 §5) : référence git « ${base} » introuvable.`],
+    };
+  }
+  const errors: DataError[] = [];
+  for (const { file, json } of templates) {
+    const text = await git(dataDir, ['show', `${base}:./${file}`]);
+    if (text === null) continue; // Modèle nouveau : rien à comparer.
+    let before: unknown;
+    try {
+      before = JSON.parse(text);
+    } catch {
+      continue;
+    }
+    if (JSON.stringify(sortedKeys(before)) === JSON.stringify(sortedKeys(json))) continue;
+    const was = versionOf(before);
+    const now = versionOf(json);
+    if (was === null || now === null || now > was) continue;
+    errors.push({
+      file,
+      code: 'version_not_bumped',
+      message: `Contenu changé depuis ${base} sans hausse de version (${was} dans ${base}, ${now} ici) : 05 §5, règle 8.`,
+    });
+  }
+  return { errors, warnings: [] };
+}
+
+/**
+ * Valide le dossier `dataDir` ; erreurs triées par fichier, chemins relatifs à `dataDir`. La règle 8 n'est vérifiée
+ * qu'avec `base`.
+ */
 export async function validateDataDir(
   dataDir: string,
-  options: { strict?: boolean } = {},
+  options: { strict?: boolean; base?: string } = {},
 ): Promise<DataValidation> {
-  const { input, errors } = await readCatalogInput(dataDir);
+  const { input, templates, errors } = await readCatalogInput(dataDir);
   const result = validateCatalog(input, options);
-  const all: DataError[] = [...errors, ...result.errors].sort((a, b) => binary(a.file, b.file));
+  const versions =
+    options.base === undefined
+      ? { errors: [], warnings: [] }
+      : await checkVersionBumps(dataDir, options.base, templates);
+  const all: DataError[] = [
+    ...errors,
+    ...result.errors,
+    ...checkTemplates(templates, catalogSheets(input.sheets)),
+    ...versions.errors,
+  ].sort((a, b) => binary(a.file, b.file));
   return {
     errors: all,
+    warnings: versions.warnings,
     counts: {
       sheets: input.sheets.length,
       illustrations: input.manifest.length,
@@ -233,6 +375,7 @@ export async function main(
 ): Promise<number> {
   let strict = false;
   let dataDir = DEFAULT_DATA_DIR;
+  let base = DEFAULT_BASE;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const value = argv[i + 1];
@@ -241,12 +384,16 @@ export async function main(
     } else if (arg === '--dir' && value !== undefined) {
       dataDir = resolve(value);
       i += 1;
+    } else if (arg === '--base' && value !== undefined) {
+      base = value;
+      i += 1;
     } else {
       out.error(USAGE);
       return 2;
     }
   }
-  const { errors, counts } = await validateDataDir(dataDir, { strict });
+  const { errors, warnings, counts } = await validateDataDir(dataDir, { strict, base });
+  for (const warning of warnings) out.error(`Avertissement : ${warning}`);
   for (const e of errors) out.error(`${display(dataDir, e.file)} [${e.code}] ${e.message}`);
   if (errors.length > 0) {
     out.error(`Catalogue invalide : ${errors.length} erreur(s).`);

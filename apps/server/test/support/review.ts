@@ -1,4 +1,4 @@
-import type { DraftSheet, TransitionRequest } from '@rune/contracts';
+import type { DraftSheet, ProgramTemplate, TransitionRequest } from '@rune/contracts';
 import { canonicalJson, contentOf } from '@rune/domain';
 import { rebuildCatalog } from '../../src/catalog/bundle';
 import { insertSheet, sheetToRow } from '../../src/catalog/repo';
@@ -74,7 +74,7 @@ export function postTransition(
  * Reconstruit le bloc servi depuis la base, comme le chargeur au démarrage ; `templates` remplace les modèles de
  * programmes gardés (sinon ceux de la reconstruction précédente). Rend la version du catalogue.
  */
-export async function rebuild(ctx: TestContext, templates?: readonly unknown[]): Promise<string> {
+export async function rebuild(ctx: TestContext, templates?: readonly ProgramTemplate[]): Promise<string> {
   const bundle = await ctx.deps.db.transaction().execute((trx) => rebuildCatalog(trx, ctx.deps, templates));
   return bundle.version;
 }

@@ -26,11 +26,41 @@ const squatIllustration = {
   replace_before_public: false,
 };
 
+/** Modèle de programme qui passe `ProgramTemplateSchema` (05 §4). */
+const fullBody = {
+  schemaVersion: 1,
+  id: 'full-body',
+  version: 2,
+  name: 'Corps entier',
+  description: 'Modèle de test.',
+  context: 'gym',
+  level: 'beginner',
+  daysPerWeek: { min: 2, max: 3, default: 3 },
+  estimatedMinutes: 45,
+  block: { mode: 'reactive' },
+  workouts: [
+    {
+      id: 'A',
+      name: 'Séance A',
+      slots: [
+        {
+          id: 'A1',
+          movementPattern: 'squat',
+          role: 'main',
+          exercises: ['squat'],
+          sets: [{ kind: 'work', count: 3, reps: { min: 8, max: 12 }, targetRir: 2, restS: 120 }],
+          progression: { type: 'double' },
+        },
+      ],
+    },
+  ],
+};
+
 const bundle = {
   version: 'cat-2',
   exercises: [{ id: 'squat', name: 'Squat' }],
   illustrations: [squatIllustration],
-  programTemplates: [{ id: 'full-body' }],
+  programTemplates: [{ template: fullBody, available: true }],
   adviceSheets: [{ id: 'echauffement' }],
 };
 
@@ -66,10 +96,28 @@ describe('refreshCatalog', () => {
     expect(await refreshCatalog(db, server)).toBe('updated');
     expect(await db.table('exercises').toArray()).toEqual(bundle.exercises);
     expect(await db.table('illustrations').toArray()).toEqual(bundle.illustrations);
-    expect(await db.table('programTemplates').toArray()).toEqual(bundle.programTemplates);
+    expect(await db.table('programTemplates').toArray()).toEqual([
+      { id: 'full-body', template: fullBody, available: true },
+    ]);
     expect(await db.table('adviceSheets').toArray()).toEqual(bundle.adviceSheets);
     expect(await getMeta(db, 'catalogVersion')).toBe('cat-2');
     expect(await getMeta(db, 'serverCatalogVersion')).toBe('cat-2');
+  });
+
+  it('modèle de programme invalide : ignoré, les autres stockés, le catalogue mis à jour', async () => {
+    await db.table('programTemplates').put({ id: 'ancien', template: {}, available: true });
+    const invalid = [
+      { id: 'full-body' },
+      { template: { ...fullBody, id: 'sans-dispo' } },
+      { template: { ...fullBody, id: 'mauvais', level: 'expert' }, available: true },
+    ];
+    const programTemplates = [...invalid, { template: { ...fullBody, id: 'autre' }, available: false }];
+    server.on('GET /api/catalog', () => server.json(200, { ...bundle, programTemplates }));
+    expect(await refreshCatalog(db, server)).toBe('updated');
+    expect(await db.table('programTemplates').toArray()).toEqual([
+      { id: 'autre', template: { ...fullBody, id: 'autre' }, available: false },
+    ]);
+    expect(await getMeta(db, 'catalogVersion')).toBe('cat-2');
   });
 
   it('SW contrôleur → postMessage SYNC_ILLUSTRATIONS', async () => {

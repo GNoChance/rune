@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import type { DraftSheet, ExerciseSheet, IllustrationEntry } from '@rune/contracts';
+import type { DraftSheet, ExerciseSheet, IllustrationEntry, ProgramTemplate } from '@rune/contracts';
 import { canonicalJson } from '@rune/domain';
 
 /** Fiche publiée complète et valide (squat goblet de la maquette), sans chaîne ni illustration. */
@@ -97,6 +97,44 @@ export function skeletonFixture(id: string, overrides: Partial<DraftSheet> = {})
     level: 1,
     not_for_minors: false,
     ...overrides,
+  };
+}
+
+/**
+ * Modèle de programme qui passe `ProgramTemplateSchema` (05 §4) : une séance `A`, un slot `A<n>` par entrée de
+ * `slots` (liste de fiches ou chaîne). Seul le schéma est tenu : pas les règles de couverture ni de volume.
+ */
+export function templateFixture(
+  id: string,
+  slots: readonly ({ exercises: readonly string[] } | { chain: string })[] = [
+    { exercises: ['goblet-squat'] },
+  ],
+): ProgramTemplate {
+  return {
+    schemaVersion: 1,
+    id,
+    version: 1,
+    name: `Modèle ${id}`,
+    description: 'Modèle de test.',
+    context: 'gym',
+    level: 'beginner',
+    daysPerWeek: { min: 2, max: 3, default: 3 },
+    estimatedMinutes: 45,
+    block: { mode: 'reactive' },
+    workouts: [
+      {
+        id: 'A',
+        name: 'Séance A',
+        slots: slots.map((s, i) => ({
+          id: `A${i + 1}`,
+          movementPattern: 'squat',
+          role: 'main',
+          ...('chain' in s ? { chain: s.chain } : { exercises: [...s.exercises] }),
+          sets: [{ kind: 'work', count: 3, reps: { min: 8, max: 12 }, targetRir: 2, restS: 120 }],
+          progression: { type: 'double' },
+        })),
+      },
+    ],
   };
 }
 

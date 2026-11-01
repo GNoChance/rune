@@ -2,11 +2,12 @@ import { createHash } from 'node:crypto';
 import {
   type CatalogBundle,
   type DraftSheet,
+  type ProgramTemplate,
   SERVED_EXCLUDED_KEYS,
   type ServedSheet,
   ServedSheetSchema,
 } from '@rune/contracts';
-import { canonicalJson } from '@rune/domain';
+import { canonicalJson, templateAvailable } from '@rune/domain';
 import type { DbExecutor } from '../db/schema';
 import { getServerMeta } from '../db/server-meta';
 import type { AppDeps } from '../deps';
@@ -21,7 +22,7 @@ import { rowToEntry, rowToSheet } from './repo';
 type CatalogContent = Omit<CatalogBundle, 'version'>;
 
 /** Dernier bloc construit et modèles reçus du chargeur, par dépendances (une appli, ou un test). */
-const state = new WeakMap<AppDeps, { bundle: CatalogBundle | null; templates: readonly unknown[] }>();
+const state = new WeakMap<AppDeps, { bundle: CatalogBundle | null; templates: readonly ProgramTemplate[] }>();
 
 /** Dernier bloc construit pour ces dépendances, sinon null. Peut précéder un commit : servir `currentCatalog`. */
 export function getServedCatalog(deps: AppDeps): CatalogBundle | null {
@@ -47,8 +48,10 @@ export function catalogVersion(content: CatalogContent): string {
 /**
  * Reconstruit le bloc depuis la base (spec brique 2 §3.7) : fiches `published`, et `retired` déjà publiées
  * (`published_at` non nul, spec §3.6), triées par `id` ; manifeste de la table `illustration` ; modèles reçus du
- * chargeur (`templates`, gardés pour les reconstructions suivantes). Met `server_meta.catalog_version` et
- * `catalog_updated_at` à jour si la version change, puis remplace le bloc en mémoire.
+ * chargeur (`templates`, gardés pour les reconstructions suivantes), chacun avec sa disponibilité recalculée sur
+ * les fiches servies (`templateAvailable`, spec brique 3 §3.6) : publier ou retirer une fiche change donc la
+ * version. Met `server_meta.catalog_version` et `catalog_updated_at` à jour si la version change, puis remplace le
+ * bloc en mémoire.
  *
  * À appeler en dernier dans la transaction de l'écriture : si elle est annulée ensuite, `currentCatalog` le voit à
  * la version de `server_meta` et reconstruit le bloc.
@@ -56,7 +59,7 @@ export function catalogVersion(content: CatalogContent): string {
 export async function rebuildCatalog(
   trx: DbExecutor,
   deps: AppDeps,
-  templates?: readonly unknown[],
+  templates?: readonly ProgramTemplate[],
 ): Promise<CatalogBundle> {
   const kept = templates ?? state.get(deps)?.templates ?? [];
   const rows = await trx
@@ -83,7 +86,10 @@ export async function rebuildCatalog(
     adviceSheets: [],
     exercises,
     illustrations,
-    programTemplates: [...kept],
+    programTemplates: kept.map((template) => ({
+      template,
+      available: templateAvailable(template, exercises),
+    })),
   };
   const version = catalogVersion(content);
   const meta = await getServerMeta(trx);

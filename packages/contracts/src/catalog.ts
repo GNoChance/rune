@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { type ILLUSTRATION_ROLES, ServedSheetSchema } from './exercise';
+import { ServedProgramTemplateSchema } from './program';
 
 /** Nom d'un fichier d'illustration : `<id>.<empreinte 8 hex>.<ext>`, sans chemin. */
 export const ILLUSTRATION_FILE_RE = /^([a-z0-9][a-z0-9-]*)\.([0-9a-f]{8})\.(svg|png|webp|jpg)$/;
@@ -112,13 +113,14 @@ export type IllustrationManifest = z.infer<typeof IllustrationManifest>;
  * - `version` : `catalog_version`, sha256 de la forme canonique des quatre autres clés ; c'est aussi l'ETag ;
  * - `exercises` : fiches `published`, et `retired` déjà publiées, triées par `id` ;
  * - `illustrations` : manifeste complet (table `illustration`), trié par `id`, pour les crédits hors ligne ;
- * - `programTemplates` : modèles de `data/programs/*.json`, triés par nom de fichier ; `adviceSheets` : vide.
+ * - `programTemplates` : modèles de `data/programs/*.json` qui passent `ProgramTemplateSchema`, triés par nom de
+ *   fichier, chacun avec sa disponibilité (`available`, spec brique 3 §3.6) ; `adviceSheets` : vide.
  */
 export const CatalogBundle = z.object({
   version: z.string(),
   exercises: z.array(ServedSheetSchema),
   illustrations: IllustrationManifest,
-  programTemplates: z.array(z.unknown()),
+  programTemplates: z.array(ServedProgramTemplateSchema),
   adviceSheets: z.array(z.unknown()),
 });
 export type CatalogBundle = z.infer<typeof CatalogBundle>;

@@ -1,7 +1,14 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { type DraftSheet, DraftSheetSchema, type ExerciseStatus, IllustrationEntry } from '@rune/contracts';
+import {
+  type DraftSheet,
+  DraftSheetSchema,
+  type ExerciseStatus,
+  IllustrationEntry,
+  type ProgramTemplate,
+  ProgramTemplateSchema,
+} from '@rune/contracts';
 import {
   type CatalogFile,
   EXERCISES_DIR,
@@ -30,20 +37,24 @@ export const PROGRAMS_DIR = 'programs';
 /** Erreur d'un fichier de `data/`, chemin relatif à `data/` : celles du validateur, de lecture et du manifeste. */
 export type CatalogLoadIssue = { file: string; code: string; message: string };
 
-/** Contenu valide de `data/` : fiches (forme de fichier), manifeste et modèles, triés par nom de fichier. */
+/**
+ * Contenu valide de `data/` : fiches (forme de fichier), manifeste et modèles qui passent `ProgramTemplateSchema`,
+ * triés par nom de fichier.
+ */
 export type CatalogFiles = {
   sheets: DraftSheet[];
   manifest: IllustrationEntry[];
-  templates: unknown[];
+  templates: ProgramTemplate[];
 };
 
 /**
- * Lecture de `data/`. En échec, `templates` rend les modèles lisibles : ils restent servis avec le catalogue
- * déjà en base, qui ne contient pas de modèles.
+ * Lecture de `data/`. En échec, `templates` rend les modèles valides : ils restent servis avec le catalogue déjà
+ * en base, qui ne contient pas de modèles. `invalidTemplates` : fichiers de modèles qui ne passent pas
+ * `ProgramTemplateSchema` (chemins relatifs à `data/`) ; ils ne sont pas servis, sans refuser le reste.
  */
 export type CatalogFilesResult =
-  | { ok: true; files: CatalogFiles }
-  | { ok: false; errors: CatalogLoadIssue[]; templates: unknown[] };
+  | { ok: true; files: CatalogFiles; invalidTemplates: string[] }
+  | { ok: false; errors: CatalogLoadIssue[]; templates: ProgramTemplate[]; invalidTemplates: string[] };
 
 /** Refus du chargement en cours d'écriture : la transaction est annulée, rien n'est écrit. */
 export class CatalogLoadError extends Error {
@@ -143,13 +154,21 @@ export async function loadCatalogFiles(deps: Pick<AppDeps, 'config'>): Promise<C
     illustrationFiles.set(name, createHash('sha256').update(bytes).digest('hex'));
   }
 
-  const templates: unknown[] = [];
+  // Modèles : tous lus pour la règle `retired_in_template` ; seuls ceux qui passent le schéma sont servis.
+  const rawTemplates: unknown[] = [];
+  const templates: ProgramTemplate[] = [];
+  const invalidTemplates: string[] = [];
   for (const name of await listFiles(join(dir, PROGRAMS_DIR), isJson)) {
-    const content = await read(`${PROGRAMS_DIR}/${name}`);
-    if (content !== undefined) templates.push(content.json);
+    const file = `${PROGRAMS_DIR}/${name}`;
+    const content = await read(file);
+    if (content === undefined) continue;
+    rawTemplates.push(content.json);
+    const template = ProgramTemplateSchema.safeParse(content.json);
+    if (template.success) templates.push(template.data);
+    else invalidTemplates.push(file);
   }
 
-  errors.push(...validateCatalog({ sheets, manifest, templates, illustrationFiles }).errors);
+  errors.push(...validateCatalog({ sheets, manifest, templates: rawTemplates, illustrationFiles }).errors);
   const parsed: DraftSheet[] = [];
   for (const { file, json } of sheets) {
     const result = DraftSheetSchema.safeParse(json);
@@ -159,9 +178,9 @@ export async function loadCatalogFiles(deps: Pick<AppDeps, 'config'>): Promise<C
     }
   }
   if (errors.length > 0) {
-    return { ok: false, errors: errors.sort((a, b) => binary(a.file, b.file)), templates };
+    return { ok: false, errors: errors.sort((a, b) => binary(a.file, b.file)), templates, invalidTemplates };
   }
-  return { ok: true, files: { sheets: parsed, manifest, templates } };
+  return { ok: true, files: { sheets: parsed, manifest, templates }, invalidTemplates };
 }
 
 /** Bilan d'un versement en base, journalisé après le commit. */
@@ -283,7 +302,9 @@ const errorName = (error: unknown) => (error instanceof Error ? error.name : 'un
 
 /**
  * Au démarrage : `loadCatalogFiles` → `seedOrMergeCatalog` → `rebuildCatalog`, dans une transaction. Des fichiers
- * invalides n'écrivent rien : le bloc est reconstruit depuis le catalogue déjà en base, et l'appli démarre.
+ * invalides n'écrivent rien : le bloc est reconstruit depuis le catalogue déjà en base, et l'appli démarre. Un
+ * modèle qui ne passe pas `ProgramTemplateSchema` n'est pas servi : `program_template_invalid`, avec le nom de son
+ * fichier seulement (la CI l'aurait refusé).
  */
 export const CATALOG_STARTUP_TASK: StartupTask = {
   name: 'catalog',
@@ -293,8 +314,10 @@ export const CATALOG_STARTUP_TASK: StartupTask = {
       result = await loadCatalogFiles(deps);
     } catch (error) {
       deps.logger.error('catalog_unreadable', { event: errorName(error) });
-      result = { ok: false, errors: [], templates: [] };
+      result = { ok: false, errors: [], templates: [], invalidTemplates: [] };
     }
+    for (const file of result.invalidTemplates)
+      deps.logger.error('program_template_invalid', { event: file });
     if (result.ok) {
       const { files } = result;
       try {

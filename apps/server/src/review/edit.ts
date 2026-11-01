@@ -166,7 +166,10 @@ function transitionInput(
     minorsConfirmed: boxes.minorsConfirmed ?? false,
     manifestIds: data.manifestIds,
     // Modèles de programmes gardés par le dernier bloc construit (chargeur), chaînes développées.
-    templateRefs: templateExerciseIds(getServedCatalog(deps)?.programTemplates ?? [], catalog),
+    templateRefs: templateExerciseIds(
+      (getServedCatalog(deps)?.programTemplates ?? []).map((served) => served.template),
+      catalog,
+    ),
     catalog,
   };
 }

@@ -52,7 +52,7 @@ export function referenceEquipment(context: ProgramTemplate['context']): Set<Equ
 }
 
 /** Matériel de la maison sans matériel (`home_bodyweight`), déjà étendu. */
-export const HOME_BODYWEIGHT: ReadonlySet<EquipmentCode> = referenceEquipment('home');
+const HOME_BODYWEIGHT: ReadonlySet<EquipmentCode> = referenceEquipment('home');
 
 /**
  * Fiches candidates d'un slot, dans l'ordre : sa liste, ou les membres de sa chaîne du plus facile au plus dur.

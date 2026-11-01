@@ -22,6 +22,7 @@ import {
   sheetFixture,
   skeletonFixture,
   tempDataDirs,
+  templateFixture,
   writeDataDir,
 } from '../support/catalog';
 
@@ -89,7 +90,7 @@ function fullCatalog() {
       ...CHAIN,
     ],
     illustrations: [start, end],
-    templates: { 'full-body': { id: 'full-body' } },
+    templates: { 'full-body': templateFixture('full-body') },
   };
 }
 
@@ -113,14 +114,14 @@ describe('loadCatalogFiles', () => {
 
   it('lit fiches, manifeste et modèles (triés par nom de fichier)', async () => {
     const spec = fullCatalog();
-    await setup(dirs.create({ ...spec, templates: { b: { id: 'b' }, a: { id: 'a' } } }));
+    await setup(dirs.create({ ...spec, templates: { b: templateFixture('b'), a: templateFixture('a') } }));
     const files = await loaded();
     expect(files.sheets.map((s) => s.id)).toEqual(
       [...spec.sheets.map((s) => s.id)].sort((a, b) => (a < b ? -1 : 1)),
     );
     expect(files.sheets.find((s) => s.id === 'goblet-squat')).toEqual(spec.sheets[2]);
     expect(files.manifest).toEqual(spec.illustrations.map((i) => i.entry));
-    expect(files.templates).toEqual([{ id: 'a' }, { id: 'b' }]);
+    expect(files.templates).toEqual([templateFixture('a'), templateFixture('b')]);
   });
 
   const valid = sheetFixture('goblet-squat');
@@ -156,13 +157,24 @@ describe('loadCatalogFiles', () => {
     ],
     ['programme illisible', { raw: { 'programs/a.json': '{' } }, 'invalid_json'],
   ] as const)('%s : refusé avec ses erreurs', async (_name, spec, code) => {
-    await setup(dirs.create({ templates: { ok: { id: 'ok' } }, ...spec }));
+    await setup(dirs.create({ templates: { ok: templateFixture('ok') }, ...spec }));
     const result = await loadCatalogFiles(ctx.deps);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.errors.map((e) => e.code)).toContain(code);
     // Les modèles lisibles restent servis avec le catalogue de la base.
-    expect(result.templates).toEqual([{ id: 'ok' }]);
+    expect(result.templates).toEqual([templateFixture('ok')]);
+  });
+
+  it('modèle hors ProgramTemplateSchema : écarté sans refuser le catalogue, son fichier nommé', async () => {
+    await setup(
+      dirs.create({ templates: { ok: templateFixture('ok'), broken: { id: 'broken' }, also: [] } }),
+    );
+    const result = await loadCatalogFiles(ctx.deps);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.files.templates).toEqual([templateFixture('ok')]);
+    expect(result.invalidTemplates).toEqual(['programs/also.json', 'programs/broken.json']);
   });
 });
 
@@ -339,9 +351,43 @@ describe('CATALOG_STARTUP_TASK', () => {
       'split-squat',
     ]);
     expect(bundle?.illustrations.map((i) => i.id)).toEqual(['goblet-squat-end', 'goblet-squat-start']);
-    expect(bundle?.programTemplates).toEqual([{ id: 'full-body' }]);
+    expect(bundle?.programTemplates).toEqual([{ template: templateFixture('full-body'), available: true }]);
     expect((await getServerMeta(ctx.deps.db)).catalogVersion).toBe(bundle?.version);
     expect(logged('catalog_seeded')).toEqual([expect.objectContaining({ count: 7 })]);
+  });
+
+  it('modèle invalide : non servi, journalisé par son nom de fichier seulement ; le reste est servi', async () => {
+    const spec = fullCatalog();
+    await setup(
+      dirs.create({
+        ...spec,
+        templates: { ...spec.templates, broken: { id: 'broken', name: 'CONTENU-SECRET', workouts: [] } },
+      }),
+    );
+    await CATALOG_STARTUP_TASK.run(ctx.deps);
+    const bundle = getServedCatalog(ctx.deps);
+    expect(bundle?.programTemplates).toEqual([{ template: templateFixture('full-body'), available: true }]);
+    expect(logged('program_template_invalid')).toEqual([
+      expect.objectContaining({ level: 'error', event: 'programs/broken.json' }),
+    ]);
+    expect(lines.join('\n')).not.toContain('CONTENU-SECRET');
+    expect(logged('catalog_seeded')).toEqual([expect.objectContaining({ count: 7 })]);
+  });
+
+  it("modèle invalide alors que le reste de data/ est refusé : journalisé aussi, l'appli démarre", async () => {
+    await setup(
+      dirs.create({
+        templates: { ok: templateFixture('ok'), broken: { id: 'broken' } },
+        raw: { 'exercises/broken.json': '{' },
+      }),
+    );
+    await CATALOG_STARTUP_TASK.run(ctx.deps);
+    expect(getServedCatalog(ctx.deps)?.programTemplates).toEqual([
+      { template: templateFixture('ok'), available: false },
+    ]);
+    expect(logged('program_template_invalid')).toEqual([
+      expect.objectContaining({ event: 'programs/broken.json' }),
+    ]);
   });
 
   it('deux chargements de suite ne changent rien', async () => {

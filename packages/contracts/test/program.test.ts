@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CatalogBundle,
   CHANGE_ERROR_CODES,
   CHANGE_REASON_CODES,
   CreateChangeRequest,
@@ -108,6 +109,16 @@ describe('ServedProgramTemplateSchema', () => {
   it('porte le modèle et sa disponibilité', () => {
     expect(ServedProgramTemplateSchema.safeParse({ template, available: false }).success).toBe(true);
     expect(ServedProgramTemplateSchema.safeParse({ template }).success).toBe(false);
+  });
+
+  it('CatalogBundle.programTemplates : une liste de modèles servis, plus de modèles bruts', () => {
+    const empty = { version: 'v', exercises: [], illustrations: [], programTemplates: [], adviceSheets: [] };
+    const served = { ...empty, programTemplates: [{ template, available: true }] };
+    expect(CatalogBundle.safeParse(served).success).toBe(true);
+    expect(CatalogBundle.safeParse({ ...empty, programTemplates: [template] }).success).toBe(false);
+    expect(CatalogBundle.safeParse({ ...empty, programTemplates: [{ id: 'full-body' }] }).success).toBe(
+      false,
+    );
   });
 });
 

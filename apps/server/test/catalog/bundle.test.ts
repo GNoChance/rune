@@ -1,18 +1,26 @@
 import { createHash } from 'node:crypto';
 import {
   type CatalogBundle,
+  type ProgramTemplate,
   SERVED_EXCLUDED_KEYS,
+  ServedProgramTemplateSchema,
   type ServedSheet,
   ServedSheetSchema,
 } from '@rune/contracts';
 import { buildChains, canonicalJson, substitutes, usableChainSteps } from '@rune/domain';
 import { afterEach, describe, expect, it } from 'vitest';
-import { currentCatalog, getServedCatalog, rebuildCatalog } from '../../src/catalog/bundle';
-import { insertSheet, upsertIllustration } from '../../src/catalog/repo';
+import { catalogVersion, currentCatalog, getServedCatalog, rebuildCatalog } from '../../src/catalog/bundle';
+import { insertSheet, updateSheet, upsertIllustration } from '../../src/catalog/repo';
 import { getServerMeta } from '../../src/db/server-meta';
 import { createLogger } from '../../src/logger';
 import { createTestContext, type TestContext } from '../support';
-import { illustrationFixture, retiredDraft, sheetFixture, skeletonFixture } from '../support/catalog';
+import {
+  illustrationFixture,
+  retiredDraft,
+  sheetFixture,
+  skeletonFixture,
+  templateFixture,
+} from '../support/catalog';
 
 let ctx: TestContext;
 afterEach(() => ctx?.close());
@@ -28,7 +36,7 @@ async function setup(lines: string[] = []): Promise<TestContext> {
   return ctx;
 }
 
-const rebuild = (templates?: readonly unknown[]) =>
+const rebuild = (templates?: readonly ProgramTemplate[]) =>
   ctx.deps.db.transaction().execute((trx) => rebuildCatalog(trx, ctx.deps, templates));
 
 /** Une fiche de chaque cas : seules `published` et `retired-published` sont servies (spec §3.6). */
@@ -101,11 +109,69 @@ describe('rebuildCatalog', () => {
     await upsertIllustration(ctx.deps.db, a.entry);
     const withManifest = await rebuild();
     expect(withManifest.illustrations).toEqual([a.entry, b.entry]);
-    const withTemplates = await rebuild([{ id: 'full-body' }]);
-    expect(withTemplates.programTemplates).toEqual([{ id: 'full-body' }]);
+    const withTemplates = await rebuild([templateFixture('full-body')]);
+    expect(withTemplates.programTemplates).toEqual([
+      { template: templateFixture('full-body'), available: false },
+    ]);
     expect(withTemplates.version).not.toBe(withManifest.version);
     // Les modèles reçus restent ceux des reconstructions suivantes (enregistrement d'une fiche, tâche 9).
     expect((await rebuild()).version).toBe(withTemplates.version);
+  });
+
+  it('available : chaque slot a une fiche publiée (un membre publié pour une chaîne), sinon faux', async () => {
+    await setup();
+    await seedStatuses();
+    await insertSheet(
+      ctx.deps.db,
+      sheetFixture('chain-member', { chain_id: 'rangee' }),
+      at('2026-10-29T08:00:00.000Z'),
+    );
+    const templates = [
+      templateFixture('a-published', [
+        { exercises: ['draft-sheet', 'published-sheet'] },
+        { chain: 'rangee' },
+      ]),
+      // Une fiche relue, brouillon ou retirée ne rend pas un slot disponible.
+      templateFixture('b-unpublished', [
+        { exercises: ['published-sheet'] },
+        { exercises: ['reviewed-sheet', 'retired-published'] },
+      ]),
+      templateFixture('c-no-chain', [{ chain: 'absente' }]),
+    ];
+    const bundle = await rebuild(templates);
+    expect(bundle.programTemplates.map((t) => [t.template.id, t.available])).toEqual([
+      ['a-published', true],
+      ['b-unpublished', false],
+      ['c-no-chain', false],
+    ]);
+    for (const served of bundle.programTemplates)
+      expect(ServedProgramTemplateSchema.parse(served)).toEqual(served);
+  });
+
+  it('catalogVersion change quand available change (fiche citée publiée)', async () => {
+    await setup();
+    await insertSheet(
+      ctx.deps.db,
+      sheetFixture('cited', { status: 'reviewed', published_at: undefined }),
+      at('2026-10-29T08:00:00.000Z'),
+    );
+    const before = await rebuild([templateFixture('t', [{ exercises: ['cited'] }])]);
+    expect(before.programTemplates[0]?.available).toBe(false);
+    await updateSheet(ctx.deps.db, sheetFixture('cited', { revision: 5 }), {
+      savedAt: '2026-10-30T08:00:00.000Z',
+      savedBy: null,
+      baseRevision: 4,
+    });
+    const after = await rebuild();
+    expect(after.programTemplates[0]?.available).toBe(true);
+    expect(after.version).not.toBe(before.version);
+    // `available` entre à lui seul dans la version.
+    const { version: _v, ...content } = after;
+    const flipped = {
+      ...content,
+      programTemplates: [{ template: templateFixture('t', [{ exercises: ['cited'] }]), available: false }],
+    };
+    expect(catalogVersion(flipped)).not.toBe(after.version);
   });
 
   it('version inchangée : server_meta non réécrit', async () => {
