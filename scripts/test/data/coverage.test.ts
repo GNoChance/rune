@@ -184,17 +184,56 @@ describe('condition (c) de 04 §7 : le contrôle', () => {
     expect(row(rows, 'gym_reference', 'A2')?.adult).toEqual(['squat-hold']);
   });
 
+  it('slot à petit matériel : exempté sans matériel (R22, 05 §5 règle 4), jamais ailleurs', () => {
+    const catalog = [
+      sheet('band-squat', { equipment_options: [['resistance_band']], load_mode: 'band' }),
+      sheet('chair-squat', { equipment_options: [['chair']] }),
+      // Chaîne aux haltères, sans muscle commun avec les autres : ni remplaçante ni remplacée.
+      ...['ladder-1', 'ladder-2'].map((id, i) =>
+        sheet(id, {
+          chain_id: 'ladder',
+          ...(i === 0 ? { harder_id: 'ladder-2' } : { easier_id: 'ladder-1' }),
+          equipment_options: [['dumbbells']],
+          primary_muscles: ['glutes'],
+        }),
+      ),
+    ];
+    const rows = templateCoverage(
+      [
+        template('sport', 'beginner', [
+          slot('A1', { exercises: ['band-squat'] }),
+          slot('A2', { exercises: ['band-squat', 'chair-squat'] }),
+          slot('A3', { chain: 'ladder' }),
+        ]),
+      ],
+      catalog,
+    );
+    const exempt = rows.filter((r) => r.exempt).map((r) => `${r.slotId} ${r.profile}`);
+    // A2 a un exercice faisable sans matériel (chaise) : il reste soumis à la condition, et échoue avec 1 seul.
+    expect(exempt).toEqual(['A1 home_bodyweight', 'A3 home_bodyweight']);
+    // La ligne exemptée reste calculée : le remplaçant faisable sans matériel y figure.
+    expect(row(rows, 'home_bodyweight', 'A1')?.adult).toEqual(['chair-squat']);
+    // Ni la salle ni le petit matériel ne sont exemptés : élastique et chaise n'y sont pas dans la salle.
+    expect(coverageFailures(rows).map((r) => `${r.slotId} ${r.profile}`)).toEqual([
+      'A1 gym_reference',
+      'A2 gym_reference',
+      'A2 home_bodyweight',
+    ]);
+  });
+
   it(`échec sous ${COVERAGE_MIN.adult} exercices pour un adulte ou sous ${COVERAGE_MIN.cautious} en prudent`, () => {
     const base = {
       templateId: 't',
       slotId: 'A1',
       movementPattern: 'squat',
       profile: 'gym_reference',
+      exempt: false,
     } as const;
     const rows: SlotCoverage[] = [
       { ...base, adult: ['a', 'b'], cautious: ['a'] },
       { ...base, adult: ['a'], cautious: ['a'] },
       { ...base, adult: ['a', 'b'], cautious: [] },
+      { ...base, profile: 'home_bodyweight', exempt: true, adult: [], cautious: [] },
     ];
     expect(coverageFailures(rows)).toEqual([rows[1], rows[2]]);
   });

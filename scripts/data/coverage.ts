@@ -5,6 +5,10 @@
  *
  * - Profils (04 §7) : `gym_reference` pour un modèle `gym`, `home_bodyweight` et `home_small_equipment` pour un
  *   modèle `home`, les trois pour un modèle `sport`.
+ * - Slot à petit matériel exempté de `home_bodyweight` (décision R22, 05 §5 règle 4 : ces slots « peuvent exiger du
+ *   petit matériel ; s'il manque, ils sont sautés sans pénalité ») : si aucun exercice de sa liste ou de sa chaîne
+ *   n'est faisable sans matériel, `home_bodyweight` n'est pas un profil pertinent pour lui. Sa ligne reste
+ *   calculée (`exempt`), mais ne peut pas échouer.
  * - Exercices utilisables d'un slot (05 §11, « Changer d'exercice ») : les fiches utilisables de sa liste, ou les
  *   variantes utilisables de sa chaîne (`usableChainSteps`), puis les remplaçants (`substitutes`) de la référence,
  *   sans doublon. La référence est le premier exercice de la liste ; pour une chaîne, c'est la variante courante,
@@ -30,8 +34,10 @@ import {
   buildChains,
   type CatalogContext,
   expandEquipment,
+  feasible,
   isUsable,
   levelFromExperience,
+  slotCandidates,
   substitutes,
   usableChainSteps,
 } from '@rune/domain';
@@ -93,6 +99,8 @@ export type SlotCoverage = {
   slotId: string;
   movementPattern: SlotSpec['movementPattern'];
   profile: ReferenceProfile;
+  /** Slot à petit matériel dans `home_bodyweight` (décision R22) : profil non pertinent, jamais en échec. */
+  exempt: boolean;
   adult: string[];
   cautious: string[];
 };
@@ -100,7 +108,8 @@ export type SlotCoverage = {
 /**
  * Couverture de chaque slot de chaque modèle, dans chaque profil pertinent, sur `catalog` (tous statuts, voir
  * l'en-tête). Pour un slot `chain`, `adult` et `cautious` sont la plus courte des listes obtenues avec chaque
- * membre non retiré de la chaîne comme variante courante.
+ * membre non retiré de la chaîne comme variante courante. Un slot dont aucun membre de liste ou de chaîne n'est
+ * faisable sans matériel est `exempt` dans `home_bodyweight` (même lecture que la règle 4 du validateur).
  */
 export function templateCoverage(
   templates: readonly ProgramTemplate[],
@@ -130,6 +139,9 @@ export function templateCoverage(
           slotId: slot.id,
           movementPattern: slot.movementPattern,
           profile,
+          exempt:
+            profile === 'home_bodyweight' &&
+            !slotCandidates(slot, sheets, chains).some((s) => feasible(s, equipment)),
           adult: worst(false),
           cautious: worst(true),
         });
@@ -139,9 +151,11 @@ export function templateCoverage(
   return rows;
 }
 
-/** Lignes qui ne remplissent pas la condition (c). */
+/** Lignes qui ne remplissent pas la condition (c) ; une ligne exemptée n'échoue jamais. */
 export function coverageFailures(rows: readonly SlotCoverage[]): SlotCoverage[] {
-  return rows.filter((r) => r.adult.length < COVERAGE_MIN.adult || r.cautious.length < COVERAGE_MIN.cautious);
+  return rows.filter(
+    (r) => !r.exempt && (r.adult.length < COVERAGE_MIN.adult || r.cautious.length < COVERAGE_MIN.cautious),
+  );
 }
 
 /**
