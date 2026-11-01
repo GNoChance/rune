@@ -88,9 +88,11 @@ const workoutSession: Omit<EntitySyncHooks, 'afterBatch'> = {
         .executeTakeFirst();
       // Ligne absente ou supprimée : la synchro générique rejette ou applique sans effet.
       if (!existing || existing.deletedAt !== null) return;
-      if (fields.status === 'in_progress' && existing.status !== 'in_progress') {
-        throw new OpRejection('invalid_transition', 'status');
-      }
+      // Jamais de retour à `in_progress` ; une séance terminée n'est jamais abandonnée après coup (ruling R33). Une
+      // séance abandonnée peut encore être terminée : l'appareil qui la tenait la finit après sa clôture (D12).
+      const back = fields.status === 'in_progress' && existing.status !== 'in_progress';
+      const dropped = fields.status === 'abandoned' && existing.status === 'completed';
+      if (back || dropped) throw new OpRejection('invalid_transition', 'status');
       storedStart = Date.parse(existing.startedAt);
     }
     await assertOwnReference(trx, 'programInstance', fields.instance_id, userId);

@@ -285,11 +285,12 @@ async function expire(trx: DbExecutor, deps: AppDeps, id: string): Promise<void>
 }
 
 /**
- * `POST /api/program/changes/:id/accept` (05 §15.3) : 409 `not_proposed` pour un changement déjà décidé ou expiré ;
- * date limite dépassée → `expired`, `baseRevision` (du corps ou de la proposition) qui n'est plus la révision de
- * l'instance active → `stale_revision`, et la proposition passe à `expired` (refus rendu après la transaction) ; 422
- * `invalid_change` si le programme résultant ne passe pas le validateur (la proposition reste `proposed`). Acceptée :
- * `decided_at` maintenant, `revision` + 1, rejeu.
+ * `POST /api/program/changes/:id/accept` (05 §15.3) : 409 `not_proposed` pour un changement déjà décidé ou expiré.
+ * La proposition elle-même périmée (05 §15.4, ruling R37) passe à `expired`, refus rendu après la transaction : date
+ * limite dépassée → `expired` ; sa `base_revision` n'est plus la révision de son instance, ou l'instance n'est plus
+ * active → `stale_revision`. Un `baseRevision` du client seul périmé → 409 `stale_revision`, proposition intacte : le
+ * client relit et recommence. 422 `invalid_change` si le programme résultant ne passe pas le validateur (la
+ * proposition reste `proposed`). Acceptée : `decided_at` maintenant, `revision` + 1, rejeu.
  */
 export async function acceptChange(
   trx: Trx,
@@ -303,20 +304,19 @@ export async function acceptChange(
   const row = await ownChange(trx, userId, id);
   if (row.status !== 'proposed') return { refused: 'not_proposed' };
   const instance = await instanceById(trx, userId, row.instanceId);
-  const refusal: Refusal['refused'] | null =
+  const outdated: Refusal['refused'] | null =
     row.expiresAt !== null && Date.parse(row.expiresAt) < now.getTime()
       ? 'expired'
-      : instance?.status !== 'active' ||
-          row.baseRevision !== instance.revision ||
-          body.baseRevision !== instance.revision
+      : instance?.status !== 'active' || row.baseRevision !== instance.revision
         ? 'stale_revision'
         : null;
-  if (refusal !== null || instance === undefined) {
+  if (outdated !== null || instance === undefined) {
     await expire(trx, deps, id);
     await expireProposals(trx, userId, now);
-    return { refused: refusal ?? 'stale_revision' };
+    return { refused: outdated ?? 'stale_revision' };
   }
   await expireProposals(trx, userId, now);
+  if (body.baseRevision !== instance.revision) return { refused: 'stale_revision' };
 
   const operations = operationsOf(row);
   const program = await validate(

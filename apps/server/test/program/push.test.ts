@@ -114,7 +114,7 @@ describe('workout_session au push', () => {
     expect(rowOf('workout_session', x.sessionId)?.profile).toBe('adult');
   });
 
-  it('completed ou abandoned → in_progress : invalid_transition ; in_progress → completed admis', async () => {
+  it('completed ou abandoned → in_progress, completed → abandoned : invalid_transition (R33)', async () => {
     const a = await setup();
     const running = sessionOps(a.id, { status: 'in_progress', endedAt: null });
     const done = sessionOps(a.id, { status: 'completed' });
@@ -124,11 +124,28 @@ describe('workout_session au push', () => {
       patch(a, 'workout_session', done.sessionId, { status: 'in_progress' }),
       patch(a, 'workout_session', dropped.sessionId, { status: 'in_progress', note: 'retour' }),
       patch(a, 'workout_session', running.sessionId, { status: 'completed', endedAt: dayAt(0, 1) }),
-      patch(a, 'workout_session', done.sessionId, { status: 'abandoned' }),
+      patch(a, 'workout_session', done.sessionId, { status: 'abandoned', note: 'fermée' }),
     ]);
-    expect(codes(res.body)).toEqual(['invalid_transition', 'invalid_transition', 'applied', 'applied']);
+    expect(codes(res.body)).toEqual([
+      'invalid_transition',
+      'invalid_transition',
+      'applied',
+      'invalid_transition',
+    ]);
     expect(rowOf('workout_session', dropped.sessionId)).toMatchObject({ status: 'abandoned', note: null });
     expect(rowOf('workout_session', running.sessionId)?.status).toBe('completed');
+    expect(rowOf('workout_session', done.sessionId)).toMatchObject({ status: 'completed', note: null });
+  });
+
+  it('abandoned → completed admis : un appareil termine une séance qu’un autre a close comme oubliée (R33)', async () => {
+    const a = await setup();
+    const stale = sessionOps(a.id, { status: 'abandoned' });
+    await syncPush(ctx, a.cookie, stale.ops);
+    const res = await syncPush(ctx, a.cookie, [
+      patch(a, 'workout_session', stale.sessionId, { status: 'completed', endedAt: dayAt(0, 1) }),
+    ]);
+    expect(codes(res.body)).toEqual(['applied']);
+    expect(rowOf('workout_session', stale.sessionId)?.status).toBe('completed');
   });
 
   it('started_at à plus de 10 min dans le futur → ramené à maintenant, ended_at décalé d’autant (R24)', async () => {

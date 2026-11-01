@@ -350,22 +350,31 @@ describe('POST /api/program/changes/:id/accept', () => {
     expect(rowOf('slot_state', stateId)?.suspended).toBe(1);
   });
 
-  it('base périmée (corps ou proposition) → 409 stale_revision et la proposition passe expired', async () => {
+  it('base de la proposition périmée → 409 stale_revision et la proposition passe expired', async () => {
+    const a = await setup();
+    const instanceId = await enrollIn(a);
+    ctx.deps.sqlite.prepare('UPDATE program_instance SET revision = 1 WHERE id = ?').run(instanceId);
+    const stale = await proposal(a, instanceId, { baseRevision: 0 });
+    const res = await accept(a, stale, { baseRevision: 1 });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'stale_revision' });
+    expect(rowOf('instance_change', stale)).toMatchObject({ status: 'expired', decided_at: null });
+    expect(rowOf('program_instance', instanceId)?.revision).toBe(1);
+  });
+
+  it('base du client seule périmée → 409 stale_revision, la proposition reste proposed (R37)', async () => {
     const a = await setup();
     const instanceId = await enrollIn(a);
     const fresh = await proposal(a, instanceId);
-    const res = await accept(a, fresh, { baseRevision: 3 });
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: 'stale_revision' });
-    expect(rowOf('instance_change', fresh)).toMatchObject({ status: 'expired', decided_at: null });
-
-    ctx.deps.sqlite.prepare('UPDATE program_instance SET revision = 1 WHERE id = ?').run(instanceId);
-    const stale = await proposal(a, instanceId, { baseRevision: 0 });
-    const again = await accept(a, stale, { baseRevision: 1 });
-    expect(again.status).toBe(409);
-    expect(await again.json()).toEqual({ error: 'stale_revision' });
-    expect(rowOf('instance_change', stale)?.status).toBe('expired');
-    expect(rowOf('program_instance', instanceId)?.revision).toBe(1);
+    for (const baseRevision of [3, 1]) {
+      const res = await accept(a, fresh, { baseRevision });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: 'stale_revision' });
+    }
+    expect(rowOf('instance_change', fresh)).toMatchObject({ status: 'proposed', decided_at: null, rev: 1 });
+    expect(rowOf('program_instance', instanceId)?.revision).toBe(0);
+    // Le client relit la révision et recommence : acceptée.
+    expect((await accept(a, fresh, { baseRevision: 0 })).status).toBe(200);
   });
 
   it('plus de 7 jours → 409 expired, la proposition passe expired', async () => {
@@ -481,5 +490,100 @@ describe('POST /api/program/changes/:id/reject', () => {
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: 'not_proposed' });
     expect(rowOf('instance_change', id)?.status).toBe('expired');
+  });
+});
+
+describe('concurrence', () => {
+  it('deux acceptations simultanées d’une proposition, même base : une 200, une 409 ; revision + 1 une seule fois', async () => {
+    const a = await setup();
+    const instanceId = await enrollIn(a);
+    const id = await proposal(a, instanceId);
+    const responses = await Promise.all([
+      accept(a, id, { baseRevision: 0 }),
+      accept(a, id, { baseRevision: 0 }),
+    ]);
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(await responses.find((r) => r.status === 409)?.json()).toEqual({ error: 'not_proposed' });
+    expect(rowOf('program_instance', instanceId)?.revision).toBe(1);
+    expect(rowsOf('instance_change').filter((r) => r.status === 'accepted')).toHaveLength(1);
+    expect(rowOf('instance_change', id)).toMatchObject({ status: 'accepted', decided_at: NOW });
+  });
+
+  it('deux changements simultanés de la même base : un 201, un 409 stale_revision', async () => {
+    const a = await setup();
+    const instanceId = await enrollIn(a);
+    const responses = await Promise.all([
+      postChange(a, { baseRevision: 0, operations: [{ op: 'set_rest', slot: 'A1', seconds: 150 }] }),
+      postChange(a, { baseRevision: 0, operations: [{ op: 'set_rest', slot: 'A1', seconds: 180 }] }),
+    ]);
+    expect(responses.map((r) => r.status).sort()).toEqual([201, 409]);
+    expect(await responses.find((r) => r.status === 409)?.json()).toEqual({ error: 'stale_revision' });
+    expect(rowOf('program_instance', instanceId)?.revision).toBe(1);
+    expect(rowsOf('instance_change')).toHaveLength(1);
+  });
+});
+
+describe('atomicité du switch_template', () => {
+  /**
+   * Échecs injectés par un déclencheur SQLite : à l'insertion de la nouvelle instance (l'ancienne est déjà terminée et
+   * le changement écrit), ou dans le rejeu de l'ancienne instance qui suit (une proposition en attente y expire).
+   */
+  const FAILURES = {
+    insertion: `CREATE TRIGGER injected_failure AFTER INSERT ON program_instance
+      WHEN NEW.template_id = 'test-four' BEGIN SELECT RAISE(ABORT, 'injected'); END`,
+    replay: `CREATE TRIGGER injected_failure BEFORE UPDATE OF status ON instance_change
+      WHEN NEW.status = 'expired' BEGIN SELECT RAISE(ABORT, 'injected'); END`,
+  };
+  const dump = () =>
+    ['program_instance', 'instance_change', 'slot_state'].map((t) =>
+      ctx.deps.sqlite.prepare(`SELECT * FROM ${t} ORDER BY id`).all(),
+    );
+
+  it.each([
+    ['changement de l’utilisateur', 'insertion'],
+    ['changement de l’utilisateur', 'replay'],
+    ['proposition acceptée', 'insertion'],
+    ['proposition acceptée', 'replay'],
+  ] as const)('%s, échec à l’étape « %s » → rien ne reste', async (path, step) => {
+    const a = await setup();
+    const old = await enrollIn(a, 'test-program', 3);
+    const pending = await proposal(a, old);
+    const switching =
+      path === 'proposition acceptée'
+        ? await proposal(a, old, {
+            author: 'coach',
+            operations: [{ op: 'switch_template', templateId: 'test-four' }],
+          })
+        : null;
+    ctx.deps.sqlite.exec(FAILURES[step]);
+    const before = dump();
+
+    const res =
+      switching === null
+        ? await postChange(a, {
+            baseRevision: 0,
+            operations: [{ op: 'switch_template', templateId: 'test-four' }],
+          })
+        : await accept(a, switching, { baseRevision: 0 });
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'internal' });
+    expect(dump()).toEqual(before);
+    expect(rowsOf('program_instance')).toEqual([
+      expect.objectContaining({ id: old, status: 'active', revision: 0, ended_at: null }),
+    ]);
+    expect(rowOf('instance_change', pending)?.status).toBe('proposed');
+
+    // Sans l'échec injecté, le même changement passe.
+    ctx.deps.sqlite.exec('DROP TRIGGER injected_failure');
+    const retry =
+      switching === null
+        ? await postChange(a, {
+            baseRevision: 0,
+            operations: [{ op: 'switch_template', templateId: 'test-four' }],
+          })
+        : await accept(a, switching, { baseRevision: 0 });
+    expect(retry.status).toBe(path === 'proposition acceptée' ? 200 : 201);
+    expect(rowOf('program_instance', old)?.status).toBe('ended');
+    expect(rowOf('instance_change', pending)?.status).toBe('expired');
   });
 });
