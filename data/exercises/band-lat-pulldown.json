@@ -1,7 +1,7 @@
 {
   "id": "band-lat-pulldown",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Tirage vertical à l'élastique",
@@ -10,6 +10,13 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "band",
+  "primary_muscles": [
+    "lats"
+  ],
+  "secondary_muscles": [
+    "biceps",
+    "traps"
+  ],
   "equipment_options": [
     [
       "resistance_band"

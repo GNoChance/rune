@@ -1,7 +1,7 @@
 {
   "id": "single-leg-romanian-deadlift",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Soulevé de terre roumain unipodal",
@@ -10,6 +10,13 @@
   "unilateral": true,
   "measure": "reps",
   "load_mode": "bodyweight",
+  "primary_muscles": [
+    "hamstrings",
+    "glutes"
+  ],
+  "secondary_muscles": [
+    "lower_back"
+  ],
   "equipment_options": [
     []
   ],

@@ -1,7 +1,7 @@
 {
   "id": "dumbbell-step-up",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Step-up aux haltères",
@@ -10,6 +10,13 @@
   "unilateral": true,
   "measure": "reps",
   "load_mode": "dumbbell",
+  "primary_muscles": [
+    "quadriceps",
+    "glutes"
+  ],
+  "secondary_muscles": [
+    "adductors"
+  ],
   "equipment_options": [
     [
       "dumbbells",

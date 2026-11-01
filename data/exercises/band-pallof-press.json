@@ -1,7 +1,7 @@
 {
   "id": "band-pallof-press",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Pallof press à l'élastique",
@@ -10,6 +10,11 @@
   "unilateral": true,
   "measure": "reps",
   "load_mode": "band",
+  "primary_muscles": [
+    "obliques",
+    "abs"
+  ],
+  "secondary_muscles": [],
   "equipment_options": [
     [
       "resistance_band"

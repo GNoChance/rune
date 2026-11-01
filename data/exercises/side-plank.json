@@ -1,7 +1,7 @@
 {
   "id": "side-plank",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Planche latérale",
@@ -10,6 +10,13 @@
   "unilateral": true,
   "measure": "duration",
   "load_mode": "bodyweight",
+  "primary_muscles": [
+    "obliques"
+  ],
+  "secondary_muscles": [
+    "abs",
+    "glutes"
+  ],
   "equipment_options": [
     []
   ],

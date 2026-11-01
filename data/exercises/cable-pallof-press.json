@@ -1,7 +1,7 @@
 {
   "id": "cable-pallof-press",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Pallof press à la poulie",
@@ -10,6 +10,11 @@
   "unilateral": true,
   "measure": "reps",
   "load_mode": "machine",
+  "primary_muscles": [
+    "obliques",
+    "abs"
+  ],
+  "secondary_muscles": [],
   "equipment_options": [
     [
       "cable_station"

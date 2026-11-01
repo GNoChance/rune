@@ -1,7 +1,7 @@
 {
   "id": "standing-calf-raise",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Mollets debout",
@@ -10,6 +10,10 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "bodyweight",
+  "primary_muscles": [
+    "calves"
+  ],
+  "secondary_muscles": [],
   "equipment_options": [
     []
   ],

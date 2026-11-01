@@ -1,7 +1,7 @@
 {
   "id": "leg-curl",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Leg curl",
@@ -10,6 +10,12 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "machine",
+  "primary_muscles": [
+    "hamstrings"
+  ],
+  "secondary_muscles": [
+    "calves"
+  ],
   "equipment_options": [
     [
       "leg_curl"

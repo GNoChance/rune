@@ -1,0 +1,238 @@
+{
+  "schemaVersion": 1,
+  "id": "home-intermediate-upper-lower",
+  "version": 1,
+  "name": "Maison · Intermédiaire · Haut / Bas",
+  "description": "Quatre séances haut et bas du corps à la maison, 3 ou 4 fois par semaine : variantes difficiles au poids du corps et travail sur une jambe. Haltères, élastiques et barre de traction passent en premier s'ils sont cochés. Une semaine allégée toutes les 5 semaines.",
+  "context": "home",
+  "level": "intermediate",
+  "daysPerWeek": { "min": 3, "max": 4, "default": 4 },
+  "estimatedMinutes": 50,
+  "block": { "mode": "planned", "weeks": 5, "deloadWeek": 5 },
+  "workouts": [
+    {
+      "id": "H1",
+      "name": "Haut 1 · Force",
+      "slots": [
+        {
+          "id": "H1-1",
+          "movementPattern": "horizontal_push",
+          "role": "main",
+          "chain": "push-up",
+          "sets": [
+            { "kind": "work", "count": 4, "reps": { "min": 6, "max": 10 }, "targetRir": 2, "restS": 150 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "H1-2",
+          "movementPattern": "horizontal_pull",
+          "role": "secondary",
+          "exercises": ["one-arm-dumbbell-row", "band-row", "table-row"],
+          "sets": [
+            { "kind": "work", "count": 5, "reps": { "min": 6, "max": 10 }, "targetRir": 2, "restS": 120 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "H1-3",
+          "movementPattern": "vertical_pull",
+          "role": "secondary",
+          "chain": "pull-up",
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 5, "max": 8 }, "targetRir": 2, "restS": 120 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "H1-4",
+          "movementPattern": "vertical_push",
+          "role": "secondary",
+          "chain": "pike-push-up",
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 6, "max": 10 }, "targetRir": 2, "restS": 120 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "H1-5",
+          "movementPattern": "elbow_extension",
+          "role": "accessory",
+          "exercises": ["overhead-dumbbell-triceps-extension"],
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 10, "max": 15 }, "targetRir": 1, "restS": 60 }
+          ],
+          "progression": { "type": "double" }
+        }
+      ]
+    },
+    {
+      "id": "B1",
+      "name": "Bas 1 · Force",
+      "slots": [
+        {
+          "id": "B1-1",
+          "movementPattern": "squat",
+          "role": "main",
+          "chain": "bodyweight-squat",
+          "sets": [
+            { "kind": "work", "count": 4, "reps": { "min": 6, "max": 10 }, "targetRir": 2, "restS": 150 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "B1-2",
+          "movementPattern": "hip_hinge",
+          "role": "secondary",
+          "exercises": ["dumbbell-romanian-deadlift", "single-leg-romanian-deadlift"],
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 6, "max": 10 }, "targetRir": 2, "restS": 120 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "B1-3",
+          "movementPattern": "knee_flexion",
+          "role": "secondary",
+          "chain": "nordic-curl",
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 5, "max": 8 }, "targetRir": 2, "restS": 120 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "B1-4",
+          "movementPattern": "calf_raise",
+          "role": "accessory",
+          "chain": "standing-calf-raise",
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 10, "max": 15 }, "targetRir": 2, "restS": 60 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "B1-5",
+          "movementPattern": "core_anti_extension",
+          "role": "accessory",
+          "chain": "front-plank",
+          "sets": [
+            { "kind": "work", "count": 3, "durationS": { "min": 30, "max": 60 }, "targetRir": 2, "restS": 60 }
+          ],
+          "progression": { "type": "duration", "stepS": 5 }
+        }
+      ]
+    },
+    {
+      "id": "H2",
+      "name": "Haut 2 · Volume",
+      "slots": [
+        {
+          "id": "H2-1",
+          "movementPattern": "horizontal_push",
+          "role": "main",
+          "chain": "push-up",
+          "sets": [
+            { "kind": "work", "count": 4, "reps": { "min": 10, "max": 15 }, "targetRir": 2, "restS": 150 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "H2-2",
+          "movementPattern": "horizontal_pull",
+          "role": "secondary",
+          "exercises": ["one-arm-dumbbell-row", "band-row", "table-row"],
+          "sets": [
+            { "kind": "work", "count": 5, "reps": { "min": 10, "max": 15 }, "targetRir": 2, "restS": 120 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "H2-3",
+          "movementPattern": "vertical_pull",
+          "role": "secondary",
+          "exercises": ["band-lat-pulldown", "band-assisted-pull-up"],
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 10, "max": 15 }, "targetRir": 2, "restS": 120 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "H2-4",
+          "movementPattern": "vertical_push",
+          "role": "secondary",
+          "chain": "pike-push-up",
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 10, "max": 15 }, "targetRir": 2, "restS": 120 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "H2-5",
+          "movementPattern": "shoulder_isolation",
+          "role": "accessory",
+          "exercises": ["dumbbell-lateral-raise"],
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 12, "max": 15 }, "targetRir": 1, "restS": 60 }
+          ],
+          "progression": { "type": "double" }
+        }
+      ]
+    },
+    {
+      "id": "B2",
+      "name": "Bas 2 · Volume",
+      "slots": [
+        {
+          "id": "B2-1",
+          "movementPattern": "squat",
+          "role": "main",
+          "chain": "bodyweight-squat",
+          "sets": [
+            { "kind": "work", "count": 4, "reps": { "min": 10, "max": 15 }, "targetRir": 2, "restS": 150 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "B2-2",
+          "movementPattern": "lunge",
+          "role": "secondary",
+          "exercises": ["dumbbell-step-up", "step-up"],
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 8, "max": 12 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "B2-3",
+          "movementPattern": "hip_hinge",
+          "role": "secondary",
+          "exercises": ["dumbbell-romanian-deadlift", "single-leg-romanian-deadlift"],
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 10, "max": 15 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "B2-4",
+          "movementPattern": "knee_flexion",
+          "role": "accessory",
+          "chain": "nordic-curl",
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 5, "max": 8 }, "targetRir": 2, "restS": 120 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "B2-5",
+          "movementPattern": "core_anti_rotation",
+          "role": "accessory",
+          "exercises": ["side-plank"],
+          "sets": [
+            { "kind": "work", "count": 3, "durationS": { "min": 20, "max": 45 }, "targetRir": 2, "restS": 60 }
+          ],
+          "progression": { "type": "duration", "stepS": 5 }
+        }
+      ]
+    }
+  ]
+}

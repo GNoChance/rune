@@ -1,7 +1,7 @@
 {
   "id": "goblet-squat",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Squat goblet",
@@ -10,6 +10,13 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "dumbbell",
+  "primary_muscles": [
+    "quadriceps",
+    "glutes"
+  ],
+  "secondary_muscles": [
+    "adductors"
+  ],
   "equipment_options": [
     [
       "dumbbells"

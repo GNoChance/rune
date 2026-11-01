@@ -1,7 +1,7 @@
 {
   "id": "machine-chest-press",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Développé couché à la machine",
@@ -10,6 +10,13 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "machine",
+  "primary_muscles": [
+    "chest"
+  ],
+  "secondary_muscles": [
+    "front_delts",
+    "triceps"
+  ],
   "equipment_options": [
     [
       "upper_body_machines"

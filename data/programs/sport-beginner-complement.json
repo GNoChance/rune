@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "id": "sport-beginner-complement",
+  "version": 1,
+  "name": "Complément sport · Débutant · Corps entier et prévention",
+  "description": "Une séance de 30 à 40 minutes, 2 fois par semaine, en complément de ton sport : les grands mouvements du corps entier en 2 séries, puis la prévention des ischio-jambiers, des adducteurs et des mollets, et du gainage. Chaque exercice a sa version à la salle et sa version sans matériel.",
+  "context": "sport",
+  "level": "beginner",
+  "daysPerWeek": { "min": 2, "max": 2, "default": 2 },
+  "estimatedMinutes": 40,
+  "block": { "mode": "reactive" },
+  "workouts": [
+    {
+      "id": "A",
+      "name": "Corps entier et prévention",
+      "slots": [
+        {
+          "id": "A1",
+          "movementPattern": "squat",
+          "role": "main",
+          "exercises": ["goblet-squat", "bodyweight-squat"],
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 8, "max": 15 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "A2",
+          "movementPattern": "hip_hinge",
+          "role": "main",
+          "exercises": ["dumbbell-romanian-deadlift", "single-leg-romanian-deadlift"],
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 8, "max": 15 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "A3",
+          "movementPattern": "horizontal_push",
+          "role": "main",
+          "exercises": ["dumbbell-bench-press", "push-up"],
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 8, "max": 15 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "A4",
+          "movementPattern": "horizontal_pull",
+          "role": "main",
+          "exercises": ["seated-cable-row", "one-arm-dumbbell-row", "band-row", "table-row"],
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 8, "max": 15 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "A5",
+          "movementPattern": "vertical_push",
+          "role": "main",
+          "exercises": ["seated-dumbbell-shoulder-press", "pike-push-up"],
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 8, "max": 15 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "A6",
+          "movementPattern": "vertical_pull",
+          "role": "main",
+          "exercises": ["lat-pulldown", "band-assisted-pull-up", "band-lat-pulldown"],
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 8, "max": 15 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "A7",
+          "movementPattern": "knee_flexion",
+          "role": "accessory",
+          "chain": "nordic-curl",
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 6, "max": 10 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "A8",
+          "movementPattern": "hip_adduction_abduction",
+          "role": "accessory",
+          "exercises": ["copenhagen-plank-short-lever"],
+          "sets": [
+            { "kind": "work", "count": 2, "durationS": { "min": 15, "max": 30 }, "targetRir": 2, "restS": 60 }
+          ],
+          "progression": { "type": "duration", "stepS": 5 }
+        },
+        {
+          "id": "A9",
+          "movementPattern": "calf_raise",
+          "role": "accessory",
+          "chain": "standing-calf-raise",
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 8, "max": 15 }, "targetRir": 2, "restS": 60 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "A10",
+          "movementPattern": "core_anti_rotation",
+          "role": "accessory",
+          "exercises": ["side-plank"],
+          "sets": [
+            { "kind": "work", "count": 2, "durationS": { "min": 20, "max": 40 }, "targetRir": 2, "restS": 60 }
+          ],
+          "progression": { "type": "duration", "stepS": 5 }
+        }
+      ]
+    }
+  ]
+}

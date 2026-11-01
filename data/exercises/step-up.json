@@ -1,7 +1,7 @@
 {
   "id": "step-up",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Step-up",
@@ -10,6 +10,13 @@
   "unilateral": true,
   "measure": "reps",
   "load_mode": "bodyweight",
+  "primary_muscles": [
+    "quadriceps",
+    "glutes"
+  ],
+  "secondary_muscles": [
+    "adductors"
+  ],
   "equipment_options": [
     [
       "box"

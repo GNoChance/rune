@@ -1,7 +1,7 @@
 {
   "id": "archer-push-up",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Pompe archer",
@@ -10,6 +10,14 @@
   "unilateral": true,
   "measure": "reps",
   "load_mode": "bodyweight",
+  "primary_muscles": [
+    "chest",
+    "triceps"
+  ],
+  "secondary_muscles": [
+    "front_delts",
+    "abs"
+  ],
   "equipment_options": [
     []
   ],

@@ -1,7 +1,7 @@
 {
   "id": "bench-press",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Développé couché",
@@ -10,6 +10,13 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "barbell",
+  "primary_muscles": [
+    "chest",
+    "triceps"
+  ],
+  "secondary_muscles": [
+    "front_delts"
+  ],
   "equipment_options": [
     [
       "barbell",

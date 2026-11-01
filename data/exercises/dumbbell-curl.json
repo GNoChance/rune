@@ -1,7 +1,7 @@
 {
   "id": "dumbbell-curl",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Curl biceps aux haltères",
@@ -10,6 +10,12 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "dumbbell",
+  "primary_muscles": [
+    "biceps"
+  ],
+  "secondary_muscles": [
+    "forearms"
+  ],
   "equipment_options": [
     [
       "dumbbells"

@@ -1,7 +1,7 @@
 {
   "id": "deadlift",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Soulevé de terre",
@@ -10,6 +10,16 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "barbell",
+  "primary_muscles": [
+    "glutes",
+    "hamstrings",
+    "lower_back"
+  ],
+  "secondary_muscles": [
+    "quadriceps",
+    "traps",
+    "forearms"
+  ],
   "equipment_options": [
     [
       "barbell"

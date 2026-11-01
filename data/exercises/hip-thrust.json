@@ -1,7 +1,7 @@
 {
   "id": "hip-thrust",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Hip thrust",
@@ -10,6 +10,12 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "barbell",
+  "primary_muscles": [
+    "glutes"
+  ],
+  "secondary_muscles": [
+    "hamstrings"
+  ],
   "equipment_options": [
     [
       "barbell",

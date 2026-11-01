@@ -1,7 +1,7 @@
 {
   "id": "elevated-pike-push-up",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Pompe pike pieds surélevés",
@@ -10,6 +10,14 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "bodyweight",
+  "primary_muscles": [
+    "front_delts",
+    "triceps"
+  ],
+  "secondary_muscles": [
+    "side_delts",
+    "traps"
+  ],
   "equipment_options": [
     [
       "chair"

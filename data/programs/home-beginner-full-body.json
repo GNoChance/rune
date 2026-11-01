@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "id": "home-beginner-full-body",
+  "version": 1,
+  "name": "Maison · Débutant · Corps entier",
+  "description": "Une séance corps entier au poids du corps, 2 ou 3 fois par semaine. Chaque mouvement avance de variante en variante, de la plus facile à la plus difficile. Barre de traction, élastiques ou haltères, s'ils sont cochés, ajoutent les tirages et des variantes chargées.",
+  "context": "home",
+  "level": "beginner",
+  "daysPerWeek": { "min": 2, "max": 3, "default": 3 },
+  "estimatedMinutes": 40,
+  "block": { "mode": "reactive" },
+  "workouts": [
+    {
+      "id": "A",
+      "name": "Corps entier",
+      "slots": [
+        {
+          "id": "A1",
+          "movementPattern": "squat",
+          "role": "main",
+          "chain": "bodyweight-squat",
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 8, "max": 12 }, "targetRir": 2, "restS": 150 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "A2",
+          "movementPattern": "horizontal_push",
+          "role": "main",
+          "chain": "push-up",
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 8, "max": 12 }, "targetRir": 2, "restS": 150 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "A3",
+          "movementPattern": "horizontal_pull",
+          "role": "secondary",
+          "exercises": ["one-arm-dumbbell-row", "band-row", "table-row"],
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 8, "max": 12 }, "targetRir": 2, "restS": 120 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "A4",
+          "movementPattern": "glute_bridge",
+          "role": "secondary",
+          "chain": "glute-bridge",
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 10, "max": 15 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "A5",
+          "movementPattern": "vertical_pull",
+          "role": "secondary",
+          "exercises": ["band-assisted-pull-up", "negative-pull-up", "band-lat-pulldown"],
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 6, "max": 10 }, "targetRir": 2, "restS": 120 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "A6",
+          "movementPattern": "knee_flexion",
+          "role": "accessory",
+          "chain": "nordic-curl",
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 6, "max": 10 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "A7",
+          "movementPattern": "core_anti_extension",
+          "role": "accessory",
+          "chain": "front-plank",
+          "sets": [
+            { "kind": "work", "count": 3, "durationS": { "min": 20, "max": 60 }, "targetRir": 2, "restS": 60 }
+          ],
+          "progression": { "type": "duration", "stepS": 5 }
+        }
+      ]
+    }
+  ]
+}

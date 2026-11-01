@@ -1,7 +1,7 @@
 {
   "id": "romanian-deadlift",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Soulevé de terre roumain",
@@ -10,6 +10,14 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "barbell",
+  "primary_muscles": [
+    "hamstrings",
+    "glutes"
+  ],
+  "secondary_muscles": [
+    "lower_back",
+    "forearms"
+  ],
   "equipment_options": [
     [
       "barbell"

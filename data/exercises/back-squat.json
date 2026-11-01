@@ -1,7 +1,7 @@
 {
   "id": "back-squat",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Squat barre",
@@ -10,6 +10,14 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "barbell",
+  "primary_muscles": [
+    "quadriceps",
+    "glutes"
+  ],
+  "secondary_muscles": [
+    "adductors",
+    "lower_back"
+  ],
   "equipment_options": [
     [
       "barbell",

@@ -1,7 +1,7 @@
 {
   "id": "assisted-nordic-curl",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Nordic assisté",
@@ -10,6 +10,12 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "bodyweight",
+  "primary_muscles": [
+    "hamstrings"
+  ],
+  "secondary_muscles": [
+    "calves"
+  ],
   "equipment_options": [
     []
   ],

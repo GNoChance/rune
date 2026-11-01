@@ -1,7 +1,7 @@
 {
   "id": "overhead-press",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Développé militaire",
@@ -10,6 +10,15 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "barbell",
+  "primary_muscles": [
+    "front_delts",
+    "triceps"
+  ],
+  "secondary_muscles": [
+    "side_delts",
+    "traps",
+    "abs"
+  ],
   "equipment_options": [
     [
       "barbell",

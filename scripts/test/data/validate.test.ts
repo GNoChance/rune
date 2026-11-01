@@ -1,11 +1,19 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { canonicalJson, normalize } from '@rune/domain';
+import { EXPERIENCES, GOALS, ProgramTemplateSchema } from '@rune/contracts';
+import { canonicalJson, normalize, recommendTemplate, type TemplateDescriptor } from '@rune/domain';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { checkGlossary, DEFAULT_DATA_DIR, GLOSSARY_FILE, main, validateDataDir } from '../../data/validate';
+import {
+  checkGlossary,
+  DEFAULT_DATA_DIR,
+  GLOSSARY_FILE,
+  main,
+  PROGRAMS_DIR,
+  validateDataDir,
+} from '../../data/validate';
 
 /** Squelette valide (04 §8, étape 1) : champs « squelette » seulement, au statut `draft`. */
 const skeleton = (id: string, extra: Record<string, unknown> = {}) => ({
@@ -109,10 +117,66 @@ function capture() {
   };
 }
 
+/** Identifiants stables des 6 modèles (05 §3), un par contexte et par niveau. */
+const TEMPLATE_IDS = [
+  'gym-beginner-full-body-ab',
+  'gym-intermediate-upper-lower',
+  'home-beginner-full-body',
+  'home-intermediate-upper-lower',
+  'sport-beginner-complement',
+  'sport-intermediate-strength-prevention',
+];
+
 describe('data:validate sur le dépôt', () => {
   it('le dossier data/ du dépôt est valide', async () => {
     const { errors } = await validateDataDir(DEFAULT_DATA_DIR);
     expect(errors).toEqual([]);
+  });
+
+  it('chaque modèle que recommendTemplate peut rendre existe dans data/programs (05 §17.6)', async () => {
+    const dir = join(DEFAULT_DATA_DIR, PROGRAMS_DIR);
+    const names = (await readdir(dir)).filter((name) => name.endsWith('.json')).sort();
+    const templates = await Promise.all(
+      names.map(async (name) => {
+        const template = ProgramTemplateSchema.parse(JSON.parse(await readFile(join(dir, name), 'utf8')));
+        expect(name).toBe(`${template.id}.json`);
+        return template;
+      }),
+    );
+    expect(templates.map((t) => t.id)).toEqual(TEMPLATE_IDS);
+
+    const descriptors: TemplateDescriptor[] = templates.map((t) => ({
+      id: t.id,
+      context: t.context,
+      level: t.level,
+      days: { min: t.daysPerWeek.min, max: t.daysPerWeek.max },
+      available: true,
+    }));
+    // Tous les profils d'entrée de recommendTemplate (R-REC-1 à R-REC-6).
+    const inputs = GOALS.flatMap((goal) =>
+      [null, 'football'].flatMap((sportCode) =>
+        (['gym', 'home'] as const).flatMap((primaryPlaceKind) =>
+          EXPERIENCES.flatMap((experience) =>
+            ([2, 3, 4] as const).map((daysPerWeek) => ({
+              goal,
+              sportCode,
+              primaryPlaceKind,
+              experience,
+              daysPerWeek,
+            })),
+          ),
+        ),
+      ),
+    );
+    const returned = new Set<string>();
+    for (const input of inputs) {
+      const rec = recommendTemplate(input, descriptors);
+      const template = descriptors.find((d) => d.id === rec.templateId);
+      // Chaque profil reçoit un modèle du dépôt, de son contexte et du niveau retenu (jamais un repli).
+      expect(template, JSON.stringify(input)).toMatchObject({ context: rec.context, level: rec.level });
+      if (template !== undefined) returned.add(template.id);
+    }
+    expect([...returned].sort()).toEqual(TEMPLATE_IDS);
   });
 });
 

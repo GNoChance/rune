@@ -12,15 +12,15 @@ Notes de `pnpm exercises:draft` (04 §9 ; spec de la brique 2, §5). Les valeurs
 
    La clé ne s'écrit nulle part ailleurs : ni fichier versionné, ni journal, ni rapport, ni message de commit. Le script ne l'affiche jamais. Sans `.env.local` (ou sans la ligne), il prend la variable d'environnement `ANTHROPIC_API_KEY` du poste, là où la procédure P5 (`docs/exploitation/P5-rotation-secrets.md`) range la clé de `rune-dev` ; `.env.local` passe en premier.
 2. Les squelettes `data/exercises/<id>.json` existent au statut `draft` et passent `pnpm data:validate`.
-3. `pnpm exercises:draft` rédige tous les `draft` dont aucun champ IA n'est rempli ; `pnpm exercises:draft --ids goblet-squat,lat-pulldown` rédige ces fiches-là (une fiche déjà rédigée est réécrite : ne jamais passer les ids des étalons, `push-up` et `dumbbell-romanian-deadlift`). Options : `--model <id>` (prix connu exigé), `--max-tokens <n>` (16 000 par défaut), `--dir <dossier data>`.
+3. `pnpm exercises:draft` rédige tous les `draft` dont aucun champ IA n'est rempli ; `pnpm exercises:draft --ids goblet-squat,lat-pulldown` rédige ces fiches-là (une fiche déjà rédigée est réécrite : ne jamais passer les ids des étalons, `push-up` et `dumbbell-romanian-deadlift`). Depuis la brique 3 (tâche 8), les 64 squelettes du lot A ont leurs muscles (`primary_muscles`, `secondary_muscles`) renseignés à la main pour le volume des modèles : sans `--ids`, le script les saute tous. Il faut les nommer par `--ids` ; la rédaction réécrit alors leurs muscles (le prompt ne les envoie pas), à comparer à la relecture avec ceux de `docs/catalog/lot-a.md`. Options : `--model <id>` (prix connu exigé), `--max-tokens <n>` (16 000 par défaut), `--dir <dossier data>`.
 4. Le script affiche une ligne par fiche (rédigée, refusée, échec, non envoyée) avec son coût, le coût total, puis le résultat de `data:validate`. Sortie 0 si tout est rédigé et le catalogue valide, 1 sinon. Il refuse de tourner quand la variable `CI` est définie.
 5. Relire le diff, lancer `pnpm data:validate`, ouvrir la PR (04 §8, étape 2).
 
 ## État au 2026-10-30 : étalons et squelettes prêts, pilote en attente
 
-- **Prêts** (plan de la brique 2, tâche 18, étapes 1 à 3) : les 2 fiches étalons écrites à la main (`push-up`, `dumbbell-romanian-deadlift` ; `draft`, lot `A`, `drafting.origin` `human`) et 64 squelettes du lot A provisoire, listés dans `docs/catalog/lot-a-provisoire.md`. `pnpm data:validate` passe ; `pnpm data:validate --strict` échoue seulement sur R-EQ-5 (5 codes de matériel encore inutilisés, attendus au lot B). Le test « data/ du dépôt sur base vide » de `apps/server/test/catalog/routes.test.ts` vérifie que les 66 fiches sont amorcées en `draft`, visibles dans `GET /api/review/exercises` et absentes de `GET /api/catalog`.
+- **Prêts** (plan de la brique 2, tâche 18, étapes 1 à 3) : les 2 fiches étalons écrites à la main (`push-up`, `dumbbell-romanian-deadlift` ; `draft`, lot `A`, `drafting.origin` `human`) et 64 squelettes du lot A provisoire, listés dans `docs/catalog/lot-a-provisoire.md` (devenu `docs/catalog/lot-a.md` avec les 6 modèles de la brique 3). `pnpm data:validate` passe ; `pnpm data:validate --strict` échoue seulement sur R-EQ-5 (5 codes de matériel encore inutilisés, attendus au lot B). Le test « data/ du dépôt sur base vide » de `apps/server/test/catalog/routes.test.ts` vérifie que les 66 fiches sont amorcées en `draft`, visibles dans `GET /api/review/exercises` et absentes de `GET /api/catalog`.
 - **Pilote en attente** (étape 4). Avant de le lancer, dans l'ordre :
-  1. le propriétaire valide la liste du lot A (ids, noms, niveaux, chaînes ; questions en fin de `lot-a-provisoire.md`) ;
+  1. le propriétaire valide la liste du lot A (ids, noms, niveaux, chaînes ; questions en fin de `lot-a.md`) ;
   2. l'admin et les relectrices relisent les deux étalons dans l'appli ; l'admin les passe en `reviewed`, exporte le catalogue puis lance `pnpm data:pull`. Le script ne montre au modèle que des étalons `reviewed` ou `published` : sans cette étape, le prompt dit « Aucune fiche étalon n'est encore relue » ;
   3. le propriétaire pose la clé dans `.env.local` ;
   4. revérifier le modèle et les prix (section suivante et `MODEL_PRICES`), avec la date.
@@ -30,7 +30,7 @@ Notes de `pnpm exercises:draft` (04 §9 ; spec de la brique 2, §5). Les valeurs
   pnpm exercises:draft --ids back-squat,lat-pulldown,front-plank,incline-push-up,band-external-rotation
   ```
 
-  Toujours passer `--ids` pendant le pilote : sans, le script rédigerait les 64 squelettes d'un coup.
+  Toujours passer `--ids` : depuis que les muscles des squelettes sont renseignés à la main (brique 3, tâche 8), le script sans `--ids` n'en rédige plus aucun.
 
 ## Valeurs vérifiées le 2026-10-30
 

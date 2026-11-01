@@ -1,7 +1,7 @@
 {
   "id": "face-pull",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Face pull",
@@ -10,6 +10,13 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "machine",
+  "primary_muscles": [
+    "rear_delts"
+  ],
+  "secondary_muscles": [
+    "rotator_cuff",
+    "traps"
+  ],
   "equipment_options": [
     [
       "cable_station"

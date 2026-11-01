@@ -1,7 +1,7 @@
 {
   "id": "copenhagen-plank-leg-raise",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Planche de Copenhague avec levée de jambe",
@@ -10,6 +10,13 @@
   "unilateral": true,
   "measure": "duration",
   "load_mode": "bodyweight",
+  "primary_muscles": [
+    "adductors"
+  ],
+  "secondary_muscles": [
+    "obliques",
+    "abs"
+  ],
   "equipment_options": [
     [
       "chair"

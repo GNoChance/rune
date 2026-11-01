@@ -1,7 +1,7 @@
 {
   "id": "lat-pulldown",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "A",
   "name": "Tirage vertical",
@@ -10,6 +10,13 @@
   "unilateral": false,
   "measure": "reps",
   "load_mode": "machine",
+  "primary_muscles": [
+    "lats"
+  ],
+  "secondary_muscles": [
+    "biceps",
+    "traps"
+  ],
   "equipment_options": [
     [
       "lat_pulldown"
