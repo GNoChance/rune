@@ -92,6 +92,7 @@ describe('scénarios de référence sur 12 semaines', () => {
 
     it.each(SCRIPTED_PROFILES)('profil $id : aucune hausse au-delà des plafonds', (profile) => {
       const sim = run(template, profile);
+      let checked = 0;
       for (const step of sim.steps) {
         for (const d of step.decisions) {
           const c = performedLoad(step, step.session.exercises.find((e) => e.id === d.id)?.slotId ?? '');
@@ -104,7 +105,9 @@ describe('scénarios de référence sur 12 semaines', () => {
           if (found === undefined || sheet === undefined) continue;
           const grid = loadGrid(sheet.load_mode, sim.place.loadSettings);
           const stepUp = (next(grid, c) ?? c) - c;
+          // Hors `linear`, pas d'incrément propre : ces progressions sont tenues au seul plafond de 10 %.
           const increment = found.slot.progression.type === 'linear' ? found.slot.progression.incrementG : 0;
+          checked++;
           const cap =
             profile.sessionProfile === 'cautious'
               ? (c * rules.raiseCapPct) / 100
@@ -118,6 +121,10 @@ describe('scénarios de référence sur 12 semaines', () => {
           if (profile.sessionProfile === 'cautious') expect(to - c, where).toBeLessThanOrEqual(stepUp);
         }
       }
+      // Le contrôle a bien eu des hausses à examiner (en salle ; à la maison sans matériel, aucune charge ne monte),
+      // sauf pour un profil qui ne monte jamais.
+      if (template.context === 'gym' && profile.id !== 'fails' && profile.id !== 'never_logs_effort')
+        expect(checked).toBeGreaterThan(0);
     });
   });
 
@@ -130,27 +137,30 @@ describe('scénarios de référence sur 12 semaines', () => {
         sim.steps.filter((s) => s.planned.weekType === 'deload').map((s) => s.weekIndex + 1),
       );
       expect([...deloads].sort((a, b) => a - b)).toEqual([5, 10]);
+      let compared = 0;
       for (const step of sim.steps) {
         expect(step.planned.weekType === 'deload').toBe(step.blockWeek === 5);
         expect(step.session.weekType).toBe(step.planned.weekType);
         if (step.planned.weekType !== 'deload') continue;
         // Semaine allégée : état inchangé, séries de travail divisées par deux arrondi au-dessus, RIR plus haut.
         expect(step.decisions.every((d) => d.result === 'DELOAD')).toBe(true);
-        const before = sim.steps[step.index - 1];
+        // La dernière séance de semaine normale de la même séance du modèle (les séances alternent).
+        const before = sim.steps
+          .slice(0, step.index)
+          .reverse()
+          .find((s) => s.planned.weekType === 'normal' && s.planned.workoutId === step.planned.workoutId);
         for (const ex of step.planned.exercises) {
           const normal = before?.planned.exercises.find((e) => e.slotId === ex.slotId);
-          const works = ex.sets.filter((s) => s.kind === 'work').length;
-          const usual = normal?.sets.filter((s) => s.kind === 'work').length ?? 0;
-          if (
-            ex.exerciseId === null ||
-            normal === undefined ||
-            before?.planned.workoutId !== step.planned.workoutId
-          ) {
-            continue;
-          }
-          expect(works).toBeLessThanOrEqual(Math.ceil(usual / 2));
+          if (ex.exerciseId === null || normal === undefined || normal.exerciseId === null) continue;
+          const works = ex.sets.filter((s) => s.kind === 'work').length / (ex.unilateral ? 2 : 1);
+          const usual = normal.sets.filter((s) => s.kind === 'work').length / (normal.unilateral ? 2 : 1);
+          expect(works, `${step.index + 1} ${ex.slotId}`).toBeLessThanOrEqual(Math.ceil(usual / 2));
+          expect(usual).toBeGreaterThan(0);
+          compared++;
         }
       }
+      // Les profils qui suspendent un slot en gardent d'autres : la comparaison a toujours eu lieu.
+      expect(compared).toBeGreaterThan(0);
     });
   });
 
@@ -184,7 +194,7 @@ describe('scénarios de référence sur 12 semaines', () => {
       }
     });
 
-    it('« prudent » : toutes les cibles dans les bornes, aucune hausse avant la 3e séance', () => {
+    it("« prudent » : cibles dans les bornes, charge de la 2e séance d'un exercice au plus celle de la 1re", () => {
       const sim = run(template, profileOf('cautious'));
       const { cautious } = rules;
       const seen = new Map<string, { n: number; first: number | null }>();
