@@ -19,7 +19,7 @@ import type { AcceptedChange, PlaceContext } from '../../src/program/types';
 
 type Muscles = { primary: Muscle[]; secondary?: Muscle[] };
 
-/** Fiche publiée de niveau 1, surchargée champ par champ. */
+/** Fiche publiée de niveau 1, polyarticulaire, surchargée champ par champ. */
 export function programSheet(
   id: string,
   pattern: MovementPattern,
@@ -31,6 +31,7 @@ export function programSheet(
     id,
     status: 'published',
     level: 1,
+    mechanics: 'compound',
     not_for_minors: false,
     equipment_options: equipment,
     movement_pattern: pattern,
@@ -66,16 +67,18 @@ export const PROGRAM_CATALOG: readonly CatalogSheet[] = [
     'horizontal_push',
     { primary: ['chest'], secondary: ['front_delts'] },
     [['dumbbells', 'flat_bench']],
-    { load_mode: 'dumbbell' },
+    { load_mode: 'dumbbell', mechanics: 'isolation' },
   ),
   programSheet('barbell-row', 'horizontal_pull', ROW, [['barbell']]),
   programSheet('seated-cable-row', 'horizontal_pull', ROW, [['seated_row']], { load_mode: 'machine' }),
   programSheet('inverted-row', 'horizontal_pull', ROW, [['table']]),
   programSheet('kneeling-plank', 'core_anti_extension', PLANK, [[]], {
+    mechanics: 'isolation',
     chain_id: 'front-plank',
     harder_id: 'front-plank',
   }),
   programSheet('front-plank', 'core_anti_extension', PLANK, [[]], {
+    mechanics: 'isolation',
     chain_id: 'front-plank',
     easier_id: 'kneeling-plank',
   }),
@@ -95,11 +98,16 @@ export const PROGRAM_CATALOG: readonly CatalogSheet[] = [
   }),
   programSheet('split-squat', 'lunge', LUNGE, [[]], { unilateral: true }),
   // Fiches des cas de test : hors volume, introuvable dans les lieux, brouillon, interdite aux mineurs.
-  programSheet('calf-raise', 'calf_raise', { primary: ['calves'] }, [[]]),
+  programSheet('calf-raise', 'calf_raise', { primary: ['calves'] }, [[]], { mechanics: 'isolation' }),
   programSheet('pallof-press', 'core_anti_rotation', { primary: ['obliques'] }, [['cable_station']], {
     load_mode: 'machine',
+    mechanics: 'isolation',
   }),
   programSheet('smith-squat', 'squat', SQUAT, [['smith_machine']], { load_mode: 'machine' }),
+  programSheet('weighted-plank', 'core_anti_extension', PLANK, [['dumbbells']], {
+    load_mode: 'dumbbell',
+    mechanics: 'isolation',
+  }),
   programSheet('draft-squat', 'squat', SQUAT, [[]], { status: 'draft' }),
   programSheet('jump-squat', 'squat', SQUAT, [[]], { not_for_minors: true }),
 ];

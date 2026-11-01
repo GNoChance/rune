@@ -8,16 +8,19 @@ import {
   type PROGRAM_LEVELS,
   type ServedProgramTemplate,
   type SessionProfile,
+  type SlotSpec,
 } from '@rune/contracts';
 import { expandEquipment, feasible } from '../catalog/equipment';
 import type { CatalogSheet } from '../catalog/usable';
 import { applyOperation, type EffectiveProgram, findSlot, workSetCount } from './effective';
-import { RULES_VERSION, type RulesSet, rulesFor } from './rules';
+import { currentRules, type RulesSet } from './rules';
 import type { PlaceContext } from './types';
 import {
   COVERAGE_GROUPS,
+  type CoverageGap,
   coverageGaps,
   referenceEquipment,
+  slotCandidates,
   VOLUME_GROUPS,
   type VolumeGroup,
   volumeRange,
@@ -78,34 +81,16 @@ export const OPERATION_AUTHORS: Readonly<Record<InstanceChangeOperation['op'], r
   switch_template: ['user', 'coach'],
 };
 
-/**
- * Bornes adultes de 05 §15 qui ne sont pas dans les règles du moteur (les bornes prudentes et le repos y sont). Le
- * RIR minimal d'un slot principal vaut pour un utilisateur débutant comme pour un modèle débutant (règle 3).
- */
-export const CHANGE_BOUNDS = {
-  workSets: [1, 5],
-  reps: [5, 30],
-  minRepsGap: 2,
-  targetRir: [1, 4],
-  minRirBeginnerMain: 2,
-  maxSlotsPerWorkout: 8,
-  days: [2, 4],
-} as const;
-
 /** Identifiant d'un changement pas encore créé (nom provisoire d'un slot ajouté). */
 export const PENDING_CHANGE_ID = 'pending';
-
-function currentRules(): RulesSet {
-  const rules = rulesFor(RULES_VERSION);
-  if (rules === null) throw new Error(`Règles ${RULES_VERSION} absentes`);
-  return rules;
-}
 
 type Context = {
   author: ChangeAuthor;
   cautious: boolean;
   level: ProgramLevel;
+  /** Règles en vigueur (`currentRules`) : bornes prudentes, repos, `programBounds` (05 §15). */
   rules: RulesSet;
+  catalog: readonly CatalogSheet[];
   byId: ReadonlyMap<string, CatalogSheet>;
   /** Matériel de chaque lieu, étendu ; `null` sans lieu (tout est faisable). */
   places: readonly ReadonlySet<EquipmentCode>[] | null;
@@ -147,6 +132,28 @@ function checkNewSlotExercises(
 
 const outside = (value: number, [min, max]: readonly [number, number]) => value < min || value > max;
 
+/**
+ * Exercice que le slot fera (05 §11, tous lieux confondus) : le premier candidat utilisable dans un lieu de
+ * l'utilisateur, sinon le premier candidat connu.
+ */
+function resolvedExercise(slot: SlotSpec, ctx: Context): CatalogSheet | undefined {
+  const candidates = slotCandidates(slot, ctx.catalog);
+  return candidates.find((s) => usableSomewhere(s, ctx)) ?? candidates[0];
+}
+
+/**
+ * RIR minimal de `set_target_rir` : 2 pour un débutant sur un slot principal ou un exercice polyarticulaire
+ * (05 §15), et sur tout slot principal d'un modèle débutant (05 §5, règle 3) ; sinon le bas de la fourchette.
+ */
+function minTargetRir(slot: SlotSpec, template: EffectiveProgram['template'], ctx: Context): number {
+  const bounds = ctx.rules.programBounds;
+  const beginnerCompound =
+    ctx.level === 'beginner' &&
+    (slot.role === 'main' || resolvedExercise(slot, ctx)?.mechanics === 'compound');
+  const beginnerTemplateMain = template.level === 'beginner' && slot.role === 'main';
+  return beginnerCompound || beginnerTemplateMain ? bounds.minRirBeginnerCompound : bounds.targetRir[0];
+}
+
 /** Bornes d'une opération sur l'état courant du changement (opérations précédentes appliquées). */
 function checkOperation(
   state: EffectiveProgram,
@@ -155,7 +162,7 @@ function checkOperation(
 ): ChangeErrorCode | null {
   if (!OPERATION_AUTHORS[op.op].includes(ctx.author)) return 'forbidden_for_author';
   const { template } = state;
-  const { cautious } = ctx.rules;
+  const { cautious, programBounds: bounds } = ctx.rules;
   switch (op.op) {
     case 'start_deload':
       return null;
@@ -163,14 +170,14 @@ function checkOperation(
       if (ctx.cautious) return 'forbidden_cautious';
       const workout = template.workouts.find((w) => w.id === op.workout);
       if (workout === undefined) return 'workout_unknown';
-      if (ctx.addedTo.has(op.workout) || workout.slots.length >= CHANGE_BOUNDS.maxSlotsPerWorkout) {
+      if (ctx.addedTo.has(op.workout) || workout.slots.length >= bounds.maxSlotsPerWorkout) {
         return 'slot_limit';
       }
       return checkNewSlotExercises(op.exercises, op.movementPattern, ctx);
     }
     case 'set_days_per_week': {
       const { min, max } = template.daysPerWeek;
-      const [low, high] = CHANGE_BOUNDS.days;
+      const [low, high] = bounds.days;
       return outside(op.days, [Math.max(min, low), Math.min(max, high)]) ? 'days_out_of_range' : null;
     }
     case 'switch_template': {
@@ -181,7 +188,7 @@ function checkOperation(
       }
       if (op.daysPerWeek === undefined) return null;
       const { min, max } = served.template.daysPerWeek;
-      const [low, high] = CHANGE_BOUNDS.days;
+      const [low, high] = bounds.days;
       return outside(op.daysPerWeek, [Math.max(min, low), Math.min(max, high)]) ? 'days_out_of_range' : null;
     }
   }
@@ -191,19 +198,16 @@ function checkOperation(
   switch (op.op) {
     case 'replace_exercise':
       return checkExercise(op.exercise, slot.movementPattern, ctx);
-    case 'change_sets': {
+    case 'change_sets':
+      // Prudent : aucune hausse ; une baisse reste permise, même au-dessus du plafond prudent (elle s'en approche).
       if (ctx.cautious && op.delta > 0) return 'forbidden_cautious';
-      const max = ctx.cautious ? cautious.maxWorkSets : CHANGE_BOUNDS.workSets[1];
-      return outside(workSetCount(slot) + op.delta, [CHANGE_BOUNDS.workSets[0], max])
-        ? 'sets_out_of_bounds'
-        : null;
-    }
+      return outside(workSetCount(slot) + op.delta, bounds.workSets) ? 'sets_out_of_bounds' : null;
     case 'set_rep_range': {
       if (!slot.sets.some((s) => s.kind === 'work' && s.reps !== undefined)) return 'reps_out_of_bounds';
       const range: readonly [number, number] = ctx.cautious
         ? [cautious.repsMin, cautious.repsMax]
-        : CHANGE_BOUNDS.reps;
-      const gap = ctx.cautious ? cautious.minRepsGap : CHANGE_BOUNDS.minRepsGap;
+        : bounds.reps;
+      const gap = ctx.cautious ? cautious.minRepsGap : bounds.minRepsGap;
       return outside(op.min, range) || outside(op.max, range) || op.max - op.min < gap
         ? 'reps_out_of_bounds'
         : null;
@@ -213,10 +217,9 @@ function checkOperation(
         s.kind === 'work' && s.targetRir !== undefined ? [s.targetRir] : [],
       );
       if (ctx.cautious && current.some((rir) => op.value < rir)) return 'forbidden_cautious';
-      const beginnerMain =
-        slot.role === 'main' && (ctx.level === 'beginner' || template.level === 'beginner');
-      const min = beginnerMain ? CHANGE_BOUNDS.minRirBeginnerMain : CHANGE_BOUNDS.targetRir[0];
-      return outside(op.value, [min, CHANGE_BOUNDS.targetRir[1]]) ? 'rir_out_of_bounds' : null;
+      return outside(op.value, [minTargetRir(slot, template, ctx), bounds.targetRir[1]])
+        ? 'rir_out_of_bounds'
+        : null;
     }
     case 'set_rest':
       return outside(op.seconds, ctx.rules.restS) ? 'rest_out_of_bounds' : null;
@@ -234,27 +237,40 @@ function checkOperation(
 
 /**
  * Index de l'opération qui a fait basculer `bad` pour de bon : la dernière `j` dont l'état d'après est en défaut
- * et celui d'avant non. `states[0]` est le programme reçu (jamais en défaut), `states[j + 1]` l'état après `j`.
+ * et celui d'avant non (`states[j + 1]` est l'état après `j`). Défaut déjà présent dans le programme reçu (snapshot
+ * validé avec d'anciennes règles) : la première opération.
  */
 function culprit(states: number, bad: (i: number) => boolean): number {
   for (let i = states - 1; i > 0; i -= 1) if (bad(i) && !bad(i - 1)) return i - 1;
   return 0;
 }
 
+const gapKey = (gap: CoverageGap) => `${gap.group}|${gap.days}|${gap.week}`;
+
 /**
- * Couverture et volume du résultat (05 §15.3), comparés au programme reçu : un groupe de couverture couvert qui ne
- * l'est plus donne `coverage_lost` ; un groupe de volume qui sort de la fourchette, ou qui s'en éloigne s'il en
- * était déjà sorti (catalogue servi plus pauvre que celui de la CI), donne `volume_out_of_range`. La suspension
- * n'y entre pas : elle reste toujours permise.
+ * Couverture et volume du résultat (05 §15.3) :
+ * - un groupe de couverture sans aucun slot dans une semaine de programme donne `coverage_lost`, jugé dans
+ *   l'absolu : ce contrôle ne lit que les types de mouvement, pas le catalogue (05 §15 : « remove_slot interdit si un
+ *   groupe de couverture se retrouve vide ») ;
+ * - les contrôles qui dépendent du catalogue se jugent par rapport au programme reçu, que le catalogue servi (fiches
+ *   publiées) peut déjà mettre en défaut alors que la CI l'a validé contre les brouillons : une semaine qui perd sa
+ *   fiche au poids du corps (modèles `home` et `sport`) donne `coverage_lost` ; un groupe de volume qui sort de la
+ *   fourchette, ou qui s'en éloigne s'il en était déjà sorti, donne `volume_out_of_range`.
+ * La suspension n'y entre pas : elle reste toujours permise.
  */
 function resultErrors(states: readonly EffectiveProgram[], catalog: readonly CatalogSheet[]): ChangeError[] {
   const original = states[0];
   if (original === undefined || states.length < 2) return [];
   const errors: ChangeError[] = [];
-  const gaps = states.map((s) => new Set(coverageGaps(s.template, catalog).map((g) => g.group)));
-  const before = gaps[0] ?? new Set();
+  const gaps = states.map((s) => coverageGaps(s.template, catalog));
+  const bodyweightBefore = new Set(
+    (gaps[0] ?? []).filter((g) => g.code === 'coverage_needs_bodyweight').map(gapKey),
+  );
   for (const group of COVERAGE_GROUPS) {
-    const lost = (i: number) => (gaps[i]?.has(group) ?? false) && !before.has(group);
+    const lost = (i: number) =>
+      (gaps[i] ?? []).some(
+        (g) => g.group === group && (g.code === 'coverage_missing' || !bodyweightBefore.has(gapKey(g))),
+      );
     if (lost(states.length - 1)) errors.push({ op: culprit(states.length, lost), code: 'coverage_lost' });
   }
   const [min, max] = volumeRange(original.template);
@@ -284,6 +300,7 @@ export function validateChange(input: ChangeValidationInput): ChangeValidation {
     cautious: input.profile === 'cautious',
     level: input.level,
     rules: currentRules(),
+    catalog: input.catalog,
     byId: new Map(input.catalog.map((s) => [s.id, s])),
     places: input.places.length === 0 ? null : input.places.map((p) => expandEquipment(p.equipment)),
     servedTemplates: input.servedTemplates,

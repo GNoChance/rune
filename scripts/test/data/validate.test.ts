@@ -231,13 +231,30 @@ describe('data:validate sur un dossier', () => {
   it('validateTemplate sur chaque modèle : une ligne par erreur, chemin du champ dans le message', async () => {
     await writeHome((t) => t.workouts[0]?.slots[0]?.exercises?.push('hack-squat'));
     const io = capture();
-    expect(await main(['--dir', dir, '--base', 'HEAD'], io.console)).toBe(1);
+    expect(await main(['--dir', dir], io.console)).toBe(1);
     const lines = io.lines.err.map((line) => line.replace(/^.*?(programs\/)/, '$1'));
     expect(lines).toContainEqual(
       expect.stringMatching(
         /^programs\/home-test\.json \[unknown_exercise\] workouts\.0\.slots\.0\.exercises\.1 : /,
       ),
     );
+  });
+
+  it('hors dépôt git, --base par défaut : avertissement seulement, sortie 0', async () => {
+    await writeHome();
+    const io = capture();
+    expect(await main(['--dir', dir], io.console)).toBe(0);
+    expect(io.lines.err).toEqual([expect.stringMatching(/^Avertissement : règle 8 non vérifiée.*« main »/)]);
+    expect(io.lines.out).toEqual(['Catalogue valide : 5 fiche(s), 0 illustration(s), 1 modèle(s).']);
+  });
+
+  it('--base donné mais introuvable : erreur, même sans modèle', async () => {
+    const io = capture();
+    expect(await main(['--dir', dir, '--base', 'main'], io.console)).toBe(1);
+    expect(io.lines.err.map((line) => line.replace(/^.*?(programs)/, '$1'))).toEqual([
+      expect.stringMatching(/^programs \[base_not_found\] .*« main »/),
+      'Catalogue invalide : 1 erreur(s).',
+    ]);
   });
 
   it('identifiant de modèle unique entre les fichiers (règle 2)', async () => {
@@ -340,11 +357,22 @@ describe('règle 8 : la version monte quand le contenu change (--base, 05 §5)',
     expect(await errors('HEAD~1')).toEqual([]);
   });
 
-  it('référence introuvable : avertissement, règle 8 non vérifiée, sortie 0', async () => {
+  it('--base donné et introuvable : base_not_found, sortie 1', async () => {
     await writeTemplate({ ...homeTemplate(), description: 'Autre description.' });
     const io = capture();
-    expect(await main(['--dir', data, '--base', 'inconnue'], io.console)).toBe(0);
-    expect(io.lines.err).toEqual([expect.stringMatching(/^Avertissement : règle 8 non vérifiée.*inconnue/)]);
+    expect(await main(['--dir', data, '--base', 'inconnue'], io.console)).toBe(1);
+    expect(io.lines.err.filter((line) => line.includes('[base_not_found]'))).toEqual([
+      expect.stringMatching(/« inconnue »/),
+    ]);
+    expect(io.lines.out).toEqual([]);
+  });
+
+  it('main par défaut introuvable : avertissement, règle 8 non vérifiée, sortie 0', async () => {
+    git('branch', '-M', 'autre');
+    await writeTemplate({ ...homeTemplate(), description: 'Autre description.' });
+    const io = capture();
+    expect(await main(['--dir', data], io.console)).toBe(0);
+    expect(io.lines.err).toEqual([expect.stringMatching(/^Avertissement : règle 8 non vérifiée.*« main »/)]);
     expect(io.lines.out).toEqual(['Catalogue valide : 5 fiche(s), 0 illustration(s), 1 modèle(s).']);
   });
 });

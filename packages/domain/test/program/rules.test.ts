@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RULES_BY_VERSION, RULES_VERSION, rulesFor } from '../../src/program/rules';
+import { currentRules, RULES_BY_VERSION, RULES_VERSION, rulesFor } from '../../src/program/rules';
 
 const deepFrozen = (o: unknown): boolean =>
   typeof o !== 'object' || o === null || (Object.isFrozen(o) && Object.values(o).every(deepFrozen));
@@ -27,5 +27,17 @@ describe('règles versionnées', () => {
     expect(r.raiseCapPct).toBe(10);
     expect(r.restS).toEqual([30, 300]);
     expect(r.defaultIncrementG).toEqual({ upper: 2500, lower: 5000 });
+  });
+  it('bornes des modèles et des changements (05 §5 règle 3, 05 §15)', () => {
+    expect(currentRules()).toBe(RULES_BY_VERSION[RULES_VERSION]);
+    expect(currentRules().programBounds).toEqual({
+      workSets: [1, 5],
+      reps: [5, 30],
+      minRepsGap: 2,
+      targetRir: [1, 4],
+      minRirBeginnerCompound: 2,
+      maxSlotsPerWorkout: 8,
+      days: [2, 4],
+    });
   });
 });

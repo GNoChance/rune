@@ -4,7 +4,7 @@ import { feasible } from '../catalog/equipment';
 import type { CatalogSheet } from '../catalog/usable';
 import { normalize } from '../text';
 import { workSetCount } from './effective';
-import { RULES_VERSION, rulesFor } from './rules';
+import { currentRules } from './rules';
 import { coverageGaps, referenceEquipment, volumeRange, weeklyVolume } from './volume';
 
 /*
@@ -41,11 +41,6 @@ export interface TemplateIssue {
 
 /** Noms de programmes déposés (05 §1.7) : aucun ne paraît dans un nom ou une description. */
 export const FORBIDDEN_PROGRAM_NAMES = ['StrongLifts', 'Starting Strength', '5/3/1', 'Wendler'] as const;
-
-/** Bornes de la règle 3 qui ne sont pas déjà dans le schéma. */
-const WORK_SETS = [1, 5] as const;
-const MIN_RIR_BEGINNER_MAIN = 2;
-const REST_S = rulesFor(RULES_VERSION)?.restS ?? [30, 300];
 
 type ZodIssue = NonNullable<ReturnType<typeof ProgramTemplateSchema.safeParse>['error']>['issues'][number];
 type Path = readonly PropertyKey[];
@@ -121,8 +116,14 @@ const slotsOf = (template: ProgramTemplate): SlotAt[] =>
     w.slots.map((slot, si) => ({ slot, path: `workouts.${wi}.slots.${si}` })),
   );
 
-/** Règle 3, hors schéma : RIR des slots `main` débutants, nombre de séries de travail, repos. */
+/**
+ * Règle 3, hors schéma : RIR des slots `main` débutants, nombre de séries de travail, repos. Bornes des règles en
+ * vigueur (`programBounds`, `restS`).
+ */
 function coherenceIssues(template: ProgramTemplate): TemplateIssue[] {
+  const { programBounds, restS } = currentRules();
+  const minRir = programBounds.minRirBeginnerCompound;
+  const [minSets, maxSets] = programBounds.workSets;
   const issues: TemplateIssue[] = [];
   for (const { slot, path } of slotsOf(template)) {
     slot.sets.forEach((set, i) => {
@@ -132,28 +133,28 @@ function coherenceIssues(template: ProgramTemplate): TemplateIssue[] {
         template.level === 'beginner' &&
         slot.role === 'main' &&
         set.targetRir !== undefined &&
-        set.targetRir < MIN_RIR_BEGINNER_MAIN;
+        set.targetRir < minRir;
       if (lowRir) {
         issues.push({
           code: 'rir_too_low',
           path: `${at}.targetRir`,
-          message: `RIR ${MIN_RIR_BEGINNER_MAIN} au moins sur un slot principal d'un modèle débutant.`,
+          message: `RIR ${minRir} au moins sur un slot principal d'un modèle débutant.`,
         });
       }
-      if (set.restS !== undefined && (set.restS < REST_S[0] || set.restS > REST_S[1])) {
+      if (set.restS !== undefined && (set.restS < restS[0] || set.restS > restS[1])) {
         issues.push({
           code: 'rest_bounds',
           path: `${at}.restS`,
-          message: `Repos de ${REST_S[0]} à ${REST_S[1]} s (${set.restS} s).`,
+          message: `Repos de ${restS[0]} à ${restS[1]} s (${set.restS} s).`,
         });
       }
     });
     const work = workSetCount(slot);
-    if (work < WORK_SETS[0] || work > WORK_SETS[1]) {
+    if (work < minSets || work > maxSets) {
       issues.push({
         code: 'work_sets_count',
         path: `${path}.sets`,
-        message: `De ${WORK_SETS[0]} à ${WORK_SETS[1]} séries de travail par slot (${work}).`,
+        message: `De ${minSets} à ${maxSets} séries de travail par slot (${work}).`,
       });
     }
   }
@@ -231,7 +232,7 @@ function volumeIssues(template: ProgramTemplate, catalog: readonly CatalogSheet[
     .map(([group, sets]) => ({
       code: 'volume_out_of_range',
       path: `volume.${group}`,
-      message: `${sets} séries par semaine pour ${group}, hors de ${min} à ${max}.`,
+      message: `${String(sets).replace('.', ',')} séries par semaine pour ${group}, hors de ${min} à ${max}.`,
     }));
 }
 

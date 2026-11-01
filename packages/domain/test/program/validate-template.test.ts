@@ -92,7 +92,7 @@ describe('validateTemplate : règle 3, cohérence', () => {
     ]);
   });
 
-  it('rir_too_low : RIR 0 partout (schéma), RIR 1 sur un slot main d’un modèle débutant', () => {
+  it("rir_too_low : RIR 0 partout (schéma), RIR 1 sur un slot main d'un modèle débutant", () => {
     const zero = validate(
       gymAb((t) => {
         const set = slotOf(t, 'A3').sets[0];
@@ -242,7 +242,7 @@ describe('validateTemplate : règle 5, références', () => {
     expect(issues).toEqual([]);
   });
 
-  it('pattern_mismatch : fiche d’un autre type de mouvement', () => {
+  it("pattern_mismatch : fiche d'un autre type de mouvement", () => {
     const issues = validate(
       gymAb((t) => {
         slotOf(t, 'A1').exercises?.push('lat-pulldown');
@@ -363,6 +363,8 @@ describe('validateTemplate : règle 6, volume', () => {
       }),
     );
     expect(issues).toEqual([expect.objectContaining({ code: 'volume_out_of_range', path: 'volume.delts' })]);
+    // Décimales à la française dans le message.
+    expect(issues[0]?.message).toBe('12,75 séries par semaine pour delts, hors de 6 à 12.');
   });
 
   it('les slots de mollets ne changent pas le volume contrôlé', () => {
@@ -403,14 +405,14 @@ describe('templateAvailable', () => {
     expect(templateAvailable(GYM_AB, served)).toBe(true);
   });
 
-  it('faux si un slot n’a plus aucune fiche publiée', () => {
+  it("faux si un slot n'a plus aucune fiche publiée", () => {
     const template = gymAb((t) => {
       slotOf(t, 'B3').exercises = ['draft-squat'];
     });
     expect(templateAvailable(template, PROGRAM_CATALOG)).toBe(false);
   });
 
-  it('faux si aucun membre de la chaîne n’est publié', () => {
+  it("faux si aucun membre de la chaîne n'est publié", () => {
     const catalog = PROGRAM_CATALOG.map((s) =>
       s.chain_id === 'front-plank' ? { ...s, status: 'retired' as const } : s,
     );

@@ -6,7 +6,7 @@ import type {
   SlotSpec,
   WorkoutSpec,
 } from '@rune/contracts';
-import { RULES_VERSION, rulesFor } from './rules';
+import { currentRules } from './rules';
 import type { AcceptedChange } from './types';
 
 /**
@@ -53,9 +53,6 @@ const addedSlotSets = (): SetSpec[] => [
   { kind: 'work', count: 2, reps: { min: 8, max: 12 }, targetRir: 2, restS: 90 },
 ];
 
-/** Pas d'une progression `duration` née d'un remplacement sur un slot `chain` (règles en vigueur). */
-const STEP_S = rulesFor(RULES_VERSION)?.stepS ?? 5;
-
 function mapSlots(template: ProgramTemplate, f: (slot: SlotSpec) => SlotSpec): ProgramTemplate {
   return { ...template, workouts: template.workouts.map((w) => ({ ...w, slots: w.slots.map(f) })) };
 }
@@ -74,7 +71,10 @@ const mapWorkSets = (slot: SlotSpec, f: (set: SetSpec) => SetSpec): SlotSpec => 
   sets: slot.sets.map((s) => (s.kind === 'work' ? f(s) : s)),
 });
 
-/** `replace_exercise` : la fiche en tête de liste ; un slot `chain` devient une liste à une fiche. */
+/**
+ * `replace_exercise` : la fiche en tête de liste ; un slot `chain` devient une liste à une fiche, en `double`, ou en
+ * `duration` s'il se mesure en durée (pas des règles en vigueur s'il n'en avait pas).
+ */
 function replaceExercise(slot: SlotSpec, exercise: string): SlotSpec {
   if (slot.chain !== undefined) {
     const { chain: _chain, ...rest } = slot;
@@ -82,7 +82,7 @@ function replaceExercise(slot: SlotSpec, exercise: string): SlotSpec {
       ? { type: 'double' }
       : slot.progression.type === 'duration'
         ? slot.progression
-        : { type: 'duration', stepS: STEP_S };
+        : { type: 'duration', stepS: currentRules().stepS };
     return { ...rest, exercises: [exercise], progression };
   }
   const others = (slot.exercises ?? []).filter((e) => e !== exercise);

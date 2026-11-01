@@ -2,14 +2,16 @@ import type { EquipmentCode, ExerciseLevel, ExerciseSheet } from '@rune/contract
 import { feasible } from './equipment';
 
 /**
- * Champs qu'on lit dans une fiche pour la faisabilité, les chaînes et les remplaçants. Une fiche complète
- * (`ExerciseSheet`) les a tous, comme une fiche servie aux téléphones, privée de ses colonnes éditoriales.
+ * Champs qu'on lit dans une fiche pour la faisabilité, les chaînes, les remplaçants et les programmes (`mechanics` :
+ * bornes des débutants en polyarticulaire, 05 §15). Une fiche complète (`ExerciseSheet`) les a tous, comme une fiche
+ * servie aux téléphones, privée de ses colonnes éditoriales.
  */
 export type CatalogSheet = Pick<
   ExerciseSheet,
   | 'id'
   | 'status'
   | 'level'
+  | 'mechanics'
   | 'not_for_minors'
   | 'equipment_options'
   | 'movement_pattern'

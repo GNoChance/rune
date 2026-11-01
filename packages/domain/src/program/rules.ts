@@ -42,6 +42,20 @@ export interface RulesSet {
     position: readonly [number, number];
   };
   noteMaxLength: number;
+  /**
+   * Bornes des modèles (05 §5, règle 3) et plafonds adultes des changements (05 §15) ; les bornes prudentes sont
+   * dans `cautious`, le repos dans `restS`.
+   */
+  programBounds: {
+    workSets: readonly [number, number];
+    reps: readonly [number, number];
+    minRepsGap: number;
+    targetRir: readonly [number, number];
+    /** `targetRir` minimal d'un débutant sur un slot principal ou un exercice polyarticulaire. */
+    minRirBeginnerCompound: number;
+    maxSlotsPerWorkout: number;
+    days: readonly [number, number];
+  };
 }
 
 export type RulesBook = Readonly<Record<string, RulesSet>>;
@@ -87,10 +101,29 @@ const V1: RulesSet = {
   forgottenSessionH: { sameDevice: 6, otherDevice: 24 },
   setBounds: { loadG: [0, 500_000], reps: [0, 200], durationS: [0, 7200], position: [1, 99] },
   noteMaxLength: 500,
+  programBounds: {
+    workSets: [1, 5],
+    reps: [5, 30],
+    minRepsGap: 2,
+    targetRir: [1, 4],
+    minRirBeginnerCompound: 2,
+    maxSlotsPerWorkout: 8,
+    days: [2, 4],
+  },
 };
 
 export const RULES_BY_VERSION: RulesBook = deepFreeze({ '1': V1 });
 
 export function rulesFor(version: string): RulesSet | null {
   return Object.hasOwn(RULES_BY_VERSION, version) ? (RULES_BY_VERSION[version] ?? null) : null;
+}
+
+/**
+ * Règles de la version courante (`RULES_VERSION`) : celles des validateurs et des nouvelles séances. Lève si elles
+ * manquent, ce qui serait une erreur de publication des règles.
+ */
+export function currentRules(): RulesSet {
+  const rules = rulesFor(RULES_VERSION);
+  if (rules === null) throw new Error(`Règles ${RULES_VERSION} absentes de RULES_BY_VERSION`);
+  return rules;
 }

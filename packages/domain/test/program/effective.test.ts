@@ -81,7 +81,7 @@ describe('effectiveProgram', () => {
     expect(slotOf(template, 'A5').progression).toEqual({ type: 'duration', stepS: 5 });
   });
 
-  it('change_sets : porte sur la dernière série de travail, jamais sur l’échauffement', () => {
+  it("change_sets : porte sur la dernière série de travail, jamais sur l'échauffement", () => {
     const up = run(['c1', 1, [{ op: 'change_sets', slot: 'A1', delta: 1 }]]);
     expect(slotOf(up.template, 'A1').sets).toEqual([
       { kind: 'warmup', count: 2, reps: { min: 5, max: 5 }, pctWorkLoad: 50 },
@@ -193,7 +193,7 @@ describe('effectiveProgram', () => {
     expect(program).toEqual(effectiveProgram(GYM_AB, 3, []));
   });
 
-  it('ordre : decidedAt, puis id en ordre binaire, quel que soit l’ordre reçu', () => {
+  it("ordre : decidedAt, puis id en ordre binaire, quel que soit l'ordre reçu", () => {
     const changes = [
       accepted('b', 2, [{ op: 'set_rest', slot: 'A1', seconds: 200 }]),
       accepted('c', 1, [{ op: 'set_rest', slot: 'A1', seconds: 100 }]),

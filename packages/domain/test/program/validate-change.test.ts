@@ -140,7 +140,7 @@ describe('validateChange : cibles', () => {
 });
 
 describe('validateChange : replace_exercise', () => {
-  it('fiche d’un autre type de mouvement → pattern_mismatch', () => {
+  it("fiche d'un autre type de mouvement → pattern_mismatch", () => {
     expect(errors([{ op: 'replace_exercise', slot: 'A1', exercise: 'bench-press' }])).toEqual([
       { op: 0, code: 'pattern_mismatch' },
     ]);
@@ -183,7 +183,7 @@ describe('validateChange : change_sets', () => {
     expect(check([{ op: 'change_sets', slot: 'A1', delta: -1 }], cautious).ok).toBe(true);
   });
 
-  it('adulte : résultat entre 1 et 5 (sets_out_of_bounds), opérations appliquées l’une après l’autre', () => {
+  it("adulte : résultat entre 1 et 5 (sets_out_of_bounds), opérations appliquées l'une après l'autre", () => {
     // A5 (gainage, 3 séries) : hors des groupes de volume.
     expect(
       check([
@@ -206,16 +206,38 @@ describe('validateChange : change_sets', () => {
     ).toEqual([{ op: 1, code: 'sets_out_of_bounds' }]);
   });
 
-  it('prudent : résultat au plus 3', () => {
+  it('prudent : une baisse vers le plafond de 3 est admise depuis 5 séries, une hausse jamais', () => {
     const program = effectiveProgram(GYM_AB, 3, [
       accepted('c1', 1, [
-        { op: 'change_sets', slot: 'A1', delta: 1 },
-        { op: 'change_sets', slot: 'A1', delta: 1 },
+        { op: 'change_sets', slot: 'A5', delta: 1 },
+        { op: 'change_sets', slot: 'A5', delta: 1 },
       ]),
     ]);
-    expect(errors([{ op: 'change_sets', slot: 'A1', delta: -1 }], { ...cautious, program })).toEqual([
-      { op: 0, code: 'sets_out_of_bounds' },
+    expect(check([{ op: 'change_sets', slot: 'A5', delta: -1 }], { ...cautious, program }).ok).toBe(true);
+    expect(
+      check(
+        [
+          { op: 'change_sets', slot: 'A5', delta: -1 },
+          { op: 'change_sets', slot: 'A5', delta: -1 },
+        ],
+        { ...cautious, program },
+      ).ok,
+    ).toBe(true);
+    expect(errors([{ op: 'change_sets', slot: 'A5', delta: 1 }], { ...cautious, program })).toEqual([
+      { op: 0, code: 'forbidden_cautious' },
     ]);
+  });
+
+  it('prudent : jamais sous 1 série', () => {
+    expect(
+      errors(
+        [
+          { op: 'change_sets', slot: 'A4', delta: -1 },
+          { op: 'change_sets', slot: 'A4', delta: -1 },
+        ],
+        cautious,
+      ),
+    ).toEqual([{ op: 1, code: 'sets_out_of_bounds' }]);
   });
 });
 
@@ -271,7 +293,7 @@ describe('validateChange : set_target_rir', () => {
     ).toBe(true);
   });
 
-  it('1 sur un slot main d’un modèle débutant, même pour un intermédiaire → rir_out_of_bounds (règle 3)', () => {
+  it("1 sur un slot main d'un modèle débutant, même pour un intermédiaire → rir_out_of_bounds (règle 3)", () => {
     expect(errors([{ op: 'set_target_rir', slot: 'A1', value: 1 }], { level: 'intermediate' })).toEqual([
       { op: 0, code: 'rir_out_of_bounds' },
     ]);
@@ -283,8 +305,31 @@ describe('validateChange : set_target_rir', () => {
     ]);
   });
 
-  it('1 sur un accessoire : admis', () => {
+  it('1 sur un accessoire en isolation : admis', () => {
     expect(check([{ op: 'set_target_rir', slot: 'A4', value: 1 }]).ok).toBe(true);
+  });
+
+  it('1 sur un slot secondaire polyarticulaire, utilisateur débutant → rir_out_of_bounds (05 §15)', () => {
+    expect(errors([{ op: 'set_target_rir', slot: 'A3', value: 1 }])).toEqual([
+      { op: 0, code: 'rir_out_of_bounds' },
+    ]);
+    expect(check([{ op: 'set_target_rir', slot: 'A3', value: 1 }], { level: 'intermediate' }).ok).toBe(true);
+  });
+
+  it("polyarticulaire ou non : on lit le premier exercice du slot utilisable dans un lieu de l'utilisateur", () => {
+    const program = effectiveProgram(
+      gymAb((t) => {
+        slotOf(t, 'A4').exercises = ['bench-press', 'dumbbell-fly'];
+      }),
+      3,
+      [],
+    );
+    const op: InstanceChangeOperation = { op: 'set_target_rir', slot: 'A4', value: 1 };
+    // À la salle, le développé couché (polyarticulaire) passe en premier.
+    expect(errors([op], { program })).toEqual([{ op: 0, code: 'rir_out_of_bounds' }]);
+    // Sans barre, c'est l'écarté (isolation) qui sera fait.
+    const dumbbellsOnly = [place('appartement', ['dumbbells', 'flat_bench'], 'home')];
+    expect(check([op], { program, places: dumbbellsOnly }).ok).toBe(true);
   });
 
   it('prudent : à la baisse → forbidden_cautious ; à la hausse admis', () => {
@@ -320,6 +365,47 @@ describe('validateChange : remove_slot et add_slot', () => {
     expect(errors([{ op: 'remove_slot', slot: 'A5' }])).toEqual([{ op: 0, code: 'coverage_lost' }]);
   });
 
+  /** Modèle maison dont la chaîne de gainage est retirée du catalogue servi : core déjà sans fiche au poids du corps. */
+  const homeWithoutPlank = () => ({
+    program: effectiveProgram(
+      gymAb((t) => {
+        t.context = 'home';
+      }),
+      3,
+      [],
+    ),
+    catalog: PROGRAM_CATALOG.map((s) =>
+      s.chain_id === 'front-plank' ? { ...s, status: 'retired' as const } : s,
+    ),
+  });
+
+  it('remove_slot qui vide core, même si core manquait déjà de fiche au poids du corps → coverage_lost', () => {
+    expect(errors([{ op: 'remove_slot', slot: 'A5' }], homeWithoutPlank())).toEqual([
+      { op: 0, code: 'coverage_lost' },
+    ]);
+    // Contrôle : catalogue intact.
+    expect(errors([{ op: 'remove_slot', slot: 'A5' }], { program: homeWithoutPlank().program })).toEqual([
+      { op: 0, code: 'coverage_lost' },
+    ]);
+  });
+
+  it('manque au poids du corps déjà là (catalogue servi plus pauvre) : un changement sans rapport passe', () => {
+    expect(check([{ op: 'set_rest', slot: 'A1', seconds: 180 }], homeWithoutPlank()).ok).toBe(true);
+  });
+
+  it('modèle maison : un remplacement qui ôte au gainage sa fiche au poids du corps → coverage_lost', () => {
+    const program = effectiveProgram(
+      gymAb((t) => {
+        t.context = 'home';
+      }),
+      3,
+      [],
+    );
+    expect(errors([{ op: 'replace_exercise', slot: 'A5', exercise: 'weighted-plank' }], { program })).toEqual(
+      [{ op: 0, code: 'coverage_lost' }],
+    );
+  });
+
   it('coverage_lost appliquée au résultat : un add_slot du même groupe la rattrape', () => {
     const ops: InstanceChangeOperation[] = [
       { op: 'remove_slot', slot: 'A5' },
@@ -333,7 +419,7 @@ describe('validateChange : remove_slot et add_slot', () => {
     expect(errors([{ op: 'remove_slot', slot: 'A4' }])).toEqual([{ op: 0, code: 'volume_out_of_range' }]);
   });
 
-  it('volume déjà hors fourchette : un changement qui ne l’aggrave pas passe, un qui l’aggrave est refusé', () => {
+  it("volume déjà hors fourchette : un changement qui ne l'aggrave pas passe, un qui l'aggrave est refusé", () => {
     const program = effectiveProgram(GYM_AB, 3, [accepted('c1', 1, [{ op: 'remove_slot', slot: 'A4' }])]);
     expect(check([{ op: 'set_rest', slot: 'A1', seconds: 180 }], { program }).ok).toBe(true);
     expect(errors([{ op: 'change_sets', slot: 'A2', delta: -1 }], { program })).toEqual([
@@ -342,7 +428,7 @@ describe('validateChange : remove_slot et add_slot', () => {
     expect(check([{ op: 'change_sets', slot: 'A2', delta: 1 }], { program }).ok).toBe(true);
   });
 
-  it('erreur du résultat imputée à la dernière opération qui l’a provoquée', () => {
+  it("erreur du résultat imputée à la dernière opération qui l'a provoquée", () => {
     expect(
       errors([
         { op: 'set_rest', slot: 'A1', seconds: 180 },
@@ -354,7 +440,7 @@ describe('validateChange : remove_slot et add_slot', () => {
     ).toEqual([{ op: 4, code: 'volume_out_of_range' }]);
   });
 
-  it('remove_slot du seul slot d’une séance → slot_limit', () => {
+  it("remove_slot du seul slot d'une séance → slot_limit", () => {
     const program = effectiveProgram(GYM_AB, 3, [
       accepted('c1', 1, [
         { op: 'add_slot', workout: 'B', movementPattern: 'core_anti_rotation', exercises: ['pallof-press'] },
@@ -478,7 +564,7 @@ describe('validateChange : switch_template', () => {
 });
 
 describe('validateChange : plusieurs erreurs', () => {
-  it('une erreur par opération fautive, dans l’ordre des opérations', () => {
+  it("une erreur par opération fautive, dans l'ordre des opérations", () => {
     const program: EffectiveProgram = effectiveProgram(GYM_AB, 3, []);
     expect(
       errors(

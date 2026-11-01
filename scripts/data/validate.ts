@@ -10,8 +10,9 @@
  * (`<fichier> [<code>] <message>`) ; 2 pour une option inconnue.
  *
  * Règle 8 de 05 §5 (`--base <ref>`, `main` par défaut) : un modèle qui existe dans `<ref>` et dont le contenu a
- * changé a une `version` plus haute. Le contenu se compare sur le JSON, pas sur la mise en forme. Si `<ref>` est
- * introuvable (copie sans historique), la règle n'est pas vérifiée et un avertissement le dit.
+ * changé a une `version` plus haute. Le contenu se compare sur le JSON, pas sur la mise en forme. Une référence
+ * donnée par `--base` doit exister (`base_not_found` sinon) ; si `main`, la référence par défaut, est introuvable
+ * (copie sans historique), la règle n'est pas vérifiée et un avertissement le dit.
  *
  * Règle R-EQ-5 (chaque code de matériel utilisé par au moins une fiche non retirée) : elle n'est exigée qu'avec
  * `--strict`. Tant que le lot A n'est pas publié, le catalogue n'utilise pas encore tout le matériel ; la CI
@@ -293,16 +294,23 @@ const versionOf = (json: unknown): number | null =>
   isRecord(json) && typeof json.version === 'number' ? json.version : null;
 
 /**
- * Règle 8 de 05 §5 : un modèle présent dans `base` dont le contenu diffère a une `version` plus haute. Rien à
- * vérifier sans modèle ; référence introuvable : un avertissement, aucune erreur.
+ * Règle 8 de 05 §5 : un modèle présent dans `base` dont le contenu diffère a une `version` plus haute.
+ * - `required` (référence donnée explicitement) : la référence doit exister, même sans modèle, sinon
+ *   `base_not_found` ;
+ * - sinon (référence par défaut) : rien à vérifier sans modèle, et une référence introuvable donne un avertissement.
  */
 export async function checkVersionBumps(
   dataDir: string,
   base: string,
   templates: readonly TemplateFile[],
+  required = false,
 ): Promise<{ errors: DataError[]; warnings: string[] }> {
-  if (templates.length === 0) return { errors: [], warnings: [] };
+  if (!required && templates.length === 0) return { errors: [], warnings: [] };
   if ((await git(dataDir, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`])) === null) {
+    if (required) {
+      const message = `Référence git « ${base} » introuvable : la règle 8 (05 §5) ne peut pas être vérifiée.`;
+      return { errors: [{ file: PROGRAMS_DIR, code: 'base_not_found', message }], warnings: [] };
+    }
     return {
       errors: [],
       warnings: [`règle 8 non vérifiée (05 §5) : référence git « ${base} » introuvable.`],
@@ -333,18 +341,18 @@ export async function checkVersionBumps(
 
 /**
  * Valide le dossier `dataDir` ; erreurs triées par fichier, chemins relatifs à `dataDir`. La règle 8 n'est vérifiée
- * qu'avec `base`.
+ * qu'avec `base` ; `requireBase` : la référence a été donnée explicitement et doit exister.
  */
 export async function validateDataDir(
   dataDir: string,
-  options: { strict?: boolean; base?: string } = {},
+  options: { strict?: boolean; base?: string; requireBase?: boolean } = {},
 ): Promise<DataValidation> {
   const { input, templates, errors } = await readCatalogInput(dataDir);
   const result = validateCatalog(input, options);
   const versions =
     options.base === undefined
       ? { errors: [], warnings: [] }
-      : await checkVersionBumps(dataDir, options.base, templates);
+      : await checkVersionBumps(dataDir, options.base, templates, options.requireBase ?? false);
   const all: DataError[] = [
     ...errors,
     ...result.errors,
@@ -376,6 +384,7 @@ export async function main(
   let strict = false;
   let dataDir = DEFAULT_DATA_DIR;
   let base = DEFAULT_BASE;
+  let requireBase = false;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const value = argv[i + 1];
@@ -386,13 +395,14 @@ export async function main(
       i += 1;
     } else if (arg === '--base' && value !== undefined) {
       base = value;
+      requireBase = true;
       i += 1;
     } else {
       out.error(USAGE);
       return 2;
     }
   }
-  const { errors, warnings, counts } = await validateDataDir(dataDir, { strict, base });
+  const { errors, warnings, counts } = await validateDataDir(dataDir, { strict, base, requireBase });
   for (const warning of warnings) out.error(`Avertissement : ${warning}`);
   for (const e of errors) out.error(`${display(dataDir, e.file)} [${e.code}] ${e.message}`);
   if (errors.length > 0) {
