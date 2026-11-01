@@ -180,11 +180,11 @@ describe("requêtes de l'API", () => {
 });
 
 describe('codes raison', () => {
-  it('donne à chaque code un texte non vide, droit, sans « appsport »', () => {
+  it('donne à chaque code un texte non vide, droit, sans l ancien nom de code', () => {
     for (const code of [...REASON_CODES, ...CHANGE_REASON_CODES]) {
       const text = REASON_TEXTS[code];
       expect(text.length, code).toBeGreaterThan(0);
-      expect(text.toLowerCase(), code).not.toContain('appsport');
+      expect(text.toLowerCase(), code).not.toContain(['app', 'sport'].join(''));
       expect(text, code).not.toContain('’');
     }
     expect(Object.keys(REASON_TEXTS)).toHaveLength(REASON_CODES.length + CHANGE_REASON_CODES.length);

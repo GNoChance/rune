@@ -13,9 +13,10 @@ const read = (f: string) => readFileSync(join(srcDir, f), 'utf8');
 describe('pureté de packages/domain', () => {
   it('contient des fichiers à vérifier', () => expect(files.length).toBeGreaterThan(0));
 
-  it('lit src/ récursivement : auth/ et catalog/ sont vérifiés', () => {
+  it('lit src/ récursivement : auth/, catalog/ et program/ sont vérifiés', () => {
     expect(files.some((f) => f.startsWith('auth/'))).toBe(true);
     expect(files.some((f) => f.startsWith('catalog/'))).toBe(true);
+    expect(files.some((f) => f.startsWith('program/'))).toBe(true);
   });
 
   it.each(files)('%s : ni horloge, ni aléa, ni node:', (f) => {
