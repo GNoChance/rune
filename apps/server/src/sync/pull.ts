@@ -14,6 +14,7 @@ import type { Database } from '../db/schema';
 import { getServerMeta } from '../db/server-meta';
 import type { AppDeps } from '../deps';
 import { httpError } from '../http/errors';
+import { expireProposals } from '../program/expire';
 
 type Raw = Record<string, unknown>;
 
@@ -107,6 +108,8 @@ export async function buildPull(
     if (!sinceWatermark) throw httpError('validation');
   }
   return deps.db.transaction().execute(async (trx) => {
+    // Propositions périmées de l'utilisateur passées à `expired` avant la lecture (spec brique 3 §4.4.6).
+    await expireProposals(trx, user.id, deps.clock.now());
     const meta = await getServerMeta(trx);
     if (
       sinceWatermark &&

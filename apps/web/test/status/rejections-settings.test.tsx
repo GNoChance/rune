@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { RejectionCode } from '@rune/contracts';
 import { act, cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { REJECTION_CODE_LABELS } from '../../src/features/status/RejectionsPage';
@@ -86,8 +87,16 @@ describe('RejectionsPage (R-SYN-18)', () => {
     ['stale_revision', 'Version périmée'],
     ['unknown_entity', 'Type de donnée inconnu'],
     ['protocol', "Version de l'appli trop ancienne"],
+    ['forbidden_reference', 'Programme ou lieu non autorisé'],
+    ['invalid_transition', 'Séance déjà terminée'],
+    ['unknown_exercise', 'Exercice inconnu'],
+    ['out_of_range', 'Valeur hors limites'],
   ])('REJECTION_CODE_LABELS.%s', (code, label) => {
     expect(REJECTION_CODE_LABELS[code]).toBe(label);
+  });
+
+  it('chaque code de rejet du contrat a son libellé', () => {
+    expect(RejectionCode.options.filter((c) => !Object.hasOwn(REJECTION_CODE_LABELS, c))).toEqual([]);
   });
 
   it('rejet serveur r-1 (validation) et rejet local op-7 (parent_rejected), libellés traduits', async () => {

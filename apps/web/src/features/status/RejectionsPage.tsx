@@ -12,6 +12,10 @@ export const REJECTION_CODE_LABELS: Record<string, string> = {
   stale_revision: 'Version périmée',
   unknown_entity: 'Type de donnée inconnu',
   protocol: "Version de l'appli trop ancienne",
+  forbidden_reference: 'Programme ou lieu non autorisé',
+  invalid_transition: 'Séance déjà terminée',
+  unknown_exercise: 'Exercice inconnu',
+  out_of_range: 'Valeur hors limites',
 };
 
 /** Type de donnée d'un rejet ; un type inconnu s'affiche sous son nom. */

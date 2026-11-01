@@ -67,6 +67,7 @@ describe('migration 0004_program', () => {
       { id: '0002_coach', breaking: false },
       { id: '0003_catalog', breaking: false },
       { id: '0004_program', breaking: false },
+      { id: '0005_sync_rejection_codes', breaking: false },
     ]);
   });
 
@@ -111,7 +112,7 @@ describe('migration 0004_program', () => {
         before.map((t) => [t, h.sqlite.prepare(`SELECT * FROM "${t}" ORDER BY rowid`).all()]),
       );
       expect(await migrate(h.db, MIGRATIONS, clock)).toEqual({
-        applied: ['0004_program'],
+        applied: ['0004_program', '0005_sync_rejection_codes'],
         unknownNonBreaking: [],
       });
       for (const t of before)

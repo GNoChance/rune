@@ -35,6 +35,10 @@ export const SyncOp = z.object({
 });
 export type SyncOp = z.infer<typeof SyncOp>;
 
+/**
+ * Codes de rejet d'une op (R-SYN-16). Les quatre derniers viennent des contrôles des séances (spec brique 3 §5.3) :
+ * instance ou lieu d'un autre membre, retour à `in_progress`, fiche absente du catalogue, série hors bornes.
+ */
 export const RejectionCode = z.enum([
   'validation',
   'forbidden',
@@ -42,6 +46,10 @@ export const RejectionCode = z.enum([
   'stale_revision',
   'unknown_entity',
   'protocol',
+  'forbidden_reference',
+  'invalid_transition',
+  'unknown_exercise',
+  'out_of_range',
 ]);
 export type RejectionCode = z.infer<typeof RejectionCode>;
 

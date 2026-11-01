@@ -13,12 +13,20 @@ const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8'
  * 0002_coach (socle de départ de la brique 2), v3 après 0003_catalog (départ de la brique 3). Ils ne se régénèrent jamais.
  */
 const PREVIOUS = [
-  { fixture: 'schema-v1.sql', done: ['0001_socle'], applied: ['0002_coach', '0003_catalog', '0004_program'] },
-  { fixture: 'schema-v2.sql', done: ['0001_socle', '0002_coach'], applied: ['0003_catalog', '0004_program'] },
+  {
+    fixture: 'schema-v1.sql',
+    done: ['0001_socle'],
+    applied: ['0002_coach', '0003_catalog', '0004_program', '0005_sync_rejection_codes'],
+  },
+  {
+    fixture: 'schema-v2.sql',
+    done: ['0001_socle', '0002_coach'],
+    applied: ['0003_catalog', '0004_program', '0005_sync_rejection_codes'],
+  },
   {
     fixture: 'schema-v3.sql',
     done: ['0001_socle', '0002_coach', '0003_catalog'],
-    applied: ['0004_program'],
+    applied: ['0004_program', '0005_sync_rejection_codes'],
   },
 ];
 

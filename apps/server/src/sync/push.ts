@@ -17,7 +17,7 @@ import { writeStamp } from '../db/rev';
 import type { AppliedOpTable, Database } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { isHealthConsentActive } from '../privacy/consent-state';
-import type { EntitySyncHooks, HookCtx } from './hooks';
+import type { EntitySyncHooks, HookCtx, SyncHooksMap } from './hooks';
 import { applyRestoreUpsert, type RestoreUpsertOutcome } from './restore-upsert';
 
 /** Rejet d'une op : enregistré dans sync_rejection, le reste du lot continue. */
@@ -107,14 +107,40 @@ async function runBatch(deps: AppDeps, user: SessionUser, ops: readonly unknown[
       };
       const out: PushResult[] = [];
       for (const [index, raw] of ops.entries()) out.push(await applyInSavepoint(batch, asRecord(raw), index));
-      for (const [entity, applied] of batch.written) {
-        await own(deps.syncHooks, entity)?.afterBatch?.({ trx, deps, userId: user.id, applied });
+      for (const call of afterBatchCalls(deps.syncHooks, batch.written)) {
+        await call.hooks.afterBatch?.({ trx, deps, userId: user.id, applied: call.applied });
       }
       return out;
     });
   } catch (err) {
     throw asError(err);
   }
+}
+
+type Written = { entity: string; id: string };
+
+/**
+ * Appels `afterBatch` d'un lot : un par fonction distincte, avec les lignes écrites de toutes les entités qui la
+ * partagent (entité par entité, dans l'ordre de leur première écriture). Un hook commun à plusieurs tables, comme le
+ * rejeu d'une instance, ne tourne donc qu'une fois par lot.
+ */
+function afterBatchCalls(
+  hooks: SyncHooksMap,
+  written: ReadonlyMap<string, readonly Written[]>,
+): { hooks: EntitySyncHooks; applied: Written[] }[] {
+  const calls = new Map<
+    NonNullable<EntitySyncHooks['afterBatch']>,
+    { hooks: EntitySyncHooks; applied: Written[] }
+  >();
+  for (const [entity, applied] of written) {
+    const entityHooks = own(hooks, entity);
+    const fn = entityHooks?.afterBatch;
+    if (entityHooks === undefined || fn === undefined) continue;
+    const call = calls.get(fn);
+    if (call) call.applied.push(...applied);
+    else calls.set(fn, { hooks: entityHooks, applied: [...applied] });
+  }
+  return [...calls.values()];
 }
 
 async function applyInSavepoint(b: Batch, raw: Raw, index: number): Promise<PushResult> {

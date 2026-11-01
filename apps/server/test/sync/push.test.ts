@@ -470,6 +470,37 @@ describe('POST /api/sync/push : hooks de synchro', () => {
     expect(afterBatch).not.toHaveBeenCalled();
   });
 
+  it('un afterBatch partagé par deux entités : un seul appel avec les lignes des deux, dans l’ordre', async () => {
+    const shared = vi.fn(async (_b: BatchCtx) => {});
+    const own = vi.fn(async (_b: BatchCtx) => {});
+    const a = await setup({
+      deps: {
+        syncHooks: withHooks({
+          fixture_note: { afterBatch: shared },
+          fixture_note_item: { afterBatch: shared },
+          fixture_c2_log: { afterBatch: own },
+        }),
+      },
+    });
+    const parent = note(a);
+    const child = makeOp({
+      userId: a.id,
+      entity: 'fixture_note_item',
+      id: newId(),
+      kind: 'create',
+      fields: { noteId: parent.id, label: 'l' },
+    });
+    const other = note(a);
+    await syncPush(ctx, a.cookie, [parent, child, other]);
+    expect(shared).toHaveBeenCalledTimes(1);
+    expect(shared.mock.calls[0]?.[0].applied).toEqual([
+      { entity: 'fixture_note', id: parent.id },
+      { entity: 'fixture_note', id: other.id },
+      { entity: 'fixture_note_item', id: child.id },
+    ]);
+    expect(own).not.toHaveBeenCalled();
+  });
+
   it('une erreur SQLite hors contrainte dans beforeApply → 500 et rien d’écrit', async () => {
     const beforeApply = vi.fn(async () => {
       throw Object.assign(new Error('disk I/O'), { code: 'ERR_SQLITE_ERROR', errcode: 13 });

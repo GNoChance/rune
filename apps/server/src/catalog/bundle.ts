@@ -40,6 +40,35 @@ export function servedSheetOf(sheet: DraftSheet): ServedSheet | null {
   return parsed.success ? parsed.data : null;
 }
 
+/**
+ * Fiches servies aux téléphones, lues dans la base : `published`, et `retired` déjà publiées (`published_at` non nul,
+ * spec brique 2 §3.6), triées par `id`. Une fiche que `servedSheetOf` refuse est écartée et passée à `onUnservable`.
+ * Le rejeu du serveur lit le même catalogue que le téléphone (spec brique 3 §4.4.8, parité).
+ */
+export async function servedSheets(
+  trx: DbExecutor,
+  onUnservable: (id: string) => void = () => {},
+): Promise<ServedSheet[]> {
+  const rows = await trx
+    .selectFrom('exercise')
+    .selectAll()
+    .where((eb) =>
+      eb.or([
+        eb('status', '=', 'published'),
+        eb.and([eb('status', '=', 'retired'), eb('publishedAt', 'is not', null)]),
+      ]),
+    )
+    .orderBy('id')
+    .execute();
+  const exercises: ServedSheet[] = [];
+  for (const row of rows) {
+    const served = servedSheetOf(rowToSheet(row));
+    if (served === null) onUnservable(row.id);
+    else exercises.push(served);
+  }
+  return exercises;
+}
+
 /** `catalog_version` : sha256 de la forme canonique (`canonicalJson`) du contenu servi. */
 export function catalogVersion(content: CatalogContent): string {
   return createHash('sha256').update(canonicalJson(content)).digest('hex');
@@ -62,23 +91,9 @@ export async function rebuildCatalog(
   templates?: readonly ProgramTemplate[],
 ): Promise<CatalogBundle> {
   const kept = templates ?? state.get(deps)?.templates ?? [];
-  const rows = await trx
-    .selectFrom('exercise')
-    .selectAll()
-    .where((eb) =>
-      eb.or([
-        eb('status', '=', 'published'),
-        eb.and([eb('status', '=', 'retired'), eb('publishedAt', 'is not', null)]),
-      ]),
-    )
-    .orderBy('id')
-    .execute();
-  const exercises: ServedSheet[] = [];
-  for (const row of rows) {
-    const served = servedSheetOf(rowToSheet(row));
-    if (served === null) deps.logger.error('catalog_sheet_unservable', { event: row.id });
-    else exercises.push(served);
-  }
+  const exercises = await servedSheets(trx, (id) =>
+    deps.logger.error('catalog_sheet_unservable', { event: id }),
+  );
   const illustrations = (await trx.selectFrom('illustration').selectAll().orderBy('id').execute()).map(
     rowToEntry,
   );

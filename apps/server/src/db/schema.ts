@@ -1,6 +1,10 @@
 import {
+  type ChangeAuthor,
+  type ChangeStatus,
   type CoachId,
   type CommentPart,
+  type DecisionResult,
+  type Effort,
   type ExerciseStatus,
   type Experience,
   type Goal,
@@ -10,7 +14,17 @@ import {
   type LoadMode,
   type MEASURES,
   type MECHANICS,
+  type NextAdjustment,
+  type PainLevel,
+  type RejectionCode,
+  type SessionProfile,
+  type SessionStatus,
+  type SetKind,
+  type Side,
+  type SlotMode,
+  type SwapReason,
   snakeToCamel,
+  type WeekType,
 } from '@rune/contracts';
 import type { Generated, Kysely, Transaction } from 'kysely';
 
@@ -59,7 +73,7 @@ export interface SyncRejectionTable extends SyncColumns, SoftDelete {
   opId: string;
   entity: string;
   rowId: string;
-  code: 'validation' | 'forbidden' | 'parent_rejected' | 'stale_revision' | 'unknown_entity' | 'protocol';
+  code: RejectionCode;
   detailJson: string | null;
   dismissedAt: string | null;
 }
@@ -333,6 +347,122 @@ export interface ExerciseRevisionTable {
   savedAt: string;
 }
 
+/** Programmes et séances (migration 0004_program, spec brique 3 §5.1). JSON en texte, booléens 0/1. */
+export interface ProgramInstanceTable extends SyncColumns, SoftDelete {
+  id: string;
+  templateId: string;
+  templateVersion: number;
+  snapshot: string;
+  daysPerWeek: number;
+  status: 'active' | 'ended';
+  revision: Generated<number>;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+export interface InstanceChangeTable extends SyncColumns, SoftDelete {
+  id: string;
+  instanceId: string;
+  baseRevision: number;
+  author: ChangeAuthor;
+  operations: string;
+  reasonCode: string;
+  reason: string | null;
+  status: ChangeStatus;
+  expiresAt: string | null;
+  decidedAt: string | null;
+  aiGenerated: Generated<number>;
+  aiModel: string | null;
+  promptVersion: string | null;
+  coachThreadId: string | null;
+}
+
+export interface SlotStateTable extends SyncColumns, SoftDelete {
+  id: string;
+  instanceId: string;
+  slotId: string;
+  exerciseId: string;
+  mode: SlotMode;
+  loadG: number | null;
+  targetReps: number | null;
+  variantRank: number | null;
+  durationS: number | null;
+  /**
+   * Clé rendue par `selectAll` : le CamelCasePlugin écrirait `machine_step_goverride`. Pour filtrer ou écrire la
+   * colonne, passer par `sql.ref('machine_step_g_override')`.
+   */
+  machineStepGOverride: number | null;
+  calibrationLeft: Generated<number>;
+  noProgressCount: Generated<number>;
+  stallRank: Generated<number>;
+  painStreak: number | null;
+  suspended: Generated<number>;
+  lastSessionId: string | null;
+  rulesVersion: string;
+}
+
+export interface WorkoutSessionTable extends SyncColumns, SoftDelete {
+  id: string;
+  instanceId: string | null;
+  workoutId: string | null;
+  placeId: string | null;
+  deviceId: string;
+  startedAt: string;
+  endedAt: string | null;
+  status: SessionStatus;
+  weekType: WeekType;
+  templateVersion: number | null;
+  rulesVersion: string;
+  appVersion: string;
+  profile: SessionProfile;
+  note: string | null;
+}
+
+export interface PerformedExerciseTable extends SyncColumns, SoftDelete {
+  id: string;
+  sessionId: string;
+  slotId: string | null;
+  plannedExerciseId: string | null;
+  exerciseId: string;
+  swapReason: SwapReason | null;
+  position: number;
+  painLevel: PainLevel | null;
+  nextAdjustment: NextAdjustment | null;
+  note: string | null;
+}
+
+export interface EngineDecisionTable extends SyncColumns, SoftDelete {
+  id: string;
+  instanceId: string | null;
+  slotId: string | null;
+  exerciseId: string;
+  result: DecisionResult;
+  reasonCode: string;
+  nextTarget: string | null;
+  profile: SessionProfile;
+  rulesVersion: string;
+}
+
+export interface PerformedSetTable extends SyncColumns, SoftDelete {
+  id: string;
+  performedExerciseId: string;
+  position: number;
+  kind: SetKind;
+  loadMode: LoadMode;
+  loadG: number | null;
+  reps: number | null;
+  durationS: number | null;
+  side: Side | null;
+  effort: Effort | null;
+  targetRepsMin: number | null;
+  targetRepsMax: number | null;
+  targetDurationS: number | null;
+  targetLoadG: number | null;
+  targetRir: number | null;
+  targetVariant: string | null;
+  loggedAt: string | null;
+}
+
 export interface Database {
   serverMeta: ServerMetaTable;
   schemaMigrations: SchemaMigrationsTable;
@@ -357,6 +487,13 @@ export interface Database {
   exerciseComment: ExerciseCommentTable;
   exerciseValidation: ExerciseValidationTable;
   exerciseRevision: ExerciseRevisionTable;
+  programInstance: ProgramInstanceTable;
+  instanceChange: InstanceChangeTable;
+  slotState: SlotStateTable;
+  workoutSession: WorkoutSessionTable;
+  performedExercise: PerformedExerciseTable;
+  engineDecision: EngineDecisionTable;
+  performedSet: PerformedSetTable;
 }
 
 export type DbExecutor = Kysely<Database> | Transaction<Database>;

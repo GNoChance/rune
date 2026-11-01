@@ -26,7 +26,7 @@ describe('migrate', () => {
 
   it('applique une fois, puis ne fait plus rien', async () => {
     expect(await migrate(db, MIGRATIONS, clock)).toEqual({
-      applied: ['0001_socle', '0002_coach', '0003_catalog', '0004_program'],
+      applied: ['0001_socle', '0002_coach', '0003_catalog', '0004_program', '0005_sync_rejection_codes'],
       unknownNonBreaking: [],
     });
     expect(await migrate(db, MIGRATIONS, clock)).toEqual({ applied: [], unknownNonBreaking: [] });
@@ -35,6 +35,7 @@ describe('migrate', () => {
       { id: '0002_coach', breaking: 0, appliedAt: '2026-10-06T10:00:00.000Z' },
       { id: '0003_catalog', breaking: 0, appliedAt: '2026-10-06T10:00:00.000Z' },
       { id: '0004_program', breaking: 0, appliedAt: '2026-10-06T10:00:00.000Z' },
+      { id: '0005_sync_rejection_codes', breaking: 0, appliedAt: '2026-10-06T10:00:00.000Z' },
     ]);
   });
 
@@ -73,7 +74,7 @@ describe('migrate', () => {
       db,
     );
     expect(await migrate(db, MIGRATIONS, clock)).toEqual({
-      applied: ['0001_socle', '0002_coach', '0003_catalog', '0004_program'],
+      applied: ['0001_socle', '0002_coach', '0003_catalog', '0004_program', '0005_sync_rejection_codes'],
       unknownNonBreaking: ['0099_future'],
     });
   });
