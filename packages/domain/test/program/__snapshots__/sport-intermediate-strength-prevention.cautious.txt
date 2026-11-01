@@ -406,7 +406,7 @@ A1 squat-jump : 3×6-15 rép. (RIR 3)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 6-15 rép. (cible 6), 3 séries, squat-jump
 A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×6-8 rép. (RIR 3)
     fait 9/9/9 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-8 rép. (cible 6), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-8 rép. (cible 6), 3 séries
 A3 nordic-curl : 3×6-15 rép. (RIR 3)
     fait 16/16/16 (ok)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 6-15 rép. (cible 6), 3 séries, nordic-curl
@@ -415,39 +415,32 @@ A4 copenhagen-plank : 2×30 s par côté (RIR 3)
     -> PROGRESS DURATION_UP ; prochain : 35 s, 2 séries, copenhagen-plank
 A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (RIR 3)
     fait 11/11 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-10 rép. (cible 6), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-10 rép. (cible 6), 2 séries
 A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (RIR 3)
     fait 11/11/11 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries
 A7 side-plank : 2×45 s par côté (RIR 3)
     fait 45 s/45 s/45 s/45 s (ok)
     -> STALL STALL_RESET_MIN ; prochain : 20 s, 2 séries
-   ! propose_replace ENGINE_STALL_REPLACE slot A2 bodyweight-squat [{"op":"replace_exercise","slot":"A2","exercise":"chair-squat"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A5 push-up [{"op":"replace_exercise","slot":"A5","exercise":"incline-push-up"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A6 table-row [{"op":"replace_exercise","slot":"A6","exercise":"door-frame-row"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 20 · B · 2026-02-12 · normale · avis sport_gap
 B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×6-8 rép. par côté (RIR 3)
     fait 9/9/9/9/9/9 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-8 rép. (cible 6), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-8 rép. (cible 6), 3 séries
 B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (RIR 3)
     fait 11/11/11/11/11/11 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries
 B3 single-leg-calf-raise : 3×8-15 rép. par côté (RIR 3)
     fait 16/16/16/16/16/16 (ok)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 8-15 rép. (cible 8), 3 séries, single-leg-calf-raise
 B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (RIR 3)
     fait 13/13/13 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
 B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (RIR 3)
     fait 13/13 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 8), 2 séries
 B6 band-external-rotation : not_feasible_here
-   ! propose_replace ENGINE_STALL_REPLACE slot B1 single-leg-romanian-deadlift [{"op":"replace_exercise","slot":"B1","exercise":"supported-single-leg-romanian-deadlift"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot B2 step-up [{"op":"replace_exercise","slot":"B2","exercise":"reverse-lunge"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot B4 push-up [{"op":"replace_exercise","slot":"B4","exercise":"incline-push-up"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot B5 table-row [{"op":"replace_exercise","slot":"B5","exercise":"door-frame-row"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 == Semaine 11 (bloc réactif) ==

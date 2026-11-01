@@ -727,16 +727,14 @@ H1-1 wall-push-up : 4×6-10 rép. (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 6), 4 séries, wall-push-up
 H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (RIR 2)
     fait 4/4/4/4/4 (failed)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-10 rép. (cible 6), 5 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-10 rép. (cible 6), 5 séries
 H1-3 negative-pull-up : not_feasible_here
 H1-4 pike-push-up : 3×6-10 rép. (RIR 2)
     fait 4/4/4 (failed)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries, pike-push-up
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries, pike-push-up
 H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (RIR 1)
     fait 8/8 (failed)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 10), 2 séries
-   ! propose_replace ENGINE_STALL_REPLACE slot H1-2 table-row [{"op":"replace_exercise","slot":"H1-2","exercise":"door-frame-row"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot H1-4 pike-push-up [{"op":"replace_exercise","slot":"H1-4","exercise":"kneeling-pike-push-up"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 46 · B1 · 2026-04-05 · normale
@@ -745,7 +743,7 @@ B1-1 chair-squat : 4×6-10 rép. (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 6), 4 séries, chair-squat
 B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (RIR 2)
     fait 4/4/4/4/4/4 (failed)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries
 B1-3 assisted-nordic-curl : 3×5-8 rép. (RIR 2)
     fait 3/3/3 (failed)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
@@ -755,7 +753,6 @@ B1-4 standing-calf-raise : 3×10-15 rép. (RIR 2)
 B1-5 knee-plank : 3×30 s (RIR 2)
     fait 18 s/18 s/18 s (failed)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 30 s, 3 séries, knee-plank
-   ! propose_replace ENGINE_STALL_REPLACE slot B1-2 single-leg-romanian-deadlift [{"op":"replace_exercise","slot":"B1-2","exercise":"supported-single-leg-romanian-deadlift"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 47 · H2 · 2026-04-07 · normale
@@ -764,14 +761,12 @@ H2-1 wall-push-up : 4×10-15 rép. (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 10), 4 séries, wall-push-up
 H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (RIR 2)
     fait 8/8/8/8/8 (failed)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 10-15 rép. (cible 10), 5 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 10-15 rép. (cible 10), 5 séries
 H2-3 band-lat-pulldown : not_feasible_here
 H2-4 pike-push-up : 3×10-15 rép. (RIR 2)
     fait 8/8/8 (failed)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 10-15 rép. (cible 10), 3 séries, pike-push-up
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 10-15 rép. (cible 10), 3 séries, pike-push-up
 H2-5 dumbbell-lateral-raise : not_feasible_here
-   ! propose_replace ENGINE_STALL_REPLACE slot H2-2 table-row [{"op":"replace_exercise","slot":"H2-2","exercise":"door-frame-row"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot H2-4 pike-push-up [{"op":"replace_exercise","slot":"H2-4","exercise":"kneeling-pike-push-up"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 48 · B2 · 2026-04-09 · normale
@@ -780,19 +775,16 @@ B2-1 chair-squat : 4×10-15 rép. (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 10), 4 séries, chair-squat
 B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (RIR 2)
     fait 6/6/6/6/6/6 (failed)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
 B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (RIR 2)
     fait 8/8/8/8/8/8 (failed)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 10-15 rép. (cible 10), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 10-15 rép. (cible 10), 3 séries
 B2-4 assisted-nordic-curl : 2×5-8 rép. (RIR 2)
     fait 3/3 (failed)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 5-8 rép. (cible 5), 2 séries, assisted-nordic-curl
 B2-5 side-plank : 3×20 s par côté (RIR 2)
     fait 12 s/12 s/12 s/12 s/12 s/12 s (failed)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 s, 3 séries
-   ! propose_replace ENGINE_STALL_REPLACE slot B2-2 step-up [{"op":"replace_exercise","slot":"B2-2","exercise":"reverse-lunge"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot B2-3 single-leg-romanian-deadlift [{"op":"replace_exercise","slot":"B2-3","exercise":"supported-single-leg-romanian-deadlift"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot B2-5 side-plank [{"op":"replace_exercise","slot":"B2-5","exercise":"knee-side-plank"}]
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 s, 3 séries
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 état final : semaine 13, séance suivante H1, suspendus []

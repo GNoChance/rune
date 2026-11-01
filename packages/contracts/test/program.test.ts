@@ -223,6 +223,11 @@ describe('codes raison', () => {
     expect(REASON_TEXTS.STALL_NO_REPLACEMENT).not.toMatch(/propose/);
   });
 
+  it('a un code pour une stagnation dont le remplacement a déjà été proposé à ce niveau', () => {
+    expect(REASON_CODES).toContain('STALL_ALREADY_PROPOSED');
+    expect(REASON_TEXTS.STALL_ALREADY_PROPOSED).toMatch(/déjà été proposé/);
+  });
+
   it('réécrit des codes connus vers des codes connus', () => {
     const all: readonly string[] = [...REASON_CODES, ...CHANGE_REASON_CODES];
     for (const [from, to] of Object.entries(PAIN_CODE_REWRITES)) {

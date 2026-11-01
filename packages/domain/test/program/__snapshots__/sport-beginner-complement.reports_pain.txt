@@ -282,16 +282,16 @@ A10 side-plank : 2×40 s par côté (RIR 2)
 A1 goblet-squat : suspended
 A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
     fait 16/16/16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
     fait 16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
     fait 16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
     fait 16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A6 lat-pulldown : not_feasible_here
 A7 nordic-curl : 2×6-25 rép. (RIR 2)
     fait 26/26 (ok)
@@ -305,10 +305,6 @@ A9 single-leg-calf-raise : 2×8-25 rép. par côté (RIR 2)
 A10 side-plank : 2×20 s par côté (RIR 2)
     fait 20 s/20 s/20 s/20 s (ok)
     -> PROGRESS DURATION_UP ; prochain : 25 s, 2 séries
-   ! propose_replace ENGINE_STALL_REPLACE slot A2 single-leg-romanian-deadlift [{"op":"replace_exercise","slot":"A2","exercise":"supported-single-leg-romanian-deadlift"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A3 push-up [{"op":"replace_exercise","slot":"A3","exercise":"incline-push-up"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A4 table-row [{"op":"replace_exercise","slot":"A4","exercise":"door-frame-row"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A5 pike-push-up [{"op":"replace_exercise","slot":"A5","exercise":"kneeling-pike-push-up"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 == Semaine 6 (bloc réactif) ==
@@ -375,16 +371,16 @@ A10 side-plank : 2×30 s par côté (RIR 2)
 A1 goblet-squat : suspended
 A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
     fait 16/16/16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
     fait 16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
     fait 16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
     fait 16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A6 lat-pulldown : not_feasible_here
 A7 nordic-curl : 2×6-25 rép. (RIR 2)
     fait 26/26 (ok)
@@ -398,10 +394,6 @@ A9 single-leg-calf-raise : 2×8-25 rép. par côté (RIR 2)
 A10 side-plank : 2×35 s par côté (RIR 2)
     fait 35 s/35 s/35 s/35 s (ok)
     -> PROGRESS DURATION_UP ; prochain : 40 s, 2 séries
-   ! propose_replace ENGINE_STALL_REPLACE slot A2 single-leg-romanian-deadlift [{"op":"replace_exercise","slot":"A2","exercise":"supported-single-leg-romanian-deadlift"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A3 push-up [{"op":"replace_exercise","slot":"A3","exercise":"incline-push-up"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A4 table-row [{"op":"replace_exercise","slot":"A4","exercise":"door-frame-row"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A5 pike-push-up [{"op":"replace_exercise","slot":"A5","exercise":"kneeling-pike-push-up"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 14 · A · 2026-01-31 · normale · avis sport_gap
@@ -467,16 +459,16 @@ A10 side-plank : 2×40 s par côté (RIR 2)
 A1 goblet-squat : suspended
 A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
     fait 16/16/16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
     fait 16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
     fait 16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
     fait 16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A6 lat-pulldown : not_feasible_here
 A7 nordic-curl : 2×6-25 rép. (RIR 2)
     fait 26/26 (ok)
@@ -490,10 +482,6 @@ A9 single-leg-calf-raise : 2×8-25 rép. par côté (RIR 2)
 A10 side-plank : 2×40 s par côté (RIR 2)
     fait 40 s/40 s/40 s/40 s (ok)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 40 s, 2 séries
-   ! propose_replace ENGINE_STALL_REPLACE slot A2 single-leg-romanian-deadlift [{"op":"replace_exercise","slot":"A2","exercise":"supported-single-leg-romanian-deadlift"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A3 push-up [{"op":"replace_exercise","slot":"A3","exercise":"incline-push-up"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A4 table-row [{"op":"replace_exercise","slot":"A4","exercise":"door-frame-row"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A5 pike-push-up [{"op":"replace_exercise","slot":"A5","exercise":"kneeling-pike-push-up"}]
    ! propose_replace ENGINE_STALL_REPLACE slot A10 side-plank [{"op":"replace_exercise","slot":"A10","exercise":"knee-side-plank"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
@@ -519,14 +507,13 @@ A7 nordic-curl : 2×6-25 rép. (RIR 2)
     -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
 A8 copenhagen-plank-short-lever : 2×30 s par côté (RIR 2)
     fait 30 s/30 s/30 s/30 s (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 30 s, 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 30 s, 2 séries
 A9 single-leg-calf-raise : 2×8-25 rép. par côté (RIR 2)
     fait 26/26/26/26 (ok)
     -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 2 séries, single-leg-calf-raise
 A10 side-plank : 2×40 s par côté (RIR 2)
     fait 40 s/40 s/40 s/40 s (ok)
     -> HOLD NO_PROGRESS ; prochain : 40 s, 2 séries
-   ! propose_replace ENGINE_STALL_REPLACE slot A8 copenhagen-plank-short-lever [{"op":"replace_exercise","slot":"A8","exercise":"adductor-squeeze"}]
 
 -- Séance 18 · A · 2026-02-08 · normale · avis sport_gap
 A1 goblet-squat : suspended
@@ -562,16 +549,16 @@ A10 side-plank : 2×40 s par côté (RIR 2)
 A1 goblet-squat : suspended
 A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
     fait 16/16/16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
     fait 16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
     fait 16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
     fait 16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A6 lat-pulldown : not_feasible_here
 A7 nordic-curl : 2×6-25 rép. (RIR 2)
     fait 26/26 (ok)
@@ -584,12 +571,7 @@ A9 single-leg-calf-raise : 2×8-25 rép. par côté (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 2 séries, single-leg-calf-raise
 A10 side-plank : 2×40 s par côté (RIR 2)
     fait 40 s/40 s/40 s/40 s (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 40 s, 2 séries
-   ! propose_replace ENGINE_STALL_REPLACE slot A2 single-leg-romanian-deadlift [{"op":"replace_exercise","slot":"A2","exercise":"supported-single-leg-romanian-deadlift"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A3 push-up [{"op":"replace_exercise","slot":"A3","exercise":"incline-push-up"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A4 table-row [{"op":"replace_exercise","slot":"A4","exercise":"door-frame-row"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A5 pike-push-up [{"op":"replace_exercise","slot":"A5","exercise":"kneeling-pike-push-up"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A10 side-plank [{"op":"replace_exercise","slot":"A10","exercise":"knee-side-plank"}]
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 40 s, 2 séries
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 20 · A · 2026-02-12 · normale · avis sport_gap
@@ -612,14 +594,13 @@ A7 nordic-curl : 2×6-25 rép. (RIR 2)
     -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
 A8 copenhagen-plank-short-lever : 2×30 s par côté (RIR 2)
     fait 30 s/30 s/30 s/30 s (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 30 s, 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 30 s, 2 séries
 A9 single-leg-calf-raise : 2×8-25 rép. par côté (RIR 2)
     fait 26/26/26/26 (ok)
     -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 2 séries, single-leg-calf-raise
 A10 side-plank : 2×40 s par côté (RIR 2)
     fait 40 s/40 s/40 s/40 s (ok)
     -> HOLD NO_PROGRESS ; prochain : 40 s, 2 séries
-   ! propose_replace ENGINE_STALL_REPLACE slot A8 copenhagen-plank-short-lever [{"op":"replace_exercise","slot":"A8","exercise":"adductor-squeeze"}]
 
 == Semaine 11 (bloc réactif) ==
 
@@ -655,16 +636,16 @@ A10 side-plank : 2×40 s par côté (RIR 2)
 A1 goblet-squat : suspended
 A2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×8-15 rép. par côté (RIR 2)
     fait 16/16/16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A3 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
     fait 16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A4 table-row [prévu seated-cable-row] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
     fait 16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A5 pike-push-up [prévu seated-dumbbell-shoulder-press] {replaced_not_feasible} : 2×8-15 rép. (RIR 2)
     fait 16/16 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-15 rép. (cible 8), 2 séries
 A6 lat-pulldown : not_feasible_here
 A7 nordic-curl : 2×6-25 rép. (RIR 2)
     fait 26/26 (ok)
@@ -677,12 +658,7 @@ A9 single-leg-calf-raise : 2×8-25 rép. par côté (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 2 séries, single-leg-calf-raise
 A10 side-plank : 2×40 s par côté (RIR 2)
     fait 40 s/40 s/40 s/40 s (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 40 s, 2 séries
-   ! propose_replace ENGINE_STALL_REPLACE slot A2 single-leg-romanian-deadlift [{"op":"replace_exercise","slot":"A2","exercise":"supported-single-leg-romanian-deadlift"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A3 push-up [{"op":"replace_exercise","slot":"A3","exercise":"incline-push-up"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A4 table-row [{"op":"replace_exercise","slot":"A4","exercise":"door-frame-row"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A5 pike-push-up [{"op":"replace_exercise","slot":"A5","exercise":"kneeling-pike-push-up"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A10 side-plank [{"op":"replace_exercise","slot":"A10","exercise":"knee-side-plank"}]
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 40 s, 2 séries
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 == Semaine 12 (bloc réactif) ==
@@ -707,14 +683,13 @@ A7 nordic-curl : 2×6-25 rép. (RIR 2)
     -> HOLD REPS_MAX_REACHED ; prochain : 6-25 rép. (cible 6), 2 séries, nordic-curl
 A8 copenhagen-plank-short-lever : 2×30 s par côté (RIR 2)
     fait 30 s/30 s/30 s/30 s (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 30 s, 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 30 s, 2 séries
 A9 single-leg-calf-raise : 2×8-25 rép. par côté (RIR 2)
     fait 26/26/26/26 (ok)
     -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 2 séries, single-leg-calf-raise
 A10 side-plank : 2×40 s par côté (RIR 2)
     fait 40 s/40 s/40 s/40 s (ok)
     -> HOLD NO_PROGRESS ; prochain : 40 s, 2 séries
-   ! propose_replace ENGINE_STALL_REPLACE slot A8 copenhagen-plank-short-lever [{"op":"replace_exercise","slot":"A8","exercise":"adductor-squeeze"}]
 
 -- Séance 24 · A · 2026-02-20 · normale · avis sport_gap
 A1 goblet-squat : suspended

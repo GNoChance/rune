@@ -107,6 +107,11 @@ export const REASON_CODES = [
   'STALL_REPLACE_PROPOSED',
   /** Stagnation au rang de la proposition, sans aucun remplaçant utilisable : rien n'est proposé (ruling R26). */
   'STALL_NO_REPLACEMENT',
+  /**
+   * Stagnation au rang de la proposition, au niveau (charge, variante, durée visée) où un remplacement a déjà été
+   * proposé : rien n'est reproposé (ruling R32).
+   */
+  'STALL_ALREADY_PROPOSED',
   'RESUME_14',
   'RESUME_28',
 ] as const;
@@ -166,6 +171,7 @@ export const REASON_TEXTS: Record<ReasonCode | ChangeReasonCode, string> = {
   STALL_REPLACE_PROPOSED: 'Toujours bloqué : on te propose de remplacer cet exercice.',
   STALL_NO_REPLACEMENT:
     "Tu stagnes sur cet exercice et aucun autre ne convient ici pour l'instant : on le garde.",
+  STALL_ALREADY_PROPOSED: "Tu plafonnes sur cet exercice ; un autre t'a déjà été proposé.",
   RESUME_14: "Tu reprends après deux semaines d'absence : la charge est un peu réduite.",
   RESUME_28: "Tu reprends après un mois d'absence : la charge est réduite et la variante simplifiée.",
   USER_CHANGE: 'Tu as modifié ton programme.',

@@ -278,16 +278,13 @@ describe('parité : historique de 9 séances rejoué sous Node', () => {
 });
 
 /*
- * CONCERN (tâche 10, voir le rapport) : un membre qui atteint toujours le haut des répétitions d'un exercice au poids
- * du corps (aucune charge à monter) déclenche la même proposition de remplacement toutes les 3 séances
- * (home-beginner-full-body : 10 fois pour le même slot ; sport-beginner-complement : 6 fois). Ces deux assertions
- * attendent au plus 3 propositions identiques par slot sur 12 semaines ; elles échouent aujourd'hui (`it.fails`).
- * À retirer du `it.fails` quand le moteur ne répète plus une proposition identique.
+ * Un membre qui atteint toujours le haut des répétitions d'un exercice au poids du corps (aucune charge à monter)
+ * stagne toutes les 3 séances au même niveau : le moteur ne propose le remplacement qu'une fois par niveau.
  */
 describe.each(['home-beginner-full-body', 'sport-beginner-complement'])(
   '%s : propositions répétées',
   (id) => {
-    it.fails('« progresse toujours » : au plus 3 propositions de remplacement identiques par slot', () => {
+    it('« progresse toujours » : au plus 3 propositions de remplacement identiques par slot', () => {
       const template = templates.find((t) => t.id === id);
       if (template === undefined) throw new Error(`modèle ${id} absent`);
       const sim = run(template, profileOf('always_progresses'));

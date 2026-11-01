@@ -197,7 +197,7 @@ A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
     -> HOLD REPS_MAX_REACHED ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
 A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
     fait 13/13/13 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
 A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
     fait 16/16/16/16 (ok)
     -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
@@ -208,7 +208,6 @@ A6 nordic-curl : 2×6-25 rép. (RIR 2)
 A7 knee-plank : 3×60 s (RIR 2)
     fait 60 s/60 s/60 s (ok)
     -> HOLD NO_PROGRESS ; prochain : 60 s, 3 séries, knee-plank
-   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 11 · A · 2026-01-25 · normale
@@ -258,7 +257,7 @@ A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
     -> STALL STALL_RESET_MIN ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
 A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
     fait 13/13/13 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
 A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
     fait 16/16/16/16 (ok)
     -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
@@ -269,7 +268,6 @@ A6 nordic-curl : 2×6-25 rép. (RIR 2)
 A7 front-plank : 3×25 s (RIR 2)
     fait 25 s/25 s/25 s (ok)
     -> PROGRESS DURATION_UP ; prochain : 30 s, 3 séries, front-plank
-   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 14 · A · 2026-01-31 · normale
@@ -319,7 +317,7 @@ A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
 A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
     fait 13/13/13 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
 A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
     fait 16/16/16/16 (ok)
     -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
@@ -330,7 +328,6 @@ A6 nordic-curl : 2×6-25 rép. (RIR 2)
 A7 front-plank : 3×40 s (RIR 2)
     fait 40 s/40 s/40 s (ok)
     -> PROGRESS DURATION_UP ; prochain : 45 s, 3 séries, front-plank
-   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 17 · A · 2026-02-06 · normale
@@ -380,7 +377,7 @@ A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
 A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
     fait 13/13/13 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
 A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
     fait 16/16/16/16 (ok)
     -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
@@ -391,7 +388,6 @@ A6 nordic-curl : 2×6-25 rép. (RIR 2)
 A7 front-plank : 3×55 s (RIR 2)
     fait 55 s/55 s/55 s (ok)
     -> PROGRESS DURATION_UP ; prochain : 60 s, 3 séries, front-plank
-   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 20 · A · 2026-02-12 · normale
@@ -441,7 +437,7 @@ A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
 A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
     fait 13/13/13 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
 A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
     fait 16/16/16/16 (ok)
     -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
@@ -452,7 +448,6 @@ A6 nordic-curl : 2×6-25 rép. (RIR 2)
 A7 hollow-body-hold : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (ok)
     -> PROGRESS DURATION_UP ; prochain : 25 s, 3 séries, hollow-body-hold
-   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 23 · A · 2026-02-18 · normale
@@ -502,7 +497,7 @@ A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
 A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
     fait 13/13/13 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
 A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
     fait 16/16/16/16 (ok)
     -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
@@ -513,7 +508,6 @@ A6 nordic-curl : 2×6-25 rép. (RIR 2)
 A7 hollow-body-hold : 3×35 s (RIR 2)
     fait 35 s/35 s/35 s (ok)
     -> PROGRESS DURATION_UP ; prochain : 40 s, 3 séries, hollow-body-hold
-   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 26 · A · 2026-02-24 · normale
@@ -563,7 +557,7 @@ A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
 A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
     fait 13/13/13 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
 A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
     fait 16/16/16/16 (ok)
     -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
@@ -574,7 +568,6 @@ A6 nordic-curl : 2×6-25 rép. (RIR 2)
 A7 hollow-body-hold : 3×50 s (RIR 2)
     fait 50 s/50 s/50 s (ok)
     -> PROGRESS DURATION_UP ; prochain : 55 s, 3 séries, hollow-body-hold
-   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 29 · A · 2026-03-02 · normale
@@ -624,7 +617,7 @@ A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
 A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
     fait 13/13/13 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
 A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
     fait 16/16/16/16 (ok)
     -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
@@ -635,7 +628,6 @@ A6 nordic-curl : 2×6-25 rép. (RIR 2)
 A7 hollow-body-hold : 3×60 s (RIR 2)
     fait 60 s/60 s/60 s (ok)
     -> HOLD NO_PROGRESS ; prochain : 60 s, 3 séries, hollow-body-hold
-   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 32 · A · 2026-03-08 · normale
@@ -685,7 +677,7 @@ A2 archer-push-up : 3×8-25 rép. par côté (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 8-25 rép. (cible 8), 3 séries, archer-push-up
 A3 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
     fait 13/13/13 (ok)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
 A4 single-leg-glute-bridge [prévu hip-thrust] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 2)
     fait 16/16/16/16 (ok)
     -> IGNORED NOT_FEASIBLE_HERE ; prochain : 10-25 rép. (cible 10), 2 séries, hip-thrust
@@ -696,7 +688,6 @@ A6 nordic-curl : 2×6-25 rép. (RIR 2)
 A7 hollow-body-hold : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (ok)
     -> PROGRESS DURATION_UP ; prochain : 25 s, 3 séries, hollow-body-hold
-   ! propose_replace ENGINE_STALL_REPLACE slot A3 table-row [{"op":"replace_exercise","slot":"A3","exercise":"door-frame-row"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 35 · A · 2026-03-14 · normale

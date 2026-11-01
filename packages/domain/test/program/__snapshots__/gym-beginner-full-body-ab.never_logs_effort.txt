@@ -408,15 +408,13 @@ A2 bench-press : 3×6-10 rép. @ 25 kg (échauffement 2, RIR 2)
     -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
 A3 seated-cable-row : 3×8-12 rép. @ 25 kg (RIR 2)
     fait 13/13/13 @ 25 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 kg, 8-12 rép. (cible 8), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 kg, 8-12 rép. (cible 8), 3 séries
 A4 leg-curl : 2×8-12 rép. @ 25 kg (RIR 2)
     fait 13/13 @ 25 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 kg, 8-12 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 20 s, 3 séries, knee-plank
-   ! propose_replace ENGINE_STALL_REPLACE slot A3 seated-cable-row [{"op":"replace_exercise","slot":"A3","exercise":"one-arm-dumbbell-row"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A4 leg-curl [{"op":"replace_exercise","slot":"A4","exercise":"assisted-nordic-curl"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 24 · B · 2026-02-20 · normale
@@ -428,16 +426,13 @@ B2 overhead-press : 3×6-10 rép. @ 25 kg (échauffement 2, RIR 2)
     -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
 B3 lat-pulldown : 3×8-12 rép. @ 25 kg (RIR 2)
     fait 13/13/13 @ 25 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 kg, 8-12 rép. (cible 8), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 kg, 8-12 rép. (cible 8), 3 séries
 B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 8 kg par côté (RIR 2)
     fait 13/13/13/13 @ 8 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6 kg, 8-12 rép. (cible 8), 2 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6 kg, 8-12 rép. (cible 8), 2 séries
 B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (RIR 2)
     fait 13/13 @ 8 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6 kg, 8-12 rép. (cible 8), 2 séries
-   ! propose_replace ENGINE_STALL_REPLACE slot B3 lat-pulldown [{"op":"replace_exercise","slot":"B3","exercise":"negative-pull-up"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot B4 dumbbell-reverse-lunge [{"op":"replace_exercise","slot":"B4","exercise":"reverse-lunge"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot B5 dumbbell-bench-press [{"op":"replace_exercise","slot":"B5","exercise":"machine-chest-press"}]
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6 kg, 8-12 rép. (cible 8), 2 séries
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 == Semaine 9 (bloc réactif) ==
@@ -564,10 +559,10 @@ B5 dumbbell-bench-press : 2×8-12 rép. @ 6 kg (RIR 2)
 -- Séance 31 · A · 2026-03-06 · normale
 A1 back-squat : 3×6-10 rép. @ 25 kg (échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
 A2 bench-press : 3×6-10 rép. @ 25 kg (échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
 A3 seated-cable-row : 3×8-12 rép. @ 15 kg (RIR 2)
     fait 13/13/13 @ 15 kg (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 15 kg, 8-12 rép. (cible 8), 3 séries
@@ -577,17 +572,15 @@ A4 leg-curl : 2×8-12 rép. @ 15 kg (RIR 2)
 A5 knee-plank : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (sans effort)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 20 s, 3 séries, knee-plank
-   ! propose_replace ENGINE_STALL_REPLACE slot A1 back-squat [{"op":"replace_exercise","slot":"A1","exercise":"goblet-squat"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot A2 bench-press [{"op":"replace_exercise","slot":"A2","exercise":"dumbbell-bench-press"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 32 · B · 2026-03-08 · normale
 B1 romanian-deadlift : 3×6-10 rép. @ 25 kg (échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
 B2 overhead-press : 3×6-10 rép. @ 25 kg (échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
 B3 lat-pulldown : 3×8-12 rép. @ 15 kg (RIR 2)
     fait 13/13/13 @ 15 kg (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 15 kg, 8-12 rép. (cible 8), 3 séries
@@ -597,8 +590,6 @@ B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 4 kg par côté (RIR 2)
 B5 dumbbell-bench-press : 2×8-12 rép. @ 4 kg (RIR 2)
     fait 13/13 @ 4 kg (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 4 kg, 8-12 rép. (cible 8), 2 séries
-   ! propose_replace ENGINE_STALL_REPLACE slot B1 romanian-deadlift [{"op":"replace_exercise","slot":"B1","exercise":"dumbbell-romanian-deadlift"}]
-   ! propose_replace ENGINE_STALL_REPLACE slot B2 overhead-press [{"op":"replace_exercise","slot":"B2","exercise":"seated-dumbbell-shoulder-press"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 33 · A · 2026-03-10 · normale

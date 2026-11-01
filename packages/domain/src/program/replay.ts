@@ -24,6 +24,7 @@ import {
   upcomingWeekType,
 } from './program-state';
 import { RULES_BY_VERSION, type RulesBook, type RulesSet } from './rules';
+import type { EngineLevel } from './stall';
 import {
   type AcceptedChange,
   type EngineDecision,
@@ -152,13 +153,28 @@ const suspends = (change: AcceptedChange, slotId: string): boolean =>
 // Déroulé
 // ---------------------------------------------------------------------------------------------------------------
 
-/** Ce qu'il faut pour réévaluer les cibles d'un état hors séance (`lighten_exercise`) : sa dernière évaluation. */
+/**
+ * Un état et ce que le rejeu retient à côté : le contexte de sa dernière évaluation, pour réévaluer ses cibles hors
+ * séance (`lighten_exercise`), et les niveaux où un remplacement a déjà été proposé (ruling R32).
+ */
 interface Tracked {
   state: EngineState;
   grid: LoadGrid;
   profile: SessionProfile;
   chainLength: number | null;
+  /**
+   * Niveaux (`levelKey`) de cet état où le moteur a déjà proposé un remplacement. Tiré de l'historique seul, jamais
+   * des propositions stockées : le rejeu d'un préfixe et celui de l'historique entier restent d'accord.
+   */
+  proposedAt: ReadonlySet<string>;
 }
+
+/**
+ * Niveau d'une stagnation (rulings R18, R19, R32) : charge réalisée, variante et, en durée, durée visée, comme le
+ * niveau du meilleur total qui sert au compteur de stagnation.
+ */
+const levelKey = (level: EngineLevel | null): string =>
+  level === null ? '' : `${level.loadG ?? ''}|${level.variantRank ?? ''}|${level.targetS ?? ''}`;
 
 interface Context {
   instanceId: string;
@@ -259,6 +275,8 @@ interface Evaluated {
   result: EvaluateResult;
   /** Place de la décision dans `run.decisions`, pour en corriger le code. */
   decisionIndex: number;
+  /** Identifiant de l'état évalué (`slotStateId`). */
+  stateId: string;
 }
 
 /**
@@ -321,8 +339,9 @@ function evaluateOne(
     grid: g,
     profile,
     chainLength,
+    proposedAt: previous?.proposedAt ?? new Set(),
   });
-  return suspended ? null : { slot, sheet, exerciseId, result, decisionIndex };
+  return suspended ? null : { slot, sheet, exerciseId, result, decisionIndex, stateId: id };
 }
 
 function processSession(ctx: Context, run: Run, s: SessionRecord, rules: RulesSet): void {
@@ -412,16 +431,30 @@ function replacementFor(
 }
 
 /**
- * Proposition de remplacement (05 §9.6, spec §4.3.12). S'il n'existe aucun remplaçant utilisable, rien n'est proposé
- * et la décision le dit : STALL_NO_REPLACEMENT au lieu de STALL_REPLACE_PROPOSED (ruling R26).
+ * Proposition de remplacement (05 §9.6, spec §4.3.12), une seule par état et par niveau (ruling R32). Sinon, rien
+ * n'est proposé et la décision le dit à la place de STALL_REPLACE_PROPOSED :
+ * - STALL_ALREADY_PROPOSED si un remplacement a déjà été proposé à ce niveau ;
+ * - STALL_NO_REPLACEMENT s'il n'existe aucun remplaçant utilisable (ruling R26).
+ * Le reste de la réponse à la stagnation (allègement, retour au minimum) ne change pas.
  */
 function proposeReplace(ctx: Context, run: Run, s: SessionRecord, e: Evaluated): void {
+  const tracked = run.tracked.get(e.stateId);
+  const level = levelKey(e.result.state.best.level);
+  const recode = (reasonCode: 'STALL_ALREADY_PROPOSED' | 'STALL_NO_REPLACEMENT') => {
+    const decision = run.decisions[e.decisionIndex];
+    if (decision !== undefined) run.decisions[e.decisionIndex] = { ...decision, reasonCode };
+  };
+  if (tracked?.proposedAt.has(level) === true) {
+    recode('STALL_ALREADY_PROPOSED');
+    return;
+  }
   const exercise = replacementFor(ctx, e.slot, e.sheet, s);
   if (exercise === null) {
-    const decision = run.decisions[e.decisionIndex];
-    if (decision !== undefined)
-      run.decisions[e.decisionIndex] = { ...decision, reasonCode: 'STALL_NO_REPLACEMENT' };
+    recode('STALL_NO_REPLACEMENT');
     return;
+  }
+  if (tracked !== undefined) {
+    run.tracked.set(e.stateId, { ...tracked, proposedAt: new Set([...tracked.proposedAt, level]) });
   }
   run.events.push({
     key: engineEventKey(ctx.instanceId, 'ENGINE_STALL_REPLACE', e.slot.id, e.exerciseId, s.id),

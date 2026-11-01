@@ -692,6 +692,53 @@ describe('événements de stagnation', () => {
     ]);
   });
 
+  /** Rowing barre à 60 kg, 10, 10, 10, puis à `lowerFrom` séances près à 52,5 kg. */
+  const rowHistory = (n: number, lowerFrom = n) => {
+    const rows = Array.from({ length: n }, (_, i) => row([10, 10, 10], i < lowerFrom ? 60000 : 52500));
+    return { rows, sessions: rows.map((pe, i) => session(`s${i + 1}`, at(i * 2), 'A', [pe])) };
+  };
+  const stallCodes = (r: ReplayResult, rows: readonly ExerciseRecord[]) =>
+    r.decisions
+      .filter((d) => d.result === 'STALL')
+      .map((d) => [rows.findIndex((pe) => pe.id === d.id) + 1, d.reasonCode]);
+
+  it('une seule proposition de remplacement par niveau : les stagnations suivantes au même niveau le disent (R32)', () => {
+    const { rows, sessions } = rowHistory(13);
+    const r = replay(sessions);
+    expect(stallCodes(r, rows)).toEqual([
+      [4, 'STALL_1_LIGHTEN'],
+      [7, 'STALL_REPLACE_PROPOSED'],
+      [10, 'STALL_ALREADY_PROPOSED'],
+      [13, 'STALL_ALREADY_PROPOSED'],
+    ]);
+    expect(r.events.map((e) => e.key)).toEqual([key('ENGINE_STALL_REPLACE', 'A3', 'barbell-row', 's7')]);
+    // Le reste de la réponse ne change pas : au-delà de la dernière marche, la charge visée est allégée.
+    expect(decisionOf(r, rows[9] ?? fail('séance 10')).nextTarget?.loadG).toBe(52500);
+  });
+
+  it('après un changement de niveau, une nouvelle stagnation peut proposer de nouveau (R32)', () => {
+    // Après la proposition de la 7e séance, le membre suit l'allègement : 52,5 kg à partir de la 8e.
+    const { rows, sessions } = rowHistory(13, 7);
+    const r = replay(sessions);
+    expect(stallCodes(r, rows)).toEqual([
+      [4, 'STALL_1_LIGHTEN'],
+      [7, 'STALL_REPLACE_PROPOSED'],
+      [10, 'STALL_REPLACE_PROPOSED'],
+      [13, 'STALL_ALREADY_PROPOSED'],
+    ]);
+    expect(r.events.map((e) => e.key)).toEqual([
+      key('ENGINE_STALL_REPLACE', 'A3', 'barbell-row', 's7'),
+      key('ENGINE_STALL_REPLACE', 'A3', 'barbell-row', 's10'),
+    ]);
+  });
+
+  it('la mémoire des propositions vient de l’historique seul : un préfixe puis l’historique entier, même résultat', () => {
+    const { sessions } = rowHistory(13);
+    const full = replay(sessions);
+    expect(replay(sessions.slice(0, 10)).decisions).toEqual(full.decisions.slice(0, 10));
+    expect(replay([...sessions].reverse())).toEqual(full);
+  });
+
   it('stagnation au rang de la proposition sans remplaçant utilisable : STALL_NO_REPLACEMENT, aucune proposition', () => {
     // Sans rowing à la poulie ni rowing inversé, aucune fiche de tirage horizontal ne remplace le rowing barre.
     const catalog = PROGRAM_CATALOG.filter((s) => s.id !== 'seated-cable-row' && s.id !== 'inverted-row');
