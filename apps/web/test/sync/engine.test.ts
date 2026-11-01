@@ -590,6 +590,23 @@ describe('requêtes en ligne (classe E) : même verdict que les écrans « Néce
 });
 
 describe('pull', () => {
+  it('pulledThisRun : faux au lancement et après un pull en échec, vrai après un pull réussi, faux pour un autre utilisateur', async () => {
+    await setMeta(db, 'lastPullOkAt', '2026-10-01T00:00:00.000Z');
+    makeEngine();
+    expect(engine.getState().pulledThisRun).toBe(false);
+    server.fault = 'offline';
+    await engine.syncNow('manual');
+    // Un pull d'une exécution précédente (`lastPullOkAt` en meta) ne compte pas.
+    expect(engine.getState()).toMatchObject({ connection: 'offline', pulledThisRun: false });
+    server.fault = null;
+    await engine.syncNow('manual');
+    expect(engine.getState().pulledThisRun).toBe(true);
+    await setMeta(db, 'userId', 'u2');
+    server.fault = 'offline';
+    await engine.syncNow('manual');
+    expect(engine.getState().pulledThisRun).toBe(false);
+  });
+
   it('watermark, lastPullOkAt, serverCatalogVersion ; hasMore enchaîne', async () => {
     await setMeta(db, 'watermark', 'E1:10');
     server.on('GET /api/sync/pull', (req) =>

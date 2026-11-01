@@ -58,8 +58,9 @@ export interface ProgramView {
   slotStates: SlotState[];
   /**
    * `server` : une séance du miroir porte une version de règles que cette appli ne connaît pas (faite sur un appareil
-   * plus à jour) ; les cibles viennent des `slot_state` du serveur, sans rejeu local, et l'écran propose la mise à
-   * jour (§4.4.8). L'état du programme (semaine, rotation) est tout de même recompté.
+   * plus à jour) ; les cibles viennent des `slot_state` du miroir (ceux du serveur, ou les copies provisoires qui les
+   * ont remplacés jusqu'au pull), sans rejeu local, et l'écran propose la mise à jour (§4.4.8). L'état du programme
+   * (semaine, rotation) est tout de même recompté.
    */
   source: 'local' | 'server';
   /** Propositions en attente et non expirées, la plus ancienne d'abord. */
@@ -163,8 +164,6 @@ function slotStateOf(row: MirrorRow): SlotState | null {
     rulesVersion: text(row.rulesVersion) ?? '',
   };
 }
-
-const isProvisional = (row: MirrorRow) => row.provisional === PROVISIONAL;
 
 /** Lieu d'une séance pour le moteur : matériel développé, réglages du lieu ou de sa salle, sinon par défaut. */
 const placeContext = (p: PlaceView): PlaceContext => ({
@@ -305,8 +304,10 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
       .mirror('workout_session')
       .filter((r) => r.instanceId === instance.id)
       .toArray();
-    const serverStates = (await db.mirror('slot_state').where('instanceId').equals(instance.id).toArray())
-      .filter((r) => owned(r) && !isProvisional(r))
+    // Toutes les lignes vivantes, copies provisoires comprises : une copie a remplacé la ligne du serveur jusqu'au pull
+    // et en porte le pas de machine (ruling de la revue de la Task 15).
+    const knownStates = (await db.mirror('slot_state').where('instanceId').equals(instance.id).toArray())
+      .filter(owned)
       .flatMap((r) => {
         const state = slotStateOf(r);
         return state === null ? [] : [state];
@@ -324,7 +325,7 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
       catalog: await catalog.sheets(),
       places: await placeContexts(ownerId),
       overrides: new Map(
-        serverStates.flatMap((st) =>
+        knownStates.flatMap((st) =>
           st.machineStepGOverride === null ? [] : [[st.id, st.machineStepGOverride] as const],
         ),
       ),
@@ -336,7 +337,7 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
       replay = replayInstance(input);
     } catch (error) {
       if (!(error instanceof UnknownRulesVersionError)) throw error;
-      replay = serverReplay(input, serverStates);
+      replay = serverReplay(input, knownStates);
       source = 'server';
     }
 
@@ -418,11 +419,21 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
     const states = db.mirror('slot_state');
     const decisions = db.mirror('engine_decision');
 
-    /** Copies d'un magasin : une ligne de même contenu reste, une copie que le rejeu ne produit plus part. */
+    /**
+     * Copies d'un magasin : une ligne de même contenu reste, une copie que le rejeu ne produit plus part. Le pas de
+     * machine (`machine_step_g_override`) n'est écrit que par l'API en ligne : une copie garde celui de la ligne
+     * qu'elle remplace.
+     */
     async function store(table: typeof states, rows: Copy[]): Promise<void> {
-      for (const { id, fields } of rows) {
+      for (const copy of rows) {
+        const { id } = copy;
         const existing = await table.get(id);
-        if (existing && isLive(existing) && sameContent(existing, fields)) continue;
+        const live = existing !== undefined && isLive(existing);
+        const fields =
+          live && 'machineStepGOverride' in copy.fields
+            ? { ...copy.fields, machineStepGOverride: existing.machineStepGOverride ?? null }
+            : copy.fields;
+        if (live && sameContent(existing, fields)) continue;
         await table.put({
           ...fields,
           id,

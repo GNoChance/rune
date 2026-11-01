@@ -1,6 +1,13 @@
 // @vitest-environment node
 import { createMonotonicUuidV7 } from '@rune/domain';
-import { createTestContext, createUserAndLogin, login, type TestContext } from '@rune/server/testing';
+import {
+  createTestContext,
+  createUserAndLogin,
+  login,
+  seedSheet,
+  sheetFixture,
+  type TestContext,
+} from '@rune/server/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApiClient } from '../../src/api/client';
 import type { AppServices } from '../../src/app-services';
@@ -15,6 +22,7 @@ import { inProcessTransport } from '../support/in-process-transport';
 import { PLAN } from '../support/workout';
 
 const IP = '100.64.0.2';
+const HOUR = 3_600_000;
 const randomBytes = (n: number) => crypto.getRandomValues(new Uint8Array(n));
 
 interface Device {
@@ -28,44 +36,54 @@ interface Device {
 
 let ctx: TestContext | undefined;
 const devices: Device[] = [];
+const databases = new Set<AppDb>();
 
 afterEach(async () => {
-  for (const d of devices.splice(0)) {
-    d.engine.stop();
-    await d.db.delete();
-  }
+  for (const d of devices.splice(0)) d.engine.stop();
+  for (const db of databases) await db.delete();
+  databases.clear();
   ctx?.close();
   ctx = undefined;
 });
 
-/**
- * Vrai serveur en mémoire avec les règles génériques des tables J (création idempotente, dernière écriture
- * gagnante champ par champ, R-SYN-16) : les contrôles propres aux séances (`SYNC_HOOKS`, Task 12) lisent un
- * catalogue serveur, hors de ce scénario de synchro.
- */
+/** Vrai serveur en mémoire, contrôles des séances compris (`SYNC_HOOKS`), avec les fiches du plan publiées. */
 async function server(): Promise<TestContext> {
-  ctx = await createTestContext({ deps: { syncHooks: { sync_rejection: { allowedKinds: ['patch'] } } } });
+  ctx = await createTestContext();
+  for (const id of ['back-squat', 'dumbbell-lunge']) await seedSheet(ctx, sheetFixture(id));
   return ctx;
 }
 
-async function device(c: TestContext, userId: string, cookie: string, deviceId: string): Promise<Device> {
+/**
+ * Un appareil : sa base, son moteur, ses dépôts. `db` donné : la même base rouverte (appli relancée), avec un moteur
+ * neuf. Les dépôts demandent la synchro à un faux moteur (le test la lance lui-même, appareil par appareil) mais lisent
+ * l'état du vrai (`pulledThisRun`).
+ */
+async function device(
+  c: TestContext,
+  userId: string,
+  cookie: string,
+  o: { deviceId?: string; db?: AppDb; offline?: boolean } = {},
+): Promise<Device> {
   const now = () => c.clock.now().getTime();
-  const db = createAppDb(`two-devices-${deviceId}-${crypto.randomUUID()}`);
-  await setMeta(db, 'userId', userId);
-  await setMeta(db, 'deviceId', deviceId);
+  const db = o.db ?? createAppDb(`two-devices-${o.deviceId}-${crypto.randomUUID()}`);
+  databases.add(db);
+  if (!o.db) {
+    await setMeta(db, 'userId', userId);
+    await setMeta(db, 'deviceId', o.deviceId ?? 'dev');
+  }
   const newOpId = createMonotonicUuidV7(now, randomBytes);
-  const d = { db, cookie, offline: false } as Device;
+  const d = { db, cookie, offline: o.offline ?? false } as Device;
   const inner = inProcessTransport(c, () => d.cookie);
   const transport: SyncTransport = {
     fetch: (path, init) =>
       d.offline ? Promise.reject(new TypeError('Failed to fetch')) : inner.fetch(path, init),
   };
   d.engine = createSyncEngine({ db, transport, now, newOpId, triggers: () => () => {} });
-  // Les dépôts demandent la synchro au faux moteur : le test la lance lui-même, appareil par appareil.
+  const fake = createFakeSyncEngine();
   const services: AppServices = {
     db,
     api: createApiClient(transport, { onUnauthenticated: () => {}, onAccountDeleted: () => {} }),
-    sync: createFakeSyncEngine(),
+    sync: { ...fake, getState: () => d.engine.getState(), subscribe: (fn) => d.engine.subscribe(fn) },
     transport,
     now,
     newOpId,
@@ -79,21 +97,30 @@ async function device(c: TestContext, userId: string, cookie: string, deviceId: 
 /** Séance telle que la montrent les deux appareils, sans ce qui dépend de l'appareil qui la lit. */
 const shared = ({ heldHere: _heldHere, ...rest }: WorkoutSessionView) => rest;
 
+const START = {
+  plan: PLAN,
+  placeId: null,
+  instanceId: null,
+  workoutId: 'A',
+  profile: 'adult',
+  templateVersion: null,
+} as const;
+
+const liveSets = (c: TestContext) =>
+  c.deps.sqlite
+    .prepare('SELECT id, load_g, reps FROM performed_set WHERE deleted_at IS NULL ORDER BY id')
+    .all();
+
 describe('même séance sur deux appareils (Review Focus 3)', () => {
   it('« Continuer ici » puis le premier continue hors ligne : aucune série en double, dernière écriture gagnante, lecture seule après le pull', async () => {
     const c = await server();
     const user = await createUserAndLogin(c);
-    const a = await device(c, user.id, user.cookie, 'dev-A');
-    const b = await device(c, user.id, await login(c, user.username, user.password, IP), 'dev-B');
-
-    const id = await a.repos.workouts.start({
-      plan: PLAN,
-      placeId: null,
-      instanceId: null,
-      workoutId: 'A',
-      profile: 'adult',
-      templateVersion: null,
+    const a = await device(c, user.id, user.cookie, { deviceId: 'dev-A' });
+    const b = await device(c, user.id, await login(c, user.username, user.password, IP), {
+      deviceId: 'dev-B',
     });
+
+    const id = await a.repos.workouts.start(START);
     await a.engine.syncNow('manual');
     await b.engine.syncNow('manual');
 
@@ -121,8 +148,7 @@ describe('même séance sur deux appareils (Review Focus 3)', () => {
     await b.engine.syncNow('manual');
 
     // Une seule série par ligne prévue, sur le serveur comme sur chaque appareil.
-    const serverSets = c.deps.sqlite.prepare('SELECT id FROM performed_set WHERE deleted_at IS NULL').all();
-    expect(serverSets).toHaveLength(8);
+    expect(liveSets(c)).toHaveLength(8);
     const onA = await a.repos.workouts.session(id);
     const onB2 = await b.repos.workouts.session(id);
     if (!onA || !onB2) throw new Error('séance absente');
@@ -150,8 +176,54 @@ describe('même séance sur deux appareils (Review Focus 3)', () => {
     await a.engine.syncNow('manual');
     expect((await a.repos.workouts.session(id))?.status).toBe('completed');
     expect(await a.repos.workouts.otherDeviceSession()).toBeNull();
-    expect(c.deps.sqlite.prepare('SELECT id FROM performed_set WHERE deleted_at IS NULL').all()).toHaveLength(
-      2,
-    );
+    expect(liveSets(c)).toHaveLength(2);
+  });
+
+  it('A rouvre l’appli hors ligne après que B a repris, saisi et terminé : aucune clôture avant un pull, rien de B supprimé (R33)', async () => {
+    const c = await server();
+    const user = await createUserAndLogin(c);
+    const a = await device(c, user.id, user.cookie, { deviceId: 'dev-A' });
+    const b = await device(c, user.id, await login(c, user.username, user.password, IP), {
+      deviceId: 'dev-B',
+    });
+
+    const id = await a.repos.workouts.start(START);
+    await a.engine.syncNow('manual');
+    await b.engine.syncNow('manual');
+    await b.repos.workouts.continueHere(id);
+    const sets =
+      (await b.repos.workouts.session(id))?.exercises[0]?.sets.filter((s) => s.kind === 'work') ?? [];
+    c.clock.advance(10 * 60_000);
+    for (const set of sets.slice(0, 2)) await b.repos.workouts.logSet(set.id, { loadG: 60_000, reps: 6 });
+    expect(await b.repos.workouts.finish(id)).toBe('completed');
+    await b.engine.syncNow('manual');
+    const fromB = liveSets(c);
+    expect(fromB).toHaveLength(2);
+
+    // 7 h plus tard, A relance l'appli sans réseau : son miroir date d'avant « Continuer ici ».
+    a.engine.stop();
+    c.clock.advance(7 * HOUR);
+    const a2 = await device(c, user.id, user.cookie, { db: a.db, offline: true });
+    await a2.engine.syncNow('manual');
+    expect(await a2.repos.workouts.session(id)).toMatchObject({
+      status: 'in_progress',
+      deviceId: 'dev-A',
+      heldHere: true,
+    });
+    expect(await a2.repos.workouts.closeStale(c.clock.now().getTime())).toEqual([]);
+    expect(await a2.db.outbox.count()).toBe(0);
+    expect((await a2.repos.workouts.session(id))?.status).toBe('in_progress');
+
+    // Le réseau revient : le pull apporte la fin de B, il n'y a plus rien à clore.
+    a2.offline = false;
+    await a2.engine.syncNow('manual');
+    expect(a2.engine.getState().pulledThisRun).toBe(true);
+    expect((await a2.repos.workouts.session(id))?.status).toBe('completed');
+    expect(await a2.repos.workouts.closeStale(c.clock.now().getTime())).toEqual([]);
+    expect(await a2.db.outbox.count()).toBe(0);
+    expect(c.deps.sqlite.prepare('SELECT status FROM workout_session WHERE id = ?').get(id)).toEqual({
+      status: 'completed',
+    });
+    expect(liveSets(c)).toEqual(fromB);
   });
 });

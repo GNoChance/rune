@@ -43,6 +43,7 @@ const TEMPLATE: ProgramTemplate = {
   workouts: [
     { id: 'A', name: 'Séance A', slots: [slot('A1', 'goblet-squat', 'squat')] },
     { id: 'B', name: 'Séance B', slots: [slot('B1', 'dumbbell-lunge', 'lunge')] },
+    { id: 'C', name: 'Séance C', slots: [slot('C1', 'leg-press', 'squat')] },
   ],
 };
 
@@ -233,7 +234,7 @@ describe('vue du programme', () => {
       proposals: [],
       changes: [],
     });
-    expect(view?.program.template.workouts.map((w) => w.id)).toEqual(['A', 'B']);
+    expect(view?.program.template.workouts.map((w) => w.id)).toEqual(['A', 'B', 'C']);
     expect(view?.replay.state.nextWorkoutId).toBe('B');
     expect(view?.replay.decisions.map((d) => d.id)).toEqual(['pe-old']);
     expect(view?.slotStates.map((s) => [s.id, s.lastSessionId])).toEqual([[SLOT_STATE_ID, 's-old']]);
@@ -244,11 +245,12 @@ describe('vue du programme', () => {
     const { repos, db } = await setup();
     await seedCompletedSession(db, '99');
     await seedMirror(db, 'slot_state', [SERVER_STATE]);
-    // Une copie provisoire d'avant n'est jamais lue dans ce cas.
+    // Une copie provisoire a remplacé la ligne du serveur avant le pull : c'est ce que le miroir sait de mieux.
     await db.mirror('slot_state').put({
       ...SERVER_STATE,
       id: 'i-1:B1:dumbbell-lunge',
       slotId: 'B1',
+      exerciseId: 'dumbbell-lunge',
       provisional: 1,
       serverRevSeen: null,
       deletedAt: null,
@@ -256,26 +258,28 @@ describe('vue du programme', () => {
 
     const view = await repos.programView.view();
     expect(view?.source).toBe('server');
+    const state = {
+      id: SLOT_STATE_ID,
+      instanceId: 'i-1',
+      slotId: 'A1',
+      exerciseId: 'goblet-squat',
+      mode: 'double',
+      loadG: 14_000,
+      targetReps: 8,
+      variantRank: null,
+      durationS: null,
+      machineStepGOverride: null,
+      calibrationLeft: 0,
+      noProgressCount: 0,
+      stallRank: 0,
+      painStreak: 0,
+      suspended: false,
+      lastSessionId: 's-old',
+      rulesVersion: '99',
+    };
     expect(view?.slotStates).toEqual([
-      {
-        id: SLOT_STATE_ID,
-        instanceId: 'i-1',
-        slotId: 'A1',
-        exerciseId: 'goblet-squat',
-        mode: 'double',
-        loadG: 14_000,
-        targetReps: 8,
-        variantRank: null,
-        durationS: null,
-        machineStepGOverride: null,
-        calibrationLeft: 0,
-        noProgressCount: 0,
-        stallRank: 0,
-        painStreak: 0,
-        suspended: false,
-        lastSessionId: 's-old',
-        rulesVersion: '99',
-      },
+      state,
+      { ...state, id: 'i-1:B1:dumbbell-lunge', slotId: 'B1', exerciseId: 'dumbbell-lunge' },
     ]);
     expect(view?.replay.slotStates).toEqual(view?.slotStates);
     expect(view?.replay.decisions).toEqual([]);
@@ -407,6 +411,100 @@ describe('copies provisoires (classe D, §4.4.8)', () => {
     // Même contenu : rien n'est réécrit.
     await repos.programView.storeProvisional(view.replay);
     expect(await db.mirror('slot_state').get(SLOT_STATE_ID)).toEqual(pulled);
+  });
+
+  it('pas de machine du serveur gardé : après Terminer, dans les états et dans la grille de la séance suivante', async () => {
+    const { repos, db } = await setup();
+    const id = 'i-1:C1:leg-press';
+    await seedMirror(db, 'home_equipment', [
+      { id: 'p-1:leg_press', ownerId: 'u-1', placeId: 'p-1', equipmentCode: 'leg_press' },
+    ]);
+    // Séance d'avant (calibration finie à 50 kg) et pas de machine de 2,5 kg posé en ligne.
+    await seedMirror(db, 'workout_session', [
+      {
+        id: 's-c1',
+        ownerId: 'u-1',
+        instanceId: 'i-1',
+        workoutId: 'C',
+        placeId: 'p-1',
+        deviceId: 'dev-Z',
+        startedAt: '2026-10-02T08:00:00.000Z',
+        endedAt: '2026-10-02T09:00:00.000Z',
+        status: 'completed',
+        weekType: 'normal',
+        templateVersion: 1,
+        rulesVersion: '1',
+        appVersion: 'dev',
+        profile: 'adult',
+        note: null,
+      },
+    ]);
+    await seedMirror(db, 'performed_exercise', [
+      {
+        id: 'pe-c1',
+        ownerId: 'u-1',
+        sessionId: 's-c1',
+        slotId: 'C1',
+        plannedExerciseId: 'leg-press',
+        exerciseId: 'leg-press',
+        swapReason: null,
+        position: 1,
+        nextAdjustment: null,
+        note: null,
+      },
+    ]);
+    await seedMirror(
+      db,
+      'performed_set',
+      [1, 2, 3].map((position) => ({
+        id: `set-c1-${position}`,
+        ownerId: 'u-1',
+        performedExerciseId: 'pe-c1',
+        position,
+        kind: 'work',
+        loadMode: 'machine',
+        loadG: 50_000,
+        reps: 10,
+        durationS: null,
+        side: null,
+        effort: position === 3 ? 'ok' : null,
+        loggedAt: `2026-10-02T08:1${position}:00.000Z`,
+      })),
+    );
+    await seedMirror(db, 'slot_state', [
+      {
+        ...SERVER_STATE,
+        id,
+        slotId: 'C1',
+        exerciseId: 'leg-press',
+        loadG: 50_000,
+        machineStepGOverride: 2500,
+        rulesVersion: '1',
+        lastSessionId: 's-c1',
+      },
+    ]);
+
+    const planned = await repos.programView.plannedWorkout('p-1', 'C');
+    if (!planned) throw new Error('séance prévue absente');
+    expect(planned.plan.exercises[0]?.sets.find((s) => s.kind === 'work')?.targetLoadG).toBe(50_000);
+    const sessionId = await repos.workouts.start(planned);
+    for (const set of (await repos.workouts.session(sessionId))?.exercises[0]?.sets ?? []) {
+      await repos.workouts.logSet(set.id, { loadG: 50_000, reps: 12, effort: 'ok' });
+    }
+    await repos.workouts.finish(sessionId);
+
+    expect(await db.mirror('slot_state').get(id)).toMatchObject({
+      provisional: 1,
+      machineStepGOverride: 2500,
+    });
+    const after = await repos.programView.view();
+    // + un pas de 2,5 kg (sans le pas de la machine : 55 kg).
+    expect(after?.slotStates.find((s) => s.id === id)).toMatchObject({
+      machineStepGOverride: 2500,
+      loadG: 52_500,
+    });
+    const next = await repos.programView.plannedWorkout('p-1', 'C');
+    expect(next?.plan.exercises[0]?.sets.find((s) => s.kind === 'work')?.targetLoadG).toBe(52_500);
   });
 
   it("une copie que le rejeu ne produit plus est retirée ; avec l'accord santé, painStreak est gardé", async () => {

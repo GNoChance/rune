@@ -61,6 +61,7 @@ export {
 export { isLive, parseJsonColumn } from './rows';
 export type { StatusRepo } from './status-repo';
 export {
+  closeStaleAfterPull,
   type NoteTarget,
   type SetInput,
   type StartInput,

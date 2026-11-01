@@ -114,6 +114,7 @@ export function createFakeSyncEngine(initial: Partial<SyncState> = {}): FakeSync
     lastPullOkAt: null,
     syncing: false,
     serverEpoch: null,
+    pulledThisRun: false,
     ...initial,
   };
   const listeners = new Set<(s: SyncState) => void>();

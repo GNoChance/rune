@@ -122,6 +122,12 @@ export const WORKOUT_SHEETS: ServedSheet[] = [
     load_mode: 'bodyweight',
     equipment_options: [[]],
   }),
+  served({
+    id: 'leg-press',
+    name: 'Presse à cuisses',
+    load_mode: 'machine',
+    equipment_options: [['leg_press']],
+  }),
 ];
 
 /**

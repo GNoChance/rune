@@ -6,6 +6,8 @@ import { type AppDb, createAppDb, type MirrorRow } from '../../src/local-db/db';
 import { getMeta, setMeta } from '../../src/local-db/meta';
 import { createRepos, type Repos, reposFor } from '../../src/repos';
 import {
+  closeStaleAfterPull,
+  type SetInput,
   useActiveSession,
   useHistory,
   useOtherDeviceSession,
@@ -499,6 +501,62 @@ describe('saisie des séries', () => {
   });
 });
 
+describe('saisie : listes blanches, paires, douleur après une série faite', () => {
+  it('logSet ne garde que charge, répétitions, durée et effort', async () => {
+    const { db, repos } = await setup();
+    const id = await repos.workouts.start(START);
+    const set = workSet(await view(repos, id), 0, 0);
+    const other = exerciseAt(await view(repos, id), 1).id;
+    const sneaky = { loadG: 60_000, loggedAt: '2020-01-01T00:00:00.000Z', performedExerciseId: other };
+    await repos.workouts.logSet(set.id, sneaky as SetInput);
+    expect((await ops(db)).at(-1)?.fields).toEqual({ loadG: 60_000, loggedAt: iso(DEFAULT_NOW) });
+    expect(workSet(await view(repos, id), 0, 0)).toMatchObject({ loadG: 60_000, loggedAt: DEFAULT_NOW });
+  });
+
+  it('removeSet en unilatéral retire les deux côtés de la série ; refusé si un côté est fait', async () => {
+    const { db, repos } = await setup();
+    const id = await repos.workouts.start(START);
+    const lines = workSets(await view(repos, id), 1);
+    const [, , left2, right2] = lines;
+    await repos.workouts.removeSet(right2?.id ?? '');
+    expect(workSets(await view(repos, id), 1).map((s) => [s.position, s.side])).toEqual([
+      [1, 'left'],
+      [1, 'right'],
+    ]);
+    for (const s of [left2, right2]) {
+      expect((await db.mirror('performed_set').get(s?.id ?? ''))?.deletedAt).not.toBeNull();
+    }
+    const [left1, right1] = lines;
+    await repos.workouts.logSet(left1?.id ?? '', { loadG: 14_000, reps: 10 });
+    await expect(repos.workouts.removeSet(right1?.id ?? '')).rejects.toMatchObject({ code: 'set_done' });
+    expect(workSets(await view(repos, id), 1)).toHaveLength(2);
+  });
+
+  it("douleur sans accord santé après une série faite (nouvel exercice du slot) : aucune trace dans Dexie ni dans l'outbox", async () => {
+    const { db, repos } = await setup();
+    const id = await repos.workouts.start(START);
+    const v = await view(repos, id);
+    await repos.workouts.logSet(workSet(v, 1, 0).id, { loadG: 14_000, reps: 10 });
+    await repos.workouts.markPain(exerciseAt(v, 1).id, 'pain');
+    const next = await repos.workouts.swapExercise(exerciseAt(v, 1).id, 'bulgarian-split-squat', 'pain');
+    expect(next).not.toBe(exerciseAt(v, 1).id);
+
+    const after = await view(repos, id);
+    expect(after.exercises.map((e) => [e.exerciseId, e.painLevel, e.swapReason, e.nextAdjustment])).toEqual([
+      ['back-squat', null, null, null],
+      ['dumbbell-lunge', null, null, 'lighten'],
+      ['bulgarian-split-squat', null, null, null],
+    ]);
+    const dump = await dumpLocalDb(db);
+    expect(dump).not.toMatch(/"painLevel":"/);
+    expect(dump).not.toMatch(/"swapReason":"pain"/);
+    for (const op of await ops(db)) {
+      expect(op.fields, op.opId).not.toHaveProperty('painLevel');
+      expect(op.fields.swapReason, op.opId).not.toBe('pain');
+    }
+  });
+});
+
 describe('fin de séance (D2, D4)', () => {
   it('finish : completed, séries jamais faites supprimées logiquement, séance en cours effacée', async () => {
     const { db, repos, sync, clock } = await setup();
@@ -556,9 +614,60 @@ describe('fin de séance (D2, D4)', () => {
   });
 });
 
-describe('séance oubliée (D12)', () => {
+describe('séance close : corrections des séries faites seulement (§7.6)', () => {
+  it('logSet et setEffort corrigent une série faite ; rouvrir, ajouter, retirer, changer d’exercice : refusés', async () => {
+    const { db, repos } = await setup();
+    const id = await repos.workouts.start(START);
+    const v = await view(repos, id);
+    const set = workSet(v, 0, 0);
+    await repos.workouts.logSet(set.id, { loadG: 60_000, reps: 6 });
+    await repos.workouts.finish(id);
+
+    await repos.workouts.logSet(set.id, { loadG: 62_500, reps: 5 });
+    await repos.workouts.setEffort(set.id, 'hard');
+    expect(workSet(await view(repos, id), 0, 0)).toMatchObject({
+      loadG: 62_500,
+      reps: 5,
+      effort: 'hard',
+      loggedAt: DEFAULT_NOW,
+    });
+
+    const before = await db.outbox.count();
+    const pe = exerciseAt(v, 0).id;
+    for (const attempt of [
+      () => repos.workouts.reopenSet(set.id),
+      () => repos.workouts.addSet(pe),
+      () => repos.workouts.removeSet(set.id),
+      () => repos.workouts.swapExercise(pe, 'goblet-squat', 'busy'),
+    ]) {
+      await expect(attempt()).rejects.toMatchObject({ code: 'not_in_progress' });
+    }
+    expect(await db.outbox.count()).toBe(before);
+  });
+
+  it("une série jamais faite d'une séance close (clôture d'une séance oubliée) ne se saisit plus", async () => {
+    const { repos, sync } = await setup();
+    sync.set({ pulledThisRun: true });
+    const id = await repos.workouts.start(START);
+    const open = workSet(await view(repos, id), 0, 1);
+    await repos.workouts.closeStale(DEFAULT_NOW + 7 * HOUR);
+    await expect(repos.workouts.logSet(open.id, { loadG: 60_000, reps: 6 })).rejects.toMatchObject({
+      code: 'not_in_progress',
+    });
+    await expect(repos.workouts.setEffort(open.id, 'ok')).rejects.toMatchObject({ code: 'not_in_progress' });
+  });
+});
+
+describe('séance oubliée (D12, ruling R33)', () => {
+  /** Services dont le moteur a réussi un pull dans cette exécution de l'appli. */
+  async function pulled(opts: Parameters<typeof setup>[0] = {}): Promise<Setup> {
+    const t = await setup(opts);
+    t.sync.set({ pulledThisRun: true });
+    return t;
+  }
+
   it('sur cet appareil : clôturée après 6 h sans activité, ended_at = dernière série faite', async () => {
-    const { db, repos, clock } = await setup();
+    const { db, repos, clock } = await pulled();
     const id = await repos.workouts.start(START);
     clock.now = DEFAULT_NOW + HOUR;
     await repos.workouts.logSet(workSet(await view(repos, id), 0, 0).id, { loadG: 60_000, reps: 6 });
@@ -572,8 +681,60 @@ describe('séance oubliée (D12)', () => {
     expect(await getMeta(db, 'activeSessionId')).toBeNull();
   });
 
+  it('clôture : statut et fin seulement, aucune série supprimée ; les lectures ignorent les séries jamais faites', async () => {
+    const { db, repos, clock } = await pulled();
+    const id = await repos.workouts.start(START);
+    clock.now = DEFAULT_NOW + HOUR;
+    const done = workSet(await view(repos, id), 0, 0);
+    await repos.workouts.logSet(done.id, { loadG: 60_000, reps: 6 });
+    const before = await db.outbox.count();
+
+    expect(await repos.workouts.closeStale(DEFAULT_NOW + 7 * HOUR)).toEqual([id]);
+    const written = (await ops(db)).slice(before);
+    expect(written.map((o) => [o.entity, o.kind, Object.keys(o.fields).sort()])).toEqual([
+      ['workout_session', 'patch', ['endedAt', 'status']],
+    ]);
+    expect((await rows(db, 'performed_set')).filter((r) => r.deletedAt != null)).toEqual([]);
+    const [closed] = await repos.workouts.history();
+    expect(closed?.exercises.flatMap((e) => e.sets).map((s) => s.id)).toEqual([done.id]);
+  });
+
+  it("rien avant un pull réussi dans cette exécution : un miroir d'avant ne clôt rien, n'écrit rien", async () => {
+    const { db, repos, sync, clock } = await setup();
+    const id = await repos.workouts.start(START);
+    clock.now = DEFAULT_NOW + HOUR;
+    await repos.workouts.logSet(workSet(await view(repos, id), 0, 0).id, { loadG: 60_000, reps: 6 });
+    const before = await db.outbox.count();
+
+    expect(await repos.workouts.closeStale(DEFAULT_NOW + 48 * HOUR)).toEqual([]);
+    expect(await db.outbox.count()).toBe(before);
+    expect(await getMeta(db, 'activeSessionId')).toBe(id);
+    expect((await db.mirror('workout_session').get(id))?.status).toBe('in_progress');
+
+    sync.set({ pulledThisRun: true });
+    expect(await repos.workouts.closeStale(DEFAULT_NOW + 48 * HOUR)).toEqual([id]);
+  });
+
+  it('closeStaleAfterPull : la clôture part dès que le moteur a réussi un pull', async () => {
+    const { services, db, repos, sync } = await setup();
+    const id = await repos.workouts.start(START);
+    services.now = () => DEFAULT_NOW + 7 * HOUR;
+    const stop = closeStaleAfterPull(services);
+    try {
+      sync.set({ connection: 'offline' });
+      await new Promise((r) => setTimeout(r, 20));
+      expect((await db.mirror('workout_session').get(id))?.status).toBe('in_progress');
+      sync.set({ pulledThisRun: true });
+      await vi.waitFor(async () =>
+        expect((await db.mirror('workout_session').get(id))?.status).toBe('abandoned'),
+      );
+    } finally {
+      stop();
+    }
+  });
+
   it('tenue par un autre appareil : clôturée après 24 h seulement, ended_at = début sans série faite', async () => {
-    const { db, repos } = await setup();
+    const { db, repos } = await pulled();
     const id = await repos.workouts.start(START);
     // Comme après un pull : l'autre appareil a repris la séance.
     await db.mirror('workout_session').update(id, { deviceId: 'dev-B' });
@@ -588,12 +749,12 @@ describe('séance oubliée (D12)', () => {
   });
 
   it("sans utilisateur connecté (ouverture de l'appli) : rien à clore", async () => {
-    const { repos } = await setup({ me: null });
+    const { repos } = await pulled({ me: null });
     expect(await repos.workouts.closeStale(DEFAULT_NOW + 48 * HOUR)).toEqual([]);
   });
 
   it('une séance notée en cours ici mais reprise ailleurs ne bloque plus les mises à jour', async () => {
-    const { db, repos } = await setup();
+    const { db, repos } = await pulled();
     const id = await repos.workouts.start(START);
     await db.mirror('workout_session').update(id, { deviceId: 'dev-B' });
     expect(await repos.workouts.closeStale(DEFAULT_NOW + 60_000)).toEqual([]);

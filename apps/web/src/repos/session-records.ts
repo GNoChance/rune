@@ -154,8 +154,8 @@ function sessionView(
 
 /**
  * Vues des séances `rows` (déjà choisies par l'appelant) de `ownerId` : leurs exercices et séries vivants, lus par
- * les index `sessionId` et `performedExerciseId`. Une ligne illisible est écartée ; `deviceId` (celui de cet
- * appareil, null s'il n'en a pas encore) donne `heldHere`.
+ * les index `sessionId` et `performedExerciseId` ; une séance close ne montre que ses séries faites. Une ligne
+ * illisible est écartée ; `deviceId` (celui de cet appareil, null s'il n'en a pas encore) donne `heldHere`.
  */
 export async function composeSessions(
   db: AppDb,
@@ -197,7 +197,12 @@ export async function composeSessions(
   }
   return sessions.flatMap((row) => {
     const view = sessionView(row, exercisesBySession.get(row.id) ?? [], deviceId);
-    return view === null ? [] : [view];
+    if (view === null) return [];
+    if (view.status === 'in_progress') return [view];
+    // Séance close : seules ses séries faites comptent. Une séance oubliée, close sans suppression (ruling R33), garde
+    // en base ses séries jamais faites ; aucune lecture ne les montre.
+    const exercises = view.exercises.map((e) => ({ ...e, sets: e.sets.filter((s) => s.loggedAt !== null) }));
+    return [{ ...view, exercises }];
   });
 }
 

@@ -58,6 +58,12 @@ export interface SyncState {
   lastPullOkAt: string | null;
   syncing: boolean;
   serverEpoch: string | null;
+  /**
+   * Un pull a réussi dans cette exécution de l'appli, pour l'utilisateur courant : le miroir a rejoint le serveur au
+   * moins une fois depuis le lancement (`lastPullOkAt`, gardé en meta, peut dater d'une exécution précédente). Une
+   * séance oubliée ne se clôt qu'après (ruling R33).
+   */
+  pulledThisRun: boolean;
 }
 
 export interface SyncEngine {
@@ -140,6 +146,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     lastPullOkAt: null,
     syncing: false,
     serverEpoch: null,
+    pulledThisRun: false,
   };
   const listeners = new Set<(s: SyncState) => void>();
   let lastUserId: string | null = null;
@@ -324,6 +331,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     }
     if (full && since !== null) await dropUnreceived(received, since);
     await setMeta(db, 'lastPullOkAt', nowIso());
+    setState({ pulledThisRun: true });
   }
 
   // ---- 5. Catalogue ----
@@ -386,7 +394,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     if (userId !== lastUserId) {
       lastUserId = userId;
       failures = 0;
-      setState({ connection: 'unknown' });
+      setState({ connection: 'unknown', pulledThisRun: false });
     }
     const cycle: Cycle = { userId, epoch: null, generation: gen };
     try {

@@ -17,6 +17,7 @@ import { type AppServices, useLive, useServices } from '../app-services';
 import { healthConsentCached } from '../local-db/consent';
 import type { MirrorRow } from '../local-db/db';
 import { ensureDeviceId, getMeta, setMeta } from '../local-db/meta';
+import type { SyncState } from '../sync/engine';
 import { type LocalChange, writeLocal } from '../sync/outbox';
 import { catalogRepoFor } from './catalog-repo';
 import { programViewFor } from './program-view';
@@ -86,19 +87,30 @@ export type NoteTarget = { kind: 'session'; id: string } | { kind: 'exercise'; i
 export interface WorkoutsRepo {
   /** Séance, exercices et toutes les séries prévues avec leurs cibles, en une transaction ; rend l'id de la séance. */
   start(input: StartInput): Promise<string>;
-  /** Pose `loggedAt` (l'heure d'une série déjà faite reste à la correction) ; synchro 2 s plus tard. */
+  /**
+   * N'écrit que `loadG`, `reps`, `durationS` et `effort`, et pose `loggedAt` (l'heure d'une série déjà faite reste à la
+   * correction) ; synchro 2 s plus tard. Séance close : série faite seulement (`not_in_progress` sinon, §7.6).
+   */
   logSet(setId: string, values?: SetInput): Promise<void>;
+  /** Pendant la séance seulement (`not_in_progress` sinon). */
   reopenSet(setId: string): Promise<void>;
+  /** Séance close : série faite seulement, comme `logSet`. */
   setEffort(setId: string, effort: Effort | null): Promise<void>;
-  /** Une série de travail après la dernière (deux lignes en unilatéral), cibles de la précédente ; rend les ids. */
+  /**
+   * Une série de travail après la dernière (deux lignes en unilatéral), cibles de la précédente ; rend les ids.
+   * Pendant la séance seulement.
+   */
   addSet(performedExerciseId: string): Promise<string[]>;
-  /** Série non faite seulement (`set_done` sinon). */
+  /**
+   * Série non faite, ses deux côtés en unilatéral (`set_done` si une ligne de la série est faite) ; pendant la séance
+   * seulement.
+   */
   removeSet(setId: string): Promise<void>;
   /**
    * Autre fiche pour la suite de l'exercice : sans série faite, l'exercice change de fiche ; sinon les séries faites
    * restent à l'ancienne et un nouvel exercice du même slot reprend la suite. Les séries non faites sont réécrites
    * pour la nouvelle fiche (côtés, mode de charge, sans charge visée). Rend l'id de l'exercice qui porte la fiche.
-   * `pain` n'est gardé qu'avec l'accord santé.
+   * `pain` n'est gardé qu'avec l'accord santé. Pendant la séance seulement.
    */
   swapExercise(performedExerciseId: string, exerciseId: string, reason: SwapReason): Promise<string>;
   /**
@@ -124,9 +136,11 @@ export interface WorkoutsRepo {
   /** « Continuer ici » : la séance passe à cet appareil (`device_id`, R-SYN-7). */
   continueHere(sessionId: string): Promise<void>;
   /**
-   * Séances oubliées (D12), à l'ouverture : en cours sans activité depuis 6 h sur cet appareil, 24 h sur un autre,
-   * terminées comme par « Terminer » avec `ended_at` = dernière série faite (le début sans série). Efface aussi une
-   * séance en cours notée ici mais finie ou reprise ailleurs. Rend les ids clôturés.
+   * Séances oubliées (D12) : en cours sans activité depuis 6 h sur cet appareil, 24 h sur un autre, closes avec
+   * `status` (`completed` si une série de travail faite est connue, sinon `abandoned`) et `ended_at` = dernière série
+   * faite (le début sans série), sans supprimer aucune série (ruling R33). Efface aussi une séance en cours notée ici
+   * mais finie ou reprise ailleurs. Rien tant qu'aucun pull n'a réussi dans cette exécution
+   * (`SyncState.pulledThisRun`) : `closeStaleAfterPull` l'appelle à ce moment-là. Rend les ids clôturés.
    */
   closeStale(now: number): Promise<string[]>;
   /** Exercice de séance libre (sans slot ni cible), avec une première série vide ; rend son id. */
@@ -163,6 +177,14 @@ const lineOrder = (a: MirrorRow, b: MirrorRow) =>
   (a.kind === 'warmup' ? 0 : 1) - (b.kind === 'warmup' ? 0 : 1) ||
   byPosition(a, b) ||
   sideRank(a.side) - sideRank(b.side);
+
+/** Seules clés que `logSet` écrit. */
+const SET_INPUT_KEYS = [
+  'loadG',
+  'reps',
+  'durationS',
+  'effort',
+] as const satisfies readonly (keyof SetInput)[];
 
 /** Bornes d'une série (règles en vigueur) : entier, dans [min, max] ; null admis (pas de valeur). */
 function checkSetInput(values: SetInput): void {
@@ -325,6 +347,16 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
     return { set, exercise, session };
   }
 
+  /** Changement de structure (séries, fiche) : seulement pendant la séance (une séance close ne se refait pas). */
+  function assertInProgress(session: MirrorRow): void {
+    if (session.status !== 'in_progress') throw new WorkoutError('not_in_progress');
+  }
+
+  /** Séance close : seules les valeurs d'une série faite se corrigent (§7.6, « Modifier »). */
+  function assertValueEditable(session: MirrorRow, set: MirrorRow): void {
+    if (session.status !== 'in_progress' && !isDone(set)) throw new WorkoutError('not_in_progress');
+  }
+
   async function createSet(w: Writer, peId: string, loadMode: LoadMode, set: PlannedSet): Promise<string> {
     const id = newId();
     await w.put({
@@ -408,11 +440,17 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
     return !!row && isLive(row) && row.status === 'in_progress' && row.deviceId === w.deviceId;
   }
 
-  /** Fin de séance (D2, D4) dans la transaction en cours ; une séance déjà close rend son statut. */
+  /**
+   * Fin de séance (D4) dans la transaction en cours ; une séance déjà close rend son statut. « Terminer » (`prune`)
+   * supprime aussi les séries jamais faites (D2). La clôture d'une séance oubliée n'en supprime aucune (ruling R33) :
+   * le miroir peut ignorer des séries faites sur un autre appareil ; elle n'écrit que le statut et la fin, et les
+   * lectures ignorent les séries jamais faites d'une séance close.
+   */
   async function close(
     w: Writer,
     sessionId: string,
     endedAt: string,
+    prune: boolean,
   ): Promise<{ status: 'completed' | 'abandoned'; instanceId: string | null }> {
     const session = await owned(SESSION, sessionId, w);
     const instanceId = text(session.instanceId);
@@ -423,7 +461,7 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
       (await exercisesOf(sessionId, w)).map((e) => e.id),
       w,
     );
-    for (const set of sets) if (!isDone(set)) await deleteRow(w, SET, set.id);
+    if (prune) for (const set of sets) if (!isDone(set)) await deleteRow(w, SET, set.id);
     const status = sets.some((set) => set.kind === 'work' && isDone(set)) ? 'completed' : 'abandoned';
     await w.put({ entity: SESSION, id: sessionId, kind: 'patch', fields: { status, endedAt } });
     await clearActiveIf(sessionId);
@@ -488,9 +526,11 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
       checkSetInput(values);
       const w = await writer();
       await tx(async () => {
-        const { set } = await setContext(setId, w);
+        const { set, session } = await setContext(setId, w);
+        assertValueEditable(session, set);
+        // Liste blanche : rien d'autre que les valeurs saisies n'est écrit (ni `loggedAt`, ni le parent).
         const fields: Record<string, unknown> = Object.fromEntries(
-          Object.entries(values).filter(([, v]) => v !== undefined),
+          SET_INPUT_KEYS.flatMap((k) => (values[k] === undefined ? [] : [[k, values[k]]])),
         );
         const reps = 'reps' in fields ? fields.reps : set.reps;
         const durationS = 'durationS' in fields ? fields.durationS : set.durationS;
@@ -505,7 +545,8 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
     async reopenSet(setId) {
       const w = await writer();
       await tx(async () => {
-        const { set } = await setContext(setId, w);
+        const { set, session } = await setContext(setId, w);
+        assertInProgress(session);
         if (isDone(set)) await w.put({ entity: SET, id: setId, kind: 'patch', fields: { loggedAt: null } });
       });
       void s.sync.syncNow('set_logged');
@@ -515,7 +556,8 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
       checkSetInput({ effort });
       const w = await writer();
       await tx(async () => {
-        await setContext(setId, w);
+        const { set, session } = await setContext(setId, w);
+        assertValueEditable(session, set);
         await w.put({ entity: SET, id: setId, kind: 'patch', fields: { effort } });
       });
       void s.sync.syncNow('set_logged');
@@ -524,7 +566,8 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
     async addSet(performedExerciseId) {
       const w = await writer();
       const ids = await tx(async () => {
-        const { exercise } = await exerciseContext(performedExerciseId, w);
+        const { exercise, session } = await exerciseContext(performedExerciseId, w);
+        assertInProgress(session);
         const work = (await setsOf([performedExerciseId], w)).filter((r) => r.kind === 'work');
         const last = work.at(-1);
         const position = (num(last?.position) ?? 0) + 1;
@@ -557,9 +600,14 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
     async removeSet(setId) {
       const w = await writer();
       await tx(async () => {
-        const { set } = await setContext(setId, w);
-        if (isDone(set)) throw new WorkoutError('set_done');
-        await deleteRow(w, SET, setId);
+        const { set, session } = await setContext(setId, w);
+        assertInProgress(session);
+        // Une série unilatérale est une paire : ses deux côtés partent ensemble, s'ils ne sont pas faits.
+        const lines = (await setsOf([String(set.performedExerciseId)], w)).filter(
+          (r) => r.kind === set.kind && r.position === set.position,
+        );
+        if (lines.some(isDone)) throw new WorkoutError('set_done');
+        for (const line of lines) await deleteRow(w, SET, line.id);
       });
       void s.sync.syncNow('set_logged');
     },
@@ -570,7 +618,8 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
       const id = await tx(async () => {
         const sheet = await sheetOf(exerciseId);
         if (sheet === undefined) throw new WorkoutError('unknown_exercise');
-        const { exercise } = await exerciseContext(performedExerciseId, w);
+        const { exercise, session } = await exerciseContext(performedExerciseId, w);
+        assertInProgress(session);
         const sets = await setsOf([performedExerciseId], w);
         const open = sets.filter((r) => !isDone(r));
         const previous = await sheetOf(String(exercise.exerciseId));
@@ -681,7 +730,7 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
 
     async finish(sessionId) {
       const w = await writer();
-      const closed = await tx(() => close(w, sessionId, nowIso()));
+      const closed = await tx(() => close(w, sessionId, nowIso(), true));
       await afterCompleted([closed]);
       void s.sync.syncNow('mutation');
       return closed.status;
@@ -720,8 +769,9 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
     },
 
     async closeStale(now) {
-      // Appelée à l'ouverture, connecté ou non : sans utilisateur, rien à clore.
-      if ((await currentUserId(db)) === null) return [];
+      // Miroir d'avant le premier pull de cette exécution : il peut ignorer « Continuer ici » et les séries d'un autre
+      // appareil ; rien ne se clôt avant (ruling R33). Sans utilisateur non plus.
+      if (!s.sync.getState().pulledThisRun || (await currentUserId(db)) === null) return [];
       const w = await writer();
       const { sameDevice, otherDevice } = currentRules().forgottenSessionH;
       const closed = await tx(async () => {
@@ -744,7 +794,7 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
           const hours = session.deviceId === w.deviceId ? sameDevice : otherDevice;
           if (Number.isNaN(last) || now - last < hours * HOUR_MS) continue;
           const endedAt = new Date(lastLogged ?? started).toISOString();
-          out.push({ id: session.id, ...(await close(w, session.id, endedAt)) });
+          out.push({ id: session.id, ...(await close(w, session.id, endedAt, false)) });
         }
         // Séance notée en cours ici mais close ou reprise ailleurs : elle ne bloque plus rien.
         const active = await getMeta(db, 'activeSessionId');
@@ -835,6 +885,28 @@ export function workoutRepoFor(services: AppServices): WorkoutsRepo {
     repos.set(services, repo);
   }
   return repo;
+}
+
+/**
+ * Clôture des séances oubliées (D12) dès que le moteur a réussi un pull dans cette exécution (ruling R33) : à chaque
+ * passage de `pulledThisRun` à vrai (lancement, puis un autre utilisateur). Branchée par `bootApp` ; rend la fonction
+ * qui la retire.
+ */
+export function closeStaleAfterPull(services: AppServices): () => void {
+  let pulled = false;
+  const check = (state: SyncState) => {
+    const was = pulled;
+    pulled = state.pulledThisRun;
+    if (!pulled || was) return;
+    workoutRepoFor(services)
+      .closeStale(services.now())
+      .catch(() => {
+        // Base illisible ou session perdue : la prochaine exécution réessaiera.
+      });
+  };
+  const unsubscribe = services.sync.subscribe(check);
+  check(services.sync.getState());
+  return unsubscribe;
 }
 
 function useWorkoutRepo(): WorkoutsRepo {

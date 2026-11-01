@@ -20,6 +20,7 @@ beforeEach(() => {
     lastPullOkAt: null,
     syncing: false,
     serverEpoch: null,
+    pulledThisRun: false,
   });
   engine = {
     syncNow: vi.fn(async () => {}),
