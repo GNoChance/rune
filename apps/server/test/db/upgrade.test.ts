@@ -10,11 +10,16 @@ const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8'
 
 /**
  * Schémas figés des versions précédentes, au format de dumpSchema : v1 après 0001_socle, v2 après
- * 0002_coach (socle de départ de la brique 2). Ils ne se régénèrent jamais.
+ * 0002_coach (socle de départ de la brique 2), v3 après 0003_catalog (départ de la brique 3). Ils ne se régénèrent jamais.
  */
 const PREVIOUS = [
-  { fixture: 'schema-v1.sql', done: ['0001_socle'], applied: ['0002_coach', '0003_catalog'] },
-  { fixture: 'schema-v2.sql', done: ['0001_socle', '0002_coach'], applied: ['0003_catalog'] },
+  { fixture: 'schema-v1.sql', done: ['0001_socle'], applied: ['0002_coach', '0003_catalog', '0004_program'] },
+  { fixture: 'schema-v2.sql', done: ['0001_socle', '0002_coach'], applied: ['0003_catalog', '0004_program'] },
+  {
+    fixture: 'schema-v3.sql',
+    done: ['0001_socle', '0002_coach', '0003_catalog'],
+    applied: ['0004_program'],
+  },
 ];
 
 describe('passage des versions précédentes (01 §9.1.4)', () => {

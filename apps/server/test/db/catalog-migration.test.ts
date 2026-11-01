@@ -48,7 +48,7 @@ function occurrences(sqlite: Sqlite, id: string): string[] {
 
 describe('migration 0003_catalog', () => {
   it("suit 0002_coach et n'est pas cassante", () => {
-    expect(MIGRATIONS.map((m) => ({ id: m.id, breaking: m.breaking }))).toEqual([
+    expect(MIGRATIONS.slice(0, 3).map((m) => ({ id: m.id, breaking: m.breaking }))).toEqual([
       { id: '0001_socle', breaking: false },
       { id: '0002_coach', breaking: false },
       { id: '0003_catalog', breaking: false },
@@ -70,7 +70,7 @@ describe('migration 0003_catalog', () => {
       expect(before.user?.length).toBeGreaterThan(2);
 
       expect(await migrate(h.db, MIGRATIONS, clock)).toEqual({
-        applied: ['0003_catalog'],
+        applied: ['0003_catalog', '0004_program'],
         unknownNonBreaking: [],
       });
       for (const table of socle) {

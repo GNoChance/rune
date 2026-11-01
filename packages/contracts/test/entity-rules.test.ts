@@ -26,7 +26,26 @@ const EXPECTED: Record<string, string> = {
   sync_rejection: 'C1/J/owner_id/true/cascade',
   training_profile: 'C1/E/owner_id/true/cascade',
   user: 'C0/E/id/true/cascade',
+  // Programmes et séances (brique 3)
+  engine_decision: 'C1/D/owner_id/true/cascade',
+  instance_change: 'C1/E/owner_id/true/cascade',
+  performed_exercise: 'C1/J/owner_id/true/cascade',
+  performed_set: 'C1/J/owner_id/true/cascade',
+  program_instance: 'C1/E/owner_id/true/cascade',
+  slot_state: 'C1/D/owner_id/true/cascade',
+  workout_session: 'C1/J/owner_id/true/cascade',
 };
+
+/** Tables de la brique 3 : programmes (E, D) et séances (J). */
+const PROGRAM_TABLES = [
+  'program_instance',
+  'instance_change',
+  'slot_state',
+  'engine_decision',
+  'workout_session',
+  'performed_exercise',
+  'performed_set',
+] as const;
 
 /** Tables de la brique 2 : catalogue (classe C) et relecture (classe H). */
 const CATALOG_TABLES = [
@@ -49,8 +68,8 @@ const pick = (t: string) => {
 };
 
 describe('entityRules', () => {
-  it('déclare les 18 tables du socle et les 5 du catalogue avec leurs valeurs', () => {
-    expect(Object.keys(entityRules).sort()).toEqual(Object.keys(EXPECTED));
+  it('déclare les 18 tables du socle, les 5 du catalogue et les 7 des programmes avec leurs valeurs', () => {
+    expect(Object.keys(entityRules).sort()).toEqual(Object.keys(EXPECTED).sort());
     for (const t of Object.keys(EXPECTED)) expect(pick(t)).toBe(EXPECTED[t]);
   });
 
@@ -63,6 +82,40 @@ describe('entityRules', () => {
       expect(ruleOf(t).secretColumns, t).toEqual([]);
       expect(ruleOf(t).pullRedact, t).toBeUndefined();
     }
+  });
+
+  it('déclare parent, colonnes C2 et valeurs C2 des tables de séance et de programme', () => {
+    expect(ruleOf('performed_exercise').parent).toEqual({ entity: 'workout_session', column: 'session_id' });
+    expect(ruleOf('performed_set').parent).toEqual({
+      entity: 'performed_exercise',
+      column: 'performed_exercise_id',
+    });
+    expect(ruleOf('performed_exercise').c2Columns).toEqual(['pain_level']);
+    expect(ruleOf('performed_exercise').c2Values).toEqual({ swap_reason: ['pain'] });
+    expect(ruleOf('slot_state').c2Columns).toEqual(['pain_streak']);
+    expect(ruleOf('instance_change').c2Columns).toEqual(['reason']);
+    expect(ruleOf('workout_session').clientWritable).toEqual([
+      'instance_id',
+      'workout_id',
+      'place_id',
+      'device_id',
+      'started_at',
+      'ended_at',
+      'status',
+      'week_type',
+      'template_version',
+      'rules_version',
+      'app_version',
+      'profile',
+      'note',
+    ]);
+    // Seules les trois tables de séance sont écrites par le client ; programmes et décisions : API ou serveur.
+    for (const t of ['program_instance', 'instance_change', 'slot_state', 'engine_decision'])
+      expect(ruleOf(t).clientWritable, t).toEqual([]);
+    for (const c of ['id', ...SYNC_COLUMNS]) expect(ruleOf('performed_set').clientWritable).not.toContain(c);
+    expect(ruleOf('performed_set').clientWritable).toEqual(
+      expect.arrayContaining(['performed_exercise_id', 'logged_at', 'target_variant', 'effort']),
+    );
   });
 
   it('porte les colonnes écrivables par le client et les secrets', () => {
@@ -83,15 +136,22 @@ describe('entityRules', () => {
   it('liste les tables miroir en ordre alphabétique, sans aucune table du catalogue', () => {
     expect(mirroredTables()).toEqual([
       'consent_event',
+      'engine_decision',
       'gym',
       'gym_equipment',
       'health_screening',
       'home_equipment',
+      'instance_change',
       'limitation',
+      'performed_exercise',
+      'performed_set',
       'place',
+      'program_instance',
+      'slot_state',
       'sync_rejection',
       'training_profile',
       'user',
+      'workout_session',
     ]);
     // Catalogue servi par GET /api/catalog (classe C), relecture en ligne seulement (classe H) : hors pull.
     for (const t of CATALOG_TABLES) expect(mirroredTables(), t).not.toContain(t);
@@ -139,11 +199,16 @@ describe('entityRules', () => {
       }
     });
 
-    it("aucune table du socle n'a de parent ni de c2Values", () => {
-      for (const [, r] of all) {
-        expect(r.parent).toBeUndefined();
-        expect(r.c2Values).toBeUndefined();
-      }
+    it('seules les tables de la brique 3 ont un parent ou des c2Values (ni le socle ni le catalogue)', () => {
+      const withExtension = all
+        .filter(([, r]) => r.parent !== undefined || r.c2Values !== undefined)
+        .map(([t]) => t);
+      expect(withExtension.sort()).toEqual(['performed_exercise', 'performed_set']);
+      for (const t of withExtension) expect(PROGRAM_TABLES).toContain(t);
+    });
+
+    it('les tables de la brique 3 portent les colonnes de synchro, deleted_at compris', () => {
+      for (const t of PROGRAM_TABLES) for (const c of SYNC_COLUMNS) expect(ruleOf(t).columns, t).toContain(c);
     });
   });
 });

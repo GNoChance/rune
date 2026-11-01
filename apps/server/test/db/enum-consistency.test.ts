@@ -1,5 +1,7 @@
 import {
   BODY_AREAS,
+  CHANGE_AUTHORS,
+  CHANGE_STATUSES,
   COACH_IDS,
   COMMENT_BODY_MAX,
   COMMENT_BODY_MIN,
@@ -7,6 +9,8 @@ import {
   CONSENT_ACTIONS,
   CONSENT_TYPES,
   DAYS_PER_WEEK,
+  DECISION_RESULTS,
+  EFFORTS,
   EXERCISE_LEVELS,
   EXERCISE_NAME_MAX,
   EXERCISE_STATUSES,
@@ -25,9 +29,12 @@ import {
   LIMITATION_SEVERITIES,
   LIMITATION_SIDES,
   LOAD_MODES,
+  MAX_CHANGE_OPERATIONS,
   MEASURES,
   MECHANICS,
+  NEXT_ADJUSTMENTS,
   ONBOARDING_STEPS,
+  PAIN_LEVELS,
   PLACE_KINDS,
   PLACE_NAME_MAX,
   PushResult,
@@ -35,14 +42,24 @@ import {
   RoleSchema,
   SECURITY_OUTCOMES,
   SESSION_MINUTES,
+  SESSION_PROFILES,
   SESSION_REVOKED_REASONS,
+  SESSION_STATUSES,
+  SET_KINDS,
+  SIDES,
+  SLOT_MODES,
   SPORT_OTHER_LABEL_MAX,
+  SWAP_REASONS,
   UserStatusSchema,
+  WEEK_TYPES,
 } from '@rune/contracts';
+import { currentRules } from '@rune/domain';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestContext, type TestContext } from '../support';
 
 // 01 §9.1.4 : chaque énumération et chaque borne du DDL a sa constante dans contracts, et les deux concordent.
+const { setBounds, noteMaxLength } = currentRules();
+
 const ENUMS: Record<string, readonly (string | number)[]> = {
   'applied_op.status': PushResult.shape.status.options,
   'consent_event.type': CONSENT_TYPES,
@@ -54,16 +71,29 @@ const ENUMS: Record<string, readonly (string | number)[]> = {
   'exercise.level': EXERCISE_LEVELS,
   'exercise_comment.part': COMMENT_PARTS,
   'exercise_revision.status': EXERCISE_STATUSES,
+  'engine_decision.profile': SESSION_PROFILES,
+  'engine_decision.result': DECISION_RESULTS,
   'gym_history.action': GymHistoryAction.options,
   'illustration.media_type': ILLUSTRATION_MEDIA_TYPES,
   'illustration.source': ILLUSTRATION_SOURCES,
   'illustration.license': ILLUSTRATION_LICENSES,
+  'instance_change.author': CHANGE_AUTHORS,
+  'instance_change.status': CHANGE_STATUSES,
   'limitation.body_area': BODY_AREAS,
   'limitation.side': LIMITATION_SIDES,
   'limitation.severity': LIMITATION_SEVERITIES,
+  'performed_exercise.next_adjustment': NEXT_ADJUSTMENTS,
+  'performed_exercise.pain_level': PAIN_LEVELS,
+  'performed_exercise.swap_reason': SWAP_REASONS,
+  'performed_set.effort': EFFORTS,
+  'performed_set.kind': SET_KINDS,
+  'performed_set.load_mode': LOAD_MODES,
+  'performed_set.side': SIDES,
   'place.kind': PLACE_KINDS,
+  'program_instance.status': ['active', 'ended'],
   'security_event.outcome': SECURITY_OUTCOMES,
   'session.revoked_reason': SESSION_REVOKED_REASONS,
+  'slot_state.mode': SLOT_MODES,
   'sync_rejection.code': RejectionCode.options,
   'training_profile.goal': GOALS,
   'training_profile.experience': EXPERIENCES,
@@ -72,6 +102,9 @@ const ENUMS: Record<string, readonly (string | number)[]> = {
   'user.role': RoleSchema.options,
   'user.status': UserStatusSchema.options,
   'user.onboarding_step': ONBOARDING_STEPS,
+  'workout_session.profile': SESSION_PROFILES,
+  'workout_session.status': SESSION_STATUSES,
+  'workout_session.week_type': WEEK_TYPES,
 };
 
 // `exercise.batch` (motif, pas une liste) est vérifié contre BatchSchema dans schema.test.
@@ -80,11 +113,20 @@ const BOUNDS: Record<string, { min: number | null; max: number }> = {
   'exercise_comment.body': { min: COMMENT_BODY_MIN, max: COMMENT_BODY_MAX },
   'gym.name': { min: GYM_NAME_MIN, max: GYM_NAME_MAX },
   'gym.city': { min: GYM_CITY_MIN, max: GYM_CITY_MAX },
+  'instance_change.operations': { min: 1, max: MAX_CHANGE_OPERATIONS },
   'invitation.note': { min: null, max: INVITATION_NOTE_MAX },
   'limitation.note': { min: null, max: LIMITATION_NOTE_MAX },
+  'performed_exercise.note': { min: null, max: noteMaxLength },
+  'performed_exercise.position': { min: setBounds.position[0], max: setBounds.position[1] },
+  'performed_set.duration_s': { min: setBounds.durationS[0], max: setBounds.durationS[1] },
+  'performed_set.load_g': { min: setBounds.loadG[0], max: setBounds.loadG[1] },
+  'performed_set.position': { min: setBounds.position[0], max: setBounds.position[1] },
+  'performed_set.reps': { min: setBounds.reps[0], max: setBounds.reps[1] },
   'place.name': { min: null, max: PLACE_NAME_MAX },
+  'program_instance.days_per_week': { min: Math.min(...DAYS_PER_WEEK), max: Math.max(...DAYS_PER_WEEK) },
   'training_profile.days_per_week': { min: Math.min(...DAYS_PER_WEEK), max: Math.max(...DAYS_PER_WEEK) },
   'training_profile.sport_other_label': { min: null, max: SPORT_OTHER_LABEL_MAX },
+  'workout_session.note': { min: null, max: noteMaxLength },
 };
 
 const IN_RE = /\b(\w+) IN \(([^)]*)\)/g;

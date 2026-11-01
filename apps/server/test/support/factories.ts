@@ -24,6 +24,9 @@ const next = (db: Kysely<Database>) => {
   return n;
 };
 
+/** Instance parente créée à la volée : terminée, pour laisser la place à une instance active du même compte. */
+const ENDED = { status: 'ended', endedAt: NOW };
+
 const SYNC = { rev: 1, createdAt: NOW, updatedAt: NOW };
 
 /** Insère la ligne puis la relit (camelCase) par sa clé, simple ou composée. */
@@ -214,6 +217,104 @@ const FACTORIES: Record<string, Factory> = {
       equipmentCode: 'chair',
       ownerId,
       ...SYNC,
+      ...v,
+    });
+  },
+  // Programmes et séances (brique 3) : les parents partagent le propriétaire de la ligne demandée.
+  program_instance: owned('program_instance', () => ({
+    templateId: 'full-body-3',
+    templateVersion: 1,
+    snapshot: '{}',
+    daysPerWeek: 3,
+    status: 'active',
+    startedAt: NOW,
+  })),
+  instance_change: async (db, v) => {
+    const ownerId = await parentId(db, v, 'ownerId', 'user');
+    const instanceId = await parentId(db, v, 'instanceId', 'program_instance', { ownerId, ...ENDED });
+    return insert(db, 'instance_change', {
+      id: ids(db).uuidv7(),
+      ownerId,
+      ...SYNC,
+      instanceId,
+      baseRevision: 0,
+      author: 'user',
+      operations: '[{"type":"start_deload"}]',
+      reasonCode: 'USER_CHANGE',
+      status: 'proposed',
+      ...v,
+    });
+  },
+  slot_state: async (db, v) => {
+    const ownerId = await parentId(db, v, 'ownerId', 'user');
+    const instanceId = await parentId(db, v, 'instanceId', 'program_instance', { ownerId, ...ENDED });
+    const slotId = (v.slotId as string | undefined) ?? 'push-1';
+    const exerciseId = (v.exerciseId as string | undefined) ?? 'bench-press';
+    return insert(db, 'slot_state', {
+      id: `${instanceId}:${slotId}:${exerciseId}`,
+      ownerId,
+      ...SYNC,
+      instanceId,
+      slotId,
+      exerciseId,
+      mode: 'double',
+      rulesVersion: '1',
+      ...v,
+    });
+  },
+  workout_session: owned('workout_session', () => ({
+    deviceId: 'device-1',
+    startedAt: NOW,
+    status: 'in_progress',
+    weekType: 'normal',
+    rulesVersion: '1',
+    appVersion: '0.3.0',
+    profile: 'adult',
+  })),
+  performed_exercise: async (db, v) => {
+    const ownerId = await parentId(db, v, 'ownerId', 'user');
+    const sessionId = await parentId(db, v, 'sessionId', 'workout_session', { ownerId });
+    return insert(db, 'performed_exercise', {
+      id: ids(db).uuidv7(),
+      ownerId,
+      ...SYNC,
+      sessionId,
+      exerciseId: 'bench-press',
+      position: 1,
+      ...v,
+    });
+  },
+  // 1-1 avec performed_exercise : `id` = son identifiant.
+  engine_decision: async (db, v) => {
+    const ownerId = await parentId(db, v, 'ownerId', 'user');
+    const id = await parentId(db, v, 'id', 'performed_exercise', { ownerId });
+    return insert(db, 'engine_decision', {
+      id,
+      ownerId,
+      ...SYNC,
+      exerciseId: 'bench-press',
+      result: 'HOLD',
+      reasonCode: 'HOLD_DEFAULT',
+      profile: 'adult',
+      rulesVersion: '1',
+      ...v,
+    });
+  },
+  performed_set: async (db, v) => {
+    const ownerId = await parentId(db, v, 'ownerId', 'user');
+    const performedExerciseId = await parentId(db, v, 'performedExerciseId', 'performed_exercise', {
+      ownerId,
+    });
+    return insert(db, 'performed_set', {
+      id: ids(db).uuidv7(),
+      ownerId,
+      ...SYNC,
+      performedExerciseId,
+      position: 1,
+      kind: 'work',
+      loadMode: 'barbell',
+      loadG: 60_000,
+      reps: 8,
       ...v,
     });
   },

@@ -10,7 +10,7 @@ const MIN_ID_ROUTES = 6;
 let ctx: TestContext;
 afterEach(() => ctx?.close());
 
-const WITNESSES = ['TEMOIN_TP', 'TEMOIN_HS', 'TEMOIN_LIM'];
+const WITNESSES = ['TEMOIN_TP', 'TEMOIN_HS', 'TEMOIN_LIM', 'TEMOIN_SEANCE', 'TEMOIN_EXO'];
 
 const listRoutes = () => listAppRoutes(ctx.app);
 
@@ -28,6 +28,8 @@ async function setup() {
     training_profile: { sportOtherLabel: WITNESSES[0], coach: 'scribe' },
     health_screening: { questionnaireVersion: WITNESSES[1] },
     limitation: { note: WITNESSES[2] },
+    workout_session: { note: WITNESSES[3] },
+    performed_exercise: { note: WITNESSES[4] },
   };
   const rowIds: string[] = [];
   for (const [table, rule] of Object.entries(entityRules)) {

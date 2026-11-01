@@ -30,6 +30,8 @@ const witnessesOf = (tag: string) => ({
     coach: tag === 'A' ? 'ombre' : 'scribe',
   },
   sync_rejection: { entity: `TEMOIN-${tag}-rejet` },
+  workout_session: { note: `TEMOIN-${tag}-seance` },
+  performed_exercise: { note: `TEMOIN-${tag}-exercice` },
 });
 
 /** Une ligne par table liée, consentement santé accordé. */

@@ -36,6 +36,10 @@ describe('COLUMN_CODECS', () => {
       gym: { load_settings: 'json' },
       place: { is_primary: 'boolean', visible_at_gym: 'boolean', load_settings: 'json' },
       sync_rejection: { detail_json: 'json' },
+      program_instance: { snapshot: 'json' },
+      instance_change: { operations: 'json', ai_generated: 'boolean' },
+      slot_state: { suspended: 'boolean' },
+      engine_decision: { next_target: 'json' },
     });
   });
 });

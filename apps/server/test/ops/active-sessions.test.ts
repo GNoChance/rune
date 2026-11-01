@@ -4,22 +4,13 @@ import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { runCli } from '../../src/cli';
+import { migrate } from '../../src/db/migrate';
+import { MIGRATIONS } from '../../src/db/migrations/index';
+import { openDatabase } from '../../src/db/open';
 import { listActiveWorkoutSessions } from '../../src/ops/active-sessions';
-import { createTestContext, createUser, type TestContext } from '../support';
+import { createTestContext, createUser, FakeClock, type TestContext } from '../support';
 
 const NOW = '2026-10-06T20:00:00.000Z';
-
-/** Table de la brique 2, réduite aux colonnes lues (le socle ne la crée pas). */
-function createWorkoutSessionTable(sqlite: DatabaseSync): void {
-  sqlite.exec(`CREATE TABLE workout_session (
-    id TEXT PRIMARY KEY,
-    owner_id TEXT NOT NULL REFERENCES user(id),
-    started_at TEXT NOT NULL,
-    ended_at TEXT,
-    status TEXT NOT NULL CHECK (status IN ('in_progress', 'completed', 'abandoned')),
-    deleted_at TEXT
-  ) STRICT`);
-}
 
 function insertSession(
   sqlite: DatabaseSync,
@@ -30,9 +21,10 @@ function insertSession(
 ): void {
   sqlite
     .prepare(
-      'INSERT INTO workout_session (id, owner_id, started_at, ended_at, status, deleted_at) VALUES (?, ?, ?, NULL, ?, ?)',
+      `INSERT INTO workout_session (id, owner_id, rev, created_at, updated_at, device_id, started_at, status, week_type, rules_version, app_version, profile, deleted_at)
+       VALUES (?, ?, 1, ?, ?, 'device-1', ?, ?, 'normal', '1', '0.3.0', 'adult', ?)`,
     )
-    .run(id, ownerId, startedAt, o.status ?? 'in_progress', o.deletedAt ?? null);
+    .run(id, ownerId, startedAt, startedAt, startedAt, o.status ?? 'in_progress', o.deletedAt ?? null);
 }
 
 async function withContext(fn: (ctx: TestContext) => Promise<void>, dbPath?: string): Promise<void> {
@@ -45,10 +37,24 @@ async function withContext(fn: (ctx: TestContext) => Promise<void>, dbPath?: str
 }
 
 describe('listActiveWorkoutSessions (R-DEP-3, 08 §8)', () => {
-  it('base du socle, sans table workout_session : []', async () => {
+  it('base migrée sans aucune séance : []', async () => {
     await withContext(async ({ deps }) => {
       expect(listActiveWorkoutSessions(deps.sqlite, new Date(NOW))).toEqual([]);
     });
+  });
+
+  it('base du socle, sans table workout_session : []', async () => {
+    const h = openDatabase(':memory:');
+    try {
+      await migrate(
+        h.db,
+        MIGRATIONS.filter((m) => m.id <= '0003_catalog'),
+        new FakeClock(),
+      );
+      expect(listActiveWorkoutSessions(h.sqlite, new Date(NOW))).toEqual([]);
+    } finally {
+      h.sqlite.close();
+    }
   });
 
   it('séances in_progress, non supprimées, démarrées depuis strictement moins de 3 h, triées par début', async () => {
@@ -57,7 +63,6 @@ describe('listActiveWorkoutSessions (R-DEP-3, 08 §8)', () => {
       const alice = await createUser(ctx, { username: 'alice' });
       const bob = await createUser(ctx, { username: 'bob' });
       const carol = await createUser(ctx, { username: 'carol' });
-      createWorkoutSessionTable(sqlite);
       insertSession(sqlite, 's-alice', alice.id, '2026-10-06T19:00:00.000Z');
       insertSession(sqlite, 's-old', bob.id, '2026-10-06T16:59:59.000Z');
       // Pile 3 h avant NOW : exclue (started_at > now − 3 h, pas >=).
@@ -114,7 +119,6 @@ describe('CLI sessions:active', () => {
       await withContext(
         async (ctx) => {
           const alice = await createUser(ctx, { username: 'alice' });
-          createWorkoutSessionTable(ctx.deps.sqlite);
           insertSession(ctx.deps.sqlite, 's-alice', alice.id, startedAt);
         },
         join(dir, 'rune.db'),
