@@ -21,7 +21,7 @@ export const TAB_ITEMS: readonly { href: TabHref; label: string }[] = [
  */
 const SECTIONS: readonly { tab: TabHref; prefixes: readonly string[] }[] = [
   { tab: '/exercises', prefixes: ['/exercises'] },
-  { tab: '/progression', prefixes: ['/progression'] },
+  { tab: '/progression', prefixes: ['/progression', '/history'] },
   { tab: '/profile', prefixes: ['/profile', '/places', '/gyms', '/settings', '/rejections', '/admin'] },
 ];
 

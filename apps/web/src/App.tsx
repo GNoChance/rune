@@ -46,6 +46,14 @@ const GymLoadSettings = lazy(() =>
   import('./features/places/LoadSettingsPage').then((m) => ({ default: m.GymLoadSettings })),
 );
 
+/** Historique des séances : hors du bundle initial, chargé à la première ouverture (fichiers précachés par le SW). */
+const HistoryList = lazy(() =>
+  import('./features/history/HistoryList').then((m) => ({ default: m.HistoryList })),
+);
+const HistoryDetail = lazy(() =>
+  import('./features/history/HistoryDetail').then((m) => ({ default: m.HistoryDetail })),
+);
+
 /** Pages lisibles sans session (03 §13 : Confidentialité, Crédits, Aide) et parcours d'accès. */
 export const PUBLIC_PATHS: readonly string[] = [
   '/login',
@@ -141,6 +149,8 @@ function ConnectedRoutes() {
     <Switch>
       <Route path="/" component={HomePage} />
       <Route path="/progression" component={ProgressionPage} />
+      <Route path="/history" component={HistoryList} />
+      <Route path="/history/:id">{(params) => <HistoryDetail id={params.id} />}</Route>
       <Route path="/exercises" component={ExercisesHome} />
       <Route path="/exercises/group">
         <Redirect to="/exercises" replace />

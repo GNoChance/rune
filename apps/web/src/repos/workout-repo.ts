@@ -5,6 +5,8 @@ import {
   type LoadMode,
   NEXT_ADJUSTMENTS,
   type NextAdjustment,
+  REASON_CODES,
+  type ReasonCode,
   type ServedSheet,
   ServedSheetSchema,
   type SessionProfile,
@@ -21,7 +23,7 @@ import type { SyncState } from '../sync/engine';
 import { type LocalChange, writeLocal } from '../sync/outbox';
 import { catalogRepoFor } from './catalog-repo';
 import { programViewFor } from './program-view';
-import { currentUserId, isLive, text } from './rows';
+import { currentUserId, isLive, oneOf, text } from './rows';
 import { composeSessions, latestFirst, type WorkoutSessionView } from './session-records';
 
 export type { WorkoutExerciseView, WorkoutSessionView, WorkoutSetView } from './session-records';
@@ -153,6 +155,18 @@ export interface WorkoutsRepo {
   history(): Promise<WorkoutSessionView[]>;
   /** Séance en cours tenue par un autre appareil, la plus récente (« Séance en cours sur un autre appareil »). */
   otherDeviceSession(): Promise<WorkoutSessionView | null>;
+  /**
+   * Décisions du moteur lues dans le miroir pour les exercices de la séance (l'`id` d'une décision est celui de
+   * l'exercice qui la porte). Ruling R34 : seule la dernière entrée d'un état en porte une. Aucune pour une
+   * séance libre (D7).
+   */
+  decisions(sessionId: string): Promise<SessionDecision[]>;
+}
+
+/** Décision du moteur d'une entrée de séance : la phrase se lit dans `REASON_TEXTS[reasonCode]`. */
+export interface SessionDecision {
+  performedExerciseId: string;
+  reasonCode: ReasonCode;
 }
 
 const SESSION = 'workout_session';
@@ -861,6 +875,19 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
       return views.sort(latestFirst);
     },
 
+    async decisions(sessionId) {
+      const ownerId = await currentUserId(db);
+      if (ownerId === null) return [];
+      const exercises = await db.mirror(EXERCISE).where('sessionId').equals(sessionId).toArray();
+      const ids = exercises.filter((e) => isLive(e) && e.ownerId === ownerId).map((e) => e.id);
+      const rows = await db.mirror('engine_decision').bulkGet(ids);
+      return rows.flatMap((r) => {
+        if (!r || !isLive(r) || r.ownerId !== ownerId) return [];
+        const reasonCode = oneOf(REASON_CODES, r.reasonCode);
+        return reasonCode === null ? [] : [{ performedExerciseId: r.id, reasonCode }];
+      });
+    },
+
     async otherDeviceSession() {
       const views = await readSessions((deviceId) =>
         db
@@ -928,6 +955,12 @@ export function useSession(id: string): WorkoutSessionView | null | undefined {
 export function useHistory(): WorkoutSessionView[] | undefined {
   const repo = useWorkoutRepo();
   return useLive(() => repo.history(), [repo]);
+}
+
+/** Décisions du moteur d'une séance, observées ; `undefined` tant que la base n'a pas répondu. */
+export function useSessionDecisions(sessionId: string): SessionDecision[] | undefined {
+  const repo = useWorkoutRepo();
+  return useLive(() => repo.decisions(sessionId), [repo, sessionId]);
 }
 
 export function useOtherDeviceSession(): WorkoutSessionView | null | undefined {

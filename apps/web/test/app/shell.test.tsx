@@ -172,6 +172,9 @@ describe('activeTab : onglet actif selon le préfixe de l’adresse', () => {
   it.each([
     ['/', '/'],
     ['/progression', '/progression'],
+    ['/history', '/progression'],
+    ['/history/s-1', '/progression'],
+    ['/historyx', null],
     ['/exercises', '/exercises'],
     ['/exercises/', '/exercises'],
     ['/exercises/push-up', '/exercises'],
