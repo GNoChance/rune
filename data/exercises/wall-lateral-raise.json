@@ -1,0 +1,24 @@
+{
+  "id": "wall-lateral-raise",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "B",
+  "name": "Élévation latérale en appui au mur",
+  "movement_pattern": "shoulder_isolation",
+  "mechanics": "isolation",
+  "unilateral": true,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "primary_muscles": [
+    "side_delts"
+  ],
+  "secondary_muscles": [
+    "traps"
+  ],
+  "equipment_options": [
+    []
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

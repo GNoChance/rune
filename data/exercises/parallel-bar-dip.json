@@ -1,0 +1,27 @@
+{
+  "id": "parallel-bar-dip",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "B",
+  "name": "Dips aux barres parallèles",
+  "movement_pattern": "horizontal_push",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "primary_muscles": [
+    "chest",
+    "triceps"
+  ],
+  "secondary_muscles": [
+    "front_delts"
+  ],
+  "equipment_options": [
+    [
+      "dip_station"
+    ]
+  ],
+  "level": 2,
+  "not_for_minors": false
+}

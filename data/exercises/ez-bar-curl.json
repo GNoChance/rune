@@ -1,0 +1,26 @@
+{
+  "id": "ez-bar-curl",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "B",
+  "name": "Curl biceps à la barre EZ",
+  "movement_pattern": "elbow_flexion",
+  "mechanics": "isolation",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "barbell",
+  "primary_muscles": [
+    "biceps"
+  ],
+  "secondary_muscles": [
+    "forearms"
+  ],
+  "equipment_options": [
+    [
+      "ez_bar"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

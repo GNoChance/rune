@@ -1,0 +1,27 @@
+{
+  "id": "cable-lateral-raise",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "B",
+  "name": "Élévation latérale à la poulie",
+  "movement_pattern": "shoulder_isolation",
+  "mechanics": "isolation",
+  "unilateral": true,
+  "measure": "reps",
+  "load_mode": "machine",
+  "primary_muscles": [
+    "side_delts"
+  ],
+  "secondary_muscles": [
+    "front_delts",
+    "traps"
+  ],
+  "equipment_options": [
+    [
+      "cable_station"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

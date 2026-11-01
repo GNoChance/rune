@@ -1,0 +1,26 @@
+{
+  "id": "dumbbell-external-rotation",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "B",
+  "name": "Rotation externe à l'haltère allongé sur le côté",
+  "movement_pattern": "shoulder_isolation",
+  "mechanics": "isolation",
+  "unilateral": true,
+  "measure": "reps",
+  "load_mode": "dumbbell",
+  "primary_muscles": [
+    "rotator_cuff"
+  ],
+  "secondary_muscles": [
+    "rear_delts"
+  ],
+  "equipment_options": [
+    [
+      "dumbbells"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

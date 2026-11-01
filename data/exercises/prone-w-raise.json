@@ -1,0 +1,25 @@
+{
+  "id": "prone-w-raise",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "B",
+  "name": "Élévation en W allongé",
+  "movement_pattern": "shoulder_isolation",
+  "mechanics": "isolation",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "primary_muscles": [
+    "rotator_cuff",
+    "rear_delts"
+  ],
+  "secondary_muscles": [
+    "traps"
+  ],
+  "equipment_options": [
+    []
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

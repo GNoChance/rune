@@ -1,0 +1,22 @@
+{
+  "id": "reverse-nordic-curl",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "B",
+  "name": "Nordic inversé",
+  "movement_pattern": "knee_extension",
+  "mechanics": "isolation",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "primary_muscles": [
+    "quadriceps"
+  ],
+  "secondary_muscles": [],
+  "equipment_options": [
+    []
+  ],
+  "level": 2,
+  "not_for_minors": false
+}

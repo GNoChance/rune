@@ -15,8 +15,8 @@
  * (copie sans historique), la règle n'est pas vérifiée et un avertissement le dit.
  *
  * Règle R-EQ-5 (chaque code de matériel utilisé par au moins une fiche non retirée) : elle n'est exigée qu'avec
- * `--strict`. Tant que le lot A n'est pas publié, le catalogue n'utilise pas encore tout le matériel ; la CI
- * passera à `pnpm data:validate --strict` une fois le lot A publié (plan de la brique 2, tâche 4).
+ * `--strict`. Les squelettes du lot B couvrent les derniers codes : la CI lance donc
+ * `pnpm data:validate --strict --base origin/main` (brique 3, tâche 9).
  */
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -24,7 +24,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
-import { DraftSheetSchema, IllustrationEntry } from '@rune/contracts';
+import { type DraftSheet, DraftSheetSchema, IllustrationEntry } from '@rune/contracts';
 import {
   type CatalogFile,
   type CatalogInput,
@@ -232,8 +232,11 @@ export async function readCatalogInput(
   };
 }
 
+/** Fiche lue par le validateur des modèles, et par le contrôle de couverture (`coverage.ts`) qui lit sa mesure. */
+export type DataSheet = CatalogSheet & Pick<DraftSheet, 'measure'>;
+
 /** Fiches lisibles par le validateur des modèles, tous statuts ; une fiche invalide (déjà signalée) est sautée. */
-function catalogSheets(sheets: readonly CatalogFile[]): CatalogSheet[] {
+export function catalogSheets(sheets: readonly CatalogFile[]): DataSheet[] {
   return sheets.flatMap(({ json }) => {
     const parsed = DraftSheetSchema.safeParse(json);
     if (!parsed.success) return [];

@@ -47,14 +47,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Historique complet, branches comprises : la règle 8 de data:validate lit origin/main.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Catalogue d'exercices (04 §13, critère 1). Passer à --strict (R-EQ-5) une fois le lot A publié.
-      - run: pnpm data:validate
+      # Catalogue d'exercices et modèles de programmes (04 §13, critère 1 ; 05 §5), en strict : chaque code de
+      # matériel est utilisé (R-EQ-5). Règle 8 : un modèle dont le contenu diffère de celui d'origin/main a une
+      # version plus haute. Une référence --base absente fait échouer l'étape ; sur un push vers main, origin/main
+      # est le commit lui-même et la règle n'a rien à comparer.
+      - run: pnpm data:validate --strict --base origin/main
       # Fichiers d'illustrations : 40 Ko au plus, type vérifié par les octets, SVG nettoyés et crédités (04 §12).
       - run: pnpm svg:check
       - run: pnpm test

@@ -81,8 +81,8 @@ export type CatalogInput = {
 };
 
 /**
- * `strict` : exige aussi R-EQ-5 (chaque code de matériel utilisé par au moins une fiche non retirée), en CI une
- * fois le lot A publié.
+ * `strict` : exige aussi R-EQ-5 (chaque code de matériel utilisé par au moins une fiche non retirée), en CI depuis
+ * les squelettes du lot B.
  */
 export type CatalogValidationOptions = { strict?: boolean };
 

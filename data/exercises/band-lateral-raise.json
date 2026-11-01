@@ -1,0 +1,27 @@
+{
+  "id": "band-lateral-raise",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "B",
+  "name": "Élévation latérale à l'élastique",
+  "movement_pattern": "shoulder_isolation",
+  "mechanics": "isolation",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "band",
+  "primary_muscles": [
+    "side_delts"
+  ],
+  "secondary_muscles": [
+    "front_delts",
+    "traps"
+  ],
+  "equipment_options": [
+    [
+      "resistance_band"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

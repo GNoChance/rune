@@ -1,0 +1,27 @@
+{
+  "id": "dumbbell-reverse-fly",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "B",
+  "name": "Oiseau aux haltères",
+  "movement_pattern": "shoulder_isolation",
+  "mechanics": "isolation",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "dumbbell",
+  "primary_muscles": [
+    "rear_delts"
+  ],
+  "secondary_muscles": [
+    "traps",
+    "rotator_cuff"
+  ],
+  "equipment_options": [
+    [
+      "dumbbells"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

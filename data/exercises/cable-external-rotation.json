@@ -1,0 +1,26 @@
+{
+  "id": "cable-external-rotation",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "B",
+  "name": "Rotation externe à la poulie",
+  "movement_pattern": "shoulder_isolation",
+  "mechanics": "isolation",
+  "unilateral": true,
+  "measure": "reps",
+  "load_mode": "machine",
+  "primary_muscles": [
+    "rotator_cuff"
+  ],
+  "secondary_muscles": [
+    "rear_delts"
+  ],
+  "equipment_options": [
+    [
+      "cable_station"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

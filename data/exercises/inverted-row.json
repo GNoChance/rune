@@ -1,0 +1,35 @@
+{
+  "id": "inverted-row",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "B",
+  "name": "Rowing inversé",
+  "movement_pattern": "horizontal_pull",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "primary_muscles": [
+    "lats",
+    "traps"
+  ],
+  "secondary_muscles": [
+    "rear_delts",
+    "biceps"
+  ],
+  "equipment_options": [
+    [
+      "barbell",
+      "squat_rack"
+    ],
+    [
+      "smith_machine"
+    ],
+    [
+      "suspension_trainer"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}

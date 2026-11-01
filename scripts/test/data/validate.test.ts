@@ -128,8 +128,8 @@ const TEMPLATE_IDS = [
 ];
 
 describe('data:validate sur le dépôt', () => {
-  it('le dossier data/ du dépôt est valide', async () => {
-    const { errors } = await validateDataDir(DEFAULT_DATA_DIR);
+  it('le dossier data/ du dépôt est valide, en strict (R-EQ-5 : chaque code de matériel utilisé)', async () => {
+    const { errors } = await validateDataDir(DEFAULT_DATA_DIR, { strict: true });
     expect(errors).toEqual([]);
   });
 

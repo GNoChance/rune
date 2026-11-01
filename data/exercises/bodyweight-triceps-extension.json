@@ -1,0 +1,33 @@
+{
+  "id": "bodyweight-triceps-extension",
+  "schema_version": 1,
+  "revision": 1,
+  "status": "draft",
+  "batch": "B",
+  "name": "Extension triceps au poids du corps",
+  "movement_pattern": "elbow_extension",
+  "mechanics": "isolation",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "primary_muscles": [
+    "triceps"
+  ],
+  "secondary_muscles": [],
+  "equipment_options": [
+    [
+      "table"
+    ],
+    [
+      "chair"
+    ],
+    [
+      "flat_bench"
+    ],
+    [
+      "box"
+    ]
+  ],
+  "level": 1,
+  "not_for_minors": false
+}
