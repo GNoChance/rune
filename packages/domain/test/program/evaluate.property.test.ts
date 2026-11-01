@@ -15,7 +15,12 @@ import {
 } from '@rune/contracts';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { type EngineState, type EvaluateInput, evaluateExercise } from '../../src/program/evaluate';
+import {
+  type EngineState,
+  type EvaluateInput,
+  type EvaluateResult,
+  evaluateExercise,
+} from '../../src/program/evaluate';
 import { type LoadGrid, loadGrid, next } from '../../src/program/loads';
 import { rulesFor } from '../../src/program/rules';
 import type { SetRecord } from '../../src/program/types';
@@ -300,22 +305,39 @@ function input(c: Case, state: EngineState | null, d: SessionDraw, n: number): E
   };
 }
 
-/** Un cas, un historique rejoué séance par séance, et l'entrée de la dernière évaluation. */
+/** Une séance rejouée : l'état d'avant, le tirage, l'entrée et la sortie de l'évaluation. */
+interface Step {
+  prev: EngineState | null;
+  draw: SessionDraw;
+  input: EvaluateInput;
+  out: EvaluateResult;
+}
+
+/** Un cas et un historique rejoué séance par séance ; chaque séance est gardée pour être contrôlée. */
 const arbRun = fc
   .tuple(fc.constantFrom(...CASES), fc.constantFrom<SessionProfile>('adult', 'cautious'))
   .chain(([c, profile]) =>
     fc.record({
       c: fc.constant(c),
-      history: fc.array(arbSession(c, profile), { maxLength: 20 }),
-      last: arbSession(c, profile),
+      draws: fc.array(arbSession(c, profile), { minLength: 1, maxLength: 20 }),
     }),
   )
-  .map(({ c, history, last }) => {
+  .map(({ c, draws }) => {
+    const steps: Step[] = [];
     let state: EngineState | null = null;
-    history.forEach((d, i) => {
-      state = evaluateExercise(input(c, state, d, i)).state;
+    draws.forEach((draw, i) => {
+      const inp = input(c, state, draw, i);
+      const out = evaluateExercise(inp);
+      steps.push({ prev: state, draw, input: inp, out });
+      state = out.state;
     });
-    return { c, prev: state as EngineState | null, last, input: input(c, state, last, history.length) };
+    return { c, steps };
+  });
+
+/** Contrôle chaque séance rejouée de chaque historique, pas seulement la dernière. */
+const everyStep = (check: (c: Case, step: Step) => void) =>
+  fc.property(arbRun, ({ c, steps }) => {
+    for (const step of steps) check(c, step);
   });
 
 const realizedLoad = (sets: readonly SetRecord[]): number | null => {
@@ -327,6 +349,20 @@ const maxOf = (...xs: (number | null | undefined)[]): number => {
   return v.length === 0 ? Number.NEGATIVE_INFINITY : Math.max(...v);
 };
 
+/** Aucune cible ne monte au-delà de ce qui était visé ou fait : charge, variante, durée. */
+function expectNoRaise(c: Case, { prev, input: inp, out }: Step): void {
+  const index = c.chainSteps?.findIndex((s) => s.id === inp.exercise.id) ?? -1;
+  expect(out.state.loadG ?? Number.NEGATIVE_INFINITY).toBeLessThanOrEqual(
+    maxOf(prev?.loadG, realizedLoad(inp.performed.sets)),
+  );
+  expect(out.state.variantRank ?? Number.NEGATIVE_INFINITY).toBeLessThanOrEqual(
+    maxOf(prev?.variantRank, index === -1 ? null : index + 1),
+  );
+  expect(out.state.durationS ?? Number.NEGATIVE_INFINITY).toBeLessThanOrEqual(
+    maxOf(prev?.durationS, c.measure === 'duration' ? 20 : null),
+  );
+}
+
 function deepFreeze<T>(o: T): T {
   if (typeof o === 'object' && o !== null) {
     for (const v of Object.values(o)) deepFreeze(v);
@@ -335,50 +371,47 @@ function deepFreeze<T>(o: T): T {
   return o;
 }
 
-const RUNS = { numRuns: 400 };
+const RUNS = { numRuns: 300 };
 
-describe('evaluateExercise : propriétés', () => {
-  it('jamais de hausse avec un ajustement, une douleur ou un effort manquant', () => {
+describe('evaluateExercise : propriétés, à chaque séance rejouée', () => {
+  it("jamais de hausse avec un ajustement, une douleur (via l'ajustement) ou un effort manquant", () => {
     fc.assert(
-      fc.property(arbRun, ({ c, prev, last, input: inp }) => {
-        if (last.adj === null && last.effort !== null) return;
-        const out = evaluateExercise(inp);
-        const performedRank = c.chainSteps?.findIndex((s) => s.id === inp.exercise.id) ?? -1;
-        const durationMin = c.measure === 'duration' ? 20 : null;
-        expect(out.state.loadG ?? Number.NEGATIVE_INFINITY).toBeLessThanOrEqual(
-          maxOf(prev?.loadG, realizedLoad(inp.performed.sets)),
-        );
-        expect(out.state.variantRank ?? Number.NEGATIVE_INFINITY).toBeLessThanOrEqual(
-          maxOf(prev?.variantRank, performedRank === -1 ? null : performedRank + 1),
-        );
-        expect(out.state.durationS ?? Number.NEGATIVE_INFINITY).toBeLessThanOrEqual(
-          maxOf(prev?.durationS, durationMin),
-        );
-        if (last.adj !== null) expect(out.decision.result).not.toBe('PROGRESS');
+      everyStep((c, step) => {
+        if (step.draw.adj === null && step.draw.effort !== null) return;
+        expectNoRaise(c, step);
+        if (step.draw.adj !== null) expect(step.out.decision.result).not.toBe('PROGRESS');
       }),
       RUNS,
     );
   });
 
-  it("jamais au-delà de max(incrementG, 10 %) pour un adulte, ni plus d'un pas en prudent", () => {
+  it("prudent : aucune hausse décidée à la 1re séance de l'exercice (05 §14)", () => {
     fc.assert(
-      fc.property(arbRun, ({ c, last, input: inp }) => {
-        const out = evaluateExercise(inp);
+      everyStep((c, step) => {
+        if (step.draw.profile !== 'cautious' || (step.prev?.best.sessions ?? 0) !== 0) return;
+        expectNoRaise(c, step);
+      }),
+      RUNS,
+    );
+  });
+
+  it("jamais au-delà de max(incrementG, 10 %) pour un adulte, ni d'un pas en prudent ; au-delà, seulement en somme", () => {
+    fc.assert(
+      everyStep((c, { draw, input: inp, out }) => {
         const realized = realizedLoad(inp.performed.sets);
         const newLoad = out.state.loadG;
-        if (out.decision.result === 'DELOAD' || realized === null || newLoad === null || newLoad <= realized)
-          return;
-        const oneStep = next(c.grid, realized);
-        if (last.profile === 'cautious') {
-          expect(newLoad).toBeLessThanOrEqual(oneStep ?? realized);
+        const { result } = out.decision;
+        if (result === 'DELOAD' || result === 'IGNORED' || realized === null || newLoad === null) return;
+        if (newLoad <= realized) return;
+        const oneStep = next(c.grid, realized) ?? realized;
+        const pct = (realized * rules.raiseCapPct) / 100;
+        const sum = out.state.mode === 'sum';
+        if (draw.profile === 'cautious') {
+          expect(newLoad).toBeLessThanOrEqual(oneStep);
+          if (!sum) expect(newLoad - realized).toBeLessThanOrEqual(pct);
         } else {
-          // Un pas reste toujours permis : c'est la hausse minimale (mode somme, 05 §8).
-          const cap = Math.max(
-            c.incrementG ?? 0,
-            (realized * rules.raiseCapPct) / 100,
-            (oneStep ?? realized) - realized,
-          );
-          expect(newLoad - realized).toBeLessThanOrEqual(cap);
+          const cap = Math.max(c.incrementG ?? 0, pct);
+          expect(newLoad - realized).toBeLessThanOrEqual(sum ? Math.max(cap, oneStep - realized) : cap);
         }
       }),
       RUNS,
@@ -387,11 +420,11 @@ describe('evaluateExercise : propriétés', () => {
 
   it('jamais de cible hors des bornes prudentes avec profile = cautious', () => {
     fc.assert(
-      fc.property(arbRun, ({ last, input: inp }) => {
-        if (last.profile !== 'cautious') return;
-        const target = evaluateExercise(inp).decision.nextTarget ?? fail();
+      everyStep((_, { draw, out }) => {
+        if (draw.profile !== 'cautious') return;
+        const target = out.decision.nextTarget ?? fail();
         expect(target.workSets).toBeLessThanOrEqual(rules.cautious.maxWorkSets);
-        for (const reps of [target.repsMin, target.repsMax]) {
+        for (const reps of [target.repsMin, target.repsMax, target.targetReps]) {
           if (reps === null) continue;
           expect(reps).toBeGreaterThanOrEqual(rules.cautious.repsMin);
           expect(reps).toBeLessThanOrEqual(rules.cautious.repsMax);
@@ -401,17 +434,19 @@ describe('evaluateExercise : propriétés', () => {
     );
   });
 
-  it("le moteur n'ajoute jamais de séries ; compteurs dans leurs bornes", () => {
+  it("le moteur n'ajoute jamais de séries ; cible dans sa fourchette ; compteurs dans leurs bornes", () => {
     fc.assert(
-      fc.property(arbRun, ({ c, input: inp }) => {
-        const out = evaluateExercise(inp);
+      everyStep((c, { out }) => {
         const planned = c.slot.sets.filter((s) => s.kind === 'work').reduce((n, s) => n + s.count, 0);
-        expect(out.decision.nextTarget?.workSets).toBeLessThanOrEqual(planned);
+        const t = out.decision.nextTarget ?? fail();
+        expect(t.workSets).toBeLessThanOrEqual(planned);
+        if (t.repsMin !== null && t.repsMax !== null && t.targetReps !== null) {
+          expect(t.repsMin).toBeLessThanOrEqual(t.targetReps);
+          expect(t.targetReps).toBeLessThanOrEqual(t.repsMax);
+        }
         expect(out.state.noProgressCount).toBeLessThan(rules.stallSessions);
         expect(out.state.stallRank).toBeLessThanOrEqual(3);
         expect(out.state.calibrationLeft).toBeGreaterThanOrEqual(0);
-        const t = out.decision.nextTarget ?? fail();
-        if (t.repsMin !== null && t.repsMax !== null) expect(t.repsMin).toBeLessThanOrEqual(t.repsMax);
       }),
       RUNS,
     );
@@ -419,12 +454,8 @@ describe('evaluateExercise : propriétés', () => {
 
   it("même entrée, même sortie, sans toucher à l'entrée", () => {
     fc.assert(
-      fc.property(arbRun, ({ input: inp }) => {
-        const copy = structuredClone(inp);
-        const first = evaluateExercise(deepFreeze(structuredClone(inp)));
-        const second = evaluateExercise(copy);
-        expect(first).toEqual(second);
-        expect(copy).toEqual(inp);
+      everyStep((_, { input: inp, out }) => {
+        expect(evaluateExercise(deepFreeze(structuredClone(inp)))).toEqual(out);
       }),
       RUNS,
     );

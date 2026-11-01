@@ -201,6 +201,23 @@ describe('codes raison', () => {
     expect(Object.keys(REASON_TEXTS)).toHaveLength(REASON_CODES.length + CHANGE_REASON_CODES.length);
   });
 
+  it('donne à chaque code une seule phrase, sans chiffre', () => {
+    for (const code of [...REASON_CODES, ...CHANGE_REASON_CODES]) {
+      const text = REASON_TEXTS[code];
+      expect(text, code).toMatch(/^[^.!?]+\.$/);
+      expect(text, code).not.toMatch(/\d/);
+    }
+  });
+
+  it("dit ce que le moteur fait, sans parler de charge là où il n'y en a pas", () => {
+    expect(REASON_TEXTS.REPS_MAX_REACHED).not.toMatch(/monte/);
+    expect(REASON_TEXTS.REPS_UP).not.toMatch(/marge/);
+    for (const code of ['CALIBRATION_DONE', 'NO_PROGRESS', 'EFFORT_MISSING', 'STALL_RESET_MIN'] as const) {
+      expect(REASON_TEXTS[code], code).not.toMatch(/charge/);
+    }
+    expect(REASON_TEXTS.STALL_RESET_MIN).toMatch(/durée/);
+  });
+
   it('réécrit des codes connus vers des codes connus', () => {
     const all: readonly string[] = [...REASON_CODES, ...CHANGE_REASON_CODES];
     for (const [from, to] of Object.entries(PAIN_CODE_REWRITES)) {

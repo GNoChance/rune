@@ -17,8 +17,11 @@ import {
 export interface EngineLevel {
   loadG: number | null;
   variantRank: number | null;
-  /** Meilleur total (répétitions ou secondes) fait à ce niveau ; null avant la première séance qui l'atteint. */
-  total: number | null;
+  /**
+   * Total (répétitions ou secondes) de la dernière séance complète à ce niveau, référence de « à charge égale, total
+   * en hausse » (05 §8) ; null avant la première. Ni les séances incomplètes ni les ajustements ne le changent.
+   */
+  lastTotal: number | null;
   /** Séances de suite au sommet, effort validé (`sessionsAtTop`, 05 §8). */
   atTop: number;
   /** Échecs de suite à ce niveau (`chain`, 05 §8). */
@@ -28,9 +31,12 @@ export interface EngineLevel {
 }
 
 /**
- * Record du moteur (spec §4.3.11), propre à l'état : variante la plus difficile, puis charge réalisée la plus haute,
- * puis meilleurs totaux de répétitions et de secondes à ce point. `level` porte le niveau courant, référence du
- * « progrès » de 05 §8 (« à charge égale, total en hausse ») ; null tant qu'aucune séance n'a été évaluée.
+ * Mémoire interne du moteur pour un état, jamais stockée :
+ * - le record du moteur (spec §4.3.11) : variante la plus difficile, puis charge réalisée la plus haute, puis
+ *   meilleurs totaux de répétitions et de secondes à ce point ;
+ * - `level` : le niveau courant, référence du progrès de 05 §8 ; null tant qu'aucune séance n'a été évaluée ;
+ * - `sessions` : séances de l'exercice avec données dans cet état (semaines allégées comprises), pour « aucune
+ *   hausse avant la 3e séance » du profil prudent (05 §14).
  */
 export interface EngineBest {
   loadG: number | null;
@@ -38,6 +44,7 @@ export interface EngineBest {
   reps: number;
   durationS: number;
   level: EngineLevel | null;
+  sessions: number;
 }
 
 export const EMPTY_BEST: Readonly<EngineBest> = Object.freeze({
@@ -46,6 +53,7 @@ export const EMPTY_BEST: Readonly<EngineBest> = Object.freeze({
   reps: 0,
   durationS: 0,
   level: null,
+  sessions: 0,
 });
 
 type RecordPoint = Pick<EngineBest, 'loadG' | 'variantRank' | 'reps' | 'durationS'>;
@@ -79,28 +87,50 @@ export function withRecord(best: EngineBest, point: RecordPoint): EngineBest {
   return best.level === null || compareRecord(point, best) > 0 ? { ...best, ...point } : best;
 }
 
+const above = (a: number | null, b: number | null) => a !== null && b !== null && a > b;
+
 /** Niveau de la séance : le niveau courant si la charge et la variante sont les mêmes, sinon un nouveau. */
 export function enterLevel(best: EngineBest, perf: ExercisePerformance): EngineLevel {
   const l = best.level;
   if (l !== null && l.loadG === perf.loadG && l.variantRank === perf.variantRank) return l;
-  const above = (a: number | null, b: number | null) => a !== null && b !== null && a > b;
   return {
     loadG: perf.loadG,
     variantRank: perf.variantRank,
-    total: null,
+    lastTotal: null,
     atTop: 0,
     fails: 0,
     raised: l !== null && (above(perf.loadG, l.loadG) || above(perf.variantRank, l.variantRank)),
   };
 }
 
-/** Niveau après la séance : meilleur total mis à jour, compteurs donnés. */
+/** Niveau après la séance : compteurs donnés, et total de la séance s'il sert de référence (`counts`). */
 export function leaveLevel(
   level: EngineLevel,
   perf: ExercisePerformance,
   streaks: Pick<EngineLevel, 'atTop' | 'fails' | 'raised'>,
+  counts: boolean,
 ): EngineLevel {
-  return { ...level, total: Math.max(level.total ?? perf.total, perf.total), ...streaks };
+  return { ...level, ...streaks, lastTotal: counts ? perf.total : level.lastTotal };
+}
+
+/**
+ * Progrès au sens de 05 §8, sur ce qui a été fait, quel que soit le résultat de la primitive et l'effort : charge en
+ * hausse ; ou, au même niveau, total de répétitions ou de secondes en hausse ; ou variante plus difficile ; ou record.
+ */
+export function progressed(
+  previous: EngineLevel | null,
+  level: EngineLevel,
+  perf: ExercisePerformance,
+  record: boolean,
+): boolean {
+  if (record) return true;
+  if (
+    previous !== null &&
+    (above(perf.loadG, previous.loadG) || above(perf.variantRank, previous.variantRank))
+  ) {
+    return true;
+  }
+  return level.lastTotal !== null && perf.total > level.lastTotal;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

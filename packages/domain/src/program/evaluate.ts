@@ -14,6 +14,7 @@ import { effortValidated, rirEval } from './effort';
 import type { LoadGrid } from './loads';
 import {
   calibrationRaise,
+  clamp,
   type ExercisePerformance,
   lightenTargets,
   type PrimitiveInput,
@@ -37,6 +38,7 @@ import {
   enterLevel,
   isRecord,
   leaveLevel,
+  progressed,
   recordPoint,
   stallLadder,
   stallResponse,
@@ -75,12 +77,16 @@ export interface EvaluateInput {
   slot: SlotSpec;
   /** Fiche de l'exercice réalisé. */
   exercise: CatalogSheet;
-  /** Variantes de la chaîne du slot, de la plus facile à la plus dure ; null pour un slot sans chaîne. */
+  /**
+   * Variantes de la chaîne du slot dans l'ordre de `chain_rank`, coupées avant la première `not_for_minors` en profil
+   * prudent, jamais filtrées par le lieu ; null pour un slot sans chaîne.
+   */
   chainSteps: readonly CatalogSheet[] | null;
   performed: ExerciseRecord;
   session: EvaluatedSession;
   /** Charges réalisables pour cet exercice au lieu de la séance (pas de machine corrigé compris). */
   grid: LoadGrid;
+  /** Règles de la version de la séance : `rulesFor(session.rulesVersion)`. */
   rules: RulesSet;
 }
 
@@ -93,7 +99,30 @@ export interface EvaluateResult {
   painStreak: number | null;
 }
 
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+/** Rang (à partir de 1) de l'exercice dans la chaîne d'un slot `chain` ; null hors de cette chaîne. */
+function chainRankIn(
+  slot: Pick<SlotSpec, 'chain'>,
+  exerciseId: string,
+  chainSteps: readonly { id: string }[] | null,
+): number | null {
+  if (slot.chain === undefined || chainSteps === null) return null;
+  const index = chainSteps.findIndex((s) => s.id === exerciseId);
+  return index === -1 ? null : index + 1;
+}
+
+/**
+ * Exercice d'un `slot_state` (spec §4.3.6) : le `chain_id` du slot pour une variante de sa chaîne, l'exercice lui-même
+ * sinon, remplaçant hors chaîne compris. L'identifiant de l'état est `slotStateId(instance, slot, cet exercice)`.
+ */
+export function stateExerciseId(
+  slot: Pick<SlotSpec, 'chain'>,
+  exerciseId: string,
+  chainSteps: readonly { id: string }[] | null,
+): string {
+  return slot.chain !== undefined && chainRankIn(slot, exerciseId, chainSteps) !== null
+    ? slot.chain
+    : exerciseId;
+}
 
 const targetsOf = (s: SlotTargets): SlotTargets => ({
   mode: s.mode,
@@ -126,8 +155,9 @@ function nextTarget(t: SlotTargets, shape: SlotShape, steps: readonly CatalogShe
   return {
     mode: t.mode,
     loadG: t.loadG,
-    repsMin: reps === null ? null : t.targetReps,
+    repsMin: reps === null ? null : reps.min,
     repsMax: reps === null ? null : reps.max,
+    targetReps: reps === null ? null : t.targetReps,
     durationS: t.mode === 'duration' ? t.durationS : null,
     variantId: t.variantRank === null || steps === null ? null : (steps[t.variantRank - 1]?.id ?? null),
     workSets: shape.planned,
@@ -142,15 +172,10 @@ function initialMode(type: ProgressionSpec['type'], shape: SlotShape, chained: b
 }
 
 /** État neuf (spec §4.3.5) : calibration à faire ; pour une chaîne, tenu par (slot, chaîne) (§4.3.6). */
-function newState(
-  input: EvaluateInput,
-  shape: SlotShape,
-  steps: readonly CatalogSheet[] | null,
-  variantRank: number | null,
-): EngineState {
-  const { slot, exercise, session, rules } = input;
-  const exerciseId = steps !== null && slot.chain !== undefined ? slot.chain : exercise.id;
-  const mode = initialMode(slot.progression.type, shape, steps !== null);
+function newState(input: EvaluateInput, shape: SlotShape, variantRank: number | null): EngineState {
+  const { slot, exercise, chainSteps, session, rules } = input;
+  const exerciseId = stateExerciseId(slot, exercise.id, chainSteps);
+  const mode = initialMode(slot.progression.type, shape, variantRank !== null);
   return {
     id: slotStateId(session.instanceId, slot.id, exerciseId),
     instanceId: session.instanceId,
@@ -173,16 +198,17 @@ const effortOf = (rir: number | null, rules: RulesSet): Effort | null =>
   rir === null ? null : (EFFORTS.find((e) => rules.rirByEffort[e] === rir) ?? null);
 
 /**
- * Calibration (05 §9.4) : facile → +2 pas (prudent : +1 pas, et aucune hausse avant la 3e séance) ; correct → fin ;
- * difficile ou effort manquant → maintien ; échec, ou une série sous le minimum → −10 %. Elle s'arrête au premier
- * « correct » ou au bout de 3 séances ; une séance de reprise en suit la règle, une fois. Sans charge, la première
- * séance fixe seulement le niveau de départ (variante choisie, 05 §8).
+ * Calibration (05 §9.4) : facile → +2 pas (prudent : +1 pas) ; correct → fin ; difficile ou effort manquant →
+ * maintien ; échec, ou une série sous le minimum → −10 %. Elle s'arrête au premier « correct » ou au bout de 3
+ * séances ; une séance de reprise en suit la règle, une fois. Sans charge, la première séance fixe seulement le
+ * niveau de départ (variante choisie, 05 §8).
  */
 function calibrate(
   shape: SlotShape,
   perf: ExercisePerformance,
   base: SlotTargets,
   left: number,
+  raiseAllowed: boolean,
 ): { targets: SlotTargets; left: number; code: ReasonCode } {
   const { rules } = shape;
   const loaded =
@@ -192,10 +218,8 @@ function calibrate(
   const effort = underMin ? 'failed' : effortOf(perf.rir, rules);
   const c = perf.loadG;
   let targets = base;
-  if (c !== null && effort === 'easy') {
-    const sessionNo = left > 0 ? rules.calibrationSessions - left + 1 : Number.POSITIVE_INFINITY;
-    const up =
-      shape.cautious && sessionNo < rules.cautious.noRaiseBeforeSession ? null : calibrationRaise(shape, c);
+  if (c !== null && effort === 'easy' && raiseAllowed) {
+    const up = calibrationRaise(shape, c, base.mode);
     if (up !== null) targets = { ...base, loadG: up };
   } else if (c !== null && effort === 'failed') {
     targets = lightenTargets(base, shape);
@@ -228,14 +252,22 @@ function runPrimitive(input: PrimitiveInput): PrimitiveOutcome {
   }
 }
 
+const higher = (a: number | null, b: number | null) =>
+  (a ?? Number.NEGATIVE_INFINITY) > (b ?? Number.NEGATIVE_INFINITY);
+
+/** Les cibles montent : charge, variante ou durée visée. */
+const raises = (t: SlotTargets, from: SlotTargets) =>
+  higher(t.loadG, from.loadG) ||
+  higher(t.variantRank, from.variantRank) ||
+  higher(t.durationS, from.durationS);
+
 /** Une décision selon l'ordre strict de 05 §9, et l'état qui en résulte. Fonction pure. */
 export function evaluateExercise(input: EvaluateInput): EvaluateResult {
   const { slot, exercise, chainSteps, performed, session, grid, rules } = input;
-  const index = chainSteps?.findIndex((s) => s.id === exercise.id) ?? -1;
-  const steps = slot.chain !== undefined && chainSteps !== null && index >= 0 ? chainSteps : null;
-  const performedRank = steps === null ? null : index + 1;
+  const performedRank = chainRankIn(slot, exercise.id, chainSteps);
+  const steps = performedRank === null ? null : chainSteps;
   const shape = slotShape(slot, session.profile, grid, rules, steps === null ? null : steps.length);
-  const prev = input.state ?? newState(input, shape, steps, performedRank);
+  const prev = input.state ?? newState(input, shape, performedRank);
 
   const painStreak =
     performed.painLevel === null ? null : performed.painLevel === 'pain' ? prev.painStreak + 1 : 0;
@@ -268,15 +300,33 @@ export function evaluateExercise(input: EvaluateInput): EvaluateResult {
     variantRank: performedRank,
     rir: rirEval(performed.sets, rules),
   });
+  const unchanged: EngineState = { ...prev, painStreak: painStreak ?? 0 };
 
   // 1. Données insuffisantes : ni échec ni stagnation, l'état ne change pas.
-  if (perf.values.length === 0) return finish({ ...prev, painStreak: painStreak ?? 0 }, 'IGNORED', 'NO_DATA');
+  if (perf.values.length === 0) return finish(unchanged, 'IGNORED', 'NO_DATA');
 
+  // 1 bis. Variante plus facile que celle de l'état, imposée par le lieu ou choisie (§4.3.6) : le slot n'était pas
+  // faisable tel que prévu ; l'état ne change pas. Seule la reprise après 28 jours retire une variante (05 §10.4).
+  const gap = session.resumeGapDays;
+  const allowedBack = gap !== null && gap >= rules.resume.days28.days ? rules.resume.days28.variantsBack : 0;
+  if (
+    input.state !== null &&
+    performedRank !== null &&
+    prev.variantRank !== null &&
+    performedRank < prev.variantRank - allowedBack
+  ) {
+    return finish(unchanged, 'IGNORED', 'NOT_FEASIBLE_HERE');
+  }
+
+  // Numéro de cette séance de l'exercice dans l'état. Profil prudent : la 3e séance peut porter une charge plus
+  // haute, donc une hausse se décide au plus tôt à l'évaluation de la 2e (05 §14).
+  const sessionNo = prev.best.sessions + 1;
+  const raiseAllowed = !shape.cautious || sessionNo + 1 >= rules.cautious.noRaiseBeforeSession;
   const touched: EngineState = {
-    ...prev,
-    painStreak: painStreak ?? 0,
+    ...unchanged,
     lastSessionId: session.id,
     rulesVersion: session.rulesVersion,
+    best: { ...prev.best, sessions: sessionNo },
   };
 
   // 2. Semaine allégée : l'état ne change pas, mais l'ajustement demandé s'applique quand même.
@@ -289,8 +339,9 @@ export function evaluateExercise(input: EvaluateInput): EvaluateResult {
   // La séance compte : record du moteur, niveau de la séance, cibles partant de ce qui a été fait (§4.3.2).
   const point = recordPoint(perf, shape.measure);
   const record = isRecord(prev.best, point);
-  const best = withRecord(prev.best, point);
+  const best = { ...withRecord(prev.best, point), sessions: sessionNo };
   const level = enterLevel(prev.best, perf);
+  const complete = perf.values.length >= shape.planned;
   const base: SlotTargets = {
     mode: sumOrDouble(prev.mode, perf.loadG, shape),
     loadG: perf.loadG ?? prev.loadG,
@@ -309,7 +360,7 @@ export function evaluateExercise(input: EvaluateInput): EvaluateResult {
   // 3. Ajustement demandé (bouton douleur ou choix manuel, 05 §13) : ne compte pas pour la stagnation.
   if (performed.nextAdjustment !== null) {
     const pain = performed.painLevel === 'discomfort' || performed.painLevel === 'pain';
-    const after = leaveLevel(level, perf, keep);
+    const after = leaveLevel(level, perf, keep, false);
     if (performed.nextAdjustment === 'hold') {
       return finish(save(base, after), 'ADJUSTED_HOLD', pain ? 'PAIN_HOLD' : 'USER_HOLD');
     }
@@ -321,35 +372,41 @@ export function evaluateExercise(input: EvaluateInput): EvaluateResult {
   }
 
   // 4. Calibration : premières séances de l'exercice dans ce slot, ou première séance de reprise (05 §10.4).
-  const resume = session.resumeGapDays !== null && session.resumeGapDays >= rules.resume.days14.days;
+  const resume = gap !== null && gap >= rules.resume.days14.days;
   if (slot.progression.type !== 'fixed' && (prev.calibrationLeft > 0 || resume)) {
-    const c = calibrate(shape, perf, base, prev.calibrationLeft);
-    const after = leaveLevel(level, perf, { atTop: 0, fails: 0, raised: false });
+    const c = calibrate(shape, perf, base, prev.calibrationLeft, raiseAllowed);
+    const after = leaveLevel(level, perf, { atTop: 0, fails: 0, raised: false }, complete);
     return finish(save(c.targets, after, { calibrationLeft: c.left }), 'CALIBRATION', c.code);
   }
 
   // 5. Primitive. `fixed` ne change rien et ne stagne pas.
   if (slot.progression.type === 'fixed') {
-    return finish(save(base, leaveLevel(level, perf, keep)), 'HOLD', 'NO_PROGRESS');
+    return finish(save(base, leaveLevel(level, perf, keep, complete)), 'HOLD', 'NO_PROGRESS');
   }
   const validated = effortValidated(perf.rir, shape.targetRir);
-  const o = runPrimitive({ shape, perf, base, level, validated });
+  const raw = runPrimitive({ shape, perf, base, level, validated });
+  // Profil prudent, 1re séance de l'exercice : aucune hausse, dans aucun mode.
+  const o: PrimitiveOutcome =
+    raiseAllowed || !raises(raw.targets, base)
+      ? raw
+      : { result: 'HOLD', code: 'CALIBRATION_HOLD', targets: base, atTop: 0, fails: raw.fails };
 
-  // 6. Stagnation : séances valides consécutives sans progrès ; un record remet le compteur et k à zéro.
-  const noProgressCount = record || o.result === 'PROGRESS' ? 0 : prev.noProgressCount + 1;
+  // 6. Stagnation : séances valides consécutives sans progrès (05 §8) ; un record remet le compteur et k à zéro.
+  const noProgressCount = progressed(prev.best.level, level, perf, record) ? 0 : prev.noProgressCount + 1;
   const stallRank = record ? 0 : prev.stallRank;
   if (noProgressCount >= rules.stallSessions) {
     const s = stallResponse(stallLadder(slot.progression.type, o.targets.mode), stallRank, o.targets, shape);
-    const after = leaveLevel(level, perf, { atTop: 0, fails: 0, raised: level.raised });
+    const after = leaveLevel(level, perf, { atTop: 0, fails: 0, raised: level.raised }, complete);
     return finish(save(s.targets, after, { noProgressCount: 0, stallRank: s.rank }), 'STALL', s.code, {
       rank: s.rank,
       propose: s.propose,
     });
   }
-  const after = leaveLevel(level, perf, {
-    atTop: o.atTop,
-    fails: o.fails,
-    raised: o.result === 'PROGRESS' ? false : level.raised,
-  });
+  const after = leaveLevel(
+    level,
+    perf,
+    { atTop: o.atTop, fails: o.fails, raised: o.result === 'PROGRESS' ? false : level.raised },
+    complete,
+  );
   return finish(save(o.targets, after, { noProgressCount, stallRank }), o.result, o.code);
 }

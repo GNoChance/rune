@@ -9,11 +9,6 @@ import { isDone, type SetRecord } from './types';
  * §4.3.3), fourchettes et profil prudent (05 §14), hausses plafonnées et allègement standard (05 §12).
  */
 
-/** RIR cible d'un slot dont le modèle n'en donne pas (05 §1.3 : 2 à 3 RIR en réserve). */
-export const DEFAULT_TARGET_RIR = 2;
-/** Fourchette d'un slot `linear` passé en `double` : [r, r + 4] (05 §9.6). */
-export const LINEAR_DOUBLE_SPAN = 4;
-
 export type Measure = (typeof MEASURES)[number];
 
 export interface Bounds {
@@ -46,7 +41,7 @@ export interface SlotShape {
   targetRir: number;
 }
 
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 function workSpec(slot: SlotSpec): SetSpec | undefined {
   return slot.sets.find((s) => s.kind === 'work') ?? slot.sets[0];
@@ -62,7 +57,7 @@ export function slotShape(
   const cautious = profile === 'cautious';
   const spec = workSpec(slot);
   const work = slot.sets.reduce((n, s) => (s.kind === 'work' ? n + s.count : n), 0);
-  const rir = spec?.targetRir ?? DEFAULT_TARGET_RIR;
+  const rir = spec?.targetRir ?? rules.defaultTargetRir;
   return {
     slot,
     grid,
@@ -100,7 +95,7 @@ export function repRange(shape: SlotShape, mode: SlotMode, variantRank: number |
   const reps = workSpec(slot)?.reps ?? { min: 1, max: 1 };
   let { min, max } = reps;
   if (slot.progression.type === 'linear') {
-    max = mode === 'linear' ? min : min + LINEAR_DOUBLE_SPAN;
+    max = mode === 'linear' ? min : min + rules.linearDoubleSpan;
   } else if (mode === 'chain' && chainLength !== null && variantRank !== null && variantRank >= chainLength) {
     max = Math.max(max, cautious ? rules.cautious.chainEnd : rules.cautious.chainEndAdult);
   }
@@ -190,33 +185,43 @@ export function stepAbove(grid: LoadGrid, c: number): number | null {
 const incrementOf = (slot: SlotSpec): number =>
   slot.progression.type === 'linear' ? slot.progression.incrementG : 0;
 
-/** Plafond d'une hausse pour un adulte (05 §12) : max(incrementG, 10 % de la charge). */
+/**
+ * Plafond d'une hausse (05 §12, §14) : max(incrementG, 10 % de la charge) pour un adulte ; 10 % en profil prudent,
+ * où la hausse est d'un seul pas. Seul le mode somme le dépasse, d'un pas (05 §8).
+ */
 export function raiseCap(shape: SlotShape, c: number): number {
-  return Math.max(incrementOf(shape.slot), (c * shape.rules.raiseCapPct) / 100);
+  const pct = (c * shape.rules.raiseCapPct) / 100;
+  return shape.cautious ? pct : Math.max(incrementOf(shape.slot), pct);
 }
 
 /**
  * Hausse de `linear` (05 §8) : première charge réalisable ≥ c + max(incrementG, pas), sans dépasser le plafond
- * (sinon la plus lourde sous le plafond) ; un seul pas en profil prudent.
+ * (sinon la plus lourde sous le plafond) ; un seul pas en profil prudent. Null si même un pas dépasse le plafond.
  */
 export function linearRaise(shape: SlotShape, c: number): number | null {
   const { grid } = shape;
   const one = next(grid, c);
-  if (one === null || shape.cautious) return one;
+  const cap = raiseCap(shape, c);
+  if (one === null || one - c > cap) return null;
+  if (shape.cautious) return one;
   const wanted = c + Math.max(incrementOf(shape.slot), one - c);
   const target = roundDown(grid, wanted) === wanted ? wanted : next(grid, wanted);
-  const cap = raiseCap(shape, c);
   if (target !== null && target - c <= cap) return target;
-  const capped = roundDown(grid, c + cap);
-  return capped !== null && capped > c ? capped : one;
+  return roundDown(grid, c + cap);
 }
 
-/** Calibration « facile » (05 §9.4) : +2 pas, plafonnés comme une hausse mais au moins un pas ; +1 pas en prudent. */
-export function calibrationRaise(shape: SlotShape, c: number): number | null {
+/**
+ * Calibration « facile » (05 §9.4) : +2 pas plafonnés comme une hausse, sinon un pas ; +1 pas en prudent. Un pas
+ * au-delà du plafond n'est permis qu'en mode somme ; sinon rien ne monte (null).
+ */
+export function calibrationRaise(shape: SlotShape, c: number, mode: SlotMode): number | null {
   const one = next(shape.grid, c);
-  if (one === null || shape.cautious) return one;
+  if (one === null) return null;
+  const cap = raiseCap(shape, c);
+  if (one - c > cap) return mode === 'sum' ? one : null;
+  if (shape.cautious) return one;
   const two = next(shape.grid, one);
-  return two !== null && two - c <= raiseCap(shape, c) ? two : one;
+  return two !== null && two - c <= cap ? two : one;
 }
 
 /**
@@ -302,11 +307,10 @@ const outcome = (
   fails = 0,
 ): PrimitiveOutcome => ({ result, code, targets, atTop, fails });
 
-/** Le pas du lieu dépasse max(incrementG, 10 %) (en prudent : 10 %), ou il n'y a pas de charge plus lourde. */
+/** Le pas du lieu dépasse le plafond d'une hausse (`raiseCap`), ou il n'y a pas de charge plus lourde. */
 function stepTooBig(shape: SlotShape, c: number): boolean {
   const step = stepAbove(shape.grid, c);
-  if (step === null) return true;
-  return step > (shape.cautious ? (c * shape.rules.sumModeStepPct) / 100 : raiseCap(shape, c));
+  return step === null || step > raiseCap(shape, c);
 }
 
 /** `linear` (r fixe) : toutes les séries à r et effort validé → hausse ; sinon maintien ou échec. */
@@ -329,8 +333,8 @@ export function progressLinear({ shape, perf, base, validated }: PrimitiveInput)
 
 /**
  * `double` [min, max] et son mode somme : sommet et effort validé → un pas et retour à min ; sinon progrès si le
- * total de répétitions dépasse le meilleur du niveau ; une série sous min est un échec (min − 2 juste après une
- * hausse en mode somme).
+ * total de répétitions dépasse celui de la dernière séance au même niveau ; une série sous min est un échec (min − 2
+ * juste après une hausse en mode somme).
  */
 export function progressDouble({ shape, perf, base, level, validated }: PrimitiveInput): PrimitiveOutcome {
   const sum = base.mode === 'sum';
@@ -346,7 +350,7 @@ export function progressDouble({ shape, perf, base, level, validated }: Primitiv
   }
   if (top && perf.rir === null) return outcome('HOLD', 'EFFORT_MISSING', base);
   if (top && !validated) return outcome('HOLD', 'EFFORT_NOT_VALIDATED', base);
-  if (level.total !== null && perf.total > level.total) {
+  if (level.lastTotal !== null && perf.total > level.lastTotal) {
     return outcome('PROGRESS', 'REPS_UP', { ...base, targetReps: clamp(perf.lowest + 1, min, max) });
   }
   return outcome('HOLD', top ? 'REPS_MAX_REACHED' : 'NO_PROGRESS', base);
@@ -374,7 +378,7 @@ export function progressChain({ shape, perf, base, level, validated }: Primitive
   }
   if (perf.values.length < shape.planned) return outcome('HOLD', 'SETS_MISSING', base);
   const top = perf.lowest >= max;
-  const repsUp = level.total !== null && perf.total > level.total;
+  const repsUp = level.lastTotal !== null && perf.total > level.lastTotal;
   const aim = { ...base, targetReps: clamp(perf.lowest + 1, min, max) };
   if (top && validated) {
     const atTop = level.atTop + 1;

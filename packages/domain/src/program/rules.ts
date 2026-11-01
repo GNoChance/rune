@@ -14,6 +14,10 @@ export interface RulesSet {
   sumModeStepPct: number;
   sumAllowanceBelowMin: number;
   durationFailMarginS: number;
+  /** Fourchette d'un slot `linear` passé en `double` : [r, r + linearDoubleSpan] (05 §9.6). */
+  linearDoubleSpan: number;
+  /** RIR cible d'un slot dont le modèle n'en donne pas (05 §1.3 : 2 à 3 RIR en réserve). */
+  defaultTargetRir: number;
   defaultIncrementG: { upper: number; lower: number };
   deloadRirPlus: number;
   restS: readonly [number, number];
@@ -78,6 +82,8 @@ const V1: RulesSet = {
   sumModeStepPct: 10,
   sumAllowanceBelowMin: 2,
   durationFailMarginS: 5,
+  linearDoubleSpan: 4,
+  defaultTargetRir: 2,
   defaultIncrementG: { upper: 2500, lower: 5000 },
   deloadRirPlus: 2,
   restS: [30, 300],

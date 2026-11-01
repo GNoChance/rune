@@ -107,8 +107,11 @@ export const slotStateId = (instanceId: string, slotId: string, exerciseId: stri
 export interface NextTarget {
   mode: SlotMode;
   loadG: number | null;
+  /** Fourchette de répétitions du mode et du profil ; null en `duration`. */
   repsMin: number | null;
   repsMax: number | null;
+  /** Répétitions visées par série, dans la fourchette ; null en `duration`. */
+  targetReps: number | null;
   durationS: number | null;
   variantId: string | null;
   workSets: number;

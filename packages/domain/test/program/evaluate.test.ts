@@ -17,8 +17,14 @@ import {
   type WeekType,
 } from '@rune/contracts';
 import { describe, expect, it } from 'vitest';
-import { type EngineState, type EvaluateResult, evaluateExercise } from '../../src/program/evaluate';
+import {
+  type EngineState,
+  type EvaluateResult,
+  evaluateExercise,
+  stateExerciseId,
+} from '../../src/program/evaluate';
 import { type LoadGrid, loadGrid } from '../../src/program/loads';
+import { linearRaise, slotShape } from '../../src/program/primitives';
 import { rulesFor } from '../../src/program/rules';
 import type { SetRecord } from '../../src/program/types';
 import { linkChain, PUSH_UP_CHAIN, sheet } from '../fixtures/catalog';
@@ -317,6 +323,13 @@ describe('linear, r = 6, incrementG 5 000, barre 20 kg / disque 1,25 kg (05 §8)
     expect(out.decision.nextTarget).toMatchObject({ mode: 'double', loadG: 40000, repsMin: 6, repsMax: 10 });
   });
 
+  it('linearRaise : null quand même un pas dépasse le plafond, jamais un pas trop grand', () => {
+    expect(linearRaise(slotShape(LINEAR, 'adult', BAR, rules, null), 60000)).toBe(65000);
+    expect(linearRaise(slotShape(LINEAR_MACHINE, 'adult', MACHINE_10, rules, null), 40000)).toBeNull();
+    expect(linearRaise(slotShape(LINEAR, 'cautious', BAR, rules, null), 60000)).toBe(62500);
+    expect(linearRaise(slotShape(LINEAR, 'cautious', BAR, rules, null), 20000)).toBeNull();
+  });
+
   it('décision : identifiants, profil et version de règles', () => {
     const out = ready().run(sets([6, 6, 6], { load: 60000 }));
     expect(out.decision).toMatchObject({
@@ -343,7 +356,13 @@ describe('double [8, 12] × 3 (05 §8)', () => {
   it('12, 12, 12 + correct : LOAD_UP, un pas, répétitions à 8', () => {
     const out = ready().run(sets([12, 12, 12], { load: 60000 }));
     expect(outcome(out)).toEqual(['PROGRESS', 'LOAD_UP']);
-    expect(out.decision.nextTarget).toMatchObject({ mode: 'double', loadG: 62500, repsMin: 8, repsMax: 12 });
+    expect(out.decision.nextTarget).toMatchObject({
+      mode: 'double',
+      loadG: 62500,
+      repsMin: 8,
+      repsMax: 12,
+      targetReps: 8,
+    });
   });
 
   it.each<[string, number[], DecisionResult, ReasonCode, number]>([
@@ -351,10 +370,10 @@ describe('double [8, 12] × 3 (05 §8)', () => {
     ['total égal', [9, 9, 9], 'HOLD', 'NO_PROGRESS', 8],
     ['total en baisse', [9, 9, 8], 'HOLD', 'NO_PROGRESS', 8],
     ['une série à 7', [12, 12, 7], 'FAIL', 'REPS_UNDER_MIN', 8],
-  ])('%s', (_, reps, result, code, repsMin) => {
+  ])('%s', (_, reps, result, code, targetReps) => {
     const out = ready().run(sets(reps, { load: 60000 }));
     expect(outcome(out)).toEqual([result, code]);
-    expect(out.decision.nextTarget).toMatchObject({ loadG: 60000, repsMin, repsMax: 12 });
+    expect(out.decision.nextTarget).toMatchObject({ loadG: 60000, repsMin: 8, repsMax: 12, targetReps });
   });
 
   it('sommet sans effort ou effort non validé : pas de hausse', () => {
@@ -393,7 +412,13 @@ describe('double [8, 12] × 3 (05 §8)', () => {
     it('13, 13, 13 + correct (= 3 × 12 + 3) : SUM_LOAD_UP vers 16 000', () => {
       const out = readySum().run(sets([13, 13, 13], { load: 14000 }));
       expect(outcome(out)).toEqual(['PROGRESS', 'SUM_LOAD_UP']);
-      expect(out.decision.nextTarget).toMatchObject({ mode: 'sum', loadG: 16000, repsMin: 8, repsMax: 12 });
+      expect(out.decision.nextTarget).toMatchObject({
+        mode: 'sum',
+        loadG: 16000,
+        repsMin: 8,
+        repsMax: 12,
+        targetReps: 8,
+      });
     });
 
     it('12, 12, 12 en somme : pas encore de hausse', () => {
@@ -446,8 +471,8 @@ describe('chain [8, 12] (05 §8)', () => {
   it('sommet interrompu : le compte repart', () => {
     const s = ready();
     s.run(sets([12, 12, 12]));
-    s.run(sets([12, 12, 11]));
-    expect(outcome(s.run(sets([12, 12, 12])))).toEqual(['HOLD', 'NO_PROGRESS']);
+    expect(outcome(s.run(sets([12, 12, 11])))).toEqual(['HOLD', 'NO_PROGRESS']);
+    expect(outcome(s.run(sets([12, 12, 12])))).toEqual(['PROGRESS', 'REPS_UP']);
     expect(outcome(s.run(sets([12, 12, 12])))).toEqual(['PROGRESS', 'CHAIN_NEXT']);
   });
 
@@ -479,7 +504,11 @@ describe('chain [8, 12] (05 §8)', () => {
   it('dernière variante : max 25 (15 en prudent), au-delà rien', () => {
     const last = calibrated({ ...sc, exercise: ARCHER }, sets([10, 10, 10]));
     expect(last.state.variantRank).toBe(5);
-    expect(last.run(sets([12, 12, 12])).decision.nextTarget).toMatchObject({ repsMin: 13, repsMax: 25 });
+    expect(last.run(sets([12, 12, 12])).decision.nextTarget).toMatchObject({
+      repsMin: 8,
+      repsMax: 25,
+      targetReps: 13,
+    });
     last.run(sets([25, 25, 25]));
     expect(outcome(last.run(sets([25, 25, 25])))).toEqual(['HOLD', 'REPS_MAX_REACHED']);
     expect(last.state.variantRank).toBe(5);
@@ -488,7 +517,46 @@ describe('chain [8, 12] (05 §8)', () => {
       { ...sc, exercise: FEET_ELEVATED, chainSteps: PUSH_UP_CHAIN.slice(0, 4), profile: 'cautious' },
       sets([10, 10, 10]),
     );
-    expect(cautious.run(sets([12, 12, 12])).decision.nextTarget).toMatchObject({ repsMin: 13, repsMax: 15 });
+    expect(cautious.run(sets([12, 12, 12])).decision.nextTarget).toMatchObject({
+      repsMin: 8,
+      repsMax: 15,
+      targetReps: 13,
+    });
+  });
+
+  it("variante plus facile que celle de l'état (lieu, §4.3.6) : IGNORED / NOT_FEASIBLE_HERE, état inchangé", () => {
+    const s = ready();
+    s.run(sets([12, 12, 12]));
+    s.run(sets([12, 12, 12]));
+    s.run(sets([10, 9, 9]), { exercise: PUSH_UP });
+    const before = s.state;
+    expect(before).toMatchObject({ variantRank: 3, noProgressCount: 0 });
+    const out = s.run(sets([12, 12, 12]), { exercise: INCLINE });
+    expect(outcome(out)).toEqual(['IGNORED', 'NOT_FEASIBLE_HERE']);
+    expect(out.state).toEqual(before);
+    expect(out.decision.nextTarget).toMatchObject({ variantId: 'push-up' });
+  });
+
+  it('reprise après 28 jours : une variante de moins est acceptée et fixe le niveau', () => {
+    const s = ready();
+    s.run(sets([12, 12, 12]));
+    s.run(sets([12, 12, 12]));
+    expect(s.state.variantRank).toBe(3);
+    const wall = at(PUSH_UP_CHAIN, 0);
+    const twoBack = scenario(sc, s.state).run(sets([10, 10, 10]), { exercise: wall, resumeGapDays: 40 });
+    expect(outcome(twoBack)).toEqual(['IGNORED', 'NOT_FEASIBLE_HERE']);
+    const fourteen = scenario(sc, s.state).run(sets([10, 10, 10]), { exercise: INCLINE, resumeGapDays: 14 });
+    expect(outcome(fourteen)).toEqual(['IGNORED', 'NOT_FEASIBLE_HERE']);
+    const out = s.run(sets([10, 10, 10]), { exercise: INCLINE, resumeGapDays: 28 });
+    expect(outcome(out)).toEqual(['CALIBRATION', 'CALIBRATION_DONE']);
+    expect(out.state.variantRank).toBe(2);
+  });
+
+  it("stateExerciseId : chain_id pour une variante de la chaîne du slot, l'exercice sinon", () => {
+    expect(stateExerciseId(CHAIN, 'incline-push-up', PUSH_UP_CHAIN)).toBe('push-up');
+    expect(stateExerciseId(CHAIN, 'dumbbell-curl', PUSH_UP_CHAIN)).toBe('dumbbell-curl');
+    expect(stateExerciseId(LINEAR, 'back-squat', null)).toBe('back-squat');
+    expect(stateExerciseId(LINEAR, 'incline-push-up', PUSH_UP_CHAIN)).toBe('incline-push-up');
   });
 
   it('état de chaîne évalué sans chainSteps : la variante est gardée', () => {
@@ -514,7 +582,13 @@ describe('duration [20, 60] pas 5 (05 §8)', () => {
   it('séries tenues + correct : DURATION_UP (+5 s)', () => {
     const out = ready().run(secs([30, 30, 30]));
     expect(outcome(out)).toEqual(['PROGRESS', 'DURATION_UP']);
-    expect(out.decision.nextTarget).toMatchObject({ mode: 'duration', durationS: 25, repsMin: null });
+    expect(out.decision.nextTarget).toMatchObject({
+      mode: 'duration',
+      durationS: 25,
+      repsMin: null,
+      repsMax: null,
+      targetReps: null,
+    });
   });
 
   it.each<[string, number[], Effort | null, DecisionResult, ReasonCode]>([
@@ -530,10 +604,18 @@ describe('duration [20, 60] pas 5 (05 §8)', () => {
     expect(outcome(s.run(secs(values, { effort })))).toEqual([result, code]);
   });
 
+  /** Le membre tient la cible du jour, plus `extra` secondes. */
+  const followTarget = (s: ReturnType<typeof ready>, times: number, extra = 0) => {
+    for (let i = 0; i < times; i++) {
+      const t = (s.state.durationS ?? 0) + extra;
+      s.run(secs([t, t, t]));
+    }
+  };
+
   it('jamais au-delà de max', () => {
     const s = ready();
-    for (let i = 0; i < 9; i++) s.run(secs([60, 59, 59]));
-    expect(s.state.durationS).toBe(60);
+    followTarget(s, 9, 5);
+    expect(s.state).toMatchObject({ durationS: 60, stallRank: 0 });
   });
 
   it('max tenu 2 séances sur un slot à chaîne : CHAIN_NEXT, durée à min', () => {
@@ -550,7 +632,8 @@ describe('duration [20, 60] pas 5 (05 §8)', () => {
 
   it('max tenu sans chaîne : pas de variante', () => {
     const s = ready();
-    for (let i = 0; i < 8; i++) s.run(secs([60, 60, 60]));
+    followTarget(s, 8, 5);
+    expect(outcome(s.run(secs([60, 60, 60])))).toEqual(['HOLD', 'NO_PROGRESS']);
     expect(s.state).toMatchObject({ durationS: 60, variantRank: null });
   });
 });
@@ -640,7 +723,7 @@ describe('ordre de 05 §9', () => {
     expect(chain.run(sets([10, 10, 10]), { adj: 'lighten' }).state.variantRank).toBe(2);
 
     const plank = calibrated({ slot: DURATION, exercise: FRONT_PLANK, grid: NONE }, secs([60, 60, 60]));
-    for (let i = 0; i < 4; i++) plank.run(secs([60, 60, 59]));
+    for (const t of [25, 30, 35, 40]) plank.run(secs([t, t, t]));
     expect(plank.state.durationS).toBe(40);
     expect(plank.run(secs([40, 40, 40]), { adj: 'lighten' }).state.durationS).toBe(36);
 
@@ -707,7 +790,7 @@ describe('calibration', () => {
     expect(outcome(s.run(sets([6, 6, 6], { load: 60000 })))).toEqual(['PROGRESS', 'LOAD_UP']);
   });
 
-  it('facile en double : +2 pas plafonnés à 10 % sans incrementG', () => {
+  it('facile en double : +2 pas plafonnés à 10 % sans incrementG ; un pas en mode somme', () => {
     const out = scenario({ slot: DOUBLE, exercise: SQUAT, grid: BAR }).run(
       sets([10, 10, 10], { load: 60000, effort: 'easy' }),
     );
@@ -718,23 +801,58 @@ describe('calibration', () => {
     expect(light.state.loadG).toBe(25000);
   });
 
-  it('prudent : facile → +1 pas, aucune hausse avant la 3e séance', () => {
-    const s = scenario({ ...sc, profile: 'cautious' });
-    expect(outcome(s.run(sets([6, 6, 6], { load: 60000, effort: 'easy' })))).toEqual([
+  it('facile : un pas au-delà du plafond seulement en mode somme', () => {
+    // Adulte, linear, incrementG 2 500, machine au pas de 10 kg à 40 kg : +25 %, refusé.
+    const machine = scenario({ slot: LINEAR_MACHINE, exercise: LEG_EXT, grid: MACHINE_10 }).run(
+      sets([6, 6, 6], { load: 40000, effort: 'easy' }),
+    );
+    expect(outcome(machine)).toEqual(['CALIBRATION', 'CALIBRATION_HOLD']);
+    expect(machine.state).toMatchObject({ loadG: 40000, mode: 'linear' });
+    // Double en somme, haltères de 14 à 16 kg (+14 %) : permis, c'est le mode somme.
+    const sum = scenario({ slot: DOUBLE, exercise: CURL, grid: DUMBBELLS }).run(
+      sets([10, 10, 10], { load: 14000, effort: 'easy' }),
+    );
+    expect(sum.state).toMatchObject({ mode: 'sum', loadG: 16000 });
+    // Prudent, barre seule : un pas de 2,5 kg (12,5 %) hors mode somme, refusé même à la 2e séance.
+    const bar = scenario({ ...sc, profile: 'cautious' });
+    bar.run(sets([6, 6, 6], { load: 20000, effort: 'easy' }));
+    expect(outcome(bar.run(sets([6, 6, 6], { load: 20000, effort: 'easy' })))).toEqual([
       'CALIBRATION',
       'CALIBRATION_HOLD',
     ]);
-    expect(s.state.loadG).toBe(60000);
-    s.run(sets([6, 6, 6], { load: 60000, effort: 'easy' }));
-    expect(s.state.loadG).toBe(60000);
-    const third = s.run(sets([6, 6, 6], { load: 60000, effort: 'easy' }));
-    expect(outcome(third)).toEqual(['CALIBRATION', 'CALIBRATION_UP']);
-    expect(third.state).toMatchObject({ loadG: 62500, calibrationLeft: 0 });
+    expect(bar.state.loadG).toBe(20000);
   });
 
-  it('prudent : correct termine la calibration', () => {
-    const out = scenario({ ...sc, profile: 'cautious' }).run(sets([6, 6, 6], { load: 60000, effort: 'ok' }));
-    expect(outcome(out)).toEqual(['CALIBRATION', 'CALIBRATION_DONE']);
+  it('prudent : aucune hausse à la 1re séance ; facile à la 2e → +1 pas', () => {
+    const s = scenario({ ...sc, profile: 'cautious' });
+    const first = s.run(sets([6, 6, 6], { load: 60000, effort: 'easy' }));
+    expect(outcome(first)).toEqual(['CALIBRATION', 'CALIBRATION_HOLD']);
+    expect(first.state).toMatchObject({ loadG: 60000, calibrationLeft: 2 });
+    const second = s.run(sets([6, 6, 6], { load: 60000, effort: 'easy' }));
+    expect(outcome(second)).toEqual(['CALIBRATION', 'CALIBRATION_UP']);
+    expect(second.state).toMatchObject({ loadG: 62500, calibrationLeft: 1 });
+    const third = s.run(sets([6, 6, 6], { load: 62500, effort: 'easy' }));
+    expect(outcome(third)).toEqual(['CALIBRATION', 'CALIBRATION_UP']);
+    expect(third.state).toMatchObject({ loadG: 65000, calibrationLeft: 0 });
+  });
+
+  it('prudent : correct à la 1re séance termine la calibration sans hausse ; la hausse vient à la 2e', () => {
+    const s = scenario({ ...sc, profile: 'cautious' });
+    const first = s.run(sets([6, 6, 6], { load: 60000, effort: 'ok' }));
+    expect(outcome(first)).toEqual(['CALIBRATION', 'CALIBRATION_DONE']);
+    expect(first.state.loadG).toBe(60000);
+    const second = s.run(sets([6, 6, 6], { load: 60000 }));
+    expect(outcome(second)).toEqual(['PROGRESS', 'LOAD_UP']);
+    expect(second.state.loadG).toBe(62500);
+  });
+
+  it('prudent : aucune hausse décidée à la 1re séance, dans aucun mode (compteur de séances)', () => {
+    const sc1: Scenario = { ...sc, profile: 'cautious' };
+    const done = calibrated(sc1, sets([6, 6, 6], { load: 60000 })).state;
+    const firstAgain: EngineState = { ...done, best: { ...done.best, sessions: 0 } };
+    const out = scenario(sc1, firstAgain).run(sets([6, 6, 6], { load: 60000 }));
+    expect(outcome(out)).toEqual(['HOLD', 'CALIBRATION_HOLD']);
+    expect(out.state).toMatchObject({ loadG: 60000, best: { sessions: 1 } });
   });
 
   it('séance de reprise (resumeGapDays ≥ 14) : règle de calibration', () => {
@@ -833,14 +951,62 @@ describe('stagnation', () => {
 
   it('duration : k = 1 STALL_RESET_MIN, k = 2 proposition', () => {
     const s = calibrated({ slot: DURATION, exercise: FRONT_PLANK, grid: NONE }, secs([30, 30, 30]));
-    s.run(secs([30, 30, 30]));
-    expect(s.state.durationS).toBe(25);
+    s.run(secs([35, 35, 35]));
+    expect(s.state).toMatchObject({ durationS: 25, noProgressCount: 0 });
     const k1 = s.repeat(3, () => secs([25, 25, 22]));
     expect(outcome(k1)).toEqual(['STALL', 'STALL_RESET_MIN']);
     expect(k1.state.durationS).toBe(20);
     const k2 = s.repeat(3, () => secs([20, 20, 16]));
     expect(outcome(k2)).toEqual(['STALL', 'STALL_REPLACE_PROPOSED']);
     expect(k2.stalled).toEqual({ rank: 2, propose: true });
+  });
+
+  describe("progrès au sens de 05 §8, quel que soit le résultat ou l'effort", () => {
+    it('linear 5,5,4 → 5,5,5 → 6,5,5 : échecs, mais total en hausse au même niveau ; pas de stagnation', () => {
+      const s = calibrated({ slot: LINEAR, exercise: SQUAT, grid: BAR }, sets([6, 6, 6], { load: 60000 }));
+      const results = [
+        [5, 5, 4],
+        [5, 5, 5],
+        [6, 5, 5],
+      ].map((r) => outcome(s.run(sets(r, { load: 60000 }))));
+      expect(results).toEqual([
+        ['FAIL', 'REPS_UNDER_MIN'],
+        ['FAIL', 'REPS_UNDER_MIN'],
+        ['FAIL', 'REPS_UNDER_MIN'],
+      ]);
+      expect(s.state).toMatchObject({ noProgressCount: 0, stallRank: 0, loadG: 60000 });
+    });
+
+    it('duration 36 → 37 → 38 s sous la cible de 40 s : pas de stagnation ; 36 s trois fois, si', () => {
+      const s = calibrated({ slot: DURATION, exercise: FRONT_PLANK, grid: NONE }, secs([30, 30, 30]));
+      for (const t of [25, 30, 35, 40]) s.run(secs([t, t, t]));
+      expect(s.state.durationS).toBe(40);
+      const after = s.state;
+      const results = [36, 37, 38].map((t) => outcome(s.run(secs([t, t, t]))));
+      expect(results.every(([r]) => r === 'HOLD')).toBe(true);
+      expect(s.state).toMatchObject({ noProgressCount: 0, stallRank: 0 });
+      const flat = scenario({ slot: DURATION, exercise: FRONT_PLANK, grid: NONE }, after);
+      expect(outcome(flat.repeat(3, () => secs([36, 36, 36])))).toEqual(['STALL', 'STALL_RESET_MIN']);
+    });
+
+    it('double au sommet sans effort 33 → 36 → 39 : pas de stagnation', () => {
+      const s = calibrated({ slot: DOUBLE, exercise: SQUAT, grid: BAR }, sets([13, 13, 13], { load: 60000 }));
+      const results = [11, 12, 13].map((r) => outcome(s.run(sets([r, r, r], { load: 60000, effort: null }))));
+      expect(results).toEqual([
+        ['HOLD', 'NO_PROGRESS'],
+        ['HOLD', 'EFFORT_MISSING'],
+        ['HOLD', 'EFFORT_MISSING'],
+      ]);
+      expect(s.state).toMatchObject({ noProgressCount: 0, stallRank: 0, loadG: 60000 });
+    });
+
+    it('une séance incomplète ne sert pas de référence au total', () => {
+      const s = calibrated({ slot: DOUBLE, exercise: SQUAT, grid: BAR }, sets([9, 9, 9], { load: 60000 }));
+      expect(outcome(s.run(sets([10, 10, 9], { load: 60000 })))).toEqual(['PROGRESS', 'REPS_UP']);
+      expect(outcome(s.run(sets([10, 10], { load: 60000 })))).toEqual(['HOLD', 'SETS_MISSING']);
+      expect(outcome(s.run(sets([10, 10, 9], { load: 60000 })))).toEqual(['HOLD', 'NO_PROGRESS']);
+      expect(s.state.noProgressCount).toBe(2);
+    });
   });
 
   it('un record du moteur remet le compteur et k à 0 ; un simple progrès ne remet que le compteur', () => {
