@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'wouter';
 import { RuneMark, RuneWordmark } from './Logo';
 import styles from './shell.module.css';
-import { activeTab, TAB_ICONS, TAB_ITEMS } from './TabBar';
+import { activeTab, NavEntry, SIDE_ITEMS, useTabLinks } from './TabBar';
 import { useColorScheme } from './use-color-scheme';
 
 /**
@@ -11,6 +11,7 @@ import { useColorScheme } from './use-color-scheme';
 export function SideNav() {
   const [path] = useLocation();
   const active = activeTab(path);
+  const links = useTabLinks(SIDE_ITEMS);
   const dark = useColorScheme() === 'dark';
   return (
     <div className={styles.sideNav} data-testid="side-nav">
@@ -20,16 +21,14 @@ export function SideNav() {
       </Link>
       <nav aria-label="Navigation principale">
         <ul className={styles.sideList}>
-          {TAB_ITEMS.map((t) => (
+          {links.map((t) => (
             <li key={t.href}>
-              <Link
-                href={t.href}
-                aria-current={t.href === active ? 'page' : undefined}
+              <NavEntry
+                item={t}
+                current={t.href === active}
                 className={styles.sideItem}
-              >
-                {TAB_ICONS[t.href]}
-                {t.label}
-              </Link>
+                dotClassName={styles.sideRunningDot}
+              />
             </li>
           ))}
         </ul>

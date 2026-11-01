@@ -49,8 +49,9 @@ const UPPER_STONES = /(^|\/)art\/RankStoneUpper$/;
 /** Réglages de charge des lieux et des salles : chargés à la demande (routes /places/:id/load et /gyms/:id/load). */
 const LOAD_SETTINGS_PAGE = /(^|\/)LoadSettingsPage$/;
 
-/** Historique des séances : chargé à la demande (routes /history et /history/:id). */
-const HISTORY_FEATURE = /(^|\/)features\/history\/History(List|Detail)$/;
+/** Écrans de la brique 3 (séance, historique, programme) : chargés à la demande, jamais dans le bundle initial. */
+const LAZY_FEATURE = /(^|\/)features\/(workout|history|program)(\/|$)/;
+const inLazyFeature = (path: string) => /^features\/(workout|history|program)\//.test(path);
 
 describe('architecture', () => {
   const files = [...walk(SRC)].filter(code);
@@ -105,12 +106,15 @@ describe('architecture', () => {
     }
   });
 
-  it('historique (features/history) : seulement par import() depuis App.tsx, jamais dans le bundle initial', () => {
-    const dynamic = files.filter((f) => imports(f).some((spec) => HISTORY_FEATURE.test(spec)));
+  it('séance, historique et programme (features/workout, history, program) : seulement par import() depuis App.tsx, jamais dans le bundle initial', () => {
+    const dynamic = files.filter(
+      (f) => imports(f).some((spec) => LAZY_FEATURE.test(spec)) && !inLazyFeature(rel(f)),
+    );
     expect(dynamic.map(rel)).toEqual(['App.tsx']);
     for (const file of files) {
+      if (inLazyFeature(rel(file))) continue;
       for (const spec of staticSpecifiers(readFileSync(file, 'utf8'))) {
-        expect(spec, rel(file)).not.toMatch(HISTORY_FEATURE);
+        expect(spec, rel(file)).not.toMatch(LAZY_FEATURE);
       }
     }
   });

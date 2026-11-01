@@ -53,6 +53,8 @@ const HistoryList = lazy(() =>
 const HistoryDetail = lazy(() =>
   import('./features/history/HistoryDetail').then((m) => ({ default: m.HistoryDetail })),
 );
+/** Séance du jour (brique 3) : hors du bundle initial, chargée à la première ouverture (fichier précaché par le SW). */
+const WorkoutToday = lazy(() => import('./features/workout').then((m) => ({ default: m.WorkoutToday })));
 
 /** Pages lisibles sans session (03 §13 : Confidentialité, Crédits, Aide) et parcours d'accès. */
 export const PUBLIC_PATHS: readonly string[] = [
@@ -148,6 +150,7 @@ function ConnectedRoutes() {
   return (
     <Switch>
       <Route path="/" component={HomePage} />
+      <Route path="/workout" component={WorkoutToday} />
       <Route path="/progression" component={ProgressionPage} />
       <Route path="/history" component={HistoryList} />
       <Route path="/history/:id">{(params) => <HistoryDetail id={params.id} />}</Route>

@@ -416,7 +416,7 @@ describe('HealthReconsentGate (R-CST-6, P-CST-1)', () => {
     const api = createFakeApi().on('POST', WITHDRAW, { status: 200, body: consented(null, false) });
     const { db } = await renderGate(consented('0.9'), api, '/profile/health');
     const gate = within(await screen.findByRole('dialog', { name: GATE }));
-    expect(screen.getByText(new RegExp(WITNESS))).toBeTruthy();
+    expect(await screen.findByText(new RegExp(WITNESS))).toBeTruthy();
     fireEvent.click(gate.getByRole('button', { name: 'Je refuse' }));
     const withdraw = within(await screen.findByRole('dialog', { name: "Retirer l'accord santé" }));
     // Derrière le retrait aussi, la page est inerte.

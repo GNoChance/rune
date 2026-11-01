@@ -51,6 +51,14 @@ export function formatKgValue(grams: number): string {
   return kgFormat.format(grams / 1000);
 }
 
+/** `30 s`, `1 min`, `1 min 30 s` : une durée en secondes entières. */
+export function formatSeconds(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s} s`;
+  const rest = s % 60;
+  return rest === 0 ? `${s / 60} min` : `${Math.floor(s / 60)} min ${rest} s`;
+}
+
 /** `62,5 kg`, `60 kg` : une charge en grammes entiers affichée en kilogrammes. */
 export function formatKg(grams: number): string {
   return `${formatKgValue(grams)} kg`;

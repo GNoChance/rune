@@ -1,26 +1,38 @@
 import { type CSSProperties, type ReactNode, type RefObject, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'wouter';
+import { useActiveSession } from '../repos';
 import styles from './shell.module.css';
 
-export type TabHref = '/' | '/exercises' | '/progression' | '/profile';
+export type TabHref = '/' | '/exercises' | '/workout' | '/progression' | '/profile';
 
 /**
- * Onglets (spec brique 2 §4.1) : Exercices prend la place de Salles, dont les lieux passent dans Profil › Mes
- * lieux. À la brique 3, un bouton central « Séance » s'ajoute.
+ * Onglets (spec brique 2 §4.1, brique 3 D1) : Exercices prend la place de Salles, dont les lieux passent dans
+ * Profil › Mes lieux ; le bouton central « Séance » s'y ajoute à la brique 3. Sur PC, la navigation latérale
+ * le place juste sous Accueil (`SIDE_ITEMS`).
  */
 export const TAB_ITEMS: readonly { href: TabHref; label: string }[] = [
   { href: '/', label: 'Accueil' },
   { href: '/exercises', label: 'Exercices' },
+  { href: '/workout', label: 'Séance' },
   { href: '/progression', label: 'Progression' },
   { href: '/profile', label: 'Profil' },
 ];
 
+/** Entrées de la navigation latérale : Séance juste sous Accueil (spec brique 3 D1). */
+export const SIDE_ITEMS: typeof TAB_ITEMS = [
+  ...TAB_ITEMS.filter((t) => t.href === '/'),
+  ...TAB_ITEMS.filter((t) => t.href === '/workout'),
+  ...TAB_ITEMS.filter((t) => t.href !== '/' && t.href !== '/workout'),
+];
+
 /**
- * Préfixes rangés sous chaque onglet : le catalogue sous Exercices ; les lieux et les salles (`/places…` canonique,
- * `/gyms…`), les réglages et l'administration sous Profil.
+ * Préfixes rangés sous chaque onglet : le catalogue sous Exercices ; la séance et le programme sous Séance ;
+ * la progression et l'historique sous Progression ; les lieux et les salles (`/places…` canonique, `/gyms…`),
+ * les réglages et l'administration sous Profil.
  */
 const SECTIONS: readonly { tab: TabHref; prefixes: readonly string[] }[] = [
   { tab: '/exercises', prefixes: ['/exercises'] },
+  { tab: '/workout', prefixes: ['/workout', '/program'] },
   { tab: '/progression', prefixes: ['/progression', '/history'] },
   { tab: '/profile', prefixes: ['/profile', '/places', '/gyms', '/settings', '/rejections', '/admin'] },
 ];
@@ -68,6 +80,12 @@ export const TAB_ICONS: Record<TabHref, ReactNode> = {
       <path d="M6 7v10M3 9v6M18 7v10M21 9v6M6 12h12" />
     </Icon>
   ),
+  '/workout': (
+    <Icon>
+      <circle cx="12" cy="13.5" r="7.5" />
+      <path d="M12 9.5v4l2.5 1.5M9.5 2.5h5" />
+    </Icon>
+  ),
   '/progression': (
     <Icon>
       <path d="M3 17l6-6 4 4 8-8" />
@@ -83,6 +101,51 @@ export const TAB_ICONS: Record<TabHref, ReactNode> = {
 };
 
 /**
+ * Destination et état du bouton Séance (spec brique 3 §7.1) : la séance en cours de cet appareil s'ouvre
+ * directement (`/workout/:id`), sinon la séance du jour (`/workout`). Le point animé et le nom accessible
+ * « Séance, en cours » signalent une séance en cours ; une séance tenue par un autre appareil n'en est pas une ici
+ * (l'écran `/workout` la propose).
+ */
+export function useTabLinks(items: typeof TAB_ITEMS) {
+  const active = useActiveSession();
+  return items.map((t) => {
+    const running = t.href === '/workout' && active != null;
+    return {
+      ...t,
+      to: running ? `/workout/${active.id}` : t.href,
+      running,
+    };
+  });
+}
+
+/** Point de la séance en cours : décoratif (le nom accessible le dit), fixe sous mouvement réduit. */
+function RunningDot(p: { className: string | undefined }) {
+  return <span aria-hidden="true" data-running="" className={p.className} />;
+}
+
+/** Une entrée de navigation (onglet ou navigation latérale) : le nom dit « en cours » quand c'est le cas. */
+export function NavEntry(p: {
+  item: { href: TabHref; label: string; to: string; running: boolean };
+  current: boolean;
+  className: string | undefined;
+  dotClassName: string | undefined;
+}) {
+  const { item } = p;
+  return (
+    <Link
+      href={item.to}
+      aria-current={p.current ? 'page' : undefined}
+      aria-label={item.running ? `${item.label}, en cours` : undefined}
+      className={p.className}
+    >
+      {TAB_ICONS[item.href]}
+      {item.label}
+      {item.running ? <RunningDot className={p.dotClassName} /> : null}
+    </Link>
+  );
+}
+
+/**
  * Barre d'onglets flottante en pilule, sur téléphone (maquettes MixSombre / MixClair) : l'onglet actif porte
  * `aria-current="page"` et la pastille glisse jusqu'à lui ; sans onglet actif, elle se cache.
  */
@@ -91,6 +154,7 @@ export function TabBar() {
   const active = activeTab(path);
   const index = TAB_ITEMS.findIndex((t) => t.href === active);
   const bar = useRef<HTMLElement>(null);
+  const links = useTabLinks(TAB_ITEMS);
   useFocusAboveBar(bar);
   return (
     <nav ref={bar} aria-label="Navigation principale" data-testid="tab-bar" className={styles.tabBar}>
@@ -102,16 +166,14 @@ export function TabBar() {
         className={styles.tabPill}
         style={{ '--tab-index': Math.max(index, 0) } as CSSProperties}
       />
-      {TAB_ITEMS.map((t) => (
-        <Link
+      {links.map((t) => (
+        <NavEntry
           key={t.href}
-          href={t.href}
-          aria-current={t.href === active ? 'page' : undefined}
+          item={t}
+          current={t.href === active}
           className={styles.tab}
-        >
-          {TAB_ICONS[t.href]}
-          {t.label}
-        </Link>
+          dotClassName={styles.runningDot}
+        />
       ))}
     </nav>
   );

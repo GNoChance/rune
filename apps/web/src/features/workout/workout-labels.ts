@@ -1,0 +1,73 @@
+import type { PlanNotice, PlannedExercise } from '@rune/domain';
+import { formatKg, formatSeconds } from '../../ui';
+
+/*
+ * Textes de la séance du jour (spec brique 3 §7.2) : cible résumée d'un exercice, mention de résolution du slot et
+ * phrase de chaque avis. Fonctions pures, sans rendu.
+ */
+
+export const CALIBRATION_TEXT = 'Calibration : tu choisis ta charge';
+export const ALL_SKIPPED_TEXT = "Aucun exercice de cette séance n'est disponible pour l'instant.";
+
+/** Nom d'un exercice dans la table des noms du catalogue ; l'identifiant faute de mieux. */
+export const nameOf = (names: ReadonlyMap<string, string>, id: string | null): string =>
+  id === null ? 'Exercice' : (names.get(id) ?? id);
+
+/**
+ * Cible résumée : « 3 × 6 · 60 kg », « 3 × 8–12 · 14 kg par main » (haltères), « 3 × 30 s » ; en calibration sans
+ * charge visée, « Calibration : tu choisis ta charge ». Un slot sans série (sauté, suspendu) n'a pas de cible (« »).
+ * Une série unilatérale compte pour une (gauche et droite).
+ */
+export function targetSummary(exercise: PlannedExercise): string {
+  const work = exercise.sets.filter((s) => s.kind === 'work');
+  const first = work[0];
+  if (!first) return '';
+  if (exercise.calibration && first.targetLoadG === null) return CALIBRATION_TEXT;
+  const count = new Set(work.map((s) => s.position)).size;
+  const amount =
+    first.targetDurationS !== null
+      ? formatSeconds(first.targetDurationS)
+      : first.targetRepsMin === first.targetRepsMax || first.targetRepsMax === null
+        ? `${first.targetRepsMin ?? 0}`
+        : `${first.targetRepsMin ?? 0}–${first.targetRepsMax}`;
+  const load =
+    first.targetLoadG !== null && first.targetLoadG > 0
+      ? ` · ${formatKg(first.targetLoadG)}${exercise.loadMode === 'dumbbell' ? ' par main' : ''}`
+      : '';
+  return `${count} × ${amount}${load}`;
+}
+
+/**
+ * Mention sous le nom : « Remplace <exercice prévu> (pas faisable ici) », « Pas faisable ici : sauté », « Suspendu » ;
+ * null pour un exercice prévu tel quel.
+ */
+export function resolutionNote(exercise: PlannedExercise, names: ReadonlyMap<string, string>): string | null {
+  switch (exercise.resolution) {
+    case 'replaced_not_feasible':
+      return `Remplace ${nameOf(names, exercise.plannedExerciseId)} (pas faisable ici)`;
+    case 'not_feasible_here':
+      return 'Pas faisable ici : sauté';
+    case 'suspended':
+      return 'Suspendu';
+    default:
+      return null;
+  }
+}
+
+/** Phrase d'un avis au-dessus de la liste (reprise, mineurs, sport, allègement, charge la plus légère). */
+export function noticeText(notice: PlanNotice, names: ReadonlyMap<string, string>): string {
+  switch (notice.code) {
+    case 'resume':
+      return `${notice.days} jours depuis ta dernière séance : charges −${notice.pct} %`;
+    case 'deload':
+      return "Semaine allégée : les charges et les séries sont réduites pour t'aider à récupérer.";
+    case 'minor_barbell':
+      return `${nameOf(names, notice.exerciseId)} : à la barre, entraîne-toi avec un adulte expérimenté.`;
+    case 'sport_gap':
+      return "Garde 3 h d'écart avec ton entraînement de sport.";
+    case 'lightest_load':
+      return `${nameOf(names, notice.exerciseId)} : aucune charge d'ici n'est assez légère, c'est la plus légère disponible.`;
+    case 'all_skipped':
+      return ALL_SKIPPED_TEXT;
+  }
+}

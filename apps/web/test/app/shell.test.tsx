@@ -12,7 +12,7 @@ import { BOOT_SPLASH_MAX_MS, BootSplash } from '../../src/ui/BootSplash';
 import { ConnectionPill } from '../../src/ui/ConnectionPill';
 import { SideNav } from '../../src/ui/SideNav';
 import { screenTransition } from '../../src/ui/screen-transition';
-import { activeTab, TAB_ITEMS, TabBar } from '../../src/ui/TabBar';
+import { activeTab, SIDE_ITEMS, TAB_ITEMS, TabBar } from '../../src/ui/TabBar';
 import ui from '../../src/ui/ui.module.css';
 import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
 import { createFakeApi, createFakeSyncEngine } from '../support/fake-api';
@@ -158,10 +158,11 @@ const current = () =>
     .map((a) => a.textContent);
 
 describe('TAB_ITEMS', () => {
-  it('Accueil, Exercices, Progression, Profil, dans cet ordre (spec brique 2 §4.1)', () => {
+  it('Accueil, Exercices, Séance, Progression, Profil, dans cet ordre (spec brique 3 D1)', () => {
     expect(TAB_ITEMS).toEqual([
       { href: '/', label: 'Accueil' },
       { href: '/exercises', label: 'Exercices' },
+      { href: '/workout', label: 'Séance' },
       { href: '/progression', label: 'Progression' },
       { href: '/profile', label: 'Profil' },
     ]);
@@ -202,12 +203,13 @@ describe('activeTab : onglet actif selon le préfixe de l’adresse', () => {
 });
 
 describe('TabBar', () => {
-  it('nav « Navigation principale », les 4 onglets en liens', async () => {
+  it('nav « Navigation principale », les 5 onglets en liens', async () => {
     await renderWithServices(<TabBar />, { path: '/' });
     const links = within(mainNav()).getAllByRole('link');
     expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
       ['Accueil', '/'],
       ['Exercices', '/exercises'],
+      ['Séance', '/workout'],
       ['Progression', '/progression'],
       ['Profil', '/profile'],
     ]);
@@ -249,7 +251,7 @@ describe('TabBar', () => {
     fireEvent.click(tab('Progression'));
     expect(view.location()).toBe('/progression');
     expect(current()).toEqual(['Progression']);
-    expect(pill?.getAttribute('data-index')).toBe('2');
+    expect(pill?.getAttribute('data-index')).toBe('3');
   });
 
   it('sans onglet actif, la pastille est cachée', async () => {
@@ -260,7 +262,7 @@ describe('TabBar', () => {
   it('clavier : chaque onglet est un vrai lien, dans l’ordre, jamais retiré de la tabulation', async () => {
     await renderWithServices(<TabBar />, { path: '/places' });
     const links = within(mainNav()).getAllByRole('link');
-    expect(links.map((a) => a.tagName)).toEqual(['A', 'A', 'A', 'A']);
+    expect(links.map((a) => a.tagName)).toEqual(['A', 'A', 'A', 'A', 'A']);
     for (const a of links) {
       expect(a.hasAttribute('href')).toBe(true);
       expect(a.getAttribute('tabindex')).toBeNull();
@@ -337,7 +339,7 @@ describe('SideNav (≥ 900 px)', () => {
       within(mainNav())
         .getAllByRole('link')
         .map((a) => a.getAttribute('href')),
-    ).toEqual(['/', '/exercises', '/progression', '/profile']);
+    ).toEqual(['/', '/workout', '/exercises', '/progression', '/profile']);
     expect(current()).toEqual(['Profil']);
   });
 });
@@ -454,7 +456,7 @@ describe('coquille', () => {
   it.each([
     ['téléphone, barre d’onglets', [], 'tab-bar'],
     ['≥ 900 px, navigation latérale', [DESKTOP], 'side-nav'],
-  ] as const)('admin, %s : les 4 onglets de TAB_ITEMS, aucun lien vers /admin', async (_, queries, nav) => {
+  ] as const)('admin, %s : les 5 onglets de TAB_ITEMS, aucun lien vers /admin', async (_, queries, nav) => {
     media(...queries);
     const view = await renderApp({ path: '/', me: makeMe({ role: 'admin' }) });
     await screen.findByText('Bonjour, lea');
@@ -462,7 +464,7 @@ describe('coquille', () => {
     const hrefs = within(mainNav())
       .getAllByRole('link')
       .map((a) => a.getAttribute('href'));
-    expect(hrefs).toEqual(TAB_ITEMS.map((t) => t.href));
+    expect(hrefs).toEqual((nav === 'side-nav' ? SIDE_ITEMS : TAB_ITEMS).map((t) => t.href));
     const toAdmin = (href: string | null) => href?.toLowerCase().startsWith('/admin') ?? false;
     expect(hrefs.filter(toAdmin)).toEqual([]);
     expect([...view.container.querySelectorAll('a')].filter((a) => toAdmin(a.getAttribute('href')))).toEqual(
