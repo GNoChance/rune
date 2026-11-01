@@ -1,7 +1,8 @@
+import type { ServedProgramTemplate } from '@rune/contracts';
 import { fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ONBOARDING_COMPLETED_EVENT } from '../../src/app-events';
-import { setMeta } from '../../src/local-db/meta';
+import { getMeta, setMeta } from '../../src/local-db/meta';
 import { createFakeApi } from '../support/fake-api';
 import { createTestLocalDb } from '../support/local-db';
 import {
@@ -12,6 +13,7 @@ import {
   seedProfile,
   serveProfile,
 } from '../support/onboarding';
+import { GYM_BEGINNER, INSTANCE_VIEW, seedTemplates, TEMPLATES } from '../support/program';
 import { DEFAULT_NOW, makeMe, renderApp } from '../support/render';
 import { until } from '../support/wait';
 
@@ -28,13 +30,17 @@ afterEach(() => {
   events = 0;
 });
 
-/** Onboarding repris à « C'est prêt » ; dernier pull il y a `pullAgoMs`. */
-async function openReady(pullAgoMs: number) {
+/**
+ * Onboarding repris à « C'est prêt » ; dernier pull il y a `pullAgoMs`. Sans `templates`, aucun modèle de programme
+ * n'est servi.
+ */
+async function openReady(pullAgoMs: number, o: { templates?: readonly ServedProgramTemplate[] } = {}) {
   const me = newcomer({ onboardingStep: 'health' });
   const db = createTestLocalDb();
   const api = createFakeApi().on('GET', '/api/catalog', { status: 304 });
   await seedProfile(db, { goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45 });
   await seedPrimaryGym(db);
+  if (o.templates) await seedTemplates(db, o.templates);
   await setMeta(db, 'catalogVersion', 'cat-1');
   await setMeta(db, 'serverCatalogVersion', 'cat-1');
   await setMeta(db, 'lastPullOkAt', new Date(DEFAULT_NOW - pullAgoMs).toISOString());
@@ -159,5 +165,82 @@ describe('ReadyStep (E8, R-SYN-33)', () => {
     await openReady(HOUR);
     fireEvent.click(button('Retour'));
     await until(() => currentStep() === 'health');
+  });
+});
+
+describe('ReadyStep : programme recommandé (D15, spec §7.8)', () => {
+  const ENROLL = '/api/program/enroll';
+  const START = 'Commencer avec ce programme';
+  const NO_TEMPLATE = 'Pas encore de programme disponible : tu pourras faire des séances libres.';
+  const posts = (api: { calls: { method: string; path: string }[] }) =>
+    api.calls.filter((c) => c.method === 'POST').map((c) => c.path);
+
+  it('carte du programme recommandé, case « Commencer avec ce programme » cochée par défaut', async () => {
+    await openReady(HOUR, { templates: TEMPLATES });
+    const section = await screen.findByRole('region', { name: 'Ton programme' });
+    expect(within(section).getByRole('heading', { name: GYM_BEGINNER.name })).toBeTruthy();
+    expect(within(section).getByText('Recommandé pour toi')).toBeTruthy();
+    expect(within(section).getByText('2 à 3 jours par semaine · 50 min environ')).toBeTruthy();
+    expect((within(section).getByRole('checkbox', { name: START }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByText(NO_TEMPLATE)).toBeNull();
+  });
+
+  it('« Commencer » inscrit au programme recommandé, puis termine l’onboarding', async () => {
+    const { api, db, location } = await openReady(HOUR, { templates: TEMPLATES });
+    api.on('POST', ENROLL, { status: 201, body: { instance: INSTANCE_VIEW } });
+    api.on('POST', COMPLETE, { status: 200, body: makeMe() });
+    await screen.findByRole('checkbox', { name: START });
+    await until(offlineReady);
+    await until(() => !button('Commencer').disabled);
+    fireEvent.click(button('Commencer'));
+    await until(() => location() === '/');
+    expect(posts(api)).toEqual([ENROLL, COMPLETE]);
+    expect(api.calls.find((c) => c.path === ENROLL)?.body).toEqual({
+      templateId: GYM_BEGINNER.id,
+      daysPerWeek: 3,
+    });
+    expect(await getMeta(db, 'recommendationSeen')).toBe(GYM_BEGINNER.id);
+  });
+
+  it('déjà inscrit (409 already_enrolled, nouvel essai) : l’onboarding se termine quand même', async () => {
+    const { api, location } = await openReady(HOUR, { templates: TEMPLATES });
+    api.on('POST', ENROLL, { status: 409, body: { error: 'already_enrolled' } });
+    api.on('POST', COMPLETE, { status: 200, body: makeMe() });
+    await screen.findByRole('checkbox', { name: START });
+    await until(offlineReady);
+    await until(() => !button('Commencer').disabled);
+    fireEvent.click(button('Commencer'));
+    await until(() => location() === '/');
+    expect(posts(api)).toEqual([ENROLL, COMPLETE]);
+  });
+
+  it('inscription refusée : l’onboarding ne se termine pas, le message s’affiche', async () => {
+    const { api, location } = await openReady(HOUR, { templates: TEMPLATES });
+    api.on('POST', ENROLL, { status: 422, body: { error: 'template_unavailable' } });
+    await screen.findByRole('checkbox', { name: START });
+    await until(offlineReady);
+    await until(() => !button('Commencer').disabled);
+    fireEvent.click(button('Commencer'));
+    await screen.findByText("Ce programme n'est pas disponible pour le moment.");
+    expect(posts(api)).toEqual([ENROLL]);
+    expect(location()).toBe('/onboarding');
+  });
+
+  it('case décochée : aucune inscription, l’onboarding se termine', async () => {
+    const { api, location } = await openReady(HOUR, { templates: TEMPLATES });
+    api.on('POST', COMPLETE, { status: 200, body: makeMe() });
+    fireEvent.click(await screen.findByRole('checkbox', { name: START }));
+    expect((screen.getByRole('checkbox', { name: START }) as HTMLInputElement).checked).toBe(false);
+    await until(offlineReady);
+    await until(() => !button('Commencer').disabled);
+    fireEvent.click(button('Commencer'));
+    await until(() => location() === '/');
+    expect(posts(api)).toEqual([COMPLETE]);
+  });
+
+  it('aucun modèle disponible : la phrase de la séance libre, ni carte ni case', async () => {
+    await openReady(HOUR);
+    await screen.findByText(NO_TEMPLATE);
+    expect(screen.queryByRole('checkbox', { name: START })).toBeNull();
   });
 });

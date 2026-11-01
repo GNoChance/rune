@@ -31,6 +31,7 @@ import {
 } from './icons';
 import styles from './profile.module.css';
 import { profileSummary } from './profile-summary';
+import { RecommendationBanner } from './RecommendationBanner';
 import { useFocusAfterClose } from './use-focus-after-close';
 
 /**
@@ -49,7 +50,7 @@ function reviewRowValue(me: MeResponse): string {
  * exercices », spec brique 2 §4.4), et « Se déconnecter » à part, en bas, qui ouvre la feuille où se choisit cet
  * appareil ou tous. Les valeurs des lignes sont lues sur l'appareil, jamais inventées : une valeur pas encore
  * connue n'est pas affichée. Au retour d'une relecture refusée en pleine session (`?reason=review_access_lost`),
- * un bandeau le dit.
+ * un bandeau le dit. Quand le modèle de programme recommandé change, un bandeau le propose (R-REC-7).
  */
 export function ProfileHub() {
   const me = useMe();
@@ -77,6 +78,7 @@ export function ProfileHub() {
   return (
     <Page title="Profil">
       {accessLost ? <Banner tone="warning">{REVIEW_ACCESS_LOST_MESSAGE}</Banner> : null}
+      <RecommendationBanner />
       <div className={`${styles.hub} stagger`}>
         <section aria-label="Ton compte" className={styles.account}>
           <span className={styles.initial} aria-hidden="true">

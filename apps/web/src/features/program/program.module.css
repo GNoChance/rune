@@ -1,0 +1,352 @@
+/*
+ * Mon programme et Choisir un programme (spec brique 3 §7.7, §7.8). Jetons seulement, donc justes dans les 5
+ * thèmes ; cibles d'au moins 44 px ; seul le retour d'un geste bouge (échelle des lignes), arrêté sous mouvement
+ * réduit. Les états (« Suspendu », statut du journal) sont écrits en toutes lettres, jamais portés par la couleur.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.header p {
+  margin: 0;
+}
+
+.programName {
+  margin: 0;
+  font-family: var(--font-title);
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.week {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.muted {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.bannerContent {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.bannerContent p {
+  margin: 0;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+/* ---------- Séances du modèle ---------- */
+
+.workout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.workoutTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.slots,
+.log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.slots > li + li,
+.log > li + li {
+  border-top: 1px solid var(--border);
+}
+
+/* Ligne d'un slot, ou d'une action du programme : 56 px, touchée n'importe où. */
+.slot,
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 56px;
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.slot:focus-visible,
+.row:focus-visible {
+  outline-offset: -2px;
+}
+
+.row:disabled {
+  cursor: not-allowed;
+  color: var(--text-muted);
+}
+
+@media (hover: hover) {
+  .slot:hover,
+  .row:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  }
+}
+
+.slotText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rowName {
+  flex: 1;
+  min-width: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.rowValue {
+  font-size: 0.875rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.row .rowValue {
+  flex: none;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.target {
+  flex: none;
+  font-weight: 600;
+}
+
+/* Réglages du programme : les lignes dans une carte, comme les listes de la boîte à outils. */
+.rows {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.rows > * + * {
+  border-top: 1px solid var(--border);
+}
+
+/* Lien d'action (état vide) : l'apparence du bouton principal de la boîte à outils. */
+.linkButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  padding: var(--space-2) 20px;
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* ---------- Propositions et journal ---------- */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.card p {
+  margin: 0;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--accent);
+}
+
+.beforeAfter {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.beforeAfter div {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr;
+  gap: var(--space-2);
+}
+
+.beforeAfter dt {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.beforeAfter dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.logItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+}
+
+.logItem p {
+  margin: 0;
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ---------- Feuilles ---------- */
+
+.sheetFacts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sheetFacts p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.actions,
+.group,
+.action {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.actions {
+  gap: var(--space-4);
+}
+
+.group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.groupTitle {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/* Deux actions ou deux champs côte à côte, l'un sous l'autre quand le texte grandit. */
+.pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: var(--space-2);
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.error {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--danger);
+}
+
+/* Avertissement d'un changement de programme, lu avec le titre de la feuille. */
+.warning {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--warning-bg);
+  color: var(--text);
+  line-height: 1.45;
+}
+
+/* Action dangereuse isolée en bas (spec refonte §6). */
+.dangerZone {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slot,
+  .row {
+    transition: none;
+  }
+}

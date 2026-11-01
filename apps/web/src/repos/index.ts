@@ -8,7 +8,7 @@ import { createGymsRepo, type GymsRepo } from './gyms-repo';
 import { createMeRepo, type MeRepo } from './me-repo';
 import { createPlacesRepo, type PlacesRepo } from './places-repo';
 import { createProfileRepo, type ProfileRepo } from './profile-repo';
-import { createProgramRepo, type ProgramRepo } from './program-repo';
+import { type ProgramRepo, programRepoFor } from './program-repo';
 import { type ProgramViewRepo, programViewFor } from './program-view';
 import { createRejectionsRepo, type RejectionsRepo } from './rejections-repo';
 import { createReviewRepo, type ReviewRepo } from './review-repo';
@@ -38,7 +38,17 @@ export type { GymsRepo } from './gyms-repo';
 export type { DeviceOwner, MeRepo } from './me-repo';
 export type { PlacesRepo, PlaceView } from './places-repo';
 export type { ProfileRepo, TrainingProfileView } from './profile-repo';
-export { changeErrorsOf, isExpired, isStaleRevision, type ProgramRepo } from './program-repo';
+export {
+  changeErrorsOf,
+  isExpired,
+  isStaleRevision,
+  type ProgramEditContext,
+  type ProgramRepo,
+  useProgramEditContext,
+  useProgramTemplates,
+  useRecommendation,
+  useRecommendationNotice,
+} from './program-repo';
 export {
   type PlannedSession,
   type ProgramView,
@@ -113,7 +123,8 @@ export function createRepos(s: AppServices): Repos {
     catalog: catalogRepoFor(s),
     credits: createCreditsRepo(s),
     review: createReviewRepo(s),
-    program: createProgramRepo(s),
+    // Le même que celui des hooks (`useRecommendation`, `useProgramTemplates`…).
+    program: programRepoFor(s),
     // Les mêmes que ceux des hooks (`useActiveSession`, `useProgramView`…).
     workouts: workoutRepoFor(s),
     programView: programViewFor(s),

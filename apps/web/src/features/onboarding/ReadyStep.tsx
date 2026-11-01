@@ -4,9 +4,11 @@ import { useLocation } from 'wouter';
 import { ApiError } from '../../api/client';
 import { ONBOARDING_COMPLETED_EVENT } from '../../app-events';
 import { useLive, useMe } from '../../app-services';
-import { useRepos } from '../../repos';
-import { Button, CoachBubble, plural, RankBadge, SystemPanel, useAction } from '../../ui';
+import { useProgramTemplates, useRecommendation, useRepos } from '../../repos';
+import { Button, ChoiceCard, CoachBubble, plural, RankBadge, SystemPanel, useAction } from '../../ui';
 import { coachText } from '../coach/coach-lines';
+import { NO_TEMPLATE_TEXT, reasonTexts, START_WITH_PROGRAM } from '../recommendation/recommendation-labels';
+import { TemplateCard } from '../recommendation/TemplateCard';
 import { OfflineReadyIndicator } from '../status/OfflineReadyIndicator';
 import { useReadiness } from '../status/use-readiness';
 import { AwakeningQuests, awakeningQuests } from './AwakeningQuests';
@@ -42,6 +44,11 @@ const SPARKS = [
  * sur la page (il était sur « Réessayer »), il passe à « Commencer ».
  * Un écran encore incomplet pour le serveur (409) est rendu à `onIncomplete`, avec l'étape qu'il indique (null
  * si illisible).
+ *
+ * Programme (D15, spec brique 3 §7.8) : la carte du modèle recommandé et la case « Commencer avec ce programme »,
+ * cochée par défaut. « Commencer » inscrit alors au modèle (jours de la recommandation) avant de terminer
+ * l'onboarding ; une inscription déjà faite (409, nouvel essai) compte comme faite, un autre refus arrête tout.
+ * Case décochée : aucune inscription. Sans modèle disponible : la séance libre est annoncée.
  */
 export function ReadyStep(p: { onBack(): void; onIncomplete(step: OnboardingStep | null): void }) {
   const repos = useRepos();
@@ -50,13 +57,29 @@ export function ReadyStep(p: { onBack(): void; onIncomplete(step: OnboardingStep
   const { readiness, loaded, retry } = useReadiness();
   const profile = useLive(() => repos.profile.get(), [repos]);
   const places = useLive(() => repos.places.list(), [repos]);
+  const recommendation = useRecommendation();
+  const templates = useProgramTemplates();
+  const [withProgram, setWithProgram] = useState(true);
   const [retrying, setRetrying] = useState(false);
+  const programId = useId();
   const recapId = useId();
   const startButton = useRef<HTMLButtonElement>(null);
   const offlineReady = loaded && readiness.ready;
   const waiting = loaded && !readiness.ready;
   const wasWaiting = useRef(false);
+  const recommended = recommendation?.templateId
+    ? templates?.find((t) => t.template.id === recommendation.templateId)
+    : undefined;
   const start = useAction(async () => {
+    if (withProgram && recommendation && recommended) {
+      const templateId = recommended.template.id;
+      try {
+        await repos.program.enroll(templateId, recommendation.daysPerWeek);
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.code !== 'already_enrolled') throw error;
+      }
+      await repos.program.acknowledgeRecommendation(templateId);
+    }
     try {
       await repos.profile.completeOnboarding();
     } catch (error) {
@@ -188,6 +211,27 @@ export function ReadyStep(p: { onBack(): void; onIncomplete(step: OnboardingStep
             ) : null}
           </dl>
         </section>
+      ) : null}
+      {recommendation && recommended ? (
+        <section aria-labelledby={programId} className={styles.recap}>
+          <h3 id={programId}>Ton programme</h3>
+          <TemplateCard
+            template={recommended.template}
+            headingLevel={4}
+            recommended
+            reasons={reasonTexts(recommendation)}
+          />
+          <ChoiceCard
+            type="checkbox"
+            name="start-program"
+            value={recommended.template.id}
+            checked={withProgram}
+            onChange={() => setWithProgram((v) => !v)}
+            title={START_WITH_PROGRAM}
+          />
+        </section>
+      ) : recommendation?.templateId === null ? (
+        <p className={styles.programNote}>{NO_TEMPLATE_TEXT}</p>
       ) : null}
       <StepActions
         className={styles.revealActions}

@@ -1,0 +1,89 @@
+import { type InstanceChangeView, REASON_TEXTS } from '@rune/contracts';
+import { useId, useMemo } from 'react';
+import { useServices } from '../../app-services';
+import { isExpired, type ProgramEditContext, type ProgramView, useRepos } from '../../repos';
+import { Button } from '../../ui';
+import { ActionError } from './ActionError';
+import styles from './program.module.css';
+import { expiryLabel, PROPOSAL_TITLES, type ProgramNames } from './program-labels';
+import { changeCheck, changeLines, checkMessage } from './program-model';
+import { useProgramAction } from './use-change';
+
+/**
+ * Proposition en attente (spec §7.7) : auteur (« Proposition de Rune » pour le moteur), raison, avant / après de
+ * chaque opération calculé par le domaine, date limite, « Accepter » / « Refuser ». 409 `stale_revision` : le
+ * programme a changé, la proposition reste ; 409 `expired` : elle a expiré, un pull la range au journal.
+ */
+export function ProposalCard(p: {
+  proposal: InstanceChangeView;
+  view: ProgramView;
+  ctx: ProgramEditContext;
+  names: ProgramNames;
+  offline: boolean;
+}) {
+  const { proposal, view, ctx } = p;
+  const repos = useRepos();
+  const { sync } = useServices();
+  const action = useProgramAction();
+  const titleId = useId();
+  const hintId = useId();
+  const lines = useMemo(() => changeLines(proposal, view, ctx, p.names), [proposal, view, ctx, p.names]);
+  const refused = useMemo(
+    () =>
+      checkMessage(changeCheck(view, ctx, { author: proposal.author, id: proposal.id })(proposal.operations)),
+    [proposal, view, ctx],
+  );
+  const busy = p.offline || action.pending;
+  const accept = () =>
+    action.run('accept', async () => {
+      try {
+        await repos.program.accept(proposal.id, view.instance.revision);
+      } catch (error) {
+        // Expirée côté serveur : le miroir l'a encore en attente jusqu'au prochain pull.
+        if (isExpired(error)) void sync.pullNow().catch(() => {});
+        throw error;
+      }
+    });
+  const reject = () => action.run('reject', () => repos.program.reject(proposal.id));
+
+  return (
+    <article aria-labelledby={titleId} className={styles.card}>
+      <h3 id={titleId} className={styles.cardTitle}>
+        {PROPOSAL_TITLES[proposal.author]}
+      </h3>
+      <p>{REASON_TEXTS[proposal.reasonCode]}</p>
+      {lines.map((line, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: une ligne par opération, dans l'ordre du changement
+        <dl key={i} className={styles.beforeAfter}>
+          <div>
+            <dt>Avant</dt>
+            <dd>{line.before}</dd>
+          </div>
+          <div>
+            <dt>Après</dt>
+            <dd>{line.after}</dd>
+          </div>
+        </dl>
+      ))}
+      {proposal.expiresAt ? <p className={styles.muted}>{expiryLabel(proposal.expiresAt)}</p> : null}
+      <div className={styles.pair}>
+        <Button
+          disabled={busy || refused !== null}
+          aria-describedby={refused ? hintId : undefined}
+          onClick={() => void accept()}
+        >
+          Accepter
+        </Button>
+        <Button variant="secondary" disabled={busy} onClick={() => void reject()}>
+          Refuser
+        </Button>
+      </div>
+      {refused ? (
+        <p id={hintId} className={styles.hint}>
+          {refused}
+        </p>
+      ) : null}
+      <ActionError message={action.errorOf('accept') ?? action.errorOf('reject')} />
+    </article>
+  );
+}

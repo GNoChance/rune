@@ -166,7 +166,7 @@ function slotStateOf(row: MirrorRow): SlotState | null {
 }
 
 /** Lieu d'une séance pour le moteur : matériel développé, réglages du lieu ou de sa salle, sinon par défaut. */
-const placeContext = (p: PlaceView): PlaceContext => ({
+export const placeContext = (p: PlaceView): PlaceContext => ({
   id: p.id,
   equipment: expandEquipment(p.equipment),
   loadSettings: p.loadSettings ?? defaultLoadSettings(p.kind),

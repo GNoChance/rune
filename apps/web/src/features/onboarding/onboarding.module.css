@@ -722,6 +722,14 @@
   background: var(--surface);
 }
 
+/* Sans modèle de programme disponible (spec brique 3 §7.8) : la séance libre est annoncée, en texte secondaire. */
+.programNote {
+  margin: 0;
+  font-size: 0.96875rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 /* Récapitulatif (maquette B08) : une carte, une ligne par réponse. */
 .recap {
   display: flex;

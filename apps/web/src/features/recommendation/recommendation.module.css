@@ -1,0 +1,72 @@
+/*
+ * Carte d'un modèle de programme (spec brique 3 §7.8), dans E8 et « Choisir un programme ». Jetons seulement, donc
+ * juste dans les 5 thèmes. Le modèle recommandé porte un bord d'accent, l'indisponible un fond de page et un trait
+ * pointillé : chaque état est aussi écrit en toutes lettres dans un badge.
+ */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.card[data-recommended="true"] {
+  border: 2px solid var(--accent);
+  padding: calc(var(--space-4) - 1px);
+}
+
+.card[data-unavailable="true"] {
+  border-style: dashed;
+  border-color: var(--field-border);
+  background: var(--bg);
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.name {
+  margin: 0;
+  font-family: var(--font-title);
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.facts {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+/* Indisponible : le nom et les jours passent au texte secondaire, le badge dit pourquoi. */
+.card[data-unavailable="true"] .name,
+.card[data-unavailable="true"] .facts {
+  color: var(--text-muted);
+}
+
+.description {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.reasons {
+  margin: 0;
+  padding-inline-start: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}

@@ -45,6 +45,13 @@ const PlaceLoadSettings = lazy(() =>
 const GymLoadSettings = lazy(() =>
   import('./features/places/LoadSettingsPage').then((m) => ({ default: m.GymLoadSettings })),
 );
+/** Mon programme et Choisir un programme (spec brique 3 §7.7, §7.8) : chargés à la demande, précachés. */
+const ProgramPage = lazy(() =>
+  import('./features/program/ProgramPage').then((m) => ({ default: m.ProgramPage })),
+);
+const ChooseProgram = lazy(() =>
+  import('./features/program/ChooseProgram').then((m) => ({ default: m.ChooseProgram })),
+);
 
 /** Historique des séances : hors du bundle initial, chargé à la première ouverture (fichiers précachés par le SW). */
 const HistoryList = lazy(() =>
@@ -159,6 +166,8 @@ function ConnectedRoutes() {
       <Route path="/progression/exercises/:id">{(params) => <ExerciseProgress id={params.id} />}</Route>
       <Route path="/history" component={HistoryList} />
       <Route path="/history/:id">{(params) => <HistoryDetail id={params.id} />}</Route>
+      <Route path="/program" component={ProgramPage} />
+      <Route path="/program/choose" component={ChooseProgram} />
       <Route path="/exercises" component={ExercisesHome} />
       <Route path="/exercises/group">
         <Redirect to="/exercises" replace />

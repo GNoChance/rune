@@ -277,3 +277,23 @@ span.lock svg {
     flex-direction: row;
   }
 }
+
+/* Bandeau « Un autre programme te correspond mieux » (R-REC-7) : le lien vers le choix, et « Masquer ». */
+.betterProgram {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+
+/* Lien souligné, au texte courant : lisible sur la teinte du bandeau dans les 5 thèmes. */
+.betterProgram a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

@@ -56,6 +56,10 @@ const EXERCISE_PROGRESS = /(^|\/)progression\/ExerciseProgress$/;
 const LAZY_FEATURE = /(^|\/)features\/(workout|history|program)(\/|$)/;
 const inLazyFeature = (path: string) => /^features\/(workout|history|program)\//.test(path);
 
+/** Mon programme et Choisir un programme (`features/program`) : chargés à la demande (routes /program…). */
+const PROGRAM_SCREENS = /(^|\/)features\/program\/|^\.\.?\/program\//;
+const inProgram = (path: string) => path.startsWith('features/program/');
+
 describe('architecture', () => {
   const files = [...walk(SRC)].filter(code);
 
@@ -129,6 +133,30 @@ describe('architecture', () => {
       for (const spec of staticSpecifiers(readFileSync(file, 'utf8'))) {
         expect(spec, rel(file)).not.toMatch(LAZY_FEATURE);
       }
+    }
+  });
+
+  it('écrans du programme (features/program) : seulement par import() depuis App.tsx, jamais dans le bundle initial', () => {
+    const outside = files.filter((f) => !inProgram(rel(f)));
+    const dynamic = outside.filter((f) => imports(f).some((spec) => PROGRAM_SCREENS.test(spec)));
+    expect(dynamic.map(rel)).toEqual(['App.tsx']);
+    for (const file of outside) {
+      for (const spec of staticSpecifiers(readFileSync(file, 'utf8'))) {
+        expect(spec, rel(file)).not.toMatch(PROGRAM_SCREENS);
+      }
+    }
+  });
+
+  it('le motif des écrans du programme voit leurs chemins depuis App.tsx et depuis un autre écran', () => {
+    for (const spec of [
+      './features/program/ProgramPage',
+      '../program/ChooseProgram',
+      '../../features/program/x',
+    ]) {
+      expect(spec).toMatch(PROGRAM_SCREENS);
+    }
+    for (const spec of ['./features/profile/ProfileHub', '../programme/x', './program-view', '../repos']) {
+      expect(spec).not.toMatch(PROGRAM_SCREENS);
     }
   });
 

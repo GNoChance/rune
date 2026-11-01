@@ -20,6 +20,11 @@ export interface MetaValues {
    * avec les données de l'utilisateur.
    */
   reviewIntroSeen: string;
+  /**
+   * Modèle de programme recommandé déjà vu sur l'appareil (choisi à l'inscription, ou bandeau du Profil masqué) : le
+   * bandeau « Un autre programme te correspond mieux » ne revient que pour un autre modèle (R-REC-7).
+   */
+  recommendationSeen: string;
 }
 
 /** Clés liées à l'utilisateur connecté, effacées par `wipeUserData`. */
@@ -32,6 +37,7 @@ export const USER_META_KEYS: readonly (keyof MetaValues)[] = [
   'me',
   'lastAgeBand',
   'reviewIntroSeen',
+  'recommendationSeen',
 ];
 
 export async function getMeta<K extends keyof MetaValues>(
