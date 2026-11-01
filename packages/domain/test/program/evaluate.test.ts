@@ -537,6 +537,35 @@ describe('chain [8, 12] (05 §8)', () => {
     expect(out.decision.nextTarget).toMatchObject({ variantId: 'push-up' });
   });
 
+  it('Q1 : adulte à la pompe archer puis profil prudent (chaîne coupée) : la plus dure permise est évaluée', () => {
+    const adult = calibrated({ ...sc, exercise: ARCHER }, sets([10, 10, 10]));
+    adult.run(sets([12, 12, 12]));
+    expect(adult.state.variantRank).toBe(5);
+    const cut = PUSH_UP_CHAIN.slice(0, 4);
+    const s = scenario({ ...sc, exercise: FEET_ELEVATED, chainSteps: cut, profile: 'cautious' }, adult.state);
+    const results = [12, 13, 14].map((r) => s.run(sets([r, r, r])));
+    for (const out of results) {
+      expect(out.decision.reasonCode).not.toBe('NOT_FEASIBLE_HERE');
+      expect(out.decision.nextTarget?.variantId).toBe('feet-elevated-push-up');
+    }
+    expect(s.state).toMatchObject({ variantRank: 4, exerciseId: 'push-up' });
+  });
+
+  it("Q8 : variante plus facile avec un ajustement demandé : l'ajustement s'applique (étape 3)", () => {
+    const s = ready();
+    s.run(sets([12, 12, 12]));
+    s.run(sets([12, 12, 12]));
+    expect(s.state.variantRank).toBe(3);
+    const before = s.state;
+    const lighten = s.run(sets([10, 10, 10]), { exercise: INCLINE, adj: 'lighten', pain: 'pain' });
+    expect(outcome(lighten)).toEqual(['ADJUSTED_LIGHTEN', 'PAIN_LIGHTEN']);
+    expect(lighten.state.variantRank).toBe(1);
+    expect(lighten.decision.nextTarget?.variantId).toBe('wall-push-up');
+    const hold = scenario(sc, before).run(sets([10, 10, 10]), { exercise: INCLINE, adj: 'hold' });
+    expect(outcome(hold)).toEqual(['ADJUSTED_HOLD', 'USER_HOLD']);
+    expect(hold.state.variantRank).toBe(2);
+  });
+
   it('reprise après 28 jours : une variante de moins est acceptée et fixe le niveau', () => {
     const s = ready();
     s.run(sets([12, 12, 12]));
@@ -1006,6 +1035,20 @@ describe('stagnation', () => {
       expect(outcome(s.run(sets([10, 10], { load: 60000 })))).toEqual(['HOLD', 'SETS_MISSING']);
       expect(outcome(s.run(sets([10, 10, 9], { load: 60000 })))).toEqual(['HOLD', 'NO_PROGRESS']);
       expect(s.state.noProgressCount).toBe(2);
+    });
+
+    it('Q4 : une primitive qui progresse compte comme un progrès (gainage 45 s, cible de 20 à 45 s)', () => {
+      const s = calibrated({ slot: DURATION, exercise: FRONT_PLANK, grid: NONE }, secs([45, 45, 45]));
+      const results = Array.from({ length: 6 }, () => outcome(s.run(secs([45, 45, 45]))));
+      expect(results).toEqual(Array.from({ length: 6 }, () => ['PROGRESS', 'DURATION_UP']));
+      expect(s.state).toMatchObject({ durationS: 50, noProgressCount: 0, stallRank: 0 });
+    });
+
+    it('Q7 : linear qui garde 60 kg malgré LOAD_UP ne stagne pas tant que la primitive progresse', () => {
+      const s = calibrated({ slot: LINEAR, exercise: SQUAT, grid: BAR }, sets([6, 6, 6], { load: 60000 }));
+      const results = Array.from({ length: 4 }, () => outcome(s.run(sets([6, 6, 6], { load: 60000 }))));
+      expect(results).toEqual(Array.from({ length: 4 }, () => ['PROGRESS', 'LOAD_UP']));
+      expect(s.state).toMatchObject({ noProgressCount: 0, stallRank: 0 });
     });
   });
 

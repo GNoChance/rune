@@ -306,14 +306,21 @@ export function evaluateExercise(input: EvaluateInput): EvaluateResult {
   if (perf.values.length === 0) return finish(unchanged, 'IGNORED', 'NO_DATA');
 
   // 1 bis. Variante plus facile que celle de l'état, imposée par le lieu ou choisie (§4.3.6) : le slot n'était pas
-  // faisable tel que prévu ; l'état ne change pas. Seule la reprise après 28 jours retire une variante (05 §10.4).
+  // faisable tel que prévu ; l'état ne change pas. Le rang de l'état est d'abord ramené dans la chaîne du profil
+  // (chaîne coupée en prudent, 05 §14), comme la cible qui a été proposée. Seule la reprise après 28 jours retire
+  // une variante (05 §10.4). Un ajustement demandé passe quand même (étape 3) : il ne doit pas se perdre.
   const gap = session.resumeGapDays;
   const allowedBack = gap !== null && gap >= rules.resume.days28.days ? rules.resume.days28.variantsBack : 0;
+  const stateRank =
+    prev.variantRank === null || shape.chainLength === null
+      ? prev.variantRank
+      : Math.min(prev.variantRank, shape.chainLength);
   if (
     input.state !== null &&
+    performed.nextAdjustment === null &&
     performedRank !== null &&
-    prev.variantRank !== null &&
-    performedRank < prev.variantRank - allowedBack
+    stateRank !== null &&
+    performedRank < stateRank - allowedBack
   ) {
     return finish(unchanged, 'IGNORED', 'NOT_FEASIBLE_HERE');
   }
@@ -391,8 +398,10 @@ export function evaluateExercise(input: EvaluateInput): EvaluateResult {
       ? raw
       : { result: 'HOLD', code: 'CALIBRATION_HOLD', targets: base, atTop: 0, fails: raw.fails };
 
-  // 6. Stagnation : séances valides consécutives sans progrès (05 §8) ; un record remet le compteur et k à zéro.
-  const noProgressCount = progressed(prev.best.level, level, perf, record) ? 0 : prev.noProgressCount + 1;
+  // 6. Stagnation : séances valides consécutives sans progrès ; un record remet le compteur et k à zéro. Progrès :
+  // celui de 05 §8 sur ce qui a été fait, ou une primitive qui progresse (cible qui monte, ruling R17).
+  const moved = progressed(prev.best.level, level, perf, record) || o.result === 'PROGRESS';
+  const noProgressCount = moved ? 0 : prev.noProgressCount + 1;
   const stallRank = record ? 0 : prev.stallRank;
   if (noProgressCount >= rules.stallSessions) {
     const s = stallResponse(stallLadder(slot.progression.type, o.targets.mode), stallRank, o.targets, shape);
