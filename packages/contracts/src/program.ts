@@ -105,6 +105,8 @@ export const REASON_CODES = [
   'STALL_2_DOUBLE',
   'STALL_RESET_MIN',
   'STALL_REPLACE_PROPOSED',
+  /** Stagnation au rang de la proposition, sans aucun remplaçant utilisable : rien n'est proposé (ruling R26). */
+  'STALL_NO_REPLACEMENT',
   'RESUME_14',
   'RESUME_28',
 ] as const;
@@ -162,6 +164,8 @@ export const REASON_TEXTS: Record<ReasonCode | ChangeReasonCode, string> = {
   STALL_RESET_MIN:
     'Plusieurs séances sans progrès : on repart du bas de la fourchette, en répétitions ou en durée.',
   STALL_REPLACE_PROPOSED: 'Toujours bloqué : on te propose de remplacer cet exercice.',
+  STALL_NO_REPLACEMENT:
+    "Tu stagnes sur cet exercice et aucun autre ne convient ici pour l'instant : on le garde.",
   RESUME_14: "Tu reprends après deux semaines d'absence : la charge est un peu réduite.",
   RESUME_28: "Tu reprends après un mois d'absence : la charge est réduite et la variante simplifiée.",
   USER_CHANGE: 'Tu as modifié ton programme.',

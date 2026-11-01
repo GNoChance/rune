@@ -357,19 +357,23 @@ describe('propriétés du rejeu', () => {
 
         expect(full.decisions.slice(0, prefix.decisions.length)).toEqual(prefix.decisions);
         expect(full.events.slice(0, prefix.events.length)).toEqual(prefix.events);
-        // Mêmes états pour ceux que la suite de l'historique ne touche plus : ni séance, ni allègement.
+        // Mêmes états pour ceux que la suite de l'historique ne touche plus : ni séance, ni allègement, ni
+        // suspension (elle remet à zéro la série de douleurs de tous les états du slot, ruling R25).
         const later = new Set(h.sessions.slice(k).map((s) => s.id));
         const touchedLater = new Set(
           full.decisions
             .filter((d) => h.sessions.some((s) => later.has(s.id) && s.exercises.some((e) => e.id === d.id)))
             .map((d) => `${d.instanceId}:${d.slotId}:${d.exerciseId}`),
         );
-        const lightened = new Set(
-          h.changes.flatMap((c) =>
-            c.operations.flatMap((op) => (op.op === 'lighten_exercise' ? [op.slot] : [])),
+        const touchedSlots = new Set([
+          ...h.changes.flatMap((c) =>
+            c.operations.flatMap((op) =>
+              op.op === 'lighten_exercise' || op.op === 'suspend_slot' ? [op.slot] : [],
+            ),
           ),
-        );
-        const stable = (s: SlotState) => !touchedLater.has(s.id) && !lightened.has(s.slotId);
+          ...full.events.flatMap((e) => (e.kind === 'pain_suspend' && e.slotId !== null ? [e.slotId] : [])),
+        ]);
+        const stable = (s: SlotState) => !touchedLater.has(s.id) && !touchedSlots.has(s.slotId);
         const strip = (s: SlotState) => ({ ...s, suspended: false });
         const byId = new Map(full.slotStates.map((s) => [s.id, s]));
         for (const s of prefix.slotStates.filter(stable))
@@ -478,7 +482,16 @@ describe('propriétés du rejeu', () => {
       }),
       { numRuns: 300, seed: 20261101 },
     );
-    for (const expected of ['PROGRESS', 'STALL', 'DELOAD', 'IGNORED', 'pain_suspend', 'propose_replace']) {
+    const expectedSeen = [
+      'PROGRESS',
+      'STALL',
+      'DELOAD',
+      'IGNORED',
+      'pain_suspend',
+      'propose_replace',
+      'propose_deload',
+    ];
+    for (const expected of expectedSeen) {
       expect(seen).toContain(expected);
     }
   });

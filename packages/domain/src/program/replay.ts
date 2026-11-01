@@ -215,10 +215,23 @@ function applyChange(ctx: Context, run: Run, change: AcceptedChange): void {
       case 'set_days_per_week':
         run.state = afterDaysChange(run.state, run.program);
         break;
+      case 'suspend_slot':
+        resetPainStreak(run, op.slot);
+        break;
       default:
         // Structurelle (appliquée au programme), ou `switch_template` : l'instance se termine, rien à rejouer.
         break;
     }
+  }
+}
+
+/**
+ * Suspension appliquée, quel qu'en soit l'auteur : la série de douleurs des états du slot repart de zéro, pour qu'il
+ * faille de nouveau 2 séances de suite après la reprise (ruling R25).
+ */
+function resetPainStreak(run: Run, slotId: string): void {
+  for (const [id, t] of run.tracked) {
+    if (t.state.slotId === slotId) run.tracked.set(id, { ...t, state: { ...t.state, painStreak: 0 } });
   }
 }
 
@@ -244,12 +257,15 @@ interface Evaluated {
   sheet: CatalogSheet;
   exerciseId: string;
   result: EvaluateResult;
+  /** Place de la décision dans `run.decisions`, pour en corriger le code. */
+  decisionIndex: number;
 }
 
 /**
  * Évalue un exercice contre le slot du programme effectif au début de la séance. Pas de décision sans slot (exercice
  * ajouté), pour un slot absent du programme ou une fiche inconnue. Un slot suspendu donne IGNORED / SLOT_SUSPENDED
- * sans rien évaluer. Rend null sans décision ou sur un slot suspendu : ni stagnation ni douleur à suivre.
+ * sans rien évaluer, et sa douleur ne compte pas (la série repart de zéro à la suspension, ruling R25). Rend null
+ * sans décision ou sur un slot suspendu : ni stagnation ni douleur à suivre.
  */
 function evaluateOne(
   ctx: Context,
@@ -277,7 +293,7 @@ function evaluateOne(
     slot,
     exercise: sheet,
     chainSteps: steps,
-    performed: suspended ? { ...ex, sets: [], nextAdjustment: null } : ex,
+    performed: suspended ? { ...ex, sets: [], nextAdjustment: null, painLevel: null } : ex,
     session: {
       id: s.id,
       instanceId: ctx.instanceId,
@@ -289,7 +305,9 @@ function evaluateOne(
     grid,
     rules,
   });
-  run.decisions.push(suspended ? { ...result.decision, reasonCode: 'SLOT_SUSPENDED' } : result.decision);
+  const decisionIndex =
+    run.decisions.push(suspended ? { ...result.decision, reasonCode: 'SLOT_SUSPENDED' } : result.decision) -
+    1;
 
   // L'état rendu est gardé tel quel, IGNORED compris : la douleur y est comptée même sans série (05 §13.7), et son
   // existence ne dépend jamais d'une colonne C2. Le contexte des cibles est celui de la dernière évaluation qui les a
@@ -304,7 +322,7 @@ function evaluateOne(
     profile,
     chainLength,
   });
-  return suspended ? null : { slot, sheet, exerciseId, result };
+  return suspended ? null : { slot, sheet, exerciseId, result, decisionIndex };
 }
 
 function processSession(ctx: Context, run: Run, s: SessionRecord, rules: RulesSet): void {
@@ -393,10 +411,18 @@ function replacementFor(
   return null;
 }
 
-/** Proposition de remplacement (05 §9.6, spec §4.3.12) ; aucune s'il n'existe aucun remplaçant utilisable. */
+/**
+ * Proposition de remplacement (05 §9.6, spec §4.3.12). S'il n'existe aucun remplaçant utilisable, rien n'est proposé
+ * et la décision le dit : STALL_NO_REPLACEMENT au lieu de STALL_REPLACE_PROPOSED (ruling R26).
+ */
 function proposeReplace(ctx: Context, run: Run, s: SessionRecord, e: Evaluated): void {
   const exercise = replacementFor(ctx, e.slot, e.sheet, s);
-  if (exercise === null) return;
+  if (exercise === null) {
+    const decision = run.decisions[e.decisionIndex];
+    if (decision !== undefined)
+      run.decisions[e.decisionIndex] = { ...decision, reasonCode: 'STALL_NO_REPLACEMENT' };
+    return;
+  }
   run.events.push({
     key: engineEventKey(ctx.instanceId, 'ENGINE_STALL_REPLACE', e.slot.id, e.exerciseId, s.id),
     kind: 'propose_replace',

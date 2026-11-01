@@ -566,7 +566,46 @@ describe('douleur', () => {
     ]);
     expect(r.program.suspended.has('A1')).toBe(true);
     expect(stateOf(r, 'A1', 'back-squat').suspended).toBe(true);
-    expect(stateOf(replay(sessions.slice(0, 3)), 'A1', 'back-squat').painStreak).toBe(2);
+    // La série de douleurs repart de zéro dès que la suspension s'applique (ruling R25).
+    expect(stateOf(replay(sessions.slice(0, 3)), 'A1', 'back-squat').painStreak).toBe(0);
+  });
+
+  it('après la reprise du slot, il faut de nouveau 2 séances de suite en douleur', () => {
+    const { sessions } = build();
+    const resume = accepted('c-resume', at(5), [{ op: 'resume_slot', slot: 'A1' }]);
+    const once = squat(52500, pain);
+    const twice = squat(52500, pain);
+    const history = [
+      ...sessions.slice(0, 3),
+      session('s4', at(6), 'A', [once]),
+      session('s5', at(8), 'A', [twice]),
+    ];
+    // Une seule séance douloureuse après la reprise : pas de nouvelle suspension.
+    const one = replay(history.slice(0, 4), [resume]);
+    expect(one.events.map((e) => e.key)).toEqual([key('PAIN_SUSPEND', 'A1', 'back-squat', 's3')]);
+    expect(one.program.suspended.has('A1')).toBe(false);
+    expect(decisionOf(one, once).reasonCode).toBe('PAIN_LIGHTEN');
+    // La deuxième de suite suspend de nouveau.
+    const two = replay(history, [resume]);
+    expect(two.events.map((e) => e.key)).toEqual([
+      key('PAIN_SUSPEND', 'A1', 'back-squat', 's3'),
+      key('PAIN_SUSPEND', 'A1', 'back-squat', 's5'),
+    ]);
+    expect(two.program.suspended.has('A1')).toBe(true);
+  });
+
+  it('une douleur sur un slot suspendu ne compte pas pour la série suivante', () => {
+    const { sessions } = build();
+    const during = squat(52500, pain);
+    const after = squat(52500, pain);
+    const resume = accepted('c-resume', at(7), [{ op: 'resume_slot', slot: 'A1' }]);
+    const r = replay(
+      [...sessions.slice(0, 3), session('s4', at(6), 'A', [during]), session('s5', at(8), 'A', [after])],
+      [resume],
+    );
+    expect(decisionOf(r, during).reasonCode).toBe('SLOT_SUSPENDED');
+    expect(r.events.map((e) => e.triggerSessionId)).toEqual(['s3']);
+    expect(r.program.suspended.has('A1')).toBe(false);
   });
 
   it('une séance commencée avant la fin de la séance déclenchante est évaluée avant la suspension', () => {
@@ -653,6 +692,56 @@ describe('événements de stagnation', () => {
     ]);
   });
 
+  it('stagnation au rang de la proposition sans remplaçant utilisable : STALL_NO_REPLACEMENT, aucune proposition', () => {
+    // Sans rowing à la poulie ni rowing inversé, aucune fiche de tirage horizontal ne remplace le rowing barre.
+    const catalog = PROGRAM_CATALOG.filter((s) => s.id !== 'seated-cable-row' && s.id !== 'inverted-row');
+    const rows = Array.from({ length: 7 }, () => row());
+    const r = replay(
+      rows.map((pe, i) => session(`s${i + 1}`, at(i * 2), 'A', [pe])),
+      [],
+      { catalog },
+    );
+    const last = decisionOf(r, rows[6] ?? fail('séance 7'));
+    expect([last.result, last.reasonCode]).toEqual(['STALL', 'STALL_NO_REPLACEMENT']);
+    expect(r.decisions.some((d) => d.reasonCode === 'STALL_REPLACE_PROPOSED')).toBe(false);
+    expect(r.events).toEqual([]);
+  });
+
+  it('une proposition du moteur acceptée est une entrée comme un changement de l’utilisateur', () => {
+    const sessions = Array.from({ length: 7 }, (_, i) =>
+      session(`s${i + 1}`, at(i * 2), 'A', [row(), fly()]),
+    );
+    const proposals = replay(sessions).events;
+    const deload =
+      proposals.find((e) => e.kind === 'propose_deload' && e.triggerSessionId === 's4') ?? fail('allègement');
+    const replace =
+      proposals.find((e) => e.kind === 'propose_replace' && e.slotId === 'A3') ?? fail('remplacement');
+    // Acceptées : auteur `engine`, code de la proposition, `decidedAt` renseigné (05 §15).
+    const asAccepted = (e: EngineEvent, id: string, decidedAt: number, author: 'engine' | 'user') => ({
+      id,
+      author,
+      reasonCode: author === 'engine' ? e.reasonCode : 'USER_CHANGE',
+      decidedAt,
+      operations: e.operations,
+    });
+    const engine = [asAccepted(deload, 'p1', at(7), 'engine'), asAccepted(replace, 'p2', at(13), 'engine')];
+    const user = [asAccepted(deload, 'p1', at(7), 'user'), asAccepted(replace, 'p2', at(13), 'user')];
+    const cable = done('A3', 'seated-cable-row', work([10, 10, 10], 50000), { position: 3 });
+    const history = [...sessions, session('s8', at(14), 'A', [cable])];
+
+    // `start_deload` accepté après la 4e séance : les 3 séances suivantes sont allégées.
+    const afterDeload = replay(sessions.slice(0, 4), engine.slice(0, 1));
+    expect(afterDeload.state.deloadSessionsLeft).toBe(3);
+    expect(upcomingWeekType(afterDeload.state, afterDeload.program)).toBe('deload');
+    // `replace_exercise` accepté : le rowing à la poulie passe en tête du slot et a son propre état.
+    const r = replay(history, engine);
+    expect(r.program.template.workouts[0]?.slots.find((s) => s.id === 'A3')?.exercises?.[0]).toBe(
+      'seated-cable-row',
+    );
+    expect(decisionOf(r, cable).exerciseId).toBe('seated-cable-row');
+    expect(r).toEqual(replay(history, user));
+  });
+
   it('2 slots en stagnation dans la même séance : propose_deload', () => {
     const r = replay(
       Array.from({ length: 4 }, (_, i) => session(`s${i + 1}`, at(i * 2), 'A', [row(), fly()])),
@@ -737,27 +826,29 @@ describe('reprise après absence', () => {
     ]);
   });
 
-  it('séance datée dans le futur : rejeu sans erreur, elle compte pour une séance sans toucher aux autres', () => {
+  it('séance datée dans le futur : rejeu sans erreur et déterministe, ordre par startedAt ; le serveur borne started_at', () => {
+    // Le domaine n'a pas d'horloge : il ne reconnaît pas une date fausse et range la séance par son `startedAt`. C'est
+    // le serveur qui borne `started_at` à la création (ruling R24) ; ce test ne fixe que ce que le rejeu garantit.
+    const pe = squat(70000);
+    const future = session('s4', Date.UTC(2031, 0, 1, 12), 'A', [pe]);
     const normal = [
       session('s1', at(0), 'A', [squat(60000)]),
       session('s2', at(2), 'B'),
       session('s3', at(4), 'A', [squat(65000)]),
       session('s5', at(8), 'B'),
     ];
-    const future = session('s4', Date.UTC(2031, 0, 1, 12), 'A', [squat(70000)]);
     const without = replay(normal);
-    const r = replay([...normal, future]);
 
+    expect(() => replay([future, ...normal])).not.toThrow();
+    const r = replay([future, ...normal]);
+    // Déterministe : même résultat quel que soit l'ordre d'arrivée.
+    expect(replay([...normal, future])).toEqual(r);
+    // Rangée la dernière : les séances datées avant elle sont évaluées comme sans elle, la sienne vient en fin.
     expect(r.decisions.slice(0, without.decisions.length)).toEqual(without.decisions);
-    expect([r.state.weekIndex, r.state.sessionsInWeek]).toEqual([1, 2]);
-    expect(r.state.nextWorkoutId).toBe('B');
+    expect(r.decisions.at(-1)?.id).toBe(pe.id);
     expect(r.state.lastCompletedStartedAt).toBe('2031-01-01T12:00:00.000Z');
-    // Les séances suivantes, datées correctement, se placent avant elle : leur évaluation ne dépend pas de la séance
-    // future, et les semaines se comptent en séances, jamais en dates.
-    const later = squat(70000);
-    const next = replay([...normal, future, session('s6', at(10), 'A', [later])]);
-    const nextWithout = replay([...normal, session('s6', at(10), 'A', [later])]);
-    expect(decisionOf(next, later)).toEqual(decisionOf(nextWithout, later));
+    // Les semaines se comptent en séances, jamais en dates : 5 séances, 3 jours.
+    expect([r.state.weekIndex, r.state.sessionsInWeek]).toEqual([1, 2]);
   });
 });
 

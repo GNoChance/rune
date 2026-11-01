@@ -218,6 +218,11 @@ describe('codes raison', () => {
     expect(REASON_TEXTS.STALL_RESET_MIN).toMatch(/durée/);
   });
 
+  it('a un code pour une stagnation sans remplaçant, qui ne promet aucune proposition', () => {
+    expect(REASON_CODES).toContain('STALL_NO_REPLACEMENT');
+    expect(REASON_TEXTS.STALL_NO_REPLACEMENT).not.toMatch(/propose/);
+  });
+
   it('réécrit des codes connus vers des codes connus', () => {
     const all: readonly string[] = [...REASON_CODES, ...CHANGE_REASON_CODES];
     for (const [from, to] of Object.entries(PAIN_CODE_REWRITES)) {
