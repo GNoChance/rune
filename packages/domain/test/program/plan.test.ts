@@ -2,7 +2,13 @@
  * `planWorkout` (spec brique 3 §4.2, §4.3.5 à §4.3.10, §7.2) : séance prévue à partir du rejeu, exercices résolus
  * selon le lieu, séries d'échauffement et de travail avec leurs cibles figées, disques et avis.
  */
-import { type EquipmentCode, REFERENCE_PROFILES, type SetSpec, type SlotSpec } from '@rune/contracts';
+import {
+  type EquipmentCode,
+  type ExerciseLevel,
+  REFERENCE_PROFILES,
+  type SetSpec,
+  type SlotSpec,
+} from '@rune/contracts';
 import { describe, expect, it } from 'vitest';
 import {
   type PlanInput,
@@ -15,7 +21,7 @@ import { initialProgramState, type ProgramState } from '../../src/program/progra
 import { type ReplayResult, replayInstance } from '../../src/program/replay';
 import type { PlanSheet } from '../../src/program/resolve';
 import { type SessionRecord, type SetRecord, type SlotState, slotStateId } from '../../src/program/types';
-import { GYM_AB, gymAb, PROGRAM_CATALOG, place } from '../fixtures/program';
+import { GYM_AB, gymAb, PROGRAM_CATALOG, place, programSheet } from '../fixtures/program';
 
 const fail = (what: string): never => {
   throw new Error(`${what} absent`);
@@ -88,6 +94,7 @@ function plan(over: Partial<PlanInput> = {}): PlannedWorkout {
     context: 'gym',
     today: '2026-11-01',
     lastLoadByExercise: new Map(),
+    maxLevel: 1,
     ...over,
   });
 }
@@ -341,6 +348,21 @@ describe('planWorkout : reprise après absence (05 §10.4, spec §4.3.9)', () =>
     expect(p.notices).toEqual([{ code: 'resume', days: 14, pct: 10 }]);
   });
 
+  it("séance de reprise : pas de calibration à l'écran, la cible réduite est proposée", () => {
+    for (const last of ['2026-10-18T17:00:00.000Z', '2026-10-04T17:00:00.000Z']) {
+      const e = exerciseOf(
+        plan({
+          replay: replayOf(GYM_AB, { states: [SQUAT_60], state: { lastCompletedStartedAt: last } }),
+          lastLoadByExercise: new Map([['back-squat', 60_000]]),
+        }),
+        'A1',
+      );
+      expect(e.calibration).toBe(false);
+      expect(e.suggestionG).toBeNull();
+      expect(workSets(e)[0]?.targetLoadG).not.toBeNull();
+    }
+  });
+
   it('13 jours : rien ne change', () => {
     const p = after('2026-10-19T17:00:00.000Z');
     expect(workSets(exerciseOf(p, 'A1')).map((s) => s.targetLoadG)).toEqual([60_000, 60_000, 60_000]);
@@ -424,6 +446,29 @@ describe('planWorkout : calibration (spec §4.3.5)', () => {
   });
 });
 
+describe('planWorkout : niveau maximal (05 §11.2)', () => {
+  it("celui du membre, pas celui du modèle : un débutant sur un modèle intermédiaire n'a aucun remplaçant de niveau 2", () => {
+    const catalog: PlanSheet[] = [
+      ...CATALOG.filter((s) => s.id !== 'bodyweight-squat' && s.id !== 'jump-squat'),
+      {
+        ...programSheet('pistol-squat', 'squat', { primary: ['quadriceps', 'glutes'] }, [[]], { level: 2 }),
+        measure: 'reps',
+      },
+    ];
+    const at = (level: 'beginner' | 'intermediate', maxLevel: ExerciseLevel) => {
+      const template = gymAb((t) => {
+        t.level = level;
+      });
+      return exerciseOf(plan({ replay: replayOf(template), catalog, place: HOME, maxLevel }), 'A1');
+    };
+    expect(at('intermediate', 1)).toMatchObject({ exerciseId: null, resolution: 'not_feasible_here' });
+    expect(at('beginner', 2)).toMatchObject({
+      exerciseId: 'pistol-squat',
+      resolution: 'replaced_not_feasible',
+    });
+  });
+});
+
 describe('planWorkout : avis', () => {
   it('mineur, exercice à la barre : minor_barbell', () => {
     const p = plan({ profile: 'cautious', ageBand: 'minor' });
@@ -444,6 +489,16 @@ describe('planWorkout : avis', () => {
     expect(p.notices).toEqual([{ code: 'all_skipped' }]);
     expect(p.exercises.every((e) => e.exerciseId === null && e.sets.length === 0)).toBe(true);
     expect(p.exercises.map((e) => e.resolution)).toEqual(Array(5).fill('not_feasible_here'));
+  });
+
+  it("séance sans slot (tous retirés) : rien à faire, pas d'avis all_skipped", () => {
+    const empty = gymAb((t) => {
+      const [a] = t.workouts;
+      if (a !== undefined) a.slots = [];
+    });
+    const p = plan({ replay: replayOf(empty) });
+    expect(p.exercises).toEqual([]);
+    expect(p.notices).toEqual([]);
   });
 
   it('slot suspendu : marqué, sans séries ; tous suspendus → all_skipped', () => {

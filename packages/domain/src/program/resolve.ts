@@ -44,8 +44,12 @@ export interface SlotResolution<S extends PlanSheet = PlanSheet> {
    * la mesure du slot.
    */
   candidates: S[];
-  /** Exercice prévu par le programme : tête de la liste du slot, ou variante visée de la chaîne. */
-  plannedExerciseId: string;
+  /**
+   * Exercice prévu par le programme pour ce profil : tête de la liste du slot, ou variante visée de la chaîne. Jamais
+   * une fiche `not_for_minors` en profil prudent : la première fiche permise de la liste en tient lieu (R28), et null
+   * si le profil n'en permet aucune (liste entièrement `not_for_minors`, chaîne coupée dès sa première variante).
+   */
+  plannedExerciseId: string | null;
 }
 
 /**
@@ -64,7 +68,7 @@ export function profileChain<S extends CatalogSheet>(
 
 /** Ce que le slot prévoit avant de regarder le lieu : la référence, l'ordre de préférence et ses exercices propres. */
 interface SlotPlan<S extends PlanSheet> {
-  plannedExerciseId: string;
+  plannedExerciseId: string | null;
   /** Référence des remplaçants (05 §11.2) ; absente si le catalogue ne la connaît pas. */
   reference: S | undefined;
   /** Exercices du slot à essayer, dans l'ordre. */
@@ -88,10 +92,12 @@ function chainPlan<S extends PlanSheet>(
   const steps = profileChain(ctx.catalog, chainId, ctx.cautious);
   const full = ctx.cautious ? profileChain(ctx.catalog, chainId, false) : steps;
   const rank = Math.min(Math.max(ctx.state?.variantRank ?? 1, 1), Math.max(steps.length, 1));
-  const reference = steps[rank - 1] ?? full[Math.min(rank, full.length) - 1];
+  const aimed = steps[rank - 1];
+  // Chaîne coupée dès sa première variante (prudent) : rien de prévu, mais les remplaçants partent de la variante.
+  const reference = aimed ?? full[Math.min(rank, full.length) - 1];
   const catalogCtx = { catalog: [...ctx.catalog], equipment, maxLevel: ctx.maxLevel, cautious: ctx.cautious };
   return {
-    plannedExerciseId: reference?.id ?? chainId,
+    plannedExerciseId: aimed?.id ?? (ctx.cautious ? null : chainId),
     reference,
     preferred: steps.slice(0, rank).reverse(),
     own: usableChainSteps(chainId, catalogCtx).filter(usable),
@@ -99,18 +105,22 @@ function chainPlan<S extends PlanSheet>(
   };
 }
 
-/** Slot à liste (05 §11.1) : le premier exercice utilisable de la liste, la tête servant de référence. */
+/**
+ * Slot à liste (05 §11.1) : le premier exercice utilisable de la liste, la tête servant de référence. Fiche prévue :
+ * la tête, ou en profil prudent la première fiche de la liste qui n'est pas `not_for_minors` (R28).
+ */
 function listPlan<S extends PlanSheet>(
   exercises: readonly string[],
   byId: ReadonlyMap<string, S>,
   usable: (s: S) => boolean,
+  cautious: boolean,
 ): SlotPlan<S> {
   const listed = exercises.flatMap((id) => {
     const sheet = byId.get(id);
     return sheet === undefined ? [] : [sheet];
   });
   return {
-    plannedExerciseId: exercises[0] ?? '',
+    plannedExerciseId: exercises.find((id) => !(cautious && byId.get(id)?.not_for_minors === true)) ?? null,
     reference: listed[0],
     preferred: listed,
     own: listed.filter(usable),
@@ -132,7 +142,7 @@ export function resolveSlot<S extends PlanSheet>(slot: SlotSpec, ctx: ResolveCon
   const p =
     slot.chain !== undefined
       ? chainPlan(slot.chain, ctx, usable, equipment)
-      : listPlan(slot.exercises ?? [], byId, usable);
+      : listPlan(slot.exercises ?? [], byId, usable, ctx.cautious);
   if (ctx.suspended) {
     return {
       exercise: null,

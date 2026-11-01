@@ -129,8 +129,47 @@ describe('resolveSlot : liste du slot (05 §11)', () => {
     expect(resolveSlot(slot, ctx({ place: HOME })).exercise?.id).toBe('jump-squat');
     const r = resolveSlot(slot, ctx({ place: HOME, cautious: true }));
     expect(r.exercise?.id).toBe('bodyweight-squat');
-    expect(r.resolution).toBe('replaced_not_feasible');
+    expect(r.resolution).toBe('planned');
     expect(ids(r.candidates)).not.toContain('jump-squat');
+  });
+
+  it("profil prudent : la fiche prévue n'est jamais not_for_minors, la première permise en tient lieu (R28)", () => {
+    const slot = listSlot('X1', 'squat', ['jump-squat', 'back-squat', 'bodyweight-squat']);
+    expect(resolveSlot(slot, ctx({ place: HOME })).plannedExerciseId).toBe('jump-squat');
+    const gym = resolveSlot(slot, ctx({ cautious: true }));
+    expect([gym.plannedExerciseId, gym.exercise?.id, gym.resolution]).toEqual([
+      'back-squat',
+      'back-squat',
+      'planned',
+    ]);
+    const home = resolveSlot(slot, ctx({ place: HOME, cautious: true }));
+    expect([home.plannedExerciseId, home.exercise?.id, home.resolution]).toEqual([
+      'back-squat',
+      'bodyweight-squat',
+      'replaced_not_feasible',
+    ]);
+  });
+
+  it('profil prudent, toute la liste not_for_minors : aucune fiche prévue, un remplaçant (R28)', () => {
+    const r = resolveSlot(listSlot('X1', 'squat', ['jump-squat']), ctx({ place: HOME, cautious: true }));
+    expect(r.plannedExerciseId).toBeNull();
+    expect(r.exercise?.id).toBe('bodyweight-squat');
+    expect(r.resolution).toBe('replaced_not_feasible');
+  });
+
+  it('remplaçants et candidats au plus du niveau maxLevel (04 §6.4)', () => {
+    const catalog: PlanSheet[] = [
+      ...CATALOG,
+      {
+        ...programSheet('pistol-squat', 'squat', { primary: ['quadriceps', 'glutes'] }, [[]], { level: 2 }),
+        measure: 'reps',
+      },
+    ];
+    const slot = listSlot('X1', 'squat', ['back-squat']);
+    const at = (maxLevel: 1 | 2) =>
+      ids(resolveSlot(slot, ctx({ catalog, place: HOME, maxLevel })).candidates);
+    expect(at(1)).not.toContain('pistol-squat');
+    expect(at(2)).toContain('pistol-squat');
   });
 
   it("un slot en répétitions n'est jamais résolu en gainage (substitutes ignore la mesure)", () => {
@@ -226,6 +265,15 @@ describe('resolveSlot : chaîne (spec §4.3.6)', () => {
     expect(r.exercise?.id).toBe('feet-elevated-push-up');
     expect(r.resolution).toBe('planned');
     expect(ids(r.candidates)).not.toContain('archer-push-up');
+  });
+
+  it('profil prudent, première variante not_for_minors : aucune variante prévue (R28)', () => {
+    const catalog = PUSH_UP_CHAIN.map((s) => (s.id === 'wall-push-up' ? { ...s, not_for_minors: true } : s));
+    expect(resolveSlot(PUSH_UPS, ctx({ catalog, place: HOME })).plannedExerciseId).toBe('wall-push-up');
+    const r = resolveSlot(PUSH_UPS, ctx({ catalog, place: HOME, cautious: true, state: chainState(3) }));
+    expect(r.plannedExerciseId).toBeNull();
+    expect(r.exercise).toBeNull();
+    expect(r.resolution).toBe('not_feasible_here');
   });
 
   it('candidats : variantes utilisables de la chaîne, dans leur ordre', () => {

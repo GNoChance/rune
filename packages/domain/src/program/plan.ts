@@ -1,18 +1,15 @@
-import {
-  type AgeBand,
-  EXPERIENCES,
-  type ExerciseLevel,
-  type LoadMode,
-  maxExerciseLevel,
-  type ProgramTemplate,
-  type SessionProfile,
-  type SetKind,
-  type SetSpec,
-  type Side,
-  type SlotSpec,
-  type WeekType,
+import type {
+  AgeBand,
+  ExerciseLevel,
+  LoadMode,
+  ProgramTemplate,
+  SessionProfile,
+  SetKind,
+  SetSpec,
+  Side,
+  SlotSpec,
+  WeekType,
 } from '@rune/contracts';
-import { levelFromExperience } from '../recommend-template';
 import { initialMode, stateExerciseId } from './evaluate';
 import { type LoadGrid, lightest, loadGrid, platesPerSide, roundDown } from './loads';
 import { clamp, type Measure, repRange, slotMeasure, slotShape, workSpec } from './primitives';
@@ -61,8 +58,11 @@ export interface PlannedSet {
 
 export interface PlannedExercise {
   slotId: string;
-  /** Exercice prévu par le programme (tête de liste ou variante visée), même quand il est remplacé ou sauté. */
-  plannedExerciseId: string;
+  /**
+   * Exercice prévu par le programme (tête de liste ou variante visée), même quand il est remplacé ou sauté ; jamais
+   * une fiche `not_for_minors` en profil prudent, null si le profil n'en permet aucune (`resolveSlot`, R28).
+   */
+  plannedExerciseId: string | null;
   /** Exercice du jour ; null pour un slot sauté ou suspendu, qui n'a alors aucune série. */
   exerciseId: string | null;
   resolution: SlotResolutionKind;
@@ -103,16 +103,11 @@ export interface PlanInput {
   today: string;
   /** Dernière charge faite sur chaque exercice, toutes séances comprises (spec §4.3.5). */
   lastLoadByExercise: ReadonlyMap<string, number>;
-}
-
-/**
- * `maxLevel` d'un programme : `maxExerciseLevel` d'une expérience de son niveau (04 §3.5, 02 R-REC-2), `beginner`
- * → 1, `intermediate` → 2. L'entrée de `planWorkout` ne porte pas l'expérience du membre ; le niveau du programme
- * suivi en tient lieu.
- */
-function programMaxLevel(level: ProgramTemplate['level']): ExerciseLevel {
-  const levels = EXPERIENCES.filter((e) => levelFromExperience(e) === level).map(maxExerciseLevel);
-  return levels.reduce<ExerciseLevel>((a, b) => (b > a ? b : a), 1);
+  /**
+   * Niveau de fiche le plus haut des remplaçants (05 §11.2) : `maxExerciseLevel` de l'expérience du membre, tirée de
+   * son profil d'entraînement (2 si elle est inconnue, comme l'onglet Exercices), jamais du niveau du modèle.
+   */
+  maxLevel: ExerciseLevel;
 }
 
 /** Règle de reprise de l'écart (05 §10.4), la plus forte atteinte ; null sous 14 jours ou sans séance terminée. */
@@ -143,13 +138,16 @@ interface Env {
   rules: RulesSet;
   weekType: WeekType;
   cautious: boolean;
-  maxLevel: ExerciseLevel;
   resume: RulesSet['resume']['days14'] | null;
   notices: PlanNotice[];
 }
 
 /** Slot sauté ou suspendu : rien à faire, l'écran le dit (spec §7.2). */
-function skipped(slot: SlotSpec, plannedExerciseId: string, resolution: SlotResolutionKind): PlannedExercise {
+function skipped(
+  slot: SlotSpec,
+  plannedExerciseId: string | null,
+  resolution: SlotResolutionKind,
+): PlannedExercise {
   return {
     slotId: slot.id,
     plannedExerciseId,
@@ -182,7 +180,7 @@ function planSlot(slot: SlotSpec, env: Env): PlannedExercise {
     catalog: input.catalog,
     place,
     cautious: env.cautious,
-    maxLevel: env.maxLevel,
+    maxLevel: input.maxLevel,
     state: aimed,
     suspended: replay.program.suspended.has(slot.id),
   });
@@ -332,14 +330,16 @@ export function planWorkout(input: PlanInput): PlannedWorkout {
     rules,
     weekType: upcomingWeekType(state, program),
     cautious: input.profile === 'cautious',
-    maxLevel: programMaxLevel(program.template.level),
     resume: resumeRule(days, rules),
     notices: [],
   };
   const exercises = workout.slots.map((slot) => planSlot(slot, env));
 
   const notices: PlanNotice[] = [];
-  if (exercises.every((e) => e.exerciseId === null)) notices.push({ code: 'all_skipped' });
+  // Une séance sans slot (tous retirés) n'a rien de sauté.
+  if (exercises.length > 0 && exercises.every((e) => e.exerciseId === null)) {
+    notices.push({ code: 'all_skipped' });
+  }
   if (env.resume !== null && days !== null) {
     notices.push({ code: 'resume', days, pct: env.resume.loadPct });
   }
