@@ -72,12 +72,14 @@ export { isLive, parseJsonColumn } from './rows';
 export type { StatusRepo } from './status-repo';
 export {
   closeStaleAfterPull,
+  type LiveContext,
   type NoteTarget,
   type SessionDecision,
   type SetInput,
   type StartInput,
   useActiveSession,
   useHistory,
+  useLiveContext,
   useOtherDeviceSession,
   useSession,
   useSessionDecisions,

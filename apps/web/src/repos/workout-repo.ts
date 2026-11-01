@@ -22,16 +22,19 @@ import { ensureDeviceId, getMeta, setMeta } from '../local-db/meta';
 import type { SyncState } from '../sync/engine';
 import { type LocalChange, writeLocal } from '../sync/outbox';
 import { catalogRepoFor } from './catalog-repo';
+import { type LiveContext, readLiveContext } from './live-context';
 import { programViewFor } from './program-view';
 import { currentUserId, isLive, oneOf, text } from './rows';
 import { composeSessions, latestFirst, type WorkoutSessionView } from './session-records';
 
+export type { LiveContext } from './live-context';
 export type { WorkoutExerciseView, WorkoutSessionView, WorkoutSetView } from './session-records';
 
 /*
  * Séances (spec brique 3 D2, D4, D12, §5.4, §7.1, §7.3) : tables J écrites hors ligne par `writeLocal`, chaque action
  * en une transaction Dexie (lignes et ops ensemble, R-SYN-11). « Commencer » fige le plan entier ; une série est faite
- * quand `loggedAt` est posé ; « Terminer » supprime logiquement les séries jamais faites.
+ * quand `loggedAt` est posé ; « Terminer » supprime logiquement les séries jamais faites (après un pull de cette
+ * exécution, ruling R38).
  */
 
 /** Version de l'appli écrite dans chaque séance (`app_version`) : `VITE_APP_VERSION` au build, sinon « dev ». */
@@ -129,8 +132,10 @@ export interface WorkoutsRepo {
    */
   changePlace(sessionId: string, plan: PlannedWorkout | null, placeId: string | null): Promise<void>;
   /**
-   * `completed` avec au moins une série de travail faite, sinon `abandoned` (D4) ; séries jamais faites supprimées
-   * logiquement ; séance en cours effacée ; décisions de fin gardées en copies provisoires.
+   * `completed` avec au moins une série de travail faite, sinon `abandoned` (D4) ; séance en cours effacée ; décisions
+   * de fin gardées en copies provisoires. Séries jamais faites supprimées logiquement seulement si un pull a réussi dans
+   * cette exécution (`SyncState.pulledThisRun`, ruling R38) : sinon le miroir peut ignorer des séries faites ailleurs,
+   * et la séance se clôt sans rien supprimer (les lectures d'une séance close ignorent ses séries jamais faites).
    */
   finish(sessionId: string): Promise<'completed' | 'abandoned'>;
   /** Suppression logique de la séance, de ses exercices et de ses séries (R-SYN-6). */
@@ -161,6 +166,11 @@ export interface WorkoutsRepo {
    * séance libre (D7).
    */
   decisions(sessionId: string): Promise<SessionDecision[]>;
+  /**
+   * Ce que l'écran de séance lit en plus de la séance (§7.3) : nom de la séance du modèle, réglages de charge du lieu,
+   * pas fixé des machines et « Préc. » (séries faites de la dernière séance close de chaque fiche). Null sans séance.
+   */
+  liveContext(sessionId: string): Promise<LiveContext | null>;
 }
 
 /** Décision du moteur d'une entrée de séance : la phrase se lit dans `REASON_TEXTS[reasonCode]`. */
@@ -457,8 +467,9 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
   }
 
   /**
-   * Fin de séance (D4) dans la transaction en cours ; une séance déjà close rend son statut. « Terminer » (`prune`)
-   * supprime aussi les séries jamais faites (D2). La clôture d'une séance oubliée n'en supprime aucune (ruling R33) :
+   * Fin de séance (D4) dans la transaction en cours ; une séance déjà close rend son statut. « Terminer » (`prune`, après
+   * un pull de cette exécution, ruling R38) supprime aussi les séries jamais faites (D2). La clôture d'une séance oubliée
+   * n'en supprime aucune (ruling R33) :
    * le miroir peut ignorer des séries faites sur un autre appareil ; elle n'écrit que le statut et la fin, et les
    * lectures ignorent les séries jamais faites d'une séance close.
    */
@@ -746,7 +757,9 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
 
     async finish(sessionId) {
       const w = await writer();
-      const closed = await tx(() => close(w, sessionId, nowIso(), true));
+      // Ruling R38 : pas de suppression sur un miroir qu'aucun pull de cette exécution n'a mis à jour.
+      const prune = s.sync.getState().pulledThisRun;
+      const closed = await tx(() => close(w, sessionId, nowIso(), prune));
       await afterCompleted([closed]);
       void s.sync.syncNow('mutation');
       return closed.status;
@@ -892,6 +905,10 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
       });
     },
 
+    liveContext(sessionId) {
+      return readLiveContext(db, sessionId);
+    },
+
     async otherDeviceSession() {
       const views = await readSessions((deviceId) =>
         db
@@ -970,4 +987,10 @@ export function useSessionDecisions(sessionId: string): SessionDecision[] | unde
 export function useOtherDeviceSession(): WorkoutSessionView | null | undefined {
   const repo = useWorkoutRepo();
   return useLive(() => repo.otherDeviceSession(), [repo]);
+}
+
+/** Contexte de l'écran de séance, observé ; `undefined` tant que la base n'a pas répondu, null sans séance. */
+export function useLiveContext(sessionId: string): LiveContext | null | undefined {
+  const repo = useWorkoutRepo();
+  return useLive(() => repo.liveContext(sessionId), [repo, sessionId]);
 }

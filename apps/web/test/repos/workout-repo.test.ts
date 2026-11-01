@@ -1,3 +1,4 @@
+import { defaultLoadSettings } from '@rune/contracts';
 import { renderHook, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -21,8 +22,10 @@ import type { FakeSyncEngine } from '../support/fake-api';
 import { createFakeSyncServer } from '../support/fake-sync-server';
 import { dumpLocalDb } from '../support/local-db';
 import { createTestServices, DEFAULT_NOW, makeMe } from '../support/render';
+import { seedMirror } from '../support/seed';
 import { until } from '../support/wait';
 import { LUNGE, PLAN, PLAN_ROWS, seedHealthConsent, WORKOUT_SHEETS } from '../support/workout';
+import { TEMPLATE } from '../workout/seed';
 
 const HOUR = 3_600_000;
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -558,8 +561,9 @@ describe('saisie : listes blanches, paires, douleur après une série faite', ()
 });
 
 describe('fin de séance (D2, D4)', () => {
-  it('finish : completed, séries jamais faites supprimées logiquement, séance en cours effacée', async () => {
+  it('finish après un pull de cette exécution : completed, séries jamais faites supprimées logiquement, séance en cours effacée', async () => {
     const { db, repos, sync, clock } = await setup();
+    sync.set({ pulledThisRun: true });
     const id = await repos.workouts.start(START);
     const v = await view(repos, id);
     clock.now = DEFAULT_NOW + 10 * 60_000;
@@ -589,6 +593,27 @@ describe('fin de séance (D2, D4)', () => {
     expect(sync.triggers).toContain('mutation');
     expect(await repos.workouts.activeSession()).toBeNull();
     expect((await repos.workouts.history()).map((s) => s.id)).toEqual([id]);
+  });
+
+  it('finish sans pull réussi dans cette exécution (ruling R38) : clôture sans supprimer aucune série', async () => {
+    const { db, repos, sync, clock } = await setup();
+    const id = await repos.workouts.start(START);
+    const done = workSet(await view(repos, id), 0, 0);
+    await repos.workouts.logSet(done.id, { loadG: 60_000, reps: 6 });
+    clock.now = DEFAULT_NOW + 45 * 60_000;
+    const before = await db.outbox.count();
+
+    expect(sync.getState().pulledThisRun).toBe(false);
+    expect(await repos.workouts.finish(id)).toBe('completed');
+    const written = (await ops(db)).slice(before);
+    expect(written.map((o) => [o.entity, o.kind, Object.keys(o.fields).sort()])).toEqual([
+      ['workout_session', 'patch', ['endedAt', 'status']],
+    ]);
+    expect((await rows(db, 'performed_set')).filter((r) => r.deletedAt != null)).toEqual([]);
+    expect(await getMeta(db, 'activeSessionId')).toBeNull();
+    // Les lectures d'une séance close ignorent ses séries jamais faites.
+    const [closed] = await repos.workouts.history();
+    expect(closed?.exercises.flatMap((e) => e.sets).map((s) => s.id)).toEqual([done.id]);
   });
 
   it('finish sans série de travail faite → abandoned', async () => {
@@ -760,6 +785,113 @@ describe('séance oubliée (D12, ruling R33)', () => {
     expect(await repos.workouts.closeStale(DEFAULT_NOW + 60_000)).toEqual([]);
     expect(await getMeta(db, 'activeSessionId')).toBeNull();
     expect((await db.mirror('workout_session').get(id))?.status).toBe('in_progress');
+  });
+});
+
+describe("contexte de l'écran de séance (spec §7.3)", () => {
+  const SETTINGS = { barG: 15_000, smallestPlateG: 500, dumbbellsG: [8000, 10_000], machineStepG: 2500 };
+
+  async function seedProgram(db: AppDb): Promise<void> {
+    await seedMirror(db, 'place', [
+      {
+        id: 'p-1',
+        ownerId: 'u-1',
+        kind: 'home',
+        gymId: null,
+        name: 'Garage',
+        isPrimary: true,
+        visibleAtGym: null,
+        loadSettings: SETTINGS,
+      },
+    ]);
+    await seedMirror(db, 'program_instance', [
+      {
+        id: 'i-1',
+        ownerId: 'u-1',
+        templateId: TEMPLATE.id,
+        templateVersion: TEMPLATE.version,
+        snapshot: TEMPLATE,
+        daysPerWeek: 3,
+        status: 'active',
+        revision: 1,
+        startedAt: '2026-09-01T08:00:00.000Z',
+        endedAt: null,
+        createdAt: '2026-09-01T08:00:00.000Z',
+      },
+    ]);
+  }
+
+  it('« Préc. » : séries faites de la dernière séance close sur chaque exercice, libre ou de programme', async () => {
+    const { db, repos, clock } = await setup();
+    await seedProgram(db);
+    // Plus ancienne : séance libre, squat barre 55 kg × 8.
+    clock.now = DEFAULT_NOW - 3 * 24 * HOUR;
+    const free = await repos.workouts.start({ ...START, plan: null, instanceId: null, workoutId: null });
+    const pe = await repos.workouts.addFreeExercise(free, 'back-squat');
+    const [first] = exerciseAt(await view(repos, free), 0).sets;
+    expect(exerciseAt(await view(repos, free), 0).id).toBe(pe);
+    await repos.workouts.logSet(first?.id ?? '', { loadG: 55_000, reps: 8 });
+    await repos.workouts.finish(free);
+    // Plus récente : séance de programme, squat barre 57,5 kg × 7 en série 1 seulement.
+    clock.now = DEFAULT_NOW - 24 * HOUR;
+    const last = await repos.workouts.start(START);
+    await repos.workouts.logSet(workSet(await view(repos, last), 0, 0).id, { loadG: 57_500, reps: 7 });
+    await repos.workouts.finish(last);
+
+    clock.now = DEFAULT_NOW;
+    const id = await repos.workouts.start(START);
+    const context = await repos.workouts.liveContext(id);
+    expect(context?.previous['back-squat']?.map((s) => [s.kind, s.position, s.loadG, s.reps])).toEqual([
+      ['work', 1, 57_500, 7],
+    ]);
+    // Rien la dernière fois sur la fente : pas de série précédente.
+    expect(context?.previous['dumbbell-lunge']).toBeUndefined();
+  });
+
+  it('réglages de charge du lieu, pas de machine fixé, nom de la séance du modèle ; séance libre sans nom', async () => {
+    const { db, repos } = await setup();
+    await seedProgram(db);
+    const id = await repos.workouts.start(START);
+    const squat = exerciseAt(await view(repos, id), 0);
+    await seedMirror(db, 'slot_state', [
+      {
+        id: `i-1:A1:back-squat`,
+        ownerId: 'u-1',
+        instanceId: 'i-1',
+        slotId: 'A1',
+        exerciseId: 'back-squat',
+        mode: 'linear',
+        loadG: 60_000,
+        machineStepGOverride: 1000,
+        calibrationLeft: 0,
+        noProgressCount: 0,
+        stallRank: 0,
+        suspended: false,
+        lastSessionId: null,
+        rulesVersion: '1',
+      },
+    ]);
+    expect(await repos.workouts.liveContext(id)).toMatchObject({
+      workoutName: 'Séance A',
+      loadSettings: SETTINGS,
+      machineStepG: { [squat.id]: 1000 },
+      previous: {},
+    });
+    await repos.workouts.finish(id);
+
+    const free = await repos.workouts.start({
+      ...START,
+      plan: null,
+      instanceId: null,
+      workoutId: null,
+      placeId: null,
+    });
+    expect(await repos.workouts.liveContext(free)).toMatchObject({
+      workoutName: null,
+      loadSettings: defaultLoadSettings('gym'),
+      machineStepG: {},
+    });
+    expect(await repos.workouts.liveContext('inconnue')).toBeNull();
   });
 });
 

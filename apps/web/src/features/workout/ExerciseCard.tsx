@@ -1,0 +1,259 @@
+import { useId, useState } from 'react';
+import {
+  type LiveContext,
+  type SetInput,
+  useRepos,
+  type WorkoutExerciseView,
+  type WorkoutSetView,
+} from '../../repos';
+import { Banner, BottomSheet, UNEXPECTED_ERROR_MESSAGE } from '../../ui';
+import styles from './live.module.css';
+import { NoteSheet } from './NoteSheet';
+import { gridFor } from './number-input';
+import { MenuButton } from './SessionMenu';
+import { SetRow } from './SetRow';
+import { targetSummary } from './workout-labels';
+
+/*
+ * Carte d'un exercice de la séance en cours (spec brique 3 §7.3) : nom (vers la fiche), cible, « 2 / 3 » des séries
+ * de travail faites, puis les lignes (échauffement d'abord). Repliée, elle ne garde que son en-tête ; ses champs restent
+ * montés (une saisie en cours ne se perd pas). Menu « ⋯ » : Note, Ajouter une série, Retirer une série non faite.
+ */
+
+const isDone = (set: WorkoutSetView) => set.loggedAt !== null;
+
+/** Exercice en durée : une série a une durée visée ou saisie. */
+export const measureOf = (exercise: WorkoutExerciseView): 'reps' | 'duration' =>
+  exercise.sets.some((s) => s.targetDurationS !== null || s.durationS !== null) ? 'duration' : 'reps';
+
+/** Lignes d'une série de travail : une, ou gauche et droite en unilatéral. */
+export const workLinesAt = (exercise: WorkoutExerciseView, position: number): WorkoutSetView[] =>
+  exercise.sets.filter((s) => s.kind === 'work' && s.position === position);
+
+/** Positions des séries de travail, dans l'ordre. */
+const workPositions = (exercise: WorkoutExerciseView): number[] =>
+  [...new Set(exercise.sets.filter((s) => s.kind === 'work').map((s) => s.position))].sort((a, b) => a - b);
+
+/** Séries de travail faites (une paire compte quand ses deux côtés le sont) et prévues. */
+export function workProgress(exercise: WorkoutExerciseView): { done: number; total: number } {
+  const positions = workPositions(exercise);
+  const done = positions.filter((n) => workLinesAt(exercise, n).every(isDone)).length;
+  return { done, total: positions.length };
+}
+
+/** Il reste une série de travail à faire. */
+export const hasOpenWork = (exercise: WorkoutExerciseView): boolean =>
+  exercise.sets.some((s) => s.kind === 'work' && !isDone(s));
+
+function Chevron(p: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={styles.chevron}
+      data-open={p.open ? '' : undefined}
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+export interface ExerciseCardProps {
+  exercise: WorkoutExerciseView;
+  name: string;
+  context: LiveContext;
+  open: boolean;
+  readOnly: boolean;
+  onToggle(): void;
+  /** Le nom ouvre la fiche de l'exercice. */
+  onOpenSheet(): void;
+  /** Effort à noter pour ces lignes : une série de travail, ses deux côtés en unilatéral. */
+  onEffort(lines: WorkoutSetView[]): void;
+  /** La dernière série de travail prévue vient d'être faite (exercice d'un programme) : l'effort est demandé. */
+  onLastWorkDone(lines: WorkoutSetView[]): void;
+}
+
+export function ExerciseCard(p: ExerciseCardProps) {
+  const { exercise, context } = p;
+  const repos = useRepos();
+  const bodyId = useId();
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [menu, setMenu] = useState(false);
+  const [note, setNote] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const first = exercise.sets.find((s) => s.kind === 'work') ?? exercise.sets[0];
+  const loadMode = first?.loadMode ?? 'bodyweight';
+  const grid = gridFor(loadMode, context.loadSettings, context.machineStepG[exercise.id] ?? null);
+  const measure = measureOf(exercise);
+  const showLoad = loadMode !== 'bodyweight';
+  const summary = targetSummary({
+    sets: exercise.sets,
+    loadMode,
+    // Exercice d'un programme à charge, sans charge visée : la calibration (05 §9).
+    calibration: exercise.slotId !== null && showLoad && first?.targetLoadG === null,
+  });
+  const progress = workProgress(exercise);
+  const previous = context.previous[exercise.exerciseId] ?? [];
+  const previousOf = (line: WorkoutSetView) =>
+    previous.find((s) => s.kind === line.kind && s.position === line.position && s.side === line.side) ??
+    null;
+
+  const open = exercise.sets.filter((s) => !isDone(s));
+  const active = open.find((s) => s.id === activeId) ?? open[0] ?? null;
+  const warmups = exercise.sets.filter((s) => s.kind === 'warmup');
+  const work = exercise.sets.filter((s) => s.kind === 'work');
+  const positions = workPositions(exercise);
+  const lastPosition = positions.at(-1);
+  /** Dernière position de travail sans aucune ligne faite : « Retirer une série ». */
+  const removable = [...positions].reverse().find((n) => !workLinesAt(exercise, n).some(isDone));
+
+  const run = async (action: () => Promise<unknown>) => {
+    setError(null);
+    try {
+      await action();
+    } catch {
+      setError(UNEXPECTED_ERROR_MESSAGE);
+    }
+  };
+
+  const log = async (line: WorkoutSetView, values: SetInput) => {
+    const last =
+      line.kind === 'work' && !exercise.sets.some((s) => s.kind === 'work' && !isDone(s) && s.id !== line.id);
+    await repos.workouts.logSet(line.id, values);
+    // L'effort se demande après la dernière série de travail d'un exercice du programme (05 §7) ; facultatif ailleurs.
+    if (last && exercise.slotId !== null && lastPosition !== undefined) {
+      p.onLastWorkDone(workLinesAt(exercise, lastPosition));
+    }
+  };
+
+  /** La pastille « Effort » va sur la dernière ligne faite de chaque série de travail. */
+  const chipOn = (line: WorkoutSetView) =>
+    line.kind === 'work' && workLinesAt(exercise, line.position).filter(isDone).at(-1)?.id === line.id;
+
+  const row = (line: WorkoutSetView) => (
+    <SetRow
+      key={line.id}
+      line={line}
+      previous={previousOf(line)}
+      grid={grid}
+      measure={measure}
+      active={active?.id === line.id}
+      readOnly={p.readOnly}
+      effortChip={chipOn(line)}
+      onLog={(values) => log(line, values)}
+      onReopen={() => repos.workouts.reopenSet(line.id)}
+      onEffort={() => p.onEffort(workLinesAt(exercise, line.position).filter(isDone))}
+      onActivate={() => setActiveId(line.id)}
+    />
+  );
+
+  return (
+    <section
+      className={styles.card}
+      aria-label={p.name}
+      data-measure={measure}
+      data-load={showLoad ? undefined : 'none'}
+    >
+      <div className={styles.cardHead}>
+        <h2 className={styles.cardTitle}>
+          <button type="button" className={styles.nameButton} onClick={p.onOpenSheet}>
+            {p.name}
+          </button>
+        </h2>
+        {p.readOnly ? null : <MenuButton label={`Options pour ${p.name}`} onClick={() => setMenu(true)} />}
+      </div>
+      {summary ? <p className={styles.target}>{summary}</p> : null}
+      {exercise.sets.length > 0 ? (
+        <button
+          type="button"
+          className={styles.toggle}
+          aria-expanded={p.open}
+          aria-controls={bodyId}
+          onClick={p.onToggle}
+        >
+          <span>
+            <span className={styles.srOnly}>Séries faites : </span>
+            {`${progress.done} / ${progress.total}`}
+          </span>
+          <Chevron open={p.open} />
+        </button>
+      ) : null}
+      {error ? <Banner tone="error">{error}</Banner> : null}
+      <div id={bodyId} className={styles.cardBody} hidden={!p.open}>
+        <div className={styles.columns} aria-hidden="true">
+          <span>Série</span>
+          <span>Préc.</span>
+          <span>{showLoad ? 'kg' : ''}</span>
+          <span>{measure === 'duration' ? 'Secondes' : 'Reps'}</span>
+          <span>✓</span>
+        </div>
+        {warmups.length > 0 ? (
+          <>
+            <p className={styles.caption}>Échauffement</p>
+            <ol className={styles.lines}>{warmups.map(row)}</ol>
+          </>
+        ) : null}
+        <ol className={styles.lines}>{work.map(row)}</ol>
+      </div>
+      <BottomSheet open={menu} title={p.name} onClose={() => setMenu(false)}>
+        <ul className={styles.menuList}>
+          <li>
+            <button
+              type="button"
+              className={styles.menuItem}
+              onClick={() => {
+                setMenu(false);
+                setNote(true);
+              }}
+            >
+              Note
+            </button>
+          </li>
+          <li>
+            <button
+              type="button"
+              className={styles.menuItem}
+              onClick={() => {
+                setMenu(false);
+                void run(() => repos.workouts.addSet(exercise.id));
+              }}
+            >
+              Ajouter une série
+            </button>
+          </li>
+          {removable !== undefined ? (
+            <li>
+              <button
+                type="button"
+                className={styles.menuItem}
+                onClick={() => {
+                  setMenu(false);
+                  const target = workLinesAt(exercise, removable)[0];
+                  if (target) void run(() => repos.workouts.removeSet(target.id));
+                }}
+              >
+                Retirer une série
+              </button>
+            </li>
+          ) : null}
+        </ul>
+      </BottomSheet>
+      {note ? (
+        <NoteSheet
+          title={`Note : ${p.name}`}
+          initial={exercise.note}
+          onSave={(text) => repos.workouts.setNote({ kind: 'exercise', id: exercise.id }, text)}
+          onClose={() => setNote(false)}
+        />
+      ) : null}
+    </section>
+  );
+}

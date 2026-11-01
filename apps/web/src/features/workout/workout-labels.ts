@@ -1,4 +1,4 @@
-import type { PlanNotice, PlannedExercise } from '@rune/domain';
+import type { PlanNotice, PlannedExercise, PlannedSet } from '@rune/domain';
 import { formatKg, formatSeconds } from '../../ui';
 
 /*
@@ -13,15 +13,30 @@ export const ALL_SKIPPED_TEXT = "Aucun exercice de cette séance n'est disponibl
 export const nameOf = (names: ReadonlyMap<string, string>, id: string | null): string =>
   id === null ? 'Exercice' : (names.get(id) ?? id);
 
+/** Ce que `targetSummary` lit d'un exercice : celui du plan, ou celui d'une séance commencée (cibles figées, D2). */
+export interface TargetSource {
+  calibration: boolean;
+  loadMode: PlannedExercise['loadMode'];
+  sets: readonly Pick<
+    PlannedSet,
+    'kind' | 'position' | 'targetRepsMin' | 'targetRepsMax' | 'targetDurationS' | 'targetLoadG'
+  >[];
+}
+
 /**
  * Cible résumée : « 3 × 6 · 60 kg », « 3 × 8–12 · 14 kg par main » (haltères), « 3 × 30 s » ; en calibration sans
- * charge visée, « Calibration : tu choisis ta charge ». Un slot sans série (sauté, suspendu) n'a pas de cible (« »).
- * Une série unilatérale compte pour une (gauche et droite).
+ * charge visée, « Calibration : tu choisis ta charge ». Un slot sans série (sauté, suspendu) ou des séries sans cible
+ * (séance libre) n'ont pas de cible (« »). Une série unilatérale compte pour une (gauche et droite).
  */
-export function targetSummary(exercise: PlannedExercise): string {
+export function targetSummary(exercise: TargetSource): string {
   const work = exercise.sets.filter((s) => s.kind === 'work');
   const first = work[0];
-  if (!first) return '';
+  if (
+    !first ||
+    (first.targetRepsMin === null && first.targetRepsMax === null && first.targetDurationS === null)
+  ) {
+    return '';
+  }
   if (exercise.calibration && first.targetLoadG === null) return CALIBRATION_TEXT;
   const count = new Set(work.map((s) => s.position)).size;
   const amount =

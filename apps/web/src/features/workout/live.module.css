@@ -1,0 +1,621 @@
+/*
+ * Séance en cours (spec brique 3 §7.3) : en-tête collant, cartes d'exercice, lignes de série, « Terminer » en bas.
+ * Une main à la salle : ✓, −, +, chrono, champs et actions du bas font 48 px au moins (pastille « Effort » : 44 px).
+ * Couleurs : jetons de ui/theme/tokens.css seulement, en paires déjà employées (justes dans les 5 thèmes) ; aucune
+ * teinte nouvelle. Deux retours de geste (chevron, ✓), coupés sous mouvement réduit.
+ */
+
+/* Texte lu par les lecteurs d'écran, invisible à l'écran. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* ——— En-tête collant : nom, durée, « N en attente », menu ——— */
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.headerText {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.375rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  margin: 2px 0 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.menuButton {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* ——— Cartes d'exercice ——— */
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/*
+ * Colonnes d'une ligne : Série · Préc. · kg · Reps (ou Secondes) · ✓. À 320 px, la carte garde 266 px : 44 + 32 au
+ * moins + 64 + 48 + 48, plus les écarts. Sans charge, la colonne kg disparaît ; en durée, la colonne Secondes s'élargit.
+ */
+.card {
+  --load-col: 4rem;
+  --value-col: 3rem;
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.card[data-measure="duration"] {
+  --value-col: 3.5rem;
+}
+
+.card[data-load="none"] {
+  --load-col: 0px;
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.cardTitle {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.125rem;
+  line-height: 1.25;
+}
+
+/* Le nom ouvre la fiche : souligné comme un lien. */
+.nameButton {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  padding: var(--space-2) var(--space-1);
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  text-align: start;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.target {
+  margin: 0;
+  padding-inline: var(--space-1);
+  font-size: 0.9375rem;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 48px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.chevron {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.chevron[data-open] {
+  transform: rotate(180deg);
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* `hidden` l'emporte sur l'affichage flex. */
+.cardBody[hidden] {
+  display: none;
+}
+
+.columns,
+.main {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(2rem, 1fr) var(--load-col) var(--value-col) 48px;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.columns {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.columns > :nth-child(n + 3) {
+  text-align: center;
+}
+
+/*
+ * Carte trop étroite pour ses colonnes (texte agrandi, 320 px) : la ligne passe sur deux rangs, Série · Préc. au-dessus,
+ * kg · Reps dessous, ✓ à droite des deux ; l'en-tête des colonnes suit la même place. Le seuil est en rem : il monte avec
+ * la taille du texte, comme les colonnes (11,75 rem + 64 px à loger). Les messages restent sur toute la largeur.
+ */
+@container (width < 16rem) {
+  .columns,
+  .main {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 48px;
+  }
+
+  .columns > :nth-child(1),
+  .main > :nth-child(1) {
+    grid-area: 1 / 1;
+  }
+
+  .columns > :nth-child(2),
+  .main > :nth-child(2) {
+    grid-area: 1 / 2;
+  }
+
+  .columns > :nth-child(3),
+  .main > :nth-child(3) {
+    grid-area: 2 / 1;
+  }
+
+  .columns > :nth-child(4),
+  .main > :nth-child(4) {
+    grid-area: 2 / 2;
+  }
+
+  .columns > :nth-child(5),
+  .main > :nth-child(5) {
+    grid-area: 1 / 3 / 3 / 4;
+  }
+
+  .main > :nth-child(n + 6) {
+    grid-column: 1 / -1;
+  }
+}
+
+.caption {
+  margin: var(--space-1) 0 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ——— Ligne de série ——— */
+
+.line {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  font-weight: 700;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.side {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.prevCell {
+  min-width: 0;
+}
+
+/* « Préc. » se recopie au toucher : souligné en pointillé, comme une valeur à reprendre. */
+.prev {
+  width: 100%;
+  min-height: 48px;
+  padding: var(--space-1);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: start;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+/* Champs en 16 px : pas de zoom à la saisie sur iOS. */
+.input {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+  background: var(--field-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.input[aria-invalid="true"] {
+  border-color: var(--danger);
+  box-shadow: inset 0 0 0 0.5px var(--danger);
+}
+
+.value {
+  font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.checkCell {
+  display: flex;
+  justify-content: center;
+}
+
+/* ✓ : contour tant que la série est à faire, plein une fois faite (la forme change, pas seulement la couleur). */
+.check,
+.checkStatic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--accent);
+}
+
+.check {
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.line[data-done] .check,
+.line[data-done] .checkStatic {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.check:disabled,
+.step:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Message d'une saisie refusée : sous les champs (colonnes kg à ✓) ; celui de l'enregistrement, sur toute la ligne. */
+.error,
+.saveError {
+  margin: 0;
+  font-size: 0.84375rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--danger);
+}
+
+.error {
+  grid-column: 3 / -1;
+}
+
+.saveError {
+  grid-column: 1 / -1;
+}
+
+/*
+ * − / + de la ligne en cours, chronomètre et disques par côté (un `fieldset` sans cadre, nommé « Ajuster la série 1 ») :
+ * ils passent à la ligne plutôt que de déborder.
+ */
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-1) 0;
+  border: 0;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stepCaption {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.plates {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.timerGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.chrono {
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0 var(--space-4);
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.timer {
+  font-size: 1.125rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.effortLine {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.effortChip {
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ——— « Terminer » : en bas de l'écran, collé au-dessus de la barre d'onglets (même place que le bas de la coquille) ——— */
+
+.footer {
+  position: sticky;
+  bottom: calc(73px + 2.7rem + env(safe-area-inset-bottom, 0px));
+  z-index: 10;
+  padding: var(--space-3) 0;
+  background: var(--bg);
+}
+
+/*
+ * Focus jamais caché sous l'en-tête collant ni sous « Terminer » (WCAG 2.2, 2.4.11) : le défilement garde leur place,
+ * en plus de celle de la barre d'onglets (ui/shell.module.css). En-tête : titre et ligne de durée, plus ses marges ;
+ * « Terminer » : 52 px de bouton et 2 × 12 px autour.
+ */
+:global(html):has(.header) {
+  scroll-padding-top: calc(3rem + 20px);
+}
+
+:global(html):has(.footer) {
+  scroll-padding-bottom: calc(73px + 2.7rem + 76px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Sur PC, pas de barre d'onglets (ui/AppShell, WIDE_QUERY) : le bouton se pose au bas de l'écran. */
+@media (min-width: 900px) {
+  .footer {
+    bottom: 0;
+  }
+
+  :global(html):has(.footer) {
+    scroll-padding-bottom: 76px;
+  }
+}
+
+/* ——— Feuilles ——— */
+
+.menuList,
+.effortList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.menuItem,
+.effortChoice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 52px;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+
+.menuItem[data-tone="danger"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.menuItem[aria-current="true"],
+.effortChoice[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+
+.menuItem:disabled {
+  cursor: default;
+}
+
+.sheetDetail {
+  margin: 0 0 var(--space-3);
+  color: var(--text-muted);
+}
+
+.finishList {
+  margin: 0;
+  padding-inline-start: var(--space-6);
+  font-weight: 600;
+}
+
+.noteInput {
+  width: 100%;
+  resize: vertical;
+}
+
+.counter {
+  margin: var(--space-2) 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.counter[data-over] {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* ——— Séance close ——— */
+
+.closed {
+  margin: 0;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron,
+  .check {
+    transition: none;
+  }
+}

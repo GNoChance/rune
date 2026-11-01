@@ -66,6 +66,8 @@ const ExerciseProgress = lazy(() =>
 );
 /** Séance du jour (brique 3) : hors du bundle initial, chargée à la première ouverture (fichier précaché par le SW). */
 const WorkoutToday = lazy(() => import('./features/workout').then((m) => ({ default: m.WorkoutToday })));
+/** Séance en cours (brique 3) : même module paresseux que la séance du jour. */
+const LiveWorkout = lazy(() => import('./features/workout').then((m) => ({ default: m.LiveWorkout })));
 
 /** Pages lisibles sans session (03 §13 : Confidentialité, Crédits, Aide) et parcours d'accès. */
 export const PUBLIC_PATHS: readonly string[] = [
@@ -162,6 +164,7 @@ function ConnectedRoutes() {
     <Switch>
       <Route path="/" component={HomePage} />
       <Route path="/workout" component={WorkoutToday} />
+      <Route path="/workout/:id">{(params) => <LiveWorkout id={params.id} />}</Route>
       <Route path="/progression" component={ProgressionPage} />
       <Route path="/progression/exercises/:id">{(params) => <ExerciseProgress id={params.id} />}</Route>
       <Route path="/history" component={HistoryList} />
