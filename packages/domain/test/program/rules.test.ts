@@ -16,7 +16,8 @@ describe('règles versionnées', () => {
     expect(rulesFor('1')).toBe(RULES_BY_VERSION['1']);
   });
   it('valeurs fixées', () => {
-    const r = RULES_BY_VERSION['1']!;
+    const r = rulesFor('1');
+    if (!r) throw new Error('règles 1 absentes');
     expect(r.rirByEffort).toEqual({ easy: 4, ok: 2.5, hard: 1, failed: 0 });
     expect(r.lightenPct).toBe(10);
     expect(r.stallSessions).toBe(3);

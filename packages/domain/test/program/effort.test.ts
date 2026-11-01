@@ -1,11 +1,16 @@
 import type { Effort } from '@rune/contracts';
 import { describe, expect, it } from 'vitest';
 import { effortValidated, rirEval } from '../../src/program/effort';
-import { RULES_BY_VERSION } from '../../src/program/rules';
+import { rulesFor } from '../../src/program/rules';
+
+const fail = (): never => {
+  throw new Error('règles 1 absentes');
+};
+
 import type { SetRecord } from '../../src/program/types';
 import { isDone } from '../../src/program/types';
 
-const rules = RULES_BY_VERSION['1']!;
+const rules = rulesFor('1') ?? fail();
 let n = 0;
 const set = (effort: Effort | null, over: Partial<SetRecord> = {}): SetRecord => ({
   id: `s${++n}`,

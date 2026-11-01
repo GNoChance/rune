@@ -3,8 +3,6 @@ import type { Effort } from '@rune/contracts';
 /** Version courante des règles du moteur ; chaque séance garde la sienne (spec brique 3 §4.1). */
 export const RULES_VERSION = '1';
 
-type Rank = 'E' | 'D' | 'C' | 'B' | 'A' | 'S';
-
 export interface RulesSet {
   /** RIR retenu par effort (05 §7). */
   rirByEffort: Readonly<Record<Effort, number>>;
@@ -44,9 +42,6 @@ export interface RulesSet {
     position: readonly [number, number];
   };
   noteMaxLength: number;
-  xp: { perWorkSet: number; perExerciseEffort: number; perSession: number; sessionCap: number };
-  globalRankXp: Readonly<Record<Rank, number>>;
-  groupRankSets: Readonly<Record<Rank, number>>;
 }
 
 export type RulesBook = Readonly<Record<string, RulesSet>>;
@@ -92,9 +87,6 @@ const V1: RulesSet = {
   forgottenSessionH: { sameDevice: 6, otherDevice: 24 },
   setBounds: { loadG: [0, 500_000], reps: [0, 200], durationS: [0, 7200], position: [1, 99] },
   noteMaxLength: 500,
-  xp: { perWorkSet: 10, perExerciseEffort: 5, perSession: 20, sessionCap: 300 },
-  globalRankXp: { E: 0, D: 1000, C: 5000, B: 12000, A: 30000, S: 60000 },
-  groupRankSets: { E: 0, D: 20, C: 100, B: 250, A: 600, S: 1200 },
 };
 
 export const RULES_BY_VERSION: RulesBook = deepFreeze({ '1': V1 });
