@@ -41,8 +41,9 @@ export function buildPrivacySections(rawOwner: string | undefined): readonly Pri
       title: 'Données collectées et pourquoi',
       items: [
         "Compte : pseudo, rôle, date de naissance saisie par l'administrateur (c'est la vérification de l'âge), état de tes accords. Ils servent à te connecter et à appliquer les règles d'âge.",
-        "Données personnelles : profil d'entraînement, lieux et matériel, mode prudent, séances et réglages, historique de tes accords. Elles servent à construire et suivre ton entraînement, et toi seul y accèdes.",
-        'Données de santé, seulement avec ton accord santé : indicateur de prudence issu du questionnaire, limitations et zones sensibles, douleurs signalées, mesures et nutrition. Elles servent uniquement à adapter tes séances et tes repères.',
+        "Données personnelles : profil d'entraînement, lieux et matériel, mode prudent, programmes suivis, séances et séries (exercices, charges, répétitions, durées, effort ressenti), réglages, historique de tes accords. Elles servent à construire et suivre ton entraînement, et toi seul y accèdes.",
+        "Le profil prudent d'une séance (adulte ou prudent) est gardé avec la séance, comme une donnée personnelle et non de santé : il ne dit pas si c'est ton âge, ton mode prudent ou le questionnaire qui l'a décidé, et il reste après un retrait de l'accord santé.",
+        'Données de santé, seulement avec ton accord santé : indicateur de prudence issu du questionnaire, limitations et zones sensibles, douleurs signalées en séance, motifs de changement de programme, mesures et nutrition. Elles servent uniquement à adapter tes séances et tes repères.',
         'Échanges avec le coach, seulement avec ton accord coach (brique 4) : conversations et signalements.',
         "Relecture des exercices, seulement si tu l'acceptes : l'administrateur active pour toi la relecture des fiches et, si tu le déclares, ta qualification de professionnel de santé. Ce n'est pas une donnée de santé. Tes commentaires et tes validations servent à corriger et publier les fiches.",
         "Les membres qui ne relisent pas n'en voient rien ; les autres relecteurs voient tes commentaires, mais ne savent pas si tu es professionnel de santé.",
@@ -90,8 +91,9 @@ export function buildPrivacySections(rawOwner: string | undefined): readonly Pri
       title: 'Tes droits et comment les exercer',
       items: [
         'Export : Profil, puis Confidentialité, puis « Télécharger mes données » (fichier JSON).',
+        'Séries : Profil, puis Confidentialité, puis « Télécharger mes séries (CSV) » : un fichier à ouvrir dans un tableur, une ligne par série faite, avec la colonne douleur seulement si ton accord santé est actif. Il demande le réseau.',
         "Rectification : tout ce que tu saisis est modifiable, sauf ta date de naissance, que l'administrateur corrige à ta demande.",
-        "Retrait d'un accord : à tout moment, depuis ton profil ; les données concernées sont effacées immédiatement.",
+        "Retrait d'un accord : à tout moment, depuis ton profil ; les données concernées sont effacées immédiatement. Pour la santé, la douleur signalée en séance et le motif des changements de programme disparaissent ; le reste de tes séances est gardé.",
         "Suppression du compte : depuis ton profil, ou par l'administrateur à ta demande ; tout est effacé en une fois.",
         'Relecture des exercices : ton export contient tes réglages de relecture, tes commentaires et tes validations. Un commentaire envoyé ne se modifie plus. À la suppression du compte, tes réglages sont effacés ; tes commentaires et tes validations restent sur les fiches, sans ton pseudo.',
         `Pour toute autre demande, ${contact}.`,

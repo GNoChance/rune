@@ -7,6 +7,7 @@ import { DeleteAccountDialog } from './DeleteAccountDialog';
 import { ExportButton } from './ExportButton';
 import { consentLabel, DELETE_LIST_TEXT } from './messages';
 import styles from './privacy.module.css';
+import { SetsCsvButton } from './SetsCsvButton';
 
 /**
  * Profil › Confidentialité (02 §11, spec refonte §10.4, maquette C05) : texte en vigueur, état des accords
@@ -51,6 +52,10 @@ export function PrivacySettingsPage() {
         <div className={styles.dataCard}>
           <p>Un fichier JSON avec tout ce que Rune garde sur ton compte.</p>
           <ExportButton />
+        </div>
+        <div className={styles.dataCard}>
+          <p>Tes séries faites, une ligne par série, à ouvrir dans un tableur.</p>
+          <SetsCsvButton />
         </div>
       </Section>
       <Section title="Suppression du compte" isolated>

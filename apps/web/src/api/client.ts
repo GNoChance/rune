@@ -30,6 +30,8 @@ export class NetworkRequiredError extends Error {
 
 export interface ApiClient {
   get<T>(path: string, schema: z.ZodType<T>): Promise<T>;
+  /** GET d'une réponse qui n'est pas du JSON (le CSV des séries) : le texte du corps. */
+  getText(path: string): Promise<string>;
   send<T = void>(
     method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
@@ -67,7 +69,7 @@ export function createApiClient(
 ): ApiClient {
   const timeoutMs = opts.timeoutMs ?? SYNC_TIMEOUT_MS;
 
-  async function request<T>(init: RequestInit, path: string, schema?: z.ZodType<T>): Promise<T> {
+  async function requestReply(init: RequestInit, path: string): Promise<JsonReply> {
     let reply: JsonReply;
     try {
       reply = await fetchJsonWithTimeout(t, path, init, timeoutMs);
@@ -85,6 +87,11 @@ export function createApiClient(
       if (error.code === 'account_deleted') hooks.onAccountDeleted();
       throw error;
     }
+    return reply;
+  }
+
+  async function request<T>(init: RequestInit, path: string, schema?: z.ZodType<T>): Promise<T> {
+    const reply = await requestReply(init, path);
     return (schema ? schema.parse(reply.body) : undefined) as T;
   }
 
@@ -95,6 +102,13 @@ export function createApiClient(
         path,
         schema,
       );
+    },
+    async getText(path) {
+      const reply = await requestReply(
+        { method: 'GET', credentials: 'same-origin', headers: { [PROTOCOL_HEADER]: String(SYNC_PROTOCOL) } },
+        path,
+      );
+      return reply.text;
     },
     send(method, path, body, schema) {
       return request(

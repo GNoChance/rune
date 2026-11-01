@@ -162,3 +162,106 @@ describe('purgeHealthData', () => {
     expect(await db.mirror('place').count()).toBe(1);
   });
 });
+
+describe('purgeHealthData : séances et programmes (spec brique 3 §5.5)', () => {
+  beforeEach(() => {
+    db = createTestLocalDb();
+  });
+
+  it('vide douleur, motifs et séries de douleur des copies, dont les copies provisoires, et réécrit les codes PAIN_*', async () => {
+    await db.mirror('performed_exercise').bulkPut([
+      row('e1', {
+        sessionId: 's1',
+        exerciseId: 'x',
+        position: 1,
+        painLevel: 'pain',
+        swapReason: 'pain',
+        note: 'ok',
+      }),
+      row('e2', {
+        sessionId: 's1',
+        exerciseId: 'y',
+        position: 2,
+        painLevel: null,
+        swapReason: 'equipment',
+      }),
+    ]);
+    await db
+      .mirror('slot_state')
+      .put(row('i:s:x', { painStreak: 2, suspended: true, loadG: 40_000, provisional: true }));
+    await db.mirror('engine_decision').put(
+      row('e1', {
+        reasonCode: 'PAIN_SUSPEND',
+        result: 'ADJUSTED_HOLD',
+        profile: 'cautious',
+        provisional: true,
+      }),
+    );
+    await db
+      .mirror('instance_change')
+      .bulkPut([
+        row('c1', { reasonCode: 'PAIN_HOLD', reason: W }),
+        row('c2', { reasonCode: 'USER_CHANGE', reason: null }),
+      ]);
+    await db.mirror('workout_session').put(row('s1', { profile: 'cautious' }));
+    await db.outbox.bulkPut([
+      makeOp({
+        userId: 'u1',
+        entity: 'performed_exercise',
+        id: 'e1',
+        kind: 'patch',
+        fields: { painLevel: 'pain' },
+      }),
+      makeOp({
+        userId: 'u1',
+        entity: 'performed_exercise',
+        id: 'e3',
+        kind: 'create',
+        fields: { sessionId: 's1', painLevel: 'discomfort', swapReason: 'pain', position: 3 },
+      }),
+      makeOp({
+        userId: 'u1',
+        entity: 'instance_change',
+        id: 'c3',
+        kind: 'create',
+        fields: { reasonCode: 'PAIN_LIGHTEN', reason: W, status: 'proposed' },
+      }),
+      makeOp({ userId: 'u1', entity: 'slot_state', id: 'i:s:x', kind: 'patch', fields: { painStreak: 1 } }),
+    ]);
+
+    await purgeHealthData(db);
+
+    expect(await db.mirror('performed_exercise').get('e1')).toMatchObject({
+      painLevel: null,
+      swapReason: null,
+      note: 'ok',
+    });
+    expect(await db.mirror('performed_exercise').get('e2')).toMatchObject({ swapReason: 'equipment' });
+    expect(await db.mirror('slot_state').get('i:s:x')).toMatchObject({
+      painStreak: null,
+      suspended: true,
+      loadG: 40_000,
+      provisional: true,
+    });
+    expect(await db.mirror('engine_decision').get('e1')).toMatchObject({
+      reasonCode: 'USER_SUSPEND',
+      profile: 'cautious',
+      provisional: true,
+    });
+    expect(await db.mirror('instance_change').get('c1')).toMatchObject({
+      reasonCode: 'USER_HOLD',
+      reason: null,
+    });
+    expect(await db.mirror('instance_change').get('c2')).toMatchObject({ reasonCode: 'USER_CHANGE' });
+    expect(await db.mirror('workout_session').get('s1')).toMatchObject({ profile: 'cautious' });
+
+    const ops = await db.outbox.toArray();
+    expect(ops.map((o) => [o.entity, o.fields])).toEqual([
+      ['performed_exercise', { sessionId: 's1', position: 3 }],
+      ['instance_change', { reasonCode: 'USER_LIGHTEN', status: 'proposed' }],
+    ]);
+    const dump = await dumpLocalDb(db);
+    expect(dump).not.toContain(W);
+    expect(dump).not.toContain('PAIN_');
+  });
+});

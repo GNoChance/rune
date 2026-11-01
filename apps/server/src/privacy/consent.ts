@@ -3,6 +3,7 @@ import {
   type EntityRule,
   type LimitationInput,
   type LimitationPatch,
+  PAIN_CODE_REWRITES,
   SYNC_COLUMNS,
 } from '@rune/contracts';
 import { type RawBuilder, sql, type Transaction } from 'kysely';
@@ -13,11 +14,43 @@ import type { AppDeps } from '../deps';
 import { httpError } from '../http/errors';
 import { getConsentState, isHealthConsentActive } from './consent-state';
 
+type Row = { rid: number };
+
 export type HealthWithdrawHook = (trx: Transaction<Database>, deps: AppDeps, userId: string) => Promise<void>;
 export type HealthWithdrawHooks = Readonly<Record<string /* table SQL */, HealthWithdrawHook>>;
 
-/** Vide au socle ; une entrée remplace la règle générique du retrait pour sa table (briques 3 et 5, 09 §8). */
-export const HEALTH_WITHDRAW_HOOKS: HealthWithdrawHooks = {};
+/** `CASE` qui réécrit les codes `PAIN_*` de `reason_code` (spec brique 3 §5.5, 05 §4.3.12). */
+const rewrittenCode = sql`case reason_code ${sql.join(
+  Object.entries(PAIN_CODE_REWRITES).map(([from, to]) => sql`when ${from} then ${to}`),
+  sql` `,
+)} else reason_code end`;
+const painCodes = sql.join(Object.keys(PAIN_CODE_REWRITES));
+
+/**
+ * Réécriture des codes de douleur d'une table (nouveaux `rev`, aucun rejeu : les décisions passées restent) ;
+ * `clearReason` efface aussi le motif C2 (`instance_change.reason`).
+ */
+function rewritePainCodes(table: string, clearReason: boolean): HealthWithdrawHook {
+  return async (trx, deps, userId) => {
+    const rows =
+      await sql<Row>`select rowid as rid from ${sql.table(table)} where owner_id = ${userId} and (reason_code in (${painCodes})${
+        clearReason ? sql` or reason is not null` : sql``
+      })`.execute(trx);
+    await stampRows(trx, deps, table, userId, rows.rows, () =>
+      sql.join([sql`reason_code = ${rewrittenCode}`, ...(clearReason ? [sql`reason = null`] : [])]),
+    );
+  };
+}
+
+/**
+ * Une entrée remplace la règle générique du retrait pour sa table (09 §8). Brique 3 : les motifs et codes de douleur
+ * des changements de programme et des décisions du moteur. `pain_level`, `swap_reason = 'pain'` et `pain_streak`
+ * passent par la règle générique (`c2Columns`, `c2Values`) ; les suspensions de slot restent.
+ */
+export const HEALTH_WITHDRAW_HOOKS: HealthWithdrawHooks = {
+  instance_change: rewritePainCodes('instance_change', true),
+  engine_decision: rewritePainCodes('engine_decision', false),
+};
 
 const SYNC: readonly string[] = SYNC_COLUMNS;
 
@@ -83,8 +116,6 @@ export async function grantConsent(
     details: { consentType: type },
   });
 }
-
-type Row = { rid: number };
 
 async function stampRows(
   trx: Transaction<Database>,

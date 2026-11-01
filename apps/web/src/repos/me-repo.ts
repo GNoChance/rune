@@ -48,6 +48,8 @@ export interface MeRepo {
    */
   logout(mode: 'current' | 'all'): Promise<void>;
   exportData(): Promise<ExportV1>;
+  /** CSV des séries faites (spec brique 3 §5.6) : réseau nécessaire, texte sans BOM (`downloadCsv` le remet). */
+  exportSetsCsv(): Promise<string>;
   deleteAccount(password: string): Promise<void>;
   /** Message des 18 ans à afficher : tranche vue « minor » sur l'appareil, « adult » maintenant (R-AGE-6). */
   adultNotice(): Promise<boolean>;
@@ -175,6 +177,7 @@ export function createMeRepo(s: AppServices): MeRepo {
         await whenSignedOut(db);
       }),
     exportData: () => api.get('/api/me/export', ExportV1),
+    exportSetsCsv: () => api.getText('/api/me/export/sets.csv'),
     deleteAccount: (password) =>
       withEngineStopped(async () => {
         await api.send('POST', '/api/me/delete', { password });

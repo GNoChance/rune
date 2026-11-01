@@ -258,8 +258,8 @@ describe('retrait du consentement santé (R-CST-5, P-CST-3, 09 §8)', () => {
 });
 
 describe('HEALTH_WITHDRAW_HOOKS', () => {
-  it('est vide au socle', () => {
-    expect(HEALTH_WITHDRAW_HOOKS).toEqual({});
+  it('ne porte que les tables dont le retrait réécrit des codes (brique 3)', () => {
+    expect(Object.keys(HEALTH_WITHDRAW_HOOKS).sort()).toEqual(['engine_decision', 'instance_change']);
   });
 
   it('un hook remplace la règle générique pour sa table', async () => {

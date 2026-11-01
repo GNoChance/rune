@@ -1055,6 +1055,39 @@ describe('registres de vie privée (03 §1, §14)', () => {
     expect(fiche).toContain('privacy-content.ts');
   });
 
+  it('séances, séries, programmes, CSV et profil prudent (C1) : nommés par la fiche et par la page Confidentialité (brique 3, §9)', () => {
+    const body = section(fiche, 'Catégories de données');
+    for (const needle of [
+      'Séances, séries et programmes',
+      'niveau de douleur',
+      'séries de douleur',
+      'motif',
+      'profil prudent',
+      'reste en C1',
+      '/api/me/export/sets.csv',
+      'colonne douleur',
+      'sans contenu',
+    ]) {
+      expect(body, needle).toContain(needle);
+    }
+    expect(section(fiche, 'Finalités')).toContain('séries');
+    const collected = pageItems('Données collectées et pourquoi');
+    for (const needle of [
+      'programmes suivis',
+      'séances',
+      'séries',
+      'motifs',
+      'profil prudent',
+      'reste après',
+    ]) {
+      expect(collected, needle).toContain(needle);
+    }
+    const rights = pageItems('Tes droits et comment les exercer');
+    for (const needle of ['Télécharger mes séries (CSV)', 'colonne douleur', 'douleur signalée en séance']) {
+      expect(rights, needle).toContain(needle);
+    }
+  });
+
   /** Donnée et durée des lignes du tableau de 03 §7, mot pour mot (gras retiré). */
   const retention = (): { data: string; duration: string }[] =>
     tableRows(

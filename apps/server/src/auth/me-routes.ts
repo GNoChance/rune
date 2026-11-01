@@ -9,6 +9,7 @@ import { httpError } from '../http/errors';
 import { parseJson } from '../http/validate';
 import { deleteAccount } from '../privacy/delete-account';
 import { buildExport } from '../privacy/export';
+import { buildSetsCsv } from '../privacy/sets-csv';
 import { buildMe, verifyUserPassword } from './me';
 import { logSecurityEvent } from './security-log';
 import { clearSessionCookie, requireUser } from './session';
@@ -80,6 +81,31 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
     c.header('Content-Disposition', `attachment; filename="rune-export-${parisDate(deps.clock.now())}.json"`);
     c.header('Cache-Control', 'no-store');
     return c.json(exported);
+  });
+
+  // CSV des séries (spec brique 3 §5.6). GET authentifié par cookie SameSite=Lax : même garde Fetch Metadata que
+  // l'export du catalogue (seuls la page elle-même, l'adresse tapée ou un navigateur sans l'en-tête passent).
+  routes.get('/export/sets.csv', async (c) => {
+    const user = c.get('user');
+    if (!user) throw httpError('unauthenticated');
+    const site = c.req.header('Sec-Fetch-Site');
+    if (site !== undefined && site !== 'same-origin' && site !== 'none') throw httpError('origin_mismatch');
+    const csv = await deps.db.transaction().execute(async (trx) => {
+      const data = await buildSetsCsv(trx, user.id);
+      await logSecurityEvent(trx, deps, {
+        type: 'data_exported',
+        actorId: user.id,
+        targetId: user.id,
+        ip: validClientIp(c),
+        outcome: 'success',
+        details: { format: 'sets_csv' },
+      });
+      return data;
+    });
+    c.header('Content-Type', 'text/csv; charset=utf-8');
+    c.header('Content-Disposition', `attachment; filename="rune-series-${parisDate(deps.clock.now())}.csv"`);
+    c.header('Cache-Control', 'no-store');
+    return c.body(csv);
   });
 
   routes.post('/delete', async (c) => {

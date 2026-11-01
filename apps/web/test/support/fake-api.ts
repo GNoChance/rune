@@ -71,7 +71,8 @@ export function createFakeApi(): FakeApi {
           : route.handler
         : { status: 404, body: { error: 'not_found' } };
       const hasBody = reply.body !== undefined && reply.status !== 204 && reply.status !== 304;
-      return new Response(hasBody ? JSON.stringify(reply.body) : null, {
+      const raw = typeof reply.body === 'string' && reply.headers?.['Content-Type']?.startsWith('text/');
+      return new Response(hasBody ? (raw ? (reply.body as string) : JSON.stringify(reply.body)) : null, {
         status: reply.status,
         headers: { ...(hasBody ? { 'Content-Type': 'application/json' } : {}), ...reply.headers },
       });

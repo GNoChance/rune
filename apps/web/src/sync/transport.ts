@@ -32,6 +32,8 @@ export class HttpError extends Error {
 export interface JsonReply {
   res: Response;
   body: unknown;
+  /** Corps tel que lu (BOM retiré par le décodage), pour les réponses qui ne sont pas du JSON (CSV). */
+  text: string;
 }
 
 export function httpErrorOf(reply: JsonReply): HttpError {
@@ -120,11 +122,11 @@ export async function fetchJsonWithTimeout(
     const res = await deadline.race(t.fetch(path, { ...init, signal: deadline.signal }));
     onHeaders?.(res);
     const text = await deadline.race(res.text());
-    if (text === '') return { res, body: null };
+    if (text === '') return { res, body: null, text };
     try {
-      return { res, body: JSON.parse(text) as unknown };
+      return { res, body: JSON.parse(text) as unknown, text };
     } catch {
-      return { res, body: undefined };
+      return { res, body: undefined, text };
     }
   } catch (error) {
     throw asOffline(error);

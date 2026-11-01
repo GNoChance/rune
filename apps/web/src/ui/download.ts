@@ -27,3 +27,28 @@ export function downloadJson(filename: string, data: unknown): void {
     setTimeout(() => URL.revokeObjectURL(url), REVOKE_AFTER_MS);
   }
 }
+
+/** `rune-series-AAAA-MM-JJ.csv`, date civile de Paris (comme le nom envoyé par le serveur). */
+export function setsCsvFileName(nowMs: number): string {
+  return `rune-series-${parisDate(new Date(nowMs))}.csv`;
+}
+
+/**
+ * Télécharge un CSV : le BOM UTF-8 est remis en tête (la lecture du corps l'a retiré) pour que le tableur
+ * français lise les accents ; même mécanique que `downloadJson`.
+ */
+export function downloadCsv(filename: string, text: string): void {
+  const blob = new Blob(['﻿', text], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.hidden = true;
+  document.body.append(link);
+  try {
+    link.click();
+  } finally {
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), REVOKE_AFTER_MS);
+  }
+}

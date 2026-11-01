@@ -1,4 +1,4 @@
-import { type EntityRule, type EntityRulesMap, entityRules } from '@rune/contracts';
+import { type EntityRule, type EntityRulesMap, entityRules, PAIN_CODE_REWRITES } from '@rune/contracts';
 import { isC2Value, stripC2Fields } from './c2';
 import { clearAllCommentDrafts } from './comment-drafts';
 import { type AppDb, mirrorStoreNames } from './db';
@@ -33,10 +33,32 @@ export async function clearMirrors(db: AppDb): Promise<void> {
   );
 }
 
+/** Tables dont `reason_code` peut porter un code `PAIN_*` (spec brique 3 §5.5) : réécrit comme sur le serveur. */
+const PAIN_CODE_ENTITIES: readonly string[] = ['instance_change', 'engine_decision'];
+
+/** Champs avec le code `PAIN_*` de `reasonCode` remplacé ; `rewritten` dit si une valeur a changé. */
+function rewritePainCode<T extends Record<string, unknown>>(
+  entity: string,
+  fields: T,
+): { fields: T; rewritten: boolean } {
+  const code = fields.reasonCode;
+  if (
+    !PAIN_CODE_ENTITIES.includes(entity) ||
+    typeof code !== 'string' ||
+    !Object.hasOwn(PAIN_CODE_REWRITES, code)
+  )
+    return { fields, rewritten: false };
+  return {
+    fields: { ...fields, reasonCode: PAIN_CODE_REWRITES[code as keyof typeof PAIN_CODE_REWRITES] },
+    rewritten: true,
+  };
+}
+
 /**
  * Retrait de l'accord santé (P-CST-3 étape 4), en une transaction : miroirs C2 vidés, valeurs C2
  * mises à null ailleurs ; ops sur une table C2 supprimées, clés C2 retirées des autres (un patch
- * vidé est supprimé) ; deadletter des tables C2 supprimée.
+ * vidé est supprimé) ; deadletter des tables C2 supprimée. Les codes `PAIN_*` des changements de programme et
+ * des décisions du moteur (copies provisoires comprises) sont réécrits comme sur le serveur.
  */
 export async function purgeHealthData(
   db: AppDb,
@@ -57,15 +79,17 @@ export async function purgeHealthData(
         await table.clear();
         continue;
       }
-      if (rule.c2Columns.length === 0 && !rule.c2Values) continue;
+      const hasCodes = PAIN_CODE_ENTITIES.includes(store);
+      if (rule.c2Columns.length === 0 && !rule.c2Values && !hasCodes) continue;
       for (const row of await table.toArray()) {
         const changes = Object.fromEntries(
           Object.entries(row)
             .filter(([k, v]) => isC2Value(rule, k, v))
             .map(([k]) => [k, null]),
         );
-        if (Object.keys(changes).length === 0) continue;
-        await table.put({ ...row, ...changes });
+        const { fields: next, rewritten } = rewritePainCode(store, { ...row, ...changes });
+        if (Object.keys(changes).length === 0 && !rewritten) continue;
+        await table.put(next);
         rowsCleared += 1;
       }
     }
@@ -78,8 +102,9 @@ export async function purgeHealthData(
         opsRemoved += 1;
         continue;
       }
-      const { fields, stripped } = stripC2Fields(rule, op.fields);
-      if (!stripped) continue;
+      const strippedOp = stripC2Fields(rule, op.fields);
+      const { fields, rewritten } = rewritePainCode(op.entity, strippedOp.fields);
+      if (!strippedOp.stripped && !rewritten) continue;
       if (op.kind === 'patch' && Object.keys(fields).length === 0) {
         await db.outbox.delete(op.opId);
         opsRemoved += 1;
