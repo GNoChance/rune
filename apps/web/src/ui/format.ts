@@ -63,3 +63,26 @@ export function formatSeconds(seconds: number): string {
 export function formatKg(grams: number): string {
   return `${formatKgValue(grams)} kg`;
 }
+
+const intFormat = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
+const kgGroupedFormat = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 3 });
+const tonFormat = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+/** Au-delà de 10 000 kg soulevés, on parle en tonnes (spec brique 3 §8.3). */
+export const LIFTED_TONNES_ABOVE_G = 10_000_000;
+
+/** Entier à la française, milliers séparés par une espace fine : `1 240`. */
+export function formatInt(n: number): string {
+  return intFormat.format(n);
+}
+
+/** `3 200 kg`, `62,5 kg` : des grammes entiers en kilogrammes, virgule décimale et milliers séparés. */
+export function formatKgGrouped(grams: number): string {
+  return `${kgGroupedFormat.format(grams / 1000)} kg`;
+}
+
+/** Charge soulevée au total : `3 200 kg`, puis `12,4 t` au-delà de 10 000 kg (spec brique 3 §8.3). */
+export function formatLifted(grams: number): string {
+  if (grams > LIFTED_TONNES_ABOVE_G) return `${tonFormat.format(grams / 1_000_000)} t`;
+  return `${intFormat.format(grams / 1000)} kg`;
+}

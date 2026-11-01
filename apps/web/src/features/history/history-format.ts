@@ -1,5 +1,5 @@
 import { type SessionRecord, tonnageG, workSetUnits } from '@rune/domain';
-import { plural } from '../../ui';
+import { formatLifted, plural } from '../../ui';
 
 const TIME_ZONE = 'Europe/Paris';
 
@@ -15,11 +15,6 @@ const monthKeyFormat = new Intl.DateTimeFormat('en-CA', {
   year: 'numeric',
   month: '2-digit',
 });
-const kgFormat = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
-const tonFormat = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-
-/** Au-delà de 10 000 kg soulevés, on parle en tonnes (spec brique 3 §8.3). */
-const TONNES_ABOVE_G = 10_000_000;
 
 /** « mar. 28 oct. », à l'heure de Paris. */
 export const dayLabel = (ms: number): string => dayFormat.format(new Date(ms));
@@ -34,10 +29,7 @@ export function monthLabel(ms: number): string {
 export const monthKey = (ms: number): string => monthKeyFormat.format(new Date(ms));
 
 /** « 3 200 kg » ; « 12,4 t » au-delà de 10 000 kg. Charges en grammes entiers. */
-export function liftedLabel(grams: number): string {
-  if (grams > TONNES_ABOVE_G) return `${tonFormat.format(grams / 1_000_000)} t`;
-  return `${kgFormat.format(grams / 1000)} kg`;
-}
+export const liftedLabel = formatLifted;
 
 /** « Séance A » pour une séance de programme, « Séance libre » sans programme (D7). */
 export const sessionName = (s: Pick<SessionRecord, 'workoutId'>): string =>

@@ -15,15 +15,54 @@
   gap: var(--space-4);
 }
 
-/* Texte de la fenêtre, puis ses quêtes (maquette : 14 px entre les deux). */
-.awakening {
+/* Carte de séance (en cours, du jour, proposition) : une carte de l'accueil, son action en bas. */
+.card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow:
+    0 1px 2px rgb(16 21 31 / 0.06),
+    0 6px 18px rgb(16 21 31 / 0.05);
 }
 
-.awakening > p {
+.card > p,
+.card > h2 {
   margin: 0;
+}
+
+.cardTitle {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.cardMeta {
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+/* Lien qui a l'allure du bouton principal du kit (52 px, accent) : « Commencer », « Reprendre ». */
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  padding: var(--space-2) 20px;
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-decoration: none;
 }
 
 /*

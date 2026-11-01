@@ -1,9 +1,16 @@
 import { EXPERIENCE_LABELS, GOAL_LABELS } from '@rune/contracts';
 import { isReviewer } from '@rune/domain';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Link } from 'wouter';
 import { useLive, useMe } from '../../app-services';
-import { useRepos } from '../../repos';
+import {
+  type PlannedSession,
+  type ProgramView,
+  useActiveSession,
+  usePlannedWorkout,
+  useProgramView,
+  useRepos,
+} from '../../repos';
 import { Banner, Button, CoachBubble, CountUp, Page, plural, SystemPanel } from '../../ui';
 import { coachLine } from '../coach/coach-lines';
 import { AwakeningQuests, awakeningQuests } from '../onboarding/AwakeningQuests';
@@ -88,11 +95,38 @@ function Chevron() {
 }
 
 /**
+ * Séance du jour (spec brique 3 §7.9) : son nom, le nombre d'exercices, la durée et le lieu. « Commencer » ouvre
+ * l'écran de la séance du jour, qui seul démarre la séance (changer de lieu ou de séance y reste possible).
+ */
+function TodayCard(p: { view: ProgramView; planned: PlannedSession; placeName: string | null }) {
+  const titleId = useId();
+  const { workouts, estimatedMinutes } = p.view.program.template;
+  const name = workouts.find((w) => w.id === p.planned.workoutId)?.name ?? p.planned.workoutId;
+  const count = p.planned.plan.exercises.filter((e) => e.exerciseId !== null).length;
+  const meta = [`${count} ${plural(count, 'exercice', 'exercices')}`, `${estimatedMinutes} min`];
+  if (p.placeName) meta.push(p.placeName);
+  return (
+    <section aria-labelledby={titleId} className={styles.card}>
+      <p className={styles.tileKey}>Séance du jour</p>
+      <h2 id={titleId} className={styles.cardTitle}>
+        {name}
+      </h2>
+      <p className={styles.cardMeta}>{meta.join(' · ')}</p>
+      <Link href="/workout" className={styles.action}>
+        Commencer
+      </Link>
+    </section>
+  );
+}
+
+/**
  * Accueil (spec refonte §10.2, maquettes MixSombre / MixClair, prototype « Accueil ») : salutation selon l'heure
  * de Paris, bandeaux du compte, carte « Relecture : N fiches t'attendent » pour un relecteur (en ligne seulement,
- * spec brique 2 §4.4), bulle du coach « Aujourd'hui » avec sa ligne du jour, fenêtre du Système et ses
- * quêtes d'éveil aux vrais états (« Éveil terminé. » à 3/3 seulement, « Éveil en cours. » tant qu'une quête reste
- * ouverte : pull de plus de 24 h, nouvel appareil avant le premier pull), tuiles lieu principal et rythme, ligne
+ * spec brique 2 §4.4), puis, dans l'ordre de la spec brique 3 §7.9 : séance en cours (« Reprendre »), séance du jour
+ * (« Commencer ») ou « Choisis ton programme », proposition en attente, fenêtre « Éveil en cours. » et ses quêtes
+ * d'éveil aux vrais états (masquée une fois les 3 faites ; une quête reste ouverte tant que le pull a plus de 24 h ou
+ * que le nouvel appareil n'a pas encore tiré), bulle du coach « Aujourd'hui » avec sa ligne du jour, tuiles lieu
+ * principal et rythme, ligne
  * objectif et niveau, puis le voyant « Prêt hors ligne » (R-SYN-33). Les cartes, voyant compris, entrent en
  * cascade, d'un bloc, une fois le profil, les lieux et le voyant lus : jamais une fenêtre à 0/3 qu'une bulle
  * viendrait pousser.
@@ -110,8 +144,12 @@ export function HomePage() {
   const adultNotice = useLive(() => repos.me.adultNotice(), [repos]);
   const profile = useLive(() => repos.profile.get(), [repos]);
   const places = useLive(() => repos.places.list(), [repos]);
+  const active = useActiveSession();
+  const view = useProgramView();
+  const planned = usePlannedWorkout(null, null);
   const { readiness, loaded, retry } = useReadiness();
   const [retrying, setRetrying] = useState(false);
+  const resumeTitle = useId();
   if (!me) return null;
 
   const onRetry = () => {
@@ -129,7 +167,13 @@ export function HomePage() {
   const goal = profile?.goal ?? null;
   const experience = profile?.experience ?? null;
   // Lectures locales faites (profil, même absent, lieux, voyant) : la pile entre alors d'un bloc, en cascade.
-  const readsDone = profile !== undefined && places !== undefined && loaded;
+  const readsDone =
+    profile !== undefined &&
+    places !== undefined &&
+    active !== undefined &&
+    view !== undefined &&
+    planned !== undefined &&
+    loaded;
 
   return (
     <Page title={greeting(now, me.username)}>
@@ -147,17 +191,49 @@ export function HomePage() {
       {isReviewer(me) ? <ReviewHomeCard me={me} /> : null}
       {readsDone ? (
         <div className={`${styles.cards} stagger`}>
+          {active ? (
+            <section aria-labelledby={resumeTitle} className={styles.card}>
+              <h2 id={resumeTitle} className={styles.cardTitle}>
+                Séance en cours
+              </h2>
+              <Link href={`/workout/${active.id}`} className={styles.action}>
+                Reprendre
+              </Link>
+            </section>
+          ) : null}
+          {view === null ? (
+            <Link href="/program/choose" className={styles.row}>
+              <span className={styles.rowText}>
+                <span className={styles.tileKey}>Programme</span>{' '}
+                <span className={styles.rowValue}>Choisis ton programme</span>
+              </span>
+              <Chevron />
+            </Link>
+          ) : planned ? (
+            <TodayCard
+              view={view}
+              planned={planned}
+              placeName={places?.find((place) => place.id === planned.placeId)?.name ?? null}
+            />
+          ) : null}
+          {view && view.proposals.length > 0 ? (
+            <div className={styles.card}>
+              <p className={styles.cardMeta}>Une proposition t'attend.</p>
+              <Link href="/program" className={styles.action}>
+                Voir la proposition
+              </Link>
+            </div>
+          ) : null}
+          {quests.every((q) => q.done) ? null : (
+            <SystemPanel title="Éveil en cours.">
+              <AwakeningQuests quests={quests} />
+            </SystemPanel>
+          )}
           {coach ? (
             <CoachBubble coach={coach} label="Aujourd'hui">
               <p>{coachLine(coach, 'daily', new Date(now), me.username, days)}</p>
             </CoachBubble>
           ) : null}
-          <SystemPanel title={quests.every((q) => q.done) ? 'Éveil terminé.' : 'Éveil en cours.'}>
-            <div className={styles.awakening}>
-              <p>Tes programmes et tes séances arriveront ici.</p>
-              <AwakeningQuests quests={quests} />
-            </div>
-          </SystemPanel>
           {primary || days !== null ? (
             <div className={styles.tiles}>
               {primary ? (

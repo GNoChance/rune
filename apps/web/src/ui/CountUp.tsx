@@ -11,7 +11,16 @@ const easeOut = (t: number) => 1 - (1 - t) ** 3;
  * celle affichée. Les chiffres de passage sont cachés aux lecteurs d'écran, qui lisent toujours `to` : aucune
  * information ne passe uniquement par l'animation, et une région live n'annonce pas chaque image.
  */
-export function CountUp({ to, duration = 900 }: { to: number; duration?: number }) {
+export function CountUp({
+  to,
+  duration = 900,
+  format = String,
+}: {
+  to: number;
+  duration?: number;
+  /** Écriture du nombre (milliers séparés par exemple) ; l'entier brut par défaut. */
+  format?: (n: number) => string;
+}) {
   const reduced = useReducedMotion();
   const instant = reduced || !Number.isFinite(duration) || duration <= 0;
   const [shown, setShown] = useState(() => (instant ? to : 0));
@@ -39,8 +48,8 @@ export function CountUp({ to, duration = 900 }: { to: number; duration?: number 
 
   return (
     <>
-      <span aria-hidden="true">{shown}</span>
-      <span className={styles.visuallyHidden}>{to}</span>
+      <span aria-hidden="true">{format(shown)}</span>
+      <span className={styles.visuallyHidden}>{format(to)}</span>
     </>
   );
 }

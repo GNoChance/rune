@@ -129,13 +129,26 @@
   line-height: 1.2;
 }
 
-/* Barre d'XP vide : la piste seule, qu'un reflet traverse une fois (spec refonte §9 : « juste un reflet »). */
+/*
+ * Barre d'XP : la piste, son remplissage (XP / seuil du prochain rang, rien tant que l'XP est à 0) et un reflet
+ * qui la traverse une fois (spec refonte §9).
+ */
 .xpBar {
   position: relative;
   height: 6px;
   border-radius: 3px;
   overflow: hidden;
   background: color-mix(in srgb, var(--text-muted) 18%, var(--surface));
+}
+
+/* Le remplissage grandit depuis la gauche à l'arrivée ; au repos, il est là, à sa largeur. */
+.xpFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transform-origin: left center;
+  animation: xp-fill var(--dur-celebrate) var(--ease) 300ms backwards;
 }
 
 /* Au repos, le reflet attend hors de la piste (rogné) : rien n'est caché par une opacité nulle. */
@@ -303,6 +316,128 @@
   overflow-wrap: anywhere;
 }
 
+/* ---------- Records récents ---------- */
+
+.recordList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Toute la ligne est un lien d'au moins 44 px vers la progression de l'exercice. */
+.recordLink {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 44px;
+  padding: 10px var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.recordName {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.recordMeta {
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+/* ---------- Page d'un exercice : courbe et records ---------- */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(16 21 31 / 0.06);
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 11rem;
+}
+
+.chartBase {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chartLine {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: chart-draw var(--dur-celebrate) var(--ease) 200ms backwards;
+}
+
+.chartDot {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+.records {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.record {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 2px var(--space-3);
+}
+
+.record dt {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.record dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+/* La mention du 1RM estimé : lisible, jamais réduite à une note de bas de page. */
+.record dd.mention {
+  flex-basis: 100%;
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
 /* ---------- Note du Système ---------- */
 
 .systemNote {
@@ -363,6 +498,18 @@
   }
 }
 
+@keyframes xp-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes chart-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
 @keyframes muscle-pop {
   from {
     opacity: 0;
@@ -385,7 +532,9 @@
     animation-delay: 0ms;
   }
 
-  .xpSweep {
+  .xpSweep,
+  .xpFill,
+  .chartLine {
     animation: none;
   }
 }

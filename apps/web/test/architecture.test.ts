@@ -49,6 +49,9 @@ const UPPER_STONES = /(^|\/)art\/RankStoneUpper$/;
 /** Réglages de charge des lieux et des salles : chargés à la demande (routes /places/:id/load et /gyms/:id/load). */
 const LOAD_SETTINGS_PAGE = /(^|\/)LoadSettingsPage$/;
 
+/** Page d'un exercice de la Progression (courbe et records) : chargée à la demande (route /progression/exercises/:id). */
+const EXERCISE_PROGRESS = /(^|\/)progression\/ExerciseProgress$/;
+
 /** Écrans de la brique 3 (séance, historique, programme) : chargés à la demande, jamais dans le bundle initial. */
 const LAZY_FEATURE = /(^|\/)features\/(workout|history|program)(\/|$)/;
 const inLazyFeature = (path: string) => /^features\/(workout|history|program)\//.test(path);
@@ -102,6 +105,16 @@ describe('architecture', () => {
     for (const file of files) {
       for (const spec of staticSpecifiers(readFileSync(file, 'utf8'))) {
         expect(spec, rel(file)).not.toMatch(LOAD_SETTINGS_PAGE);
+      }
+    }
+  });
+
+  it("page d'un exercice de la Progression (ExerciseProgress) : seulement par import() depuis App.tsx, jamais dans le bundle initial", () => {
+    const dynamic = files.filter((f) => imports(f).some((spec) => EXERCISE_PROGRESS.test(spec)));
+    expect(dynamic.map(rel)).toEqual(['App.tsx']);
+    for (const file of files) {
+      for (const spec of staticSpecifiers(readFileSync(file, 'utf8'))) {
+        expect(spec, rel(file)).not.toMatch(EXERCISE_PROGRESS);
       }
     }
   });

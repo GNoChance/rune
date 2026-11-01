@@ -1,12 +1,39 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError, NetworkRequiredError } from '../../src/api/client';
 import { ERROR_MESSAGES, errorMessage } from '../../src/ui/errors';
-import { formatAge, formatDate, formatDateTime, plural } from '../../src/ui/format';
+import {
+  formatAge,
+  formatDate,
+  formatDateTime,
+  formatInt,
+  formatKgGrouped,
+  formatLifted,
+  plural,
+} from '../../src/ui/format';
 
 const NOW = Date.parse('2026-10-06T12:00:00.000Z');
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
 
+const spaced = (s: string) => s.replace(/[  ]/g, ' ');
+
 describe('format', () => {
+  it('formatInt : milliers séparés par une espace fine, comme en français', () => {
+    expect(spaced(formatInt(1240))).toBe('1 240');
+    expect(spaced(formatInt(61_200))).toBe('61 200');
+    expect(formatInt(999)).toBe('999');
+  });
+
+  it('formatKgGrouped : grammes en kilogrammes, virgule et milliers', () => {
+    expect(spaced(formatKgGrouped(3_200_000))).toBe('3 200 kg');
+    expect(spaced(formatKgGrouped(62_500))).toBe('62,5 kg');
+  });
+
+  it('formatLifted : kilogrammes, puis tonnes au-delà de 10 000 kg', () => {
+    expect(spaced(formatLifted(3_200_000))).toBe('3 200 kg');
+    expect(spaced(formatLifted(10_000_000))).toBe('10 000 kg');
+    expect(spaced(formatLifted(12_400_000))).toBe('12,4 t');
+  });
+
   it("formatDate : date civile telle quelle, horodatage à l'heure de Paris", () => {
     expect(formatDate('2008-03-01')).toBe('01/03/2008');
     expect(formatDate('2026-10-05T23:30:00.000Z')).toBe('06/10/2026');

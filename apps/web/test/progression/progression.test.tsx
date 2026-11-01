@@ -8,9 +8,9 @@ import styles from '../../src/features/progression/progression.module.css';
 import { type CssBlock, declarationsOf, parseCssBlocks } from '../support/css-blocks';
 import { renderApp, renderWithServices } from '../support/render';
 
-// Onglet Progression en avant-goût (spec refonte §9, maquettes ProgressionSombre / ProgressionClair) : rang
+// Onglet Progression sans séance (spec refonte §9, maquettes ProgressionSombre / ProgressionClair) : rang
 // global E et barre d'XP à 0, compteurs à 0, les 9 groupes musculaires au rang E, la fenêtre du Système.
-// Aucune fausse donnée : le calcul réel arrive avec la brique 3.
+// Le calcul réel (avec des séances) est dans progression-real.test.tsx.
 // CountUp sous mouvement réduit n'est pas testé ici : tous ces compteurs valent 0, le test ne pourrait pas
 // échouer. La vraie vérification est celle du rythme de l'accueil (à 3), dans test/home/home.test.tsx.
 
@@ -51,7 +51,11 @@ function spoken(el: Element): string {
   return (copy.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
-const open = () => renderWithServices(<ProgressionPage />);
+async function open() {
+  const view = await renderWithServices(<ProgressionPage />);
+  await screen.findByRole('region', { name: 'Rang global' });
+  return view;
+}
 /** Élément de liste qui contient le libellé `label`. */
 const statOf = (label: string) => screen.getByText(label).closest('li') as HTMLElement;
 /** Chiffres affichés d'un compteur (la partie visible, cachée aux lecteurs d'écran). */
@@ -61,16 +65,15 @@ const shownDigits = (root: Element) =>
     .filter((t) => /^\d+$/.test(t));
 
 describe('Progression en avant-goût (spec refonte §9)', () => {
-  it('titre « Progression », rang global E, « 0 / 100 XP », prochain rang D', async () => {
+  it('titre « Progression », rang global E, « 0 / 1 000 XP », prochain rang D', async () => {
     await open();
     expect(screen.getByRole('heading', { level: 1, name: 'Progression' })).toBeTruthy();
     const hero = screen.getByRole('region', { name: 'Rang global' });
     expect(within(hero).getByRole('img', { name: 'Rang E' })).toBeTruthy();
-    expect(within(hero).getByText('Rang E')).toBeTruthy();
-    expect(within(hero).getByText('0 / 100 XP')).toBeTruthy();
+    expect(within(hero).getByText('Rang E · 0 / 1 000 XP')).toBeTruthy();
     expect(within(hero).getByText('Prochain : D')).toBeTruthy();
-    // Lu « 0 sur 100 XP » : pas de barre oblique au lecteur d'écran.
-    expect(spoken(hero)).toContain('0 sur 100 XP');
+    // Lu « 0 sur 1 000 XP » : pas de barre oblique au lecteur d'écran.
+    expect(spoken(hero).replace(/\s/g, ' ')).toContain('Rang E · 0 sur 1 000 XP');
   });
 
   it('coin HUD décoratif sur la carte du rang global (décor de la Salle de nuit, spec refonte §4)', async () => {
@@ -101,13 +104,13 @@ describe('Progression en avant-goût (spec refonte §9)', () => {
 
   it('compteurs à 0 : séances, kg soulevés, semaines d’assiduité', async () => {
     await open();
-    expect(spoken(statOf('séances'))).toBe('0 séances');
+    // Zéro est au singulier en français : « 0 séance », « 0 semaine d'assiduité ».
+    expect(spoken(statOf('séance'))).toBe('0 séance');
     expect(spoken(statOf('soulevés'))).toBe('0 kg soulevés');
-    // « semaines d'assiduité » (spec refonte §9), au pluriel comme « séances » : les unités lues s'accordent.
-    expect(spoken(statOf("d'assiduité"))).toBe("0 semaines d'assiduité");
+    expect(spoken(statOf("d'assiduité"))).toBe("0 semaine d'assiduité");
     // À l'écran, l'abréviation de la maquette.
     expect(statOf("d'assiduité").textContent).toContain('sem.');
-    for (const label of ['séances', 'soulevés', "d'assiduité"]) {
+    for (const label of ['séance', 'soulevés', "d'assiduité"]) {
       expect(shownDigits(statOf(label)), label).toEqual(['0']);
     }
   });
@@ -164,10 +167,12 @@ describe('Progression en avant-goût (spec refonte §9)', () => {
     expect(spoken(note as Element)).toBe(`SYSTÈME ${SYSTEM_TEXT}`);
   });
 
-  it('aucune fausse donnée : seuls 0, 100 (seuil du rang D) et 9 (groupes) comme nombres', async () => {
+  it('aucune fausse donnée : seuls 0, 1 000 (seuil du rang D) et 9 (groupes) comme nombres', async () => {
     const { container } = await open();
-    const numbers = new Set((spoken(container).match(/\d+/g) ?? []).map(Number));
-    expect([...numbers].sort((a, b) => a - b)).toEqual([0, 9, 100]);
+    // Les milliers sont séparés par une espace (fine) : « 1 000 » est un seul nombre.
+    const text = spoken(container).replace(/(\d)[\s\u00a0\u202f](\d{3})\b/g, '$1$2');
+    const numbers = new Set((text.match(/\d+/g) ?? []).map(Number));
+    expect([...numbers].sort((a, b) => a - b)).toEqual([0, 9, 1000]);
     // Aucun autre rang qu'E porté, et D seulement comme prochain rang.
     expect(screen.getAllByRole('img').every((img) => img.getAttribute('aria-label') === 'Rang E')).toBe(true);
   });

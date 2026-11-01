@@ -1,3 +1,4 @@
+import type { Rank } from '@rune/domain';
 import type { SVGProps } from 'react';
 
 /** Props de la racine `<svg>` d'un dessin généré : taille, nom accessible, classe ; jamais son contenu. */
@@ -19,8 +20,8 @@ export type CoachArtProps = ArtSvgProps & {
   idPrefix: string;
 };
 
-/** Rangs « Pierre runique », du galet griffé au monolithe éveillé (spec refonte §9). */
-export type Rank = 'E' | 'D' | 'C' | 'B' | 'A' | 'S';
+/** Rangs « Pierre runique », du galet griffé au monolithe éveillé (spec refonte §9) : ceux du domaine (E à S). */
+export type { Rank };
 
 /** Rangs au-dessus de E, pas encore atteints au socle : pierres chargées à la demande (RankStoneUpper). */
 export type UpperRank = Exclude<Rank, 'E'>;

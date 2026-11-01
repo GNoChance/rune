@@ -229,36 +229,34 @@ describe('bulle du coach « Aujourd’hui »', () => {
 });
 
 describe('fenêtre « Quêtes d’éveil » aux vrais états', () => {
-  it('fenêtre du Système « Éveil terminé. », texte de l’accueil, 3 quêtes cochées à 3/3', async () => {
-    await openHome();
+  it('fenêtre du Système « Éveil en cours. » tant qu’une quête est ouverte : 3 quêtes en lecture seule, sans l’ancien texte', async () => {
+    await openHome({ pullAgoMs: 25 * HOUR });
     const win = questsWindow();
     expect(within(win).getByText('SYSTÈME')).toBeTruthy();
-    expect(within(win).getByRole('heading', { level: 2, name: 'Éveil terminé.' })).toBeTruthy();
-    expect(within(win).getByText('Tes programmes et tes séances arriveront ici.')).toBeTruthy();
+    expect(within(win).getByRole('heading', { level: 2, name: 'Éveil en cours.' })).toBeTruthy();
+    expect(within(win).queryByText('Tes programmes et tes séances arriveront ici.')).toBeNull();
     expect(within(win).getByText("Quêtes d'éveil")).toBeTruthy();
     expect(
       within(win)
         .getAllByRole('checkbox')
         .map((c) => c.textContent),
     ).toEqual([...QUESTS]);
-    await until(() => QUESTS.every(isDone));
     for (const name of QUESTS) expect(quest(name).getAttribute('aria-readonly')).toBe('true');
-    expect(within(win).getByText('3/3')).toBeTruthy();
+    expect(within(win).getByText('2/3')).toBeTruthy();
   });
 
-  // « Éveil terminé. » seulement quand les 3 quêtes le sont ; sinon « Éveil en cours. » : jamais une fin annoncée
-  // au-dessus d'une quête ouverte (pull de plus de 24 h, hors ligne, nouvel appareil avant le premier pull).
-  it.each<[string, string, HomeOptions]>([
-    ['3/3', 'Éveil terminé.', {}],
-    ['2/3', 'Éveil en cours.', { pullAgoMs: 25 * HOUR }],
-    ['1/3', 'Éveil en cours.', { coach: null, place: false }],
-    ['0/3', 'Éveil en cours.', { coach: null, place: false, pullAgoMs: null }],
-  ])('quêtes à %s : fenêtre titrée « %s »', async (count, title, o) => {
+  // Fenêtre titrée « Éveil en cours. » tant qu'une quête reste ouverte (pull de plus de 24 h, hors ligne, nouvel
+  // appareil avant le premier pull) ; à 3/3 elle disparaît (spec brique 3 §7.9, test dans home-cards.test.tsx).
+  it.each<[string, HomeOptions]>([
+    ['2/3', { pullAgoMs: 25 * HOUR }],
+    ['1/3', { coach: null, place: false }],
+    ['0/3', { coach: null, place: false, pullAgoMs: null }],
+  ])('quêtes à %s : fenêtre titrée « Éveil en cours. »', async (count, o) => {
     await openHome(o);
-    const win = screen.getByRole('group', { name: title });
-    expect(within(win).getByRole('heading', { level: 2 }).textContent).toBe(title);
+    const win = screen.getByRole('group', { name: 'Éveil en cours.' });
+    expect(within(win).getByRole('heading', { level: 2 }).textContent).toBe('Éveil en cours.');
     expect(within(win).getByText(count)).toBeTruthy();
-    expect(screen.queryAllByText('Éveil terminé.')).toHaveLength(title === 'Éveil terminé.' ? 1 : 0);
+    expect(screen.queryAllByText('Éveil terminé.')).toHaveLength(0);
   });
 
   it('pas prêt hors ligne (dernier pull il y a 25 h) : « Prêt hors ligne » décochée, 2/3', async () => {
@@ -278,10 +276,10 @@ describe('fenêtre « Quêtes d’éveil » aux vrais états', () => {
     expect(within(questsWindow()).getByText('1/3')).toBeTruthy();
   });
 
-  it('le voyant « Prêt hors ligne » reste affiché, au même état que la quête', async () => {
+  it('le voyant « Prêt hors ligne » reste affiché quand les quêtes sont faites et leur fenêtre masquée', async () => {
     await openHome();
     await until(() => screen.queryByTestId('offline-ready')?.getAttribute('data-state') === 'ready');
-    expect(isDone('Prêt hors ligne')).toBe(true);
+    expect(screen.queryByRole('group', { name: /^Éveil/ })).toBeNull();
   });
 
   it('voyant pas prêt : « Réessayer » lance une synchro manuelle', async () => {
@@ -340,13 +338,13 @@ describe('tuiles et ligne objectif · niveau', () => {
     expect(digits).toEqual(['3']);
   });
 
-  it('ordre de la maquette : titre, bulle, fenêtre du Système, tuiles, ligne objectif · niveau', async () => {
-    await openHome();
+  it('ordre : titre, fenêtre du Système, bulle, tuiles, ligne objectif · niveau', async () => {
+    await openHome({ pullAgoMs: 25 * HOUR });
     const line = coachLine('skald', 'daily', new Date(DEFAULT_NOW), 'lea', 3);
     const order = [
       screen.getByRole('heading', { level: 1 }),
-      await screen.findByText(line),
       questsWindow(),
+      await screen.findByText(line),
       await screen.findByRole('link', { name: /^Lieu principal/ }),
       await screen.findByRole('link', { name: /^Rythme/ }),
       await screen.findByRole('link', { name: /^Objectif · niveau/ }),
@@ -398,16 +396,16 @@ describe('entrée des cartes en cascade, une fois les lectures locales faites', 
 
       release();
       await until(() => cardStack() !== null);
-      // Même rendu : la bulle d'abord, puis la fenêtre déjà à 3/3, les tuiles, la ligne, et le voyant en dernier,
-      // tous enfants de la cascade (chacun son retard, 60 ms après le précédent).
+      // Même rendu : « Choisis ton programme » (aucun programme dans cette base), la bulle, les tuiles, la ligne,
+      // et le voyant en dernier, tous enfants de la cascade (chacun son retard, 60 ms après le précédent) ; les
+      // quêtes, toutes faites, n'ont plus de fenêtre.
       const stack = cardStack() as Element;
       const children = [...stack.children];
       expect(children).toHaveLength(5);
-      expect(children[0]?.getAttribute('data-mode')).toBe('training');
-      expect(children[0]?.textContent).toContain("Aujourd'hui");
-      expect(children[1]).toBe(questsWindow());
-      expect(within(questsWindow()).getByText('3/3')).toBeTruthy();
-      expect(QUESTS.every(isDone)).toBe(true);
+      expect(children[0]?.getAttribute('href')).toBe('/program/choose');
+      expect(children[1]?.getAttribute('data-mode')).toBe('training');
+      expect(children[1]?.textContent).toContain("Aujourd'hui");
+      expect(screen.queryByRole('group', { name: /^Éveil/ })).toBeNull();
       expect(children[2]?.querySelector('a[href="/places/p-1"]')).not.toBeNull();
       expect(children[3]?.getAttribute('href')).toBe('/profile');
       expect(children[4]?.querySelector('[data-testid="offline-ready"]')).not.toBeNull();

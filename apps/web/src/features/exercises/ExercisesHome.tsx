@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'wouter';
 import { useLive } from '../../app-services';
 import { type CatalogPlace, type ExerciseSearch, useCatalog, useExerciseView, useRepos } from '../../repos';
 import { Field, ListGroup, ListRow, Page, plural, RankBadge, Switch } from '../../ui';
+import { useProgress } from '../progression/use-progress';
 import { CatalogMissing } from './CatalogMissing';
 import { ExerciseList, thumbnailIds } from './ExerciseList';
 import { BACK_IN_HISTORY, rememberScroll, useFeasibleOnly, useRestoreScroll } from './exercise-nav';
@@ -179,6 +180,7 @@ export function ExercisesHome() {
   const catalog = useCatalog();
   const [feasibleOnly, setFeasibleOnly] = useFeasibleOnly();
   const view = useExerciseView({ feasibleOnly });
+  const progress = useProgress();
   const search = useSearchQuery();
   const { query } = search;
   const found = useLive(async (): Promise<Found | null> => {
@@ -191,6 +193,7 @@ export function ExercisesHome() {
   const ready =
     catalog.state === 'ready' &&
     view !== undefined &&
+    progress !== undefined &&
     (!searching || (found !== undefined && found !== null));
   useRestoreScroll(ready);
 
@@ -202,7 +205,7 @@ export function ExercisesHome() {
       </Page>
     );
   }
-  if (view === undefined) return null;
+  if (view === undefined || progress === undefined) return null;
 
   const leave = () => {
     search.flush();
@@ -238,21 +241,24 @@ export function ExercisesHome() {
         ) : null
       ) : (
         <ul aria-label="Groupes musculaires" className={styles.tiles}>
-          {view.groups.map((g) => (
-            <li key={g.code}>
-              <Link
-                href={`/exercises/group/${g.code}`}
-                state={BACK_IN_HISTORY}
-                onClick={leave}
-                aria-label={`${g.label}, rang E, ${countText(g.count)}`}
-                className={styles.tile}
-              >
-                <RankBadge rank="E" size={32} mini />
-                <span className={styles.tileLabel}>{g.label}</span>{' '}
-                <span className={styles.tileCount}>{countText(g.count)}</span>
-              </Link>
-            </li>
-          ))}
+          {view.groups.map((g) => {
+            const rank = progress.summary.groups[g.code].rank;
+            return (
+              <li key={g.code}>
+                <Link
+                  href={`/exercises/group/${g.code}`}
+                  state={BACK_IN_HISTORY}
+                  onClick={leave}
+                  aria-label={`${g.label}, rang ${rank}, ${countText(g.count)}`}
+                  className={styles.tile}
+                >
+                  <RankBadge rank={rank} size={32} mini />
+                  <span className={styles.tileLabel}>{g.label}</span>{' '}
+                  <span className={styles.tileCount}>{countText(g.count)}</span>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
     </Page>
