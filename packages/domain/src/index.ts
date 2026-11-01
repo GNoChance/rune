@@ -7,5 +7,6 @@ export * from './cautious';
 export * from './ids';
 export * from './onboarding';
 export * from './program';
+export * from './progress';
 export * from './recommend-template';
 export * from './text';
