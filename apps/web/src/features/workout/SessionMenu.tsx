@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLive } from '../../app-services';
 import { useRepos, type WorkoutSessionView } from '../../repos';
 import { Banner, BottomSheet, Button, CheckGlyph, Dialog } from '../../ui';
@@ -27,6 +27,22 @@ export function MenuButton(p: { label: string; onClick(): void }) {
 }
 
 /**
+ * Feuille ouverte depuis un menu « ⋯ » : elle attend que le menu soit fermé et que le focus soit revenu à son bouton
+ * « ⋯ » (déclencheur du menu). Ce bouton devient ainsi celui de la seconde feuille, qui lui rend le focus à sa
+ * fermeture, au lieu de l'élément du menu, démonté avec lui. Rend [feuille ouverte, ouvrir après le menu, fermer].
+ */
+export function useSheetAfterMenu<T>(menuOpen: boolean): [T | null, (next: T) => void, () => void] {
+  const [sheet, setSheet] = useState<T | null>(null);
+  const [queued, setQueued] = useState<T | null>(null);
+  useEffect(() => {
+    if (menuOpen || queued === null) return;
+    setSheet(queued);
+    setQueued(null);
+  }, [menuOpen, queued]);
+  return [sheet, setQueued, () => setSheet(null)];
+}
+
+/**
  * Menu « ⋯ » de la séance (spec brique 3 §7.3) : Note de séance ; Changer de lieu tant qu'aucune série n'est faite (le
  * plan est refait au lieu choisi, D2) ; Supprimer la séance, après confirmation (R-SYN-6). Tout se fait hors ligne.
  */
@@ -40,10 +56,10 @@ export function SessionMenu(p: {
 }) {
   const repos = useRepos();
   const [open, setOpen] = useState(false);
-  const [sub, setSub] = useState<'note' | 'place' | 'delete' | null>(null);
+  const [sub, openAfterMenu, closeSub] = useSheetAfterMenu<'note' | 'place' | 'delete'>(open);
   const pick = (next: 'note' | 'place' | 'delete') => {
     setOpen(false);
-    setSub(next);
+    openAfterMenu(next);
   };
   const { id } = p.session;
   const remove = () =>
@@ -86,20 +102,20 @@ export function SessionMenu(p: {
           title="Note de séance"
           initial={p.session.note}
           onSave={(text) => repos.workouts.setNote({ kind: 'session', id }, text)}
-          onClose={() => setSub(null)}
+          onClose={closeSub}
         />
       ) : null}
-      {sub === 'place' ? <PlaceSheet session={p.session} onClose={() => setSub(null)} /> : null}
+      {sub === 'place' ? <PlaceSheet session={p.session} onClose={closeSub} /> : null}
       <Dialog
         open={sub === 'delete'}
         title="Supprimer cette séance ?"
-        onClose={() => setSub(null)}
+        onClose={closeSub}
         actions={
           <>
             <Button variant="danger" block onClick={remove}>
               Supprimer
             </Button>
-            <Button variant="secondary" block onClick={() => setSub(null)}>
+            <Button variant="secondary" block onClick={closeSub}>
               Annuler
             </Button>
           </>

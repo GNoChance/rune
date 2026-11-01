@@ -1,6 +1,6 @@
 /*
  * Séance en cours (spec brique 3 §7.3) : en-tête collant, cartes d'exercice, lignes de série, « Terminer » en bas.
- * Une main à la salle : ✓, −, +, chrono, champs et actions du bas font 48 px au moins (pastille « Effort » : 44 px).
+ * Une main à la salle : ✓, −, +, chrono, champs, pastille « Effort » et actions du bas font 48 px au moins.
  * Couleurs : jetons de ui/theme/tokens.css seulement, en paires déjà employées (justes dans les 5 thèmes) ; aucune
  * teinte nouvelle. Deux retours de geste (chevron, ✓), coupés sous mouvement réduit.
  */
@@ -454,6 +454,20 @@
   gap: var(--space-3);
 }
 
+/* « Annuler » d'une correction : la série faite reste telle qu'elle était. */
+.cancel {
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .chrono {
   min-width: 48px;
   min-height: 48px;
@@ -479,7 +493,7 @@
 }
 
 .effortChip {
-  min-height: 44px;
+  min-height: 48px;
   padding: 0 var(--space-3);
   border: 1px solid var(--accent);
   border-radius: 999px;

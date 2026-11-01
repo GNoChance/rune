@@ -1,11 +1,11 @@
 import { currentRules, type LoadGrid, platesPerSide } from '@rune/domain';
-import { type RefObject, useId, useRef, useState } from 'react';
+import { type RefObject, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { SetInput, WorkoutSetView } from '../../repos';
 import { formatKgValue } from '../../ui';
 import { DurationTimer } from './DurationTimer';
 import { EFFORT_SHORT } from './EffortSheet';
 import styles from './live.module.css';
-import { parseCount, parseKg, stepLoad } from './number-input';
+import { loadEntryOf, parseCount, parseKg, stepLoad } from './number-input';
 
 /*
  * Une ligne de série (spec brique 3 §7.3) : Série · Préc. · kg · Reps (ou Secondes) · ✓. Les champs partent de la
@@ -28,6 +28,9 @@ export const COUNT_ERRORS = {
 } as const;
 
 const NOT_SAVED = "La série n'a pas été enregistrée.";
+
+/** Délai pendant lequel le bouton d'une ligne ignore les taps après un changement d'état (double tap). */
+export const TAP_GUARD_MS = 400;
 
 const SIDE_NAMES = { left: 'gauche', right: 'droite' } as const;
 const SIDE_LABELS = { left: 'Gauche', right: 'Droite' } as const;
@@ -114,9 +117,11 @@ export interface SetRowProps {
   readOnly: boolean;
   /** Pastille « Effort » sous une série de travail faite (la dernière ligne de la paire en unilatéral). */
   effortChip: boolean;
-  /** Valeurs contrôlées ; la ligne devient faite quand la promesse est tenue. */
+  /**
+   * Valeurs contrôlées : une ligne à faire devient faite quand la promesse est tenue ; une ligne faite corrigée garde
+   * son heure (`logSet` ne touche pas `loggedAt` d'une série faite, ruling R43).
+   */
   onLog(values: SetInput): Promise<void>;
-  onReopen(): Promise<void>;
   onEffort(): void;
   /** La ligne prend la main (champ touché) : − / + passent sous elle. */
   onActivate(): void;
@@ -127,18 +132,45 @@ export function SetRow(p: SetRowProps) {
   const id = useId();
   const [draft, setDraft] = useState(() => initialDraft(line));
   const [errors, setErrors] = useState<{ kg?: string; value?: string; save?: string }>({});
-  const [pending, setPending] = useState(false);
+  // Correction d'une série faite : locale, rien n'est écrit avant « Valider » (ruling R43).
+  const [editing, setEditing] = useState(false);
   const kgInput = useRef<HTMLInputElement>(null);
   const valueInput = useRef<HTMLInputElement>(null);
-  // Ligne rouverte : les champs repartent des valeurs enregistrées.
-  const [seen, setSeen] = useState(line.loggedAt);
-  if (seen !== line.loggedAt) {
-    setSeen(line.loggedAt);
-    if (line.loggedAt === null) setDraft(initialDraft(line));
-  }
+  const checkButton = useRef<HTMLButtonElement>(null);
 
+  // Garde contre le double tap : écriture en cours, puis un court délai après chaque changement d'état de la ligne. Le
+  // bouton reste focalisable (`aria-disabled`, jamais `disabled`, qui ferait perdre le focus au clavier).
+  const busy = useRef(false);
+  const guardUntil = useRef(0);
+  const [guardedUntil, setGuardedUntil] = useState(0);
+  const guard = useCallback(() => {
+    const until = Date.now() + TAP_GUARD_MS;
+    guardUntil.current = until;
+    setGuardedUntil(until);
+  }, []);
+  useEffect(() => {
+    if (guardedUntil === 0) return;
+    const timer = setTimeout(
+      () => setGuardedUntil((u) => (u === guardedUntil ? 0 : u)),
+      Math.max(0, guardedUntil - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [guardedUntil]);
+  const [pending, setPending] = useState(false);
+  const guarded = guardedUntil !== 0 || pending;
   const done = line.loggedAt !== null;
-  const showLoad = line.loadMode !== 'bodyweight';
+  // Passage faite ⇄ à faire (ici ou par la synchro) : la garde repart. Comparé à l'état précédent, pas au premier
+  // rendu, pour que le double montage du mode strict ne la déclenche pas.
+  const previousDone = useRef(done);
+  useEffect(() => {
+    if (previousDone.current === done) return;
+    previousDone.current = done;
+    guard();
+  }, [done, guard]);
+  const blocked = () => busy.current || Date.now() < guardUntil.current;
+
+  const loadEntry = loadEntryOf(line.loadMode, p.grid);
+  const showLoad = loadEntry !== 'none';
   const name = lineName(line);
   const the = theLine(line);
   const { setBounds } = currentRules();
@@ -161,8 +193,9 @@ export function SetRow(p: SetRowProps) {
   const copyPrevious = () => {
     const prev = p.previous;
     if (!prev) return;
+    const prevLoad = loadOf(prev);
     edit({
-      ...(showLoad && prev.loadG !== null ? { kg: formatKgValue(prev.loadG) } : {}),
+      ...(showLoad && prevLoad !== null ? { kg: formatKgValue(prevLoad) } : {}),
       ...(prev.reps !== null ? { reps: String(prev.reps) } : {}),
       ...(prev.durationS !== null ? { secs: String(prev.durationS) } : {}),
     });
@@ -190,6 +223,8 @@ export function SetRow(p: SetRowProps) {
     if (showLoad) {
       const kg = parseKg(draft.kg);
       if (kg.ok) values.loadG = kg.g;
+      // Lest facultatif (`weighted`) : vide = sans charge, jamais une erreur.
+      else if (kg.error === 'empty' && loadEntry === 'optional') values.loadG = null;
       else found.kg = KG_ERRORS[kg.error];
     }
     const count =
@@ -203,28 +238,43 @@ export function SetRow(p: SetRowProps) {
       (found.kg ? kgInput : valueInput).current?.focus();
       return;
     }
+    busy.current = true;
     setPending(true);
     try {
       await p.onLog(values);
+      setEditing(false);
     } catch {
       setErrors({ save: NOT_SAVED });
     } finally {
+      busy.current = false;
       setPending(false);
+      guard();
     }
   };
 
-  const reopen = async () => {
-    setPending(true);
-    try {
-      await p.onReopen();
-    } catch {
-      setErrors({ save: NOT_SAVED });
-    } finally {
-      setPending(false);
-    }
+  /** « Corriger » : la ligne faite redevient un formulaire, sans rien écrire. */
+  const startEditing = () => {
+    setDraft(initialDraft(line));
+    setErrors({});
+    setEditing(true);
+    p.onActivate();
   };
 
-  const editable = !p.readOnly && !done;
+  /** « Annuler » : la série reste telle qu'elle était. */
+  const cancelEditing = () => {
+    setDraft(initialDraft(line));
+    setErrors({});
+    setEditing(false);
+    checkButton.current?.focus();
+  };
+
+  const press = () => {
+    if (blocked()) return;
+    if (done && !editing) startEditing();
+    else void validate();
+  };
+
+  const editable = !p.readOnly && (!done || editing);
   const previousText = p.previous ? setValueText(p.previous) : null;
   const previousCell =
     previousText === null || p.previous === null ? (
@@ -304,15 +354,22 @@ export function SetRow(p: SetRowProps) {
         })
     : shown(p.measure === 'duration' ? show(line.durationS) || null : show(line.reps) || null);
 
-  const plates = editable && p.active && showLoad ? platesText(p.grid, draft.kg) : null;
-  const loadSteps = editable && p.active && showLoad && p.grid.kind !== 'none';
+  // Outils de la ligne en cours, ou de la ligne faite qu'on corrige.
+  const tools = editable && (p.active || editing);
+  const plates = tools && showLoad ? platesText(p.grid, draft.kg) : null;
+  const loadSteps = tools && showLoad && p.grid.kind !== 'none';
   const parsedKg = parseKg(draft.kg);
   const kgValue = parsedKg.ok ? parsedKg.g : null;
   const canStep = (direction: 1 | -1) =>
     (parsedKg.ok || parsedKg.error === 'empty') && stepLoad(p.grid, kgValue, direction) !== null;
 
   return (
-    <li className={styles.line} data-done={done ? '' : undefined} data-kind={line.kind}>
+    <li
+      className={styles.line}
+      data-done={done && !editing ? '' : undefined}
+      data-editing={editing ? '' : undefined}
+      data-kind={line.kind}
+    >
       <div className={styles.main}>
         <span className={styles.label}>
           <span>{line.kind === 'warmup' ? `É${line.position}` : line.position}</span>
@@ -330,12 +387,13 @@ export function SetRow(p: SetRowProps) {
             ) : null
           ) : (
             <button
+              ref={checkButton}
               type="button"
               className={styles.check}
-              aria-label={done ? `Rouvrir ${the}` : `Valider ${the}`}
+              aria-label={done && !editing ? `Corriger ${the}` : `Valider ${the}`}
               aria-describedby={errors.save ? saveErrorId : undefined}
-              disabled={pending}
-              onClick={() => void (done ? reopen() : validate())}
+              aria-disabled={guarded ? true : undefined}
+              onClick={press}
             >
               <CheckIcon />
             </button>
@@ -357,7 +415,7 @@ export function SetRow(p: SetRowProps) {
           </p>
         ) : null}
       </div>
-      {editable && p.active ? (
+      {tools ? (
         <fieldset className={styles.tools}>
           <legend className={styles.srOnly}>{`Ajuster ${the}`}</legend>
           {loadSteps ? (
@@ -411,9 +469,19 @@ export function SetRow(p: SetRowProps) {
             </div>
           )}
           {plates ? <p className={styles.plates}>{plates}</p> : null}
+          {editing ? (
+            <button
+              type="button"
+              className={styles.cancel}
+              aria-label={`Annuler la correction de ${the}`}
+              onClick={cancelEditing}
+            >
+              Annuler
+            </button>
+          ) : null}
         </fieldset>
       ) : null}
-      {p.effortChip && done && !p.readOnly ? (
+      {p.effortChip && done && !editing && !p.readOnly ? (
         <div className={styles.effortLine}>
           <button
             type="button"

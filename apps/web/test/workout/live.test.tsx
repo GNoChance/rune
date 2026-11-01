@@ -6,11 +6,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AppDb, MirrorRow } from '../../src/local-db/db';
 import { reposFor, type StartInput } from '../../src/repos';
 import ui from '../../src/ui/ui.module.css';
+import { seedCatalog, served } from '../support/catalog';
 import { parseCssBlocks } from '../support/css-blocks';
 import { createFakeSyncEngine } from '../support/fake-api';
 import { createTestServices, DEFAULT_NOW, renderApp } from '../support/render';
 import { seedMirror } from '../support/seed';
-import { LUNGE, SQUAT } from '../support/workout';
+import { LUNGE, SQUAT, WORKOUT_SHEETS } from '../support/workout';
 import { seedBase } from './seed';
 
 // Séance en cours (`/workout/:id`, spec brique 3 §7.3) sur une vraie base locale : saisie des séries, « Préc. »,
@@ -22,11 +23,24 @@ afterEach(async () => {
   for (const db of opened.splice(0)) await db.delete();
 });
 
-/** Gainage au poids du corps, en durée : 2 × 30 s (fiche « Squat au poids du corps » du catalogue de test). */
+/** Fiches ajoutées au catalogue de test : gainage (durée), rowing à l'élastique, dips lestés. */
+const EXTRA_SHEETS = [
+  served({
+    id: 'plank',
+    name: 'Gainage',
+    measure: 'duration',
+    load_mode: 'bodyweight',
+    equipment_options: [[]],
+  }),
+  served({ id: 'band-row', name: "Rowing à l'élastique", load_mode: 'band', equipment_options: [[]] }),
+  served({ id: 'weighted-dip', name: 'Dips lestés', load_mode: 'weighted', equipment_options: [[]] }),
+];
+
+/** Gainage au poids du corps, en durée : 2 × 30 s. */
 const PLANK: PlannedExercise = {
   slotId: 'A3',
-  plannedExerciseId: 'bodyweight-squat',
-  exerciseId: 'bodyweight-squat',
+  plannedExerciseId: 'plank',
+  exerciseId: 'plank',
   resolution: 'planned',
   loadMode: 'bodyweight',
   measure: 'duration',
@@ -76,6 +90,7 @@ async function started(
 ): Promise<Setup> {
   const db = await seedBase();
   opened.push(db);
+  await seedCatalog(db, [...WORKOUT_SHEETS, ...EXTRA_SHEETS]);
   await o.before?.(db);
   const { services } = await createTestServices({ db });
   const id = await reposFor(services).workouts.start({ ...START, ...o.start });
@@ -182,7 +197,7 @@ describe('séance en cours : en-tête et cartes', () => {
     expect(screen.getByText('3 en attente')).toBeTruthy();
     expect(screen.getByText('0:00')).toBeTruthy();
     const regions = screen.getAllByRole('region').map((r) => r.getAttribute('aria-label'));
-    expect(regions).toEqual(['Squat barre', 'Fente aux haltères', 'Squat au poids du corps']);
+    expect(regions).toEqual(['Squat barre', 'Fente aux haltères', 'Gainage']);
     const squat = card('Squat barre');
     expect(within(squat).getByText('3 × 6 · 60 kg')).toBeTruthy();
     // Le premier exercice est ouvert, les autres repliés avec « 0 / n ».
@@ -255,8 +270,8 @@ describe('séance en cours : en-tête et cartes', () => {
   it('durée : colonne « Secondes » et chronomètre qui la remplit à l’arrêt', async () => {
     const s = await started();
     const view = await open(s);
-    fireEvent.click(within(card('Squat au poids du corps')).getByRole('button', { name: /^Séries faites/ }));
-    const plank = card('Squat au poids du corps');
+    fireEvent.click(within(card('Gainage')).getByRole('button', { name: /^Séries faites/ }));
+    const plank = card('Gainage');
     expect(within(plank).getByText('Secondes')).toBeTruthy();
     fireEvent.click(within(plank).getByRole('button', { name: 'Lancer le chrono' }));
     view.services.now = () => DEFAULT_NOW + 35_000;
@@ -268,7 +283,14 @@ describe('séance en cours : en-tête et cartes', () => {
 });
 
 describe('✓ et saisie (Review Focus 4)', () => {
-  it('✓ écrit la série et l’affiche faite ; la toucher la rouvre', async () => {
+  /** Bouton « Corriger » libre : la garde du double tap est passée. */
+  const corrector = async (squat: HTMLElement, n: number) => {
+    const button = await within(squat).findByRole('button', { name: `Corriger la série ${n}` });
+    await waitFor(() => expect(button.getAttribute('aria-disabled')).toBeNull());
+    return button;
+  };
+
+  it('✓ écrit la série et l’affiche faite ; la toucher l’ouvre en correction locale, « Annuler » ne change rien (ruling R43)', async () => {
     const s = await started();
     await open(s);
     const squat = card('Squat barre');
@@ -276,15 +298,63 @@ describe('✓ et saisie (Review Focus 4)', () => {
       target: { value: '62.5' },
     });
     fireEvent.click(within(squat).getByRole('button', { name: 'Valider la série 1' }));
-    await within(squat).findByRole('button', { name: 'Rouvrir la série 1' });
+    const logged = { loadG: 62_500, reps: 6, loggedAt: new Date(DEFAULT_NOW).toISOString() };
+    fireEvent.click(await corrector(squat, 1));
+    expect(await setRow(s.db, 'back-squat', 'work', 1)).toMatchObject(logged);
+    const before = await s.db.outbox.count();
+    const kg = within(squat).getByRole('textbox', { name: 'Charge en kg, série 1' }) as HTMLInputElement;
+    expect(kg.value).toBe('62,5');
+    fireEvent.change(kg, { target: { value: '70' } });
+    fireEvent.click(within(squat).getByRole('button', { name: 'Annuler la correction de la série 1' }));
+    expect(within(squat).queryByRole('textbox', { name: 'Charge en kg, série 1' })).toBeNull();
+    expect(await s.db.outbox.count()).toBe(before);
+    expect(await setRow(s.db, 'back-squat', 'work', 1)).toMatchObject(logged);
+  });
+
+  it('correction puis ✓ : les valeurs changent, la série reste faite à son heure, pas de nouvelle feuille', async () => {
+    const s = await started({
+      start: { plan: { ...PLAN, exercises: [{ ...SQUAT, sets: SQUAT.sets.slice(0, 2) }] } },
+    });
+    const view = await open(s);
+    const squat = card('Squat barre');
+    fireEvent.click(within(squat).getByRole('button', { name: 'Valider la série 1' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Plus tard' }));
+    view.services.now = () => DEFAULT_NOW + 60_000;
+    // Plus de série de travail à faire : la carte se replie ; on la rouvre.
+    const toggle = within(squat).getByRole('button', { name: /^Séries faites/ });
+    await waitFor(() => expect(toggle.getAttribute('aria-expanded')).toBe('false'));
+    fireEvent.click(toggle);
+    fireEvent.click(await corrector(squat, 1));
+    fireEvent.change(within(squat).getByRole('textbox', { name: 'Charge en kg, série 1' }), {
+      target: { value: '65' },
+    });
+    fireEvent.click(within(squat).getByRole('button', { name: 'Valider la série 1' }));
+    await waitFor(async () => expect((await setRow(s.db, 'back-squat', 'work', 1)).loadG).toBe(65_000));
+    expect((await setRow(s.db, 'back-squat', 'work', 1)).loggedAt).toBe(new Date(DEFAULT_NOW).toISOString());
+    await within(squat).findByRole('button', { name: 'Corriger la série 1' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('double tap sur ✓ : la série reste faite avec ses valeurs, sans correction ouverte', async () => {
+    const s = await started();
+    await open(s);
+    const squat = card('Squat barre');
+    const check = within(squat).getByRole('button', { name: 'Valider la série 1' });
+    fireEvent.click(check);
+    fireEvent.click(check);
+    // Second tap juste après le passage à « faite » : ignoré lui aussi.
+    const corriger = await within(squat).findByRole('button', { name: 'Corriger la série 1' });
+    expect(corriger.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(corriger);
+    expect(within(squat).queryByRole('textbox', { name: 'Charge en kg, série 1' })).toBeNull();
     expect(await setRow(s.db, 'back-squat', 'work', 1)).toMatchObject({
-      loadG: 62_500,
+      loadG: 60_000,
       reps: 6,
       loggedAt: new Date(DEFAULT_NOW).toISOString(),
     });
-    fireEvent.click(within(squat).getByRole('button', { name: 'Rouvrir la série 1' }));
-    await within(squat).findByRole('button', { name: 'Valider la série 1' });
-    expect((await setRow(s.db, 'back-squat', 'work', 1)).loggedAt).toBeNull();
+    expect(
+      (await s.db.outbox.toArray()).filter((o) => o.kind === 'patch' && 'loggedAt' in o.fields),
+    ).toHaveLength(1);
   });
 
   it.each([
@@ -314,7 +384,7 @@ describe('effort', () => {
     const squat = card('Squat barre');
     for (const n of [1, 2]) {
       fireEvent.click(within(squat).getByRole('button', { name: `Valider la série ${n}` }));
-      await within(squat).findByRole('button', { name: `Rouvrir la série ${n}` });
+      await within(squat).findByRole('button', { name: `Corriger la série ${n}` });
       expect(screen.queryByRole('dialog')).toBeNull();
     }
     fireEvent.click(within(squat).getByRole('button', { name: 'Valider la série 3' }));
@@ -339,6 +409,23 @@ describe('effort', () => {
     await waitFor(() => expect(toggle('Fente aux haltères').getAttribute('aria-expanded')).toBe('true'));
     expect(toggle('Squat barre').getAttribute('aria-expanded')).toBe('false');
     expect(toggle('Squat barre').textContent).toContain('3 / 3');
+    // Le ✓ qui l'avait ouverte est dans la carte repliée : le focus va à la carte en cours suivante.
+    await waitFor(() => expect(document.activeElement).toBe(toggle('Fente aux haltères')));
+  });
+
+  it('« Plus tard » sur le dernier exercice : le focus va à « Terminer »', async () => {
+    const s = await started({
+      start: { plan: { ...PLAN, exercises: [{ ...SQUAT, sets: SQUAT.sets.slice(1, 2) }] } },
+    });
+    await open(s);
+    const check = within(card('Squat barre')).getByRole('button', { name: 'Valider la série 1' });
+    check.focus();
+    fireEvent.click(check);
+    fireEvent.click(await screen.findByRole('button', { name: 'Plus tard' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Terminer' })),
+    );
   });
 
   it('pastille « Effort » sur une autre série faite', async () => {
@@ -427,7 +514,7 @@ describe('menu de la séance', () => {
       target: { value: '12' },
     });
     fireEvent.click(within(squat).getByRole('button', { name: 'Valider la série 1' }));
-    await within(squat).findByRole('button', { name: 'Rouvrir la série 1' });
+    await within(squat).findByRole('button', { name: 'Corriger la série 1' });
     fireEvent.click(screen.getByRole('button', { name: 'Options de la séance' }));
     menu = await screen.findByRole('dialog', { name: 'Séance A' });
     expect(within(menu).queryByRole('button', { name: 'Changer de lieu' })).toBeNull();
@@ -495,7 +582,7 @@ describe('Terminer', () => {
     const s = await started();
     await open(s);
     fireEvent.click(within(card('Squat barre')).getByRole('button', { name: 'Valider la série 1' }));
-    await within(card('Squat barre')).findByRole('button', { name: 'Rouvrir la série 1' });
+    await within(card('Squat barre')).findByRole('button', { name: 'Corriger la série 1' });
     fireEvent.click(screen.getByRole('button', { name: 'Terminer' }));
     const sheet = await screen.findByRole('dialog', { name: 'Avant de terminer' });
     expect(within(sheet).getByText('Squat barre')).toBeTruthy();
@@ -506,13 +593,19 @@ describe('Terminer', () => {
     fireEvent.click(within(effort).getByRole('button', { name: 'Encore 2 ou 3' }));
     await waitFor(async () => expect((await setRow(s.db, 'back-squat', 'work', 1)).effort).toBe('ok'));
     expect((await s.db.mirror('workout_session').get(s.id))?.status).toBe('in_progress');
+    // « Noter maintenant » est parti avec la feuille de fin : le focus va à l'exercice noté.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(card('Squat barre')).getByRole('button', { name: /^Séries faites/ }),
+      ),
+    );
   });
 
   it('« Terminer quand même » termine la séance et mène à /workout/:id/summary', async () => {
     const s = await started();
     const view = await open(s);
     fireEvent.click(within(card('Squat barre')).getByRole('button', { name: 'Valider la série 1' }));
-    await within(card('Squat barre')).findByRole('button', { name: 'Rouvrir la série 1' });
+    await within(card('Squat barre')).findByRole('button', { name: 'Corriger la série 1' });
     fireEvent.click(screen.getByRole('button', { name: 'Terminer' }));
     fireEvent.click(
       within(await screen.findByRole('dialog', { name: 'Avant de terminer' })).getByRole('button', {
@@ -540,6 +633,95 @@ describe('Terminer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Terminer' }));
     await waitFor(() => expect(view.location()).toBe(`/workout/${s.id}/summary`));
     expect(screen.queryByRole('dialog', { name: 'Avant de terminer' })).toBeNull();
+  });
+});
+
+describe('focus entre les feuilles', () => {
+  it('« Note de séance » ouverte depuis le menu : à sa fermeture, le focus revient au bouton « ⋯ »', async () => {
+    await open(await started());
+    const menu = screen.getByRole('button', { name: 'Options de la séance' });
+    menu.focus();
+    fireEvent.click(menu);
+    fireEvent.click(
+      within(await screen.findByRole('dialog', { name: 'Séance A' })).getByRole('button', {
+        name: 'Note de séance',
+      }),
+    );
+    const note = await screen.findByRole('dialog', { name: 'Note de séance' });
+    fireEvent.click(within(note).getByRole('button', { name: 'Annuler' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(menu));
+  });
+
+  it('« Note » d’un exercice : même retour au « ⋯ » de la carte', async () => {
+    await open(await started());
+    const menu = within(card('Squat barre')).getByRole('button', { name: 'Options pour Squat barre' });
+    menu.focus();
+    fireEvent.click(menu);
+    fireEvent.click(
+      within(await screen.findByRole('dialog', { name: 'Squat barre' })).getByRole('button', {
+        name: 'Note',
+      }),
+    );
+    const note = await screen.findByRole('dialog', { name: 'Note : Squat barre' });
+    fireEvent.click(within(note).getByRole('button', { name: 'Annuler' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(menu));
+  });
+});
+
+describe('élastique et lest : sans charge pour le moteur', () => {
+  const work = () =>
+    [1, 2].map((position) => ({
+      kind: 'work' as const,
+      position,
+      side: null,
+      targetRepsMin: 10,
+      targetRepsMax: 12,
+      targetDurationS: null,
+      targetLoadG: null,
+      targetRir: 2,
+      targetVariant: null,
+    }));
+  const exercise = (id: string, slotId: string, loadMode: 'band' | 'weighted'): PlannedExercise => ({
+    ...SQUAT,
+    slotId,
+    plannedExerciseId: id,
+    exerciseId: id,
+    loadMode,
+    sets: work(),
+    platesPerSide: null,
+  });
+
+  it('élastique : ni colonne kg ni calibration ; lest : kg facultatif, sans calibration, vide = sans charge', async () => {
+    const s = await started({
+      start: {
+        plan: {
+          ...PLAN,
+          exercises: [exercise('band-row', 'A1', 'band'), exercise('weighted-dip', 'A2', 'weighted')],
+        },
+      },
+    });
+    await open(s);
+    expect(screen.queryByText('Calibration : tu choisis ta charge')).toBeNull();
+    const band = card("Rowing à l'élastique");
+    expect(within(band).getByText('2 × 10–12')).toBeTruthy();
+    expect(within(band).queryByText('kg')).toBeNull();
+    expect(within(band).queryByRole('textbox', { name: /Charge/ })).toBeNull();
+    fireEvent.click(within(band).getByRole('button', { name: 'Valider la série 1' }));
+    await waitFor(async () => expect((await setRow(s.db, 'band-row', 'work', 1)).loggedAt).not.toBeNull());
+    expect(await setRow(s.db, 'band-row', 'work', 1)).toMatchObject({ loadG: null, reps: 10 });
+
+    fireEvent.click(within(card('Dips lestés')).getByRole('button', { name: /^Séries faites/ }));
+    const dips = card('Dips lestés');
+    const kg = within(dips).getByRole('textbox', { name: 'Charge en kg, série 1' }) as HTMLInputElement;
+    expect(kg.value).toBe('');
+    fireEvent.click(within(dips).getByRole('button', { name: 'Valider la série 1' }));
+    await waitFor(async () =>
+      expect((await setRow(s.db, 'weighted-dip', 'work', 1)).loggedAt).not.toBeNull(),
+    );
+    expect(await setRow(s.db, 'weighted-dip', 'work', 1)).toMatchObject({ loadG: null, reps: 10 });
+    expect(kg.getAttribute('aria-invalid')).toBeNull();
   });
 });
 
@@ -597,12 +779,11 @@ describe('live.module.css : cibles tactiles et mouvement (spec brique 3 §7.3)',
     }
   });
 
-  it('champs, « Préc. », menus et pastille : 48 px de haut au moins (44 pour la pastille)', () => {
-    for (const selector of ['.input', '.prev', '.menuButton', '.toggle']) {
+  it('champs, « Préc. », menus, pastille « Effort » et « Annuler » : 48 px de haut au moins', () => {
+    for (const selector of ['.input', '.prev', '.menuButton', '.toggle', '.effortChip', '.cancel']) {
       expect(px(rule(selector).get('min-height')), selector).toBeGreaterThanOrEqual(48);
     }
     expect(px(rule('.menuButton').get('min-width'))).toBeGreaterThanOrEqual(48);
-    expect(px(rule('.effortChip').get('min-height'))).toBeGreaterThanOrEqual(44);
   });
 
   it('champs en 16 px (pas de zoom sur iOS) ; « Terminer » en bas, collé au-dessus de la barre d’onglets', () => {

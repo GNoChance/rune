@@ -46,7 +46,6 @@ afterEach(async () => {
 
 async function renderRow(o: Partial<SetRowProps> = {}) {
   const onLog = vi.fn<(values: SetInput) => Promise<void>>(async () => {});
-  const onReopen = vi.fn(async () => {});
   const onEffort = vi.fn();
   const onActivate = vi.fn();
   const props: SetRowProps = {
@@ -58,7 +57,6 @@ async function renderRow(o: Partial<SetRowProps> = {}) {
     readOnly: false,
     effortChip: false,
     onLog,
-    onReopen,
     onEffort,
     onActivate,
     ...o,
@@ -69,7 +67,7 @@ async function renderRow(o: Partial<SetRowProps> = {}) {
     </ul>,
   );
   opened.push(view.db);
-  return { ...view, onLog, onReopen, onEffort, onActivate };
+  return { ...view, onLog, onEffort, onActivate };
 }
 
 const input = (name: string) => screen.getByRole('textbox', { name }) as HTMLInputElement;
@@ -186,6 +184,12 @@ describe('✓ : saisie contrôlée (Review Focus 4)', () => {
     type('Charge en kg, série 1', '62,5');
     fireEvent.click(screen.getByRole('button', { name: 'Valider la série 1' }));
     await waitFor(() => expect(onLog).toHaveBeenCalledWith({ loadG: 62_500, reps: 6 }));
+    // Garde du double tap passée (la ligne de ce test reste à faire : le parent ne la marque pas faite).
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Valider la série 1' }).getAttribute('aria-disabled'),
+      ).toBeNull(),
+    );
     type('Charge en kg, série 1', '62.5');
     fireEvent.click(screen.getByRole('button', { name: 'Valider la série 1' }));
     await waitFor(() => expect(onLog).toHaveBeenCalledTimes(2));
@@ -235,16 +239,102 @@ describe('✓ : saisie contrôlée (Review Focus 4)', () => {
   });
 });
 
+describe('double tap', () => {
+  it('deux taps sur ✓ : une seule écriture ; le bouton reste focalisable (aria-disabled, jamais disabled)', async () => {
+    let release = () => {};
+    const onLog = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    await renderRow({ onLog });
+    const check = screen.getByRole('button', { name: 'Valider la série 1' }) as HTMLButtonElement;
+    fireEvent.click(check);
+    fireEvent.click(check);
+    expect(onLog).toHaveBeenCalledTimes(1);
+    expect(check.disabled).toBe(false);
+    await waitFor(() => expect(check.getAttribute('aria-disabled')).toBe('true'));
+    release();
+    // Le bouton ignore encore les taps un court instant après l'écriture, puis se libère.
+    await waitFor(() => expect(check.getAttribute('aria-disabled')).toBeNull());
+  });
+});
+
+describe('élastique et lest (le moteur les traite sans charge)', () => {
+  it('élastique : pas de colonne kg, seulement les répétitions', async () => {
+    const { onLog } = await renderRow({
+      line: line({ loadMode: 'band', targetLoadG: null }),
+      grid: gridFor('band', SETTINGS, null),
+    });
+    expect(screen.queryByRole('textbox', { name: /Charge/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Valider la série 1' }));
+    await waitFor(() => expect(onLog).toHaveBeenCalledWith({ reps: 6 }));
+  });
+
+  it('lest : kg facultatif, vide = sans charge, jamais une erreur ; pas de − / + de charge', async () => {
+    const { onLog } = await renderRow({
+      line: line({ loadMode: 'weighted', targetLoadG: null }),
+      grid: gridFor('weighted', SETTINGS, null),
+    });
+    expect(input('Charge en kg, série 1').value).toBe('');
+    expect(screen.queryByRole('button', { name: 'Monter la charge' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Valider la série 1' }));
+    await waitFor(() => expect(onLog).toHaveBeenCalledWith({ loadG: null, reps: 6 }));
+    expect(input('Charge en kg, série 1').getAttribute('aria-invalid')).toBeNull();
+  });
+
+  it('lest saisi : écrit ; une saisie fausse reste refusée', async () => {
+    const { onLog } = await renderRow({
+      line: line({ loadMode: 'weighted', targetLoadG: null }),
+      grid: gridFor('weighted', SETTINGS, null),
+    });
+    type('Charge en kg, série 1', 'abc');
+    fireEvent.click(screen.getByRole('button', { name: 'Valider la série 1' }));
+    expect(errorOf(input('Charge en kg, série 1'))).toContain('Charge invalide');
+    expect(onLog).not.toHaveBeenCalled();
+    type('Charge en kg, série 1', '10');
+    fireEvent.click(screen.getByRole('button', { name: 'Valider la série 1' }));
+    await waitFor(() => expect(onLog).toHaveBeenCalledWith({ loadG: 10_000, reps: 6 }));
+  });
+});
+
 describe('série faite', () => {
   const done = line({ loadG: 62_500, reps: 6, loggedAt: DEFAULT_NOW });
 
-  it('valeurs affichées, plus de champ ; la toucher la rouvre', async () => {
-    const { onReopen } = await renderRow({ line: done });
+  it('valeurs affichées, plus de champ ; « Corriger » rouvre la ligne en local, sans rien écrire (ruling R43)', async () => {
+    const { onLog } = await renderRow({ line: done });
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.getByText('62,5')).toBeTruthy();
     expect(screen.getByText('6')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Rouvrir la série 1' }));
-    await waitFor(() => expect(onReopen).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Corriger la série 1' }));
+    expect(input('Charge en kg, série 1').value).toBe('62,5');
+    expect(input('Répétitions, série 1').value).toBe('6');
+    expect(screen.getByRole('button', { name: 'Valider la série 1' })).toBeTruthy();
+    expect(onLog).not.toHaveBeenCalled();
+  });
+
+  it('correction puis « Annuler » : rien d’écrit, la série reste telle qu’elle était', async () => {
+    const { onLog } = await renderRow({ line: done });
+    fireEvent.click(screen.getByRole('button', { name: 'Corriger la série 1' }));
+    type('Charge en kg, série 1', '70');
+    fireEvent.click(screen.getByRole('button', { name: 'Annuler la correction de la série 1' }));
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.getByText('62,5')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Corriger la série 1' }));
+    // Une nouvelle correction repart des valeurs enregistrées.
+    fireEvent.click(screen.getByRole('button', { name: 'Corriger la série 1' }));
+    expect(input('Charge en kg, série 1').value).toBe('62,5');
+    expect(onLog).not.toHaveBeenCalled();
+  });
+
+  it('correction puis ✓ : les nouvelles valeurs, et la ligne redevient faite', async () => {
+    const { onLog } = await renderRow({ line: done });
+    fireEvent.click(screen.getByRole('button', { name: 'Corriger la série 1' }));
+    type('Charge en kg, série 1', '65');
+    fireEvent.click(screen.getByRole('button', { name: 'Valider la série 1' }));
+    await waitFor(() => expect(onLog).toHaveBeenCalledWith({ loadG: 65_000, reps: 6 }));
+    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull());
   });
 
   it('pastille « Effort » facultative', async () => {

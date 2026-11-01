@@ -1,5 +1,5 @@
 import type { Effort } from '@rune/contracts';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import { useServices, useSyncState } from '../../app-services';
 import {
@@ -15,7 +15,7 @@ import {
 import { Banner, Button, EmptyState, Page, UNEXPECTED_ERROR_MESSAGE } from '../../ui';
 import { clockText } from './DurationTimer';
 import { EffortSheet } from './EffortSheet';
-import { ExerciseCard, hasOpenWork, workLinesAt } from './ExerciseCard';
+import { ExerciseCard, hasOpenWork, measureOf, workLinesAt } from './ExerciseCard';
 import { FinishSheet } from './FinishSheet';
 import styles from './live.module.css';
 import { ExerciseSheetSheet } from './PlanList';
@@ -128,15 +128,26 @@ export function LiveWorkout(p: { id: string }) {
       context={context}
       title={title}
       names={new Map(catalog.sheets.map((s) => [s.id, s.name]))}
+      measures={new Map(catalog.sheets.map((s) => [s.id, s.measure]))}
       error={error}
       onLeave={leave}
     />
   );
 }
 
+/**
+ * Où rendre le focus à la fermeture de la feuille d'effort quand son déclencheur n'est plus là : après la dernière
+ * série, le ✓ est dans une carte qui se replie (`next` : la carte suivante qui a encore une série de travail à faire,
+ * sinon « Terminer » ; l'exercice qui vient d'être fini est écarté même si la séance observée ne l'a pas encore vu) ; après
+ * « Noter maintenant », le bouton est parti avec la feuille de fin (`exercise` : la carte notée). La pastille
+ * « Effort » reste en place : la feuille lui rend le focus elle-même.
+ */
+type FocusAfter = { kind: 'next'; done: string } | { kind: 'exercise'; id: string } | null;
+
 interface EffortTarget {
   lines: WorkoutSetView[];
   detail: string;
+  after: FocusAfter;
 }
 
 function Live(p: {
@@ -144,6 +155,8 @@ function Live(p: {
   context: LiveContext;
   title: string;
   names: ReadonlyMap<string, string>;
+  /** Mesure de chaque fiche (répétitions ou durée), par id. */
+  measures: ReadonlyMap<string, 'reps' | 'duration'>;
   error: string | null;
   onLeave(action: () => Promise<string>): void;
 }) {
@@ -155,6 +168,9 @@ function Live(p: {
   const [finishing, setFinishing] = useState(false);
   const [sheet, setSheet] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refocus, setRefocus] = useState<FocusAfter>(null);
+  const root = useRef<HTMLElement>(null);
+  const finishButton = useRef<HTMLButtonElement>(null);
 
   const readOnly = !session.heldHere;
   const name = (e: WorkoutExerciseView) => nameOf(p.names, e.exerciseId);
@@ -165,11 +181,29 @@ function Live(p: {
   const remaining = session.exercises.some(hasOpenWork);
   const missing = missingEffort(session);
 
-  const askEffort = (exercise: WorkoutExerciseView, lines: WorkoutSetView[]) => {
+  const askEffort = (exercise: WorkoutExerciseView, lines: WorkoutSetView[], after: FocusAfter = null) => {
     const position = lines[0]?.position;
     if (position === undefined) return;
-    setEffort({ lines, detail: `${name(exercise)} · série ${position}` });
+    setEffort({ lines, detail: `${name(exercise)} · série ${position}`, after });
   };
+
+  const closeEffort = () => {
+    setRefocus(effort?.after ?? null);
+    setEffort(null);
+  };
+
+  // Après la fermeture de la feuille (et le retour de focus qu'elle tente), le focus va où on l'attend.
+  useEffect(() => {
+    if (refocus === null || effort !== null) return;
+    const toggle = (id: string) =>
+      root.current?.querySelector<HTMLElement>(`[data-toggle-for="${id}"]`) ?? null;
+    const nextId =
+      refocus.kind === 'next'
+        ? (session.exercises.find((e) => e.id !== refocus.done && hasOpenWork(e))?.id ?? null)
+        : refocus.id;
+    (nextId === null ? finishButton.current : toggle(nextId))?.focus();
+    setRefocus(null);
+  }, [refocus, effort, session]);
 
   const pickEffort = async (value: Effort) => {
     if (!effort) return;
@@ -181,7 +215,7 @@ function Live(p: {
       setError(EFFORT_FAILED);
     } finally {
       setSavingEffort(false);
-      setEffort(null);
+      closeEffort();
     }
   };
 
@@ -199,13 +233,18 @@ function Live(p: {
     setFinishing(false);
     const exercise = missing[0];
     const last = exercise?.sets.filter((s) => s.kind === 'work' && isDone(s)).at(-1);
-    if (exercise && last) askEffort(exercise, workLinesAt(exercise, last.position).filter(isDone));
+    if (exercise && last) {
+      askEffort(exercise, workLinesAt(exercise, last.position).filter(isDone), {
+        kind: 'exercise',
+        id: exercise.id,
+      });
+    }
   };
 
   const currentEffort = effort?.lines.find((l) => l.effort !== null)?.effort ?? null;
 
   return (
-    <section className={styles.live}>
+    <section ref={root} className={styles.live}>
       <header className={styles.header}>
         <div className={styles.headerText}>
           <h1 className={styles.title}>{p.title}</h1>
@@ -227,19 +266,21 @@ function Live(p: {
             key={exercise.id}
             exercise={exercise}
             name={name(exercise)}
+            measure={measureOf(exercise, p.measures.get(exercise.exerciseId))}
             context={p.context}
             open={isOpen(exercise)}
             readOnly={readOnly}
             onToggle={() => setExpanded((x) => ({ ...x, [exercise.id]: !isOpen(exercise) }))}
             onOpenSheet={() => setSheet(exercise.exerciseId)}
             onEffort={(lines) => askEffort(exercise, lines)}
-            onLastWorkDone={(lines) => askEffort(exercise, lines)}
+            onLastWorkDone={(lines) => askEffort(exercise, lines, { kind: 'next', done: exercise.id })}
           />
         ))}
       </div>
       {readOnly ? null : (
         <div className={styles.footer}>
           <Button
+            ref={finishButton}
             variant={remaining ? 'secondary' : 'primary'}
             block
             onClick={() => (missing.length > 0 ? setFinishing(true) : finish())}
@@ -254,7 +295,7 @@ function Live(p: {
         current={currentEffort}
         pending={savingEffort}
         onPick={(value) => void pickEffort(value)}
-        onLater={() => setEffort(null)}
+        onLater={closeEffort}
       />
       <FinishSheet
         open={finishing}

@@ -49,6 +49,18 @@ export function gridFor(loadMode: LoadMode, settings: LoadSettings, machineStepG
 }
 
 /**
+ * Charge à saisir pour un exercice : obligatoire sur une grille (barre, haltères, machine) ; facultative pour un lest
+ * (`weighted` : vide = sans charge, jamais une erreur) ; aucune au poids du corps ni à l'élastique, que le moteur traite
+ * sans charge (grille `none`).
+ */
+export type LoadEntry = 'required' | 'optional' | 'none';
+
+export function loadEntryOf(loadMode: LoadMode, grid: LoadGrid): LoadEntry {
+  if (grid.kind !== 'none') return 'required';
+  return loadMode === 'weighted' ? 'optional' : 'none';
+}
+
+/**
  * Charge réalisable suivante (+1) ou précédente (−1) ; une charge hors grille reprend la grille. Champ vide : + donne
  * la charge la plus légère. Null : rien de plus (ou de moins) au lieu, ou pas de charge.
  */

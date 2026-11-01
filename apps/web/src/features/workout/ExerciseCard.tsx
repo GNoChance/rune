@@ -9,8 +9,8 @@ import {
 import { Banner, BottomSheet, UNEXPECTED_ERROR_MESSAGE } from '../../ui';
 import styles from './live.module.css';
 import { NoteSheet } from './NoteSheet';
-import { gridFor } from './number-input';
-import { MenuButton } from './SessionMenu';
+import { gridFor, loadEntryOf } from './number-input';
+import { MenuButton, useSheetAfterMenu } from './SessionMenu';
 import { SetRow } from './SetRow';
 import { targetSummary } from './workout-labels';
 
@@ -22,9 +22,16 @@ import { targetSummary } from './workout-labels';
 
 const isDone = (set: WorkoutSetView) => set.loggedAt !== null;
 
-/** Exercice en durée : une série a une durée visée ou saisie. */
-export const measureOf = (exercise: WorkoutExerciseView): 'reps' | 'duration' =>
-  exercise.sets.some((s) => s.targetDurationS !== null || s.durationS !== null) ? 'duration' : 'reps';
+/**
+ * Mesure d'un exercice : celle de sa fiche (`measure` du catalogue, juste aussi en séance libre, sans cible) ; faute de
+ * fiche, une série avec une durée visée ou saisie.
+ */
+export const measureOf = (
+  exercise: WorkoutExerciseView,
+  sheetMeasure: 'reps' | 'duration' | undefined,
+): 'reps' | 'duration' =>
+  sheetMeasure ??
+  (exercise.sets.some((s) => s.targetDurationS !== null || s.durationS !== null) ? 'duration' : 'reps');
 
 /** Lignes d'une série de travail : une, ou gauche et droite en unilatéral. */
 export const workLinesAt = (exercise: WorkoutExerciseView, position: number): WorkoutSetView[] =>
@@ -68,6 +75,8 @@ function Chevron(p: { open: boolean }) {
 export interface ExerciseCardProps {
   exercise: WorkoutExerciseView;
   name: string;
+  /** Répétitions ou durée (`measureOf`). */
+  measure: 'reps' | 'duration';
   context: LiveContext;
   open: boolean;
   readOnly: boolean;
@@ -86,19 +95,20 @@ export function ExerciseCard(p: ExerciseCardProps) {
   const bodyId = useId();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
-  const [note, setNote] = useState(false);
+  const [note, openNoteAfterMenu, closeNote] = useSheetAfterMenu<'note'>(menu);
   const [error, setError] = useState<string | null>(null);
 
   const first = exercise.sets.find((s) => s.kind === 'work') ?? exercise.sets[0];
   const loadMode = first?.loadMode ?? 'bodyweight';
   const grid = gridFor(loadMode, context.loadSettings, context.machineStepG[exercise.id] ?? null);
-  const measure = measureOf(exercise);
-  const showLoad = loadMode !== 'bodyweight';
+  const { measure } = p;
+  // Élastique et poids du corps : pas de colonne kg ; lest : kg facultatif.
+  const showLoad = loadEntryOf(loadMode, grid) !== 'none';
   const summary = targetSummary({
     sets: exercise.sets,
     loadMode,
-    // Exercice d'un programme à charge, sans charge visée : la calibration (05 §9).
-    calibration: exercise.slotId !== null && showLoad && first?.targetLoadG === null,
+    // Exercice d'un programme sur une grille de charges, sans charge visée : la calibration (05 §9).
+    calibration: exercise.slotId !== null && grid.kind !== 'none' && first?.targetLoadG === null,
   });
   const progress = workProgress(exercise);
   const previous = context.previous[exercise.exerciseId] ?? [];
@@ -125,8 +135,11 @@ export function ExerciseCard(p: ExerciseCardProps) {
   };
 
   const log = async (line: WorkoutSetView, values: SetInput) => {
+    // Une correction (série déjà faite) ne redemande pas l'effort.
     const last =
-      line.kind === 'work' && !exercise.sets.some((s) => s.kind === 'work' && !isDone(s) && s.id !== line.id);
+      line.kind === 'work' &&
+      !isDone(line) &&
+      !exercise.sets.some((s) => s.kind === 'work' && !isDone(s) && s.id !== line.id);
     await repos.workouts.logSet(line.id, values);
     // L'effort se demande après la dernière série de travail d'un exercice du programme (05 §7) ; facultatif ailleurs.
     if (last && exercise.slotId !== null && lastPosition !== undefined) {
@@ -149,7 +162,6 @@ export function ExerciseCard(p: ExerciseCardProps) {
       readOnly={p.readOnly}
       effortChip={chipOn(line)}
       onLog={(values) => log(line, values)}
-      onReopen={() => repos.workouts.reopenSet(line.id)}
       onEffort={() => p.onEffort(workLinesAt(exercise, line.position).filter(isDone))}
       onActivate={() => setActiveId(line.id)}
     />
@@ -175,6 +187,7 @@ export function ExerciseCard(p: ExerciseCardProps) {
         <button
           type="button"
           className={styles.toggle}
+          data-toggle-for={exercise.id}
           aria-expanded={p.open}
           aria-controls={bodyId}
           onClick={p.onToggle}
@@ -211,7 +224,7 @@ export function ExerciseCard(p: ExerciseCardProps) {
               className={styles.menuItem}
               onClick={() => {
                 setMenu(false);
-                setNote(true);
+                openNoteAfterMenu('note');
               }}
             >
               Note
@@ -251,7 +264,7 @@ export function ExerciseCard(p: ExerciseCardProps) {
           title={`Note : ${p.name}`}
           initial={exercise.note}
           onSave={(text) => repos.workouts.setNote({ kind: 'exercise', id: exercise.id }, text)}
-          onClose={() => setNote(false)}
+          onClose={closeNote}
         />
       ) : null}
     </section>
