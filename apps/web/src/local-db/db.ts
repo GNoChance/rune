@@ -103,6 +103,10 @@ export class AppDb extends Dexie {
           .modify((op, ref) => {
             ref.value = convertOutboxOp(op);
           });
+        // Ruling R50 : un client v1 (brique 2) a tiré puis jeté les lignes des 7 tables qu'il ne connaissait pas, en
+        // avançant son watermark ; sans watermark, le premier pull de la v2 est complet et les rapporte (les lignes
+        // qui ont des ops en attente sont gardées par le pull complet).
+        await tx.table('meta').delete('watermark');
       });
     this.mirrorNames = Object.keys(stores)
       .filter((s) => !NON_MIRROR_STORES.includes(s))

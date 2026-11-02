@@ -7,7 +7,9 @@ import {
   STORE_SCHEMAS_BY_VERSION,
 } from '../../src/local-db/db';
 import { getMeta } from '../../src/local-db/meta';
+import { createSyncEngine } from '../../src/sync/engine';
 import { convertOutboxOp } from '../../src/sync/protocol-converters';
+import { createFakeSyncServer } from '../support/fake-sync-server';
 import { createTestLocalDb, loadFrozenLocalDb, readFrozenDump } from '../support/local-db';
 
 /** Les 7 magasins de la brique 3 (spec §5.4), absents de la version 1. */
@@ -54,12 +56,42 @@ describe('base locale v2 (spec brique 3 §5.4)', () => {
       expect(await db.mirror(store).toArray(), store).toEqual(rows);
     }
     for (const [key, value] of Object.entries(dump.meta)) {
+      if (key === 'watermark') continue;
       expect(await getMeta(db, key as 'deviceId'), key).toEqual(value);
     }
     for (const store of PROGRAM_STORES) {
       expect(db.mirrorNames, store).toContain(store);
       expect(await db.mirror(store).count(), store).toBe(0);
     }
+  });
+
+  it('montée v1 → v2 : watermark effacé, le premier pull après la mise à jour est complet (ruling R50)', async () => {
+    // Un client brique 2 a tiré puis jeté les lignes des entités qu'il ne connaissait pas, en avançant son watermark.
+    const name = `frozen-v1-pull-${crypto.randomUUID()}`;
+    await loadFrozenLocalDb(1, name);
+    const dump = await readFrozenDump(1);
+    expect(dump.meta.watermark).toEqual(expect.any(String));
+    const db = createAppDb(name);
+    opened.push(db);
+    await db.open();
+    expect(await getMeta(db, 'watermark')).toBeUndefined();
+
+    const server = createFakeSyncServer(String(dump.meta.serverEpoch));
+    server.rows = [
+      {
+        entity: 'workout_session',
+        rev: 7,
+        row: { id: 'ws-1', ownerId: dump.meta.userId, rev: 7, status: 'completed', deletedAt: null },
+      },
+    ];
+    const engine = createSyncEngine({ db, transport: server, triggers: () => () => {} });
+    await engine.syncNow('manual');
+    engine.stop();
+
+    const pulls = server.log.filter((r) => r.path === '/api/sync/pull');
+    expect(pulls.length).toBeGreaterThan(0);
+    expect(pulls[0]?.query.has('since')).toBe(false);
+    expect(await db.mirror('workout_session').get('ws-1')).toMatchObject({ status: 'completed' });
   });
 
   it("index `provisional` des copies D : une copie provisoire s'y trouve, une ligne du serveur non", async () => {

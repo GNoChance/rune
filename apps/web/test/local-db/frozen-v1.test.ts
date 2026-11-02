@@ -26,6 +26,8 @@ it('ouvre le jeu figé v1 avec la version courante', async () => {
   for (const [store, rows] of Object.entries(dump.mirrors)) {
     expect(await db.mirror(store).toArray(), store).toEqual(rows);
   }
-  expect(await getMeta(db, 'watermark')).toBe('0199b9a0-0000-7000-8000-0000000000e1:42');
+  // Le watermark de la v1 tombe à la montée en v2 (ruling R50) : le pull suivant est complet.
+  expect(dump.meta.watermark).toBe('0199b9a0-0000-7000-8000-0000000000e1:42');
+  expect(await getMeta(db, 'watermark')).toBeUndefined();
   expect(await getMeta(db, 'deviceId')).toBe(dump.meta.deviceId);
 });
