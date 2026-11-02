@@ -342,6 +342,46 @@ describe('« La prochaine fois » (spec §7.4, ruling R34)', () => {
     expect(flat(section('La prochaine fois'))).toContain(REASON_TEXTS.LOAD_UP);
   });
 
+  it('exercice sauté (aucune série de travail faite, NO_DATA) : pas de ligne', async () => {
+    const skipped: SessionSpec = {
+      ...TODAY,
+      exercises: [
+        ...TODAY.exercises,
+        {
+          id: 'pe-goblet',
+          exerciseId: 'goblet-squat',
+          sets: [
+            { kind: 'warmup', loadG: 8_000, reps: 10, loadMode: 'dumbbell' },
+            { loadG: 14_000, reps: null, loadMode: 'dumbbell', done: false },
+          ],
+        },
+      ],
+    };
+    const noData = {
+      ...decision({ provisional: false }),
+      id: 'pe-goblet',
+      slotId: 'A2',
+      exerciseId: 'goblet-squat',
+      result: 'IGNORED',
+      reasonCode: 'NO_DATA',
+    };
+    const db = await seedAll([skipped], (d) =>
+      seedMirror(d, 'engine_decision', [decision({ provisional: false }), noData]),
+    );
+    await openSummary('s-now', db);
+    const items = within(section('La prochaine fois')).getAllByRole('listitem');
+    expect(items.map((li) => within(li).getByText(/Squat/).textContent)).toEqual(['Squat barre']);
+    expect(flat(section('La prochaine fois'))).not.toContain(REASON_TEXTS.NO_DATA);
+  });
+
+  it('seules des décisions NO_DATA : ni ligne ni « arriveront avec la synchronisation »', async () => {
+    const noData = { ...decision({ provisional: false }), result: 'IGNORED', reasonCode: 'NO_DATA' };
+    const db = await seedAll([TODAY], (d) => seedMirror(d, 'engine_decision', [noData]));
+    await openSummary('s-now', db);
+    expect(screen.queryByRole('region', { name: 'La prochaine fois' })).toBeNull();
+    expect(screen.queryByText('Tes prochaines cibles arriveront avec la synchronisation.')).toBeNull();
+  });
+
   it('séance de programme encore sans décision : les cibles arriveront avec la synchronisation', async () => {
     const db = await seedAll([TODAY]);
     await openSummary('s-now', db);

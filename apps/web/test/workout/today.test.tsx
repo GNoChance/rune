@@ -78,6 +78,27 @@ describe('targetSummary', () => {
       targetSummary(work({ calibration: true, sets: SQUAT.sets.map((s) => ({ ...s, targetLoadG: null })) })),
     ).toBe('Calibration : tu choisis ta charge');
   });
+
+  it('calibration d’un exercice sans charge (poids du corps, élastique, durée) : la cible normale', () => {
+    const noLoad = SQUAT.sets.map((s) => ({ ...s, targetLoadG: null }));
+    const lunges = LUNGE.sets.map((s) => ({ ...s, targetLoadG: null }));
+    expect(targetSummary(work({ calibration: true, loadMode: 'bodyweight', sets: noLoad }))).toBe('3 × 6');
+    expect(targetSummary(work({ calibration: true, loadMode: 'band', sets: lunges }))).toBe('2 × 8–12');
+    const plank = work({
+      calibration: true,
+      measure: 'duration',
+      loadMode: 'bodyweight',
+      sets: [1, 2, 3].map((position) => ({
+        ...(SQUAT.sets[1] as (typeof SQUAT.sets)[number]),
+        position,
+        targetRepsMin: null,
+        targetRepsMax: null,
+        targetDurationS: 30,
+        targetLoadG: null,
+      })),
+    });
+    expect(targetSummary(plank)).toBe('3 × 30 s');
+  });
 });
 
 describe('mentions et avis', () => {
@@ -91,6 +112,20 @@ describe('mentions et avis', () => {
     expect(resolutionNote(SKIPPED, NAMES)).toBe('Pas faisable ici : sauté');
     expect(resolutionNote({ ...SKIPPED, resolution: 'suspended' }, NAMES)).toBe('Suspendu');
     expect(resolutionNote(SQUAT, NAMES)).toBeNull();
+  });
+
+  it('fiche prévue retirée du catalogue : « Remplace … (retiré du catalogue) »', () => {
+    const replaced: PlannedExercise = {
+      ...SQUAT,
+      exerciseId: 'goblet-squat',
+      resolution: 'replaced_not_feasible',
+    };
+    expect(resolutionNote(replaced, NAMES, new Set(['back-squat']))).toBe(
+      'Remplace Squat barre (retiré du catalogue)',
+    );
+    expect(resolutionNote(replaced, NAMES, new Set(['goblet-squat']))).toBe(
+      'Remplace Squat barre (pas faisable ici)',
+    );
   });
 
   it('reprise après absence', () => {
@@ -133,6 +168,14 @@ describe('PlanList', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Squat barre/ }));
     expect(touched).toEqual(['back-squat']);
     expect(screen.queryByRole('button', { name: /Curl nordique/ })).toBeNull();
+  });
+
+  it('fiche prévue retirée : la mention le dit', () => {
+    render(<PlanList plan={plan} names={NAMES} retired={new Set(['back-squat'])} onOpen={() => {}} />);
+    const items = within(screen.getByRole('list', { name: 'Exercices de la séance' })).getAllByRole(
+      'listitem',
+    );
+    expect(items[3]?.textContent).toContain('Remplace Squat barre (retiré du catalogue)');
   });
 });
 
@@ -232,6 +275,25 @@ describe('séance du jour', () => {
       '/program/choose',
     );
     expect(screen.queryByRole('button', { name: 'Commencer' })).toBeNull();
+  });
+
+  it('fiche prévue retirée du catalogue : le slot prend la suivante, « Remplace … (retiré du catalogue) »', async () => {
+    const template = {
+      ...TEMPLATE,
+      workouts: TEMPLATE.workouts.map((w) =>
+        w.id === 'A'
+          ? {
+              ...w,
+              slots: w.slots.map((s) => ({ ...s, exercises: ['goblet-squat', 'bulgarian-split-squat'] })),
+            }
+          : w,
+      ),
+    };
+    const db = await seedBase({ template });
+    await db.table('exercises').update('goblet-squat', { status: 'retired' });
+    await open(db);
+    expect(await screen.findByText('Remplace Squat goblet (retiré du catalogue)')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Squat bulgare/ })).toBeTruthy();
   });
 
   it('séance en cours sur cet appareil : /workout mène à /workout/:id', async () => {

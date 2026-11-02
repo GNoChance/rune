@@ -87,6 +87,9 @@ function Summary(p: { session: WorkoutSessionView }) {
 
   const names = new Map(sheets.map((s) => [s.id, s.name]));
   const coach = profile?.coach ?? null;
+  const next = nextLines(session.exercises, decisions);
+  // Des décisions arrivées mais aucune à montrer (NO_DATA seulement) : rien à annoncer pour la prochaine fois.
+  const showNext = session.instanceId !== null && (next.length > 0 || decisions.length === 0);
   return (
     <Page title={sessionName(session)}>
       <div className={`${styles.content} stagger`}>
@@ -94,9 +97,7 @@ function Summary(p: { session: WorkoutSessionView }) {
           <Engraved summary={summary} />
         </SystemPanel>
         {summary.records.length > 0 ? <Records records={summary.records} names={names} /> : null}
-        {session.instanceId === null ? null : (
-          <NextTime lines={nextLines(session.exercises, decisions)} names={names} />
-        )}
+        {showNext ? <NextTime lines={next} names={names} /> : null}
         {coach && me ? (
           <CoachBubble coach={coach} label="Fin de séance">
             <p>{coachLine(coach, 'session_end', new Date(session.startedAt), me.username)}</p>

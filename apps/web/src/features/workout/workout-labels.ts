@@ -23,10 +23,15 @@ export interface TargetSource {
   >[];
 }
 
+/** Exercice qui porte une charge à choisir : ni au poids du corps, ni à l'élastique. */
+const carriesLoad = (loadMode: TargetSource['loadMode']): boolean =>
+  loadMode !== null && loadMode !== 'bodyweight' && loadMode !== 'band';
+
 /**
  * Cible résumée : « 3 × 6 · 60 kg », « 3 × 8–12 · 14 kg par main » (haltères), « 3 × 30 s » ; en calibration sans
- * charge visée, « Calibration : tu choisis ta charge ». Un slot sans série (sauté, suspendu) ou des séries sans cible
- * (séance libre) n'ont pas de cible (« »). Une série unilatérale compte pour une (gauche et droite).
+ * charge visée d'un exercice qui porte une charge, « Calibration : tu choisis ta charge » (au poids du corps ou à
+ * l'élastique, la cible normale). Un slot sans série (sauté, suspendu) ou des séries sans cible (séance libre) n'ont
+ * pas de cible (« »). Une série unilatérale compte pour une (gauche et droite).
  */
 export function targetSummary(exercise: TargetSource): string {
   const work = exercise.sets.filter((s) => s.kind === 'work');
@@ -37,7 +42,9 @@ export function targetSummary(exercise: TargetSource): string {
   ) {
     return '';
   }
-  if (exercise.calibration && first.targetLoadG === null) return CALIBRATION_TEXT;
+  if (exercise.calibration && first.targetLoadG === null && carriesLoad(exercise.loadMode)) {
+    return CALIBRATION_TEXT;
+  }
   const count = new Set(work.map((s) => s.position)).size;
   const amount =
     first.targetDurationS !== null
@@ -53,13 +60,21 @@ export function targetSummary(exercise: TargetSource): string {
 }
 
 /**
- * Mention sous le nom : « Remplace <exercice prévu> (pas faisable ici) », « Pas faisable ici : sauté », « Suspendu » ;
- * null pour un exercice prévu tel quel.
+ * Mention sous le nom : « Remplace <exercice prévu> (pas faisable ici) », ou « (retiré du catalogue) » quand la fiche
+ * prévue est retirée (`retired` : ids des fiches retirées du catalogue local) ; « Pas faisable ici : sauté »,
+ * « Suspendu » ; null pour un exercice prévu tel quel.
  */
-export function resolutionNote(exercise: PlannedExercise, names: ReadonlyMap<string, string>): string | null {
+export function resolutionNote(
+  exercise: PlannedExercise,
+  names: ReadonlyMap<string, string>,
+  retired: ReadonlySet<string> = new Set(),
+): string | null {
   switch (exercise.resolution) {
-    case 'replaced_not_feasible':
-      return `Remplace ${nameOf(names, exercise.plannedExerciseId)} (pas faisable ici)`;
+    case 'replaced_not_feasible': {
+      const planned = exercise.plannedExerciseId;
+      const why = planned !== null && retired.has(planned) ? 'retiré du catalogue' : 'pas faisable ici';
+      return `Remplace ${nameOf(names, planned)} (${why})`;
+    }
     case 'not_feasible_here':
       return 'Pas faisable ici : sauté';
     case 'suspended':

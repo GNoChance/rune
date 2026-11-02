@@ -13,7 +13,7 @@ import {
 } from '../../repos';
 import { Button, Dialog, EmptyState, formatKg, formatKgValue, Page, plural } from '../../ui';
 import styles from './history.module.css';
-import { dayLabel, minutesOf, sessionName } from './history-format';
+import { dayLabel, minutesOf, sessionName, showsDecision } from './history-format';
 
 const BACK = '/history';
 
@@ -229,11 +229,15 @@ function Loaded(p: { session: WorkoutSessionView; onDeleted(): void }) {
   if (catalog.state === 'loading' || decisions === undefined || places === undefined) return null;
 
   const sheetNames = new Map(catalog.sheets.map((s) => [s.id, s.name]));
+  // Ni exercice sauté ni NO_DATA : la phrase du moteur ne parle que d'un exercice fait (`showsDecision`).
+  const exercises = new Map(session.exercises.map((e) => [e.id, e]));
   const reasons = new Map(
-    decisions.map((d) => [
-      d.performedExerciseId,
-      { text: REASON_TEXTS[d.reasonCode], provisional: d.provisional },
-    ]),
+    decisions.flatMap((d) => {
+      const exercise = exercises.get(d.performedExerciseId);
+      return exercise && showsDecision(exercise, d)
+        ? [[d.performedExerciseId, { text: REASON_TEXTS[d.reasonCode], provisional: d.provisional }] as const]
+        : [];
+    }),
   );
   const place = places.find((x) => x.id === session.placeId)?.name ?? 'Lieu inconnu';
   const minutes = minutesOf(session);

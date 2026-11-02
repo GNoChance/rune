@@ -31,6 +31,17 @@ export const monthKey = (ms: number): string => monthKeyFormat.format(new Date(m
 /** « 3 200 kg » ; « 12,4 t » au-delà de 10 000 kg. Charges en grammes entiers. */
 export const liftedLabel = formatLifted;
 
+/**
+ * Décision du moteur à montrer pour une entrée de séance (« La prochaine fois » du résumé, historique) : pas pour un
+ * exercice sans série de travail faite (sauté, ou échauffement seul), ni pour `NO_DATA` (rien à évaluer : le repère ne
+ * change pas).
+ */
+export const showsDecision = (
+  exercise: Pick<SessionRecord['exercises'][number], 'sets'>,
+  decision: { reasonCode: string },
+): boolean =>
+  decision.reasonCode !== 'NO_DATA' && exercise.sets.some((s) => s.kind === 'work' && s.loggedAt !== null);
+
 /** « Séance A » pour une séance de programme, « Séance libre » sans programme (D7). */
 export const sessionName = (s: Pick<SessionRecord, 'workoutId'>): string =>
   s.workoutId === null ? 'Séance libre' : `Séance ${s.workoutId}`;

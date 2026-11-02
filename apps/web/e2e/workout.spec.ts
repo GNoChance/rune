@@ -518,10 +518,10 @@ test("fiche retirée en cours de programme : la séance prend la suivante, l'his
     await tab(page, 'Séance').click();
     const plan = page.getByRole('list', { name: 'Exercices de la séance', exact: true });
     await expect(plan.getByRole('listitem')).toHaveCount(E2E_TEMPLATE.slots.length);
-    // Le slot du tirage (3e) prend la suivante de sa liste et dit ce qu'elle remplace (`replaced_not_feasible`).
+    // Le slot du tirage (3e) prend la suivante de sa liste et dit ce qu'elle remplace, et pourquoi (M6).
     const rowSlot = plan.getByRole('listitem').nth(2);
     await expect(rowSlot).toContainText(E2E_TEMPLATE.swap.name);
-    await expect(rowSlot).toContainText(`Remplace ${ROW.exercise.name}`);
+    await expect(rowSlot).toContainText(`Remplace ${ROW.exercise.name} (retiré du catalogue)`);
     await expect(rowSlot.getByRole('button')).toHaveAccessibleName(new RegExp(`^${E2E_TEMPLATE.swap.name}`));
   });
 

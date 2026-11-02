@@ -136,7 +136,7 @@ export const PAIN_CODE_REWRITES = {
 
 /** Une phrase par code, tutoiement, apostrophe droite, sans chiffre de charge. À relire par le propriétaire. */
 export const REASON_TEXTS: Record<ReasonCode | ChangeReasonCode, string> = {
-  NO_DATA: 'Pas encore de séance faite sur cet exercice : tu choisis ta charge de départ.',
+  NO_DATA: 'Aucune série faite cette fois : le repère ne change pas.',
   NOT_FEASIBLE_HERE: "Cet exercice n'est pas faisable ici : on prend une alternative.",
   SLOT_SUSPENDED: 'Cet exercice est mis de côté : il reste en pause tant que tu ne le reprends pas.',
   DELOAD_WEEK: "C'est une semaine allégée : on baisse la charge pour récupérer.",

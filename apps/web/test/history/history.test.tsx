@@ -37,6 +37,8 @@ interface SetSpec {
   loadMode?: string;
   kind?: string;
   side?: string | null;
+  /** Null : série jamais faite. */
+  loggedAt?: string | null;
 }
 
 interface ExerciseSpec {
@@ -329,6 +331,44 @@ describe('historique : détail', () => {
     expect(within(first).queryByText(REASON_TEXTS.LOAD_UP)).toBeNull();
     const second = screen.getByRole('heading', { name: 'Squat barre' }).closest('section') as HTMLElement;
     expect(within(second).getByText(REASON_TEXTS.LOAD_UP)).toBeTruthy();
+  });
+
+  it('exercice sauté (aucune série de travail faite) ou décision NO_DATA : pas de phrase du moteur', async () => {
+    const session: SessionSpec = {
+      id: 's-n',
+      startedAt: '2025-10-22T08:00:00.000Z',
+      exercises: [
+        { id: 'pe-n1', exerciseId: 'back-squat', sets: [{ loadG: 60_000, reps: 5 }] },
+        { id: 'pe-n2', exerciseId: 'goblet-squat', sets: [{ loadG: 20_000, reps: null, loggedAt: null }] },
+        {
+          id: 'pe-n3',
+          exerciseId: 'bodyweight-squat',
+          sets: [{ loadG: null, reps: 12, loadMode: 'bodyweight' }],
+        },
+      ],
+    };
+    const decision = (id: string, exerciseId: string, reasonCode: string) => ({
+      id,
+      ownerId: 'u-1',
+      instanceId: 'i-1',
+      slotId: 'S1',
+      exerciseId,
+      result: reasonCode === 'NO_DATA' ? 'IGNORED' : 'PROGRESS',
+      reasonCode,
+      nextTarget: null,
+      profile: 'adult',
+      rulesVersion: '1',
+    });
+    await openDetail([session], 's-n', (db) =>
+      seedMirror(db, 'engine_decision', [
+        decision('pe-n1', 'back-squat', 'LOAD_UP'),
+        decision('pe-n2', 'goblet-squat', 'LOAD_UP'),
+        decision('pe-n3', 'bodyweight-squat', 'NO_DATA'),
+      ]),
+    );
+    expect(await screen.findByText(REASON_TEXTS.LOAD_UP)).toBeTruthy();
+    expect(document.querySelectorAll('[data-decision]')).toHaveLength(1);
+    expect(screen.queryByText(REASON_TEXTS.NO_DATA)).toBeNull();
   });
 
   it('une décision calculée par le téléphone est signalée « provisoire » en toutes lettres', async () => {

@@ -14,7 +14,7 @@ import {
 } from '@rune/domain';
 import type { SessionDecision } from '../../repos';
 import { formatKg, formatKgGrouped, formatSeconds, plural } from '../../ui';
-import { minutesOf, totalsOf } from '../history/history-format';
+import { minutesOf, showsDecision, totalsOf } from '../history/history-format';
 import { targetSummary } from './workout-labels';
 
 /*
@@ -138,7 +138,8 @@ function nextTargetText(target: NextTarget, loadMode: LoadMode | null): string {
 
 /**
  * « La prochaine fois » : une ligne par exercice de la séance qui porte une décision du moteur (ruling R34 : la
- * dernière entrée d'un état), dans l'ordre de la séance. Une séance libre n'en a aucune (D7).
+ * dernière entrée d'un état), dans l'ordre de la séance, sauf un exercice sans série de travail faite et une décision
+ * `NO_DATA` (`showsDecision`). Une séance libre n'en a aucune (D7).
  */
 export function nextLines(
   exercises: readonly SessionRecord['exercises'][number][],
@@ -147,7 +148,7 @@ export function nextLines(
   const byExercise = new Map(decisions.map((d) => [d.performedExerciseId, d]));
   return exercises.flatMap((e) => {
     const decision = byExercise.get(e.id);
-    if (!decision) return [];
+    if (!decision || !showsDecision(e, decision)) return [];
     const target = decision.nextTarget;
     const loadMode = (e.sets.find((s) => s.kind === 'work') ?? e.sets[0])?.loadMode ?? null;
     const variantId = target?.variantId ?? null;

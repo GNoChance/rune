@@ -212,7 +212,13 @@ describe('codes raison', () => {
   it("dit ce que le moteur fait, sans parler de charge là où il n'y en a pas", () => {
     expect(REASON_TEXTS.REPS_MAX_REACHED).not.toMatch(/monte/);
     expect(REASON_TEXTS.REPS_UP).not.toMatch(/marge/);
-    for (const code of ['CALIBRATION_DONE', 'NO_PROGRESS', 'EFFORT_MISSING', 'STALL_RESET_MIN'] as const) {
+    for (const code of [
+      'CALIBRATION_DONE',
+      'NO_PROGRESS',
+      'EFFORT_MISSING',
+      'STALL_RESET_MIN',
+      'NO_DATA',
+    ] as const) {
       expect(REASON_TEXTS[code], code).not.toMatch(/charge/);
     }
     expect(REASON_TEXTS.STALL_RESET_MIN).toMatch(/durée/);

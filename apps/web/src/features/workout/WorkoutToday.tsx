@@ -45,10 +45,15 @@ export function WorkoutToday() {
       </Page>
     );
   }
-  return <Today names={new Map(catalog.sheets.map((s) => [s.id, s.name]))} />;
+  return (
+    <Today
+      names={new Map(catalog.sheets.map((s) => [s.id, s.name]))}
+      retired={new Set(catalog.sheets.filter((s) => s.status === 'retired').map((s) => s.id))}
+    />
+  );
 }
 
-function Today(p: { names: ReadonlyMap<string, string> }) {
+function Today(p: { names: ReadonlyMap<string, string>; retired: ReadonlySet<string> }) {
   const repos = useRepos();
   const [, navigate] = useLocation();
   const view = useProgramView();
@@ -120,6 +125,7 @@ function Today(p: { names: ReadonlyMap<string, string> }) {
             planned={planned}
             view={view}
             names={p.names}
+            retired={p.retired}
             allSkipped={allSkipped}
             onChange={() => setPicking(true)}
             onOpen={setOpenSheet}
@@ -168,6 +174,7 @@ function TodayPlan(p: {
   planned: PlannedSession;
   view: ProgramView;
   names: ReadonlyMap<string, string>;
+  retired: ReadonlySet<string>;
   allSkipped: boolean;
   onChange(): void;
   onOpen(exerciseId: string): void;
@@ -199,7 +206,7 @@ function TodayPlan(p: {
       {p.allSkipped ? (
         <Banner tone="warning">{ALL_SKIPPED_TEXT}</Banner>
       ) : (
-        <PlanList plan={plan} names={p.names} onOpen={p.onOpen} />
+        <PlanList plan={plan} names={p.names} retired={p.retired} onOpen={p.onOpen} />
       )}
     </>
   );

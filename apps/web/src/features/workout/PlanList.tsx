@@ -33,12 +33,14 @@ function Chevron() {
 export function PlanList(p: {
   plan: PlannedWorkout;
   names: ReadonlyMap<string, string>;
+  /** Fiches retirées du catalogue local (« Remplace … (retiré du catalogue) »). */
+  retired?: ReadonlySet<string>;
   onOpen(exerciseId: string): void;
 }) {
   return (
     <ul aria-label="Exercices de la séance" className={`stagger ${styles.planList}`}>
       {p.plan.exercises.map((exercise) => {
-        const note = resolutionNote(exercise, p.names);
+        const note = resolutionNote(exercise, p.names, p.retired);
         const summary = targetSummary(exercise);
         const body = (
           <>
