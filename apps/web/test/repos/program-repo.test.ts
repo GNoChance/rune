@@ -188,6 +188,8 @@ describe('repos.program', () => {
     const e1 = await repos.program.change([{ op: 'start_deload' }], 0).catch((e: unknown) => e);
     expect(changeErrorsOf(e1)).toEqual([{ op: 1, code: 'coverage_lost' }]);
     expect(isStaleRevision(e1)).toBe(false);
+    // Un 422 ne dit rien d'un miroir en retard : pas de pull.
+    expect(sync.pullCount).toBe(0);
     const e2 = await repos.program.accept('c-1', 0).catch((e: unknown) => e);
     expect(isStaleRevision(e2)).toBe(true);
     expect(isExpired(e2)).toBe(false);
@@ -195,7 +197,39 @@ describe('repos.program', () => {
     const e3 = await repos.program.reject('c-1').catch((e: unknown) => e);
     expect(isExpired(e3)).toBe(true);
     expect(changeErrorsOf(new Error('x'))).toBeNull();
-    expect(sync.pullCount).toBe(0);
+  });
+
+  it('409 stale_revision ou expired : un pull avant que l’erreur remonte, même s’il échoue (ruling R52)', async () => {
+    const { repos, api, sync } = await setup();
+    api.on('POST', '/api/program/changes', { status: 409, body: { error: 'stale_revision' } });
+    api.on('POST', '/api/program/changes/:id/accept', { status: 409, body: { error: 'expired' } });
+    api.on('PUT', '/api/program/slot-states/:id/machine-step', {
+      status: 409,
+      body: { error: 'stale_revision' },
+    });
+    let pulled = 0;
+    const order: string[] = [];
+    sync.pullNow = async () => {
+      pulled += 1;
+      order.push('pull');
+      // Le pull échoue (réseau perdu) : l'erreur du serveur reste celle qui remonte.
+      if (pulled === 2) throw new Error('pull_failed');
+    };
+    const failure = (e: unknown) => {
+      order.push('error');
+      return e;
+    };
+    const errors = [
+      await repos.program.change([{ op: 'start_deload' }], 0).catch(failure),
+      await repos.program.accept('c-1', 0).catch(failure),
+      await repos.program.setMachineStep('ss-1', 2500).catch(failure),
+    ];
+    expect(errors.map((e) => [isStaleRevision(e), isExpired(e)])).toEqual([
+      [true, false],
+      [false, true],
+      [true, false],
+    ]);
+    expect(order).toEqual(['pull', 'error', 'pull', 'error', 'pull', 'error']);
   });
 
   it('hors ligne : « Nécessite le réseau », aucune écriture locale', async () => {

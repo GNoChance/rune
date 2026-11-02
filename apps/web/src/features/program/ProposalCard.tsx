@@ -1,7 +1,6 @@
 import { type InstanceChangeView, REASON_TEXTS } from '@rune/contracts';
 import { useId, useMemo } from 'react';
-import { useServices } from '../../app-services';
-import { isExpired, type ProgramEditContext, type ProgramView, useRepos } from '../../repos';
+import { type ProgramEditContext, type ProgramView, useRepos } from '../../repos';
 import { Button } from '../../ui';
 import { ActionError } from './ActionError';
 import styles from './program.module.css';
@@ -12,7 +11,8 @@ import { useProgramAction } from './use-change';
 /**
  * Proposition en attente (spec §7.7) : auteur (« Proposition de Rune » pour le moteur), raison, avant / après de
  * chaque opération calculé par le domaine, date limite, « Accepter » / « Refuser ». 409 `stale_revision` : le
- * programme a changé, la proposition reste ; 409 `expired` : elle a expiré, un pull la range au journal. Le serveur
+ * programme a changé, la proposition reste ; 409 `expired` : elle a expiré ; dans les deux cas le dépôt tire avant de
+ * rendre l'erreur (ruling R52), ce qui met à jour la révision et range une proposition expirée au journal. Le serveur
  * décide seul (ruling R41) : « Accepter » n'est jamais grisé par le validateur du téléphone, dont le catalogue et les
  * lieux peuvent être en retard ; un refus local ne s'affiche qu'en avertissement, et la réponse du serveur (422,
  * 409) s'affiche sous l'action.
@@ -26,7 +26,6 @@ export function ProposalCard(p: {
 }) {
   const { proposal, view, ctx } = p;
   const repos = useRepos();
-  const { sync } = useServices();
   const action = useProgramAction();
   const titleId = useId();
   const hintId = useId();
@@ -37,16 +36,7 @@ export function ProposalCard(p: {
     [proposal, view, ctx],
   );
   const busy = p.offline || action.pending;
-  const accept = () =>
-    action.run('accept', async () => {
-      try {
-        await repos.program.accept(proposal.id, view.instance.revision);
-      } catch (error) {
-        // Expirée côté serveur : le miroir l'a encore en attente jusqu'au prochain pull.
-        if (isExpired(error)) void sync.pullNow().catch(() => {});
-        throw error;
-      }
-    });
+  const accept = () => action.run('accept', () => repos.program.accept(proposal.id, view.instance.revision));
   const reject = () => action.run('reject', () => repos.program.reject(proposal.id));
 
   return (
