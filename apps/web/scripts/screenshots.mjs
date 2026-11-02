@@ -4,13 +4,16 @@
 // Chromium de Playwright, une fois en clair et une fois en sombre (apparence Auto, schéma du téléphone émulé).
 // Écrit `<dossier>/<écran>-<clair|sombre>.png` ; par défaut `.e2e-data/screenshots/`, hors dépôt (ignoré par
 // git). Mouvement réduit : chaque écran est capturé dans son état final, sans attendre ses animations.
+// Contenu servi : celui des E2E des séances (fiches publiées et modèle de programme de test), le `data/` du dépôt
+// n'ayant que des brouillons, plus une copie « salle » du modèle, recommandée à l'onboarding (salle, débutant) ;
+// les écrans de la brique 3 (programme, séance, fin de séance, historique, réglages de charge) en ont besoin.
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { createServer } from 'node:net';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium, devices } from '@playwright/test';
 import { build } from 'vite';
 
@@ -22,6 +25,7 @@ const outDir = resolve(process.argv[2] ?? join(REPO_ROOT, '.e2e-data', 'screensh
 const workDir = join(REPO_ROOT, '.e2e-data', `screenshots-${Date.now()}`);
 const publicDir = join(workDir, 'dist');
 const dataDir = join(workDir, 'data');
+const contentDir = join(workDir, 'content');
 
 /** 31 points de code, comme les E2E : au-dessus du minimum admin, pas de changement imposé. */
 const PASSWORD = 'cheval agrafe batterie correcte';
@@ -91,8 +95,28 @@ async function until(what, check, timeout = READY_TIMEOUT_MS) {
   }
 }
 
+/**
+ * Contenu de `contentDir` : `writeWorkoutContent` des E2E (module TypeScript, lancé par `tsx`), puis la copie
+ * « salle » du modèle de test, pour que l'onboarding de ce script (À la salle, Jamais) recommande un programme.
+ */
+async function writeContent() {
+  const module = pathToFileURL(join(WEB_DIR, 'e2e', 'support', 'content.ts')).href;
+  const code = `const { writeWorkoutContent } = await import(${JSON.stringify(module)});
+writeWorkoutContent(${JSON.stringify(contentDir)});`;
+  const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', code], {
+    cwd: WEB_DIR,
+    stdio: ['ignore', 'inherit', 'inherit'],
+  });
+  const [exitCode] = await once(child, 'exit');
+  if (exitCode !== 0) throw new Error(`contenu de test : échec (code ${exitCode})`);
+  const home = JSON.parse(readFileSync(join(contentDir, 'programs', 'e2e-home-full-body.json'), 'utf8'));
+  const gym = { ...home, id: 'e2e-gym-full-body', name: 'Salle · Corps entier (test)', context: 'gym' };
+  writeFileSync(join(contentDir, 'programs', `${gym.id}.json`), `${JSON.stringify(gym, null, 2)}\n`);
+}
+
 /** Serveur neuf : base initialisée, prêt quand /api/health répond ; renvoie le processus et le lien admin. */
 async function startServer(origin, port) {
+  await writeContent();
   mkdirSync(dataDir, { recursive: true });
   writeFileSync(join(dataDir, '.rune-volume'), '');
   const env = {
@@ -102,7 +126,7 @@ async function startServer(origin, port) {
     HOST: '127.0.0.1',
     RUNE_DATA_DIR: dataDir,
     RUNE_PUBLIC_DIR: publicDir,
-    RUNE_CONTENT_DIR: join(REPO_ROOT, 'data'),
+    RUNE_CONTENT_DIR: contentDir,
     APP_VERSION: 'screenshots',
   };
   const init = await runCli(['init'], env);
@@ -235,6 +259,63 @@ async function shootSheet(page, opener, name) {
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
 }
 
+const LIVE_PATH = /^\/workout\/[0-9a-f-]{36}$/;
+
+/**
+ * Écrans de la brique 3, le programme recommandé pris à l'onboarding : Mon programme et le choix d'un autre, la
+ * séance du jour, la séance en cours (repos, effort, menu d'un exercice), sa fin, l'historique, la séance libre et
+ * les réglages de charge de la salle (`gymPath` : sa fiche).
+ */
+async function workoutScreens(page, origin, gymPath) {
+  const button = (name) => page.getByRole('button', { name, exact: true });
+  await visit(page, origin, '/program', 'programme');
+  await visit(page, origin, '/program/choose', 'programme-choisir');
+  await shootSheet(page, 'Choisir Maison · Corps entier (test)', 'programme-changer');
+
+  await visit(page, origin, '/workout', 'seance-du-jour');
+  await button('Commencer').click();
+  await page.waitForURL((url) => LIVE_PATH.test(url.pathname));
+  await shoot(page, 'seance-en-cours');
+  await button('Valider la série 1').click();
+  await page.getByRole('timer').waitFor();
+  await shoot(page, 'seance-repos');
+  await button('Valider la série 2').click();
+  await page.getByRole('dialog', { name: 'Effort', exact: true }).waitFor();
+  await shoot(page, 'seance-effort');
+  await button('Encore 2 ou 3').click();
+  // Effort enregistré (sa pastille le dit) avant « Terminer », qui sinon peut demander l'effort une fois de plus.
+  await page
+    .getByRole('button', { name: 'Effort de la série 2 : Correct', exact: true, includeHidden: true })
+    .waitFor({ state: 'attached' });
+  await shootSheet(page, 'Options pour Pompe', 'seance-menu-exercice');
+  await button('Terminer').click();
+  await page.waitForURL((url) => url.pathname.endsWith('/summary'));
+  await page.getByText('Séance gravée.', { exact: true }).waitFor();
+  await page.waitForLoadState('networkidle');
+  await shoot(page, 'seance-fin');
+
+  await visit(page, origin, '/history', 'historique');
+  await page
+    .getByRole('link', { name: /Séance A/ })
+    .first()
+    .click();
+  await page.waitForURL((url) => url.pathname.startsWith('/history/'));
+  await shoot(page, 'historique-detail');
+
+  // Séance libre : ouverte, la recherche d'un exercice montrée, puis close sans série (abandonnée, sans résumé).
+  await visit(page, origin, '/workout', 'seance-du-jour-suivante');
+  await button('Séance libre').click();
+  await page.waitForURL((url) => LIVE_PATH.test(url.pathname));
+  await shoot(page, 'seance-libre');
+  await shootSheet(page, 'Ajouter un exercice', 'seance-libre-ajout');
+  await button('Terminer').click();
+  await page.waitForURL((url) => url.pathname === '/workout');
+
+  await visit(page, origin, `${gymPath}/load`, 'salle-charges');
+  await visit(page, origin, '/', 'accueil-apres-seance');
+  await visit(page, origin, '/progression', 'progression-apres-seance');
+}
+
 mkdirSync(outDir, { recursive: true });
 let server;
 let browser;
@@ -292,6 +373,7 @@ try {
   await page.waitForURL((url) => url.pathname.startsWith('/gyms/'));
   await page.waitForLoadState('networkidle');
   await shoot(page, 'salle-fiche');
+  const gymPath = new URL(page.url()).pathname;
   await visit(page, origin, '/profile', 'profil');
   await shootSheet(page, 'Se déconnecter', 'profil-deconnexion');
   await visit(page, origin, '/profile/edit', 'mon-profil');
@@ -306,6 +388,7 @@ try {
   await visit(page, origin, '/admin/gyms', 'admin-salles');
   await visit(page, origin, '/admin/health', 'admin-serveur');
   await visit(page, origin, '/zone-inconnue', 'introuvable-connecte');
+  await workoutScreens(page, origin, gymPath);
   console.log(`Captures : ${outDir}`);
 } finally {
   await browser?.close();

@@ -2,6 +2,7 @@ import { type BrowserContext, expect, type Page, test } from '@playwright/test';
 import { SYNC_PROTOCOL, SyncOp } from '@rune/contracts';
 import type { OutboxOp } from '../../src/local-db/db';
 import type { SwStatus } from '../../src/sw/protocol';
+import type { E2EServer } from './server';
 
 // Outils PWA des E2E : appli installée, service worker, caches et base locale lus depuis la page.
 
@@ -179,6 +180,43 @@ export async function triggerForeground(page: Page): Promise<void> {
   });
   if (visibility !== 'visible')
     throw new Error(`triggerForeground : page ${visibility}, le moteur ignorerait l'événement (R-SYN-29).`);
+}
+
+/**
+ * Téléphone sans réseau : serveur injoignable (requêtes sans réponse, comme un VPN coupé, R-SYN-30) et, sous
+ * Chromium, réseau coupé en plus (`setOffline`). Pas sous WebKit : son émulation fait échouer aussi ce que le SW
+ * sert depuis son cache (navigations, images), ce que ne fait pas un iPhone hors ligne ; le serveur injoignable y
+ * tient lieu de réseau absent.
+ */
+export async function goOffline(
+  server: E2EServer,
+  context: BrowserContext,
+  browserName: string,
+): Promise<void> {
+  server.setFault({ kind: 'blackhole' });
+  if (browserName === 'chromium') await context.setOffline(true);
+}
+
+/** Retour du réseau : le serveur répond de nouveau (requêtes retenues libérées) et le contexte est en ligne. */
+export async function goOnline(server: E2EServer, context: BrowserContext): Promise<void> {
+  server.setFault(null);
+  await context.setOffline(false);
+}
+
+/**
+ * Tout est envoyé : l'outbox se vide, la synchro relancée par le premier plan (R-SYN-29) à chaque essai, sans
+ * attendre la reprise programmée après les échecs (2 s, 4 s…).
+ */
+export async function waitForOutboxEmpty(page: Page, timeout = 30_000): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        await triggerForeground(page);
+        return (await idbGetAll(page, 'outbox')).length;
+      },
+      { timeout, message: 'outbox vide' },
+    )
+    .toBe(0);
 }
 
 const FAKE_TS = '2026-10-06T10:00:00.000Z';

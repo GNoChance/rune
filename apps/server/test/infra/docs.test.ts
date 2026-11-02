@@ -140,8 +140,6 @@ const RTST4 = [
   'une fois à la recette du socle, puis à chaque changement du stockage : 7 jours sans réseau, puis synchro',
   'onboarding complet en moins de 2 min, hors écran Santé (section Comptes, R-ONB-4)',
 ] as const;
-/** Contrôles sans saisie J avant la brique 3 : seuls 2, 4 et 5 peuvent être « sans objet au socle ». */
-const RTST4_SANS_OBJET = new Set([1, 3, 4]);
 
 const CLI = [
   'init',
@@ -992,12 +990,27 @@ describe('fiches pour les proches et recette', () => {
     const spec = read('docs/superpowers/specs/2026-10-06-appsport-design/01-architecture.md');
     const controls = steps(section(recette, 'Contrôles R-TST-4'));
     const heads = controls.map((s) => s.head);
-    RTST4.forEach((control, i) => {
+    for (const control of RTST4) {
       expect(spec).toContain(control);
       expect(heads, control).toContain(control);
+      // Spec brique 3 §10, critère 13 : avec les séances, les contrôles 2, 4 et 5 ne sont plus « sans objet ».
       const body = controls.find((s) => s.head === control)?.body ?? '';
-      if (!RTST4_SANS_OBJET.has(i)) expect(body, control).not.toContain('sans objet au socle');
-    });
+      expect(body, control).not.toContain('sans objet au socle');
+    }
+  });
+
+  it('recette-telephones : contrôles de la séance, dont écran allumé et minuteur après verrouillage (spec brique 3 §10, critère 13)', () => {
+    const heads = steps(section(recette, 'Contrôles de la séance')).map((s) => s.head);
+    expect(heads).toEqual([
+      'écran allumé pendant la séance',
+      'minuteur de repos après verrouillage du téléphone',
+      'son de fin de repos, avec de la musique',
+      'barre de repos sur un écran de 320 px de large',
+    ]);
+    const iphone = steps(section(recette, 'Contrôles sur iPhone')).map((s) => s.head);
+    expect(iphone).toContain('Son de fin de repos et mode silencieux');
+    const titles = sections(recette).map((s) => s.title);
+    expect(titles.indexOf('Contrôles de la séance')).toBe(titles.indexOf('Contrôles R-TST-4') + 1);
   });
 
   it('recette-telephones : iPhone et Android, R-ONB-4 chronométré, interrupteur et bandeau sur iPhone, tableau', () => {

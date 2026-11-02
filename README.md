@@ -131,7 +131,7 @@ node --import tsx src/main.ts                                            # déma
 
 Ensuite, ouvrir le lien d'invitation affiché pour créer le compte admin. Sur téléphone, l'appli installée a besoin du HTTPS : ce sera pour le serveur, derrière Tailscale.
 
-Pour les tests : `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm --filter @rune/web test:e2e` (Chromium et WebKit), et `pnpm test:infra` depuis Git Bash pour les scripts de l'hôte (il lui faut `jq` : `winget install jqlang.jq` sous Windows). Captures de relecture de chaque écran, en clair et en sombre : `node apps/web/scripts/screenshots.mjs` (dans `.e2e-data/screenshots/`).
+Pour les tests : `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm --filter @rune/web test:e2e` (Chromium et WebKit), et `pnpm test:infra` depuis Git Bash pour les scripts de l'hôte (il lui faut `jq` : `winget install jqlang.jq` sous Windows). Captures de relecture de chaque écran, en clair et en sombre, séance et programme compris (sur le contenu de test des E2E : le `data/` du dépôt n'a que des brouillons) : `node apps/web/scripts/screenshots.mjs` (dans `.e2e-data/screenshots/`).
 
 ## Hébergement
 
