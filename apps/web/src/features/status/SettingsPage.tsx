@@ -1,8 +1,8 @@
 import { useId } from 'react';
 import { Link } from 'wouter';
 import { useLive, useSyncState } from '../../app-services';
-import { useRepos } from '../../repos';
-import { ListGroup, ListRow, Page, plural } from '../../ui';
+import { useDeviceSettings, useRepos } from '../../repos';
+import { ListGroup, ListRow, Page, plural, Switch } from '../../ui';
 import { AlertIcon, OfflineIcon, SignalIcon, StorageIcon, UploadIcon } from '../profile/icons';
 import { AppearanceSection } from './AppearanceSection';
 import { CONNECTION_LABELS, CONNECTION_TONES } from './ConnectionStatus';
@@ -20,17 +20,50 @@ export const STORAGE_ADVICE =
   "Ton navigateur peut effacer les données de l'appli si l'espace manque. Pense à télécharger tes données régulièrement.";
 
 /**
- * Profil › Réglages (spec refonte §4 et §5, maquette C03) : Apparence, puis Synchronisation (état de connexion,
- * prêt hors ligne, envois en attente et refus du serveur, passés de l'ancien en-tête) et Stockage (résultat de
- * la demande de stockage persistant, R-SYN-31 : un refus ne bloque rien mais conseille l'export).
+ * Profil › Réglages (spec refonte §4 et §5, maquette C03) : Apparence, Séance (écran allumé et son du repos, spec
+ * brique 3 §7.12), puis Synchronisation (état de connexion, prêt hors ligne, envois en attente et refus du serveur,
+ * passés de l'ancien en-tête) et Stockage (résultat de la demande de stockage persistant, R-SYN-31 : un refus ne bloque
+ * rien mais conseille l'export).
  */
 export function SettingsPage() {
   return (
     <Page title="Réglages" back="/profile">
       <AppearanceSection />
+      <WorkoutSection />
       <SyncSection />
       <StorageSection />
     </Page>
+  );
+}
+
+/**
+ * Séance (spec brique 3 §7.12, D14) : deux interrupteurs, activés par défaut et gardés sur l'appareil, comme
+ * l'apparence ; l'écran de séance les lit à son ouverture et les suit.
+ */
+function WorkoutSection() {
+  const [settings, update] = useDeviceSettings();
+  const headingId = useId();
+  const screenId = useId();
+  const soundId = useId();
+  return (
+    <section aria-labelledby={headingId} className={styles.section}>
+      <h2 id={headingId} className={styles.sectionTitle}>
+        Séance
+      </h2>
+      <Switch
+        id={screenId}
+        label="Garder l'écran allumé pendant la séance"
+        checked={settings.keepScreenOn}
+        onChange={(keepScreenOn) => update({ keepScreenOn })}
+      />
+      <Switch
+        id={soundId}
+        label="Son à la fin du repos"
+        help="Seulement quand l'appli est à l'écran."
+        checked={settings.restSound}
+        onChange={(restSound) => update({ restSound })}
+      />
+    </section>
   );
 }
 

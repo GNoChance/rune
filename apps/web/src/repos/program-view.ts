@@ -15,6 +15,7 @@ import {
   currentRules,
   type EffectiveProgram,
   expandEquipment,
+  findSlot,
   type PlaceContext,
   type PlannedWorkout,
   parisDate,
@@ -24,6 +25,7 @@ import {
   RULES_BY_VERSION,
   type RulesSet,
   replayInstance,
+  resolveSlot,
   type SlotState,
   UnknownRulesVersionError,
 } from '@rune/domain';
@@ -31,7 +33,7 @@ import { useMemo } from 'react';
 import { type AppServices, useLive, useServices } from '../app-services';
 import { isC2Value } from '../local-db/c2';
 import { healthConsentCached } from '../local-db/consent';
-import type { MirrorRow } from '../local-db/db';
+import type { AppDb, MirrorRow } from '../local-db/db';
 import { getMeta } from '../local-db/meta';
 import { catalogRepoFor } from './catalog-repo';
 import { createPlacesRepo, type PlaceView, placeView } from './places-repo';
@@ -96,6 +98,20 @@ export interface ProgramViewRepo {
   storeProvisional(replay: ReplayResult): Promise<void>;
   /** Rejeu local de l'instance active, gardé en copies provisoires ; rien quand les cibles viennent du serveur. */
   refreshProvisional(): Promise<void>;
+  /**
+   * « Changer d'exercice » en séance (05 §11.4, spec §7.3) : candidats du slot de l'exercice réalisé, tels que
+   * `resolveSlot` les rend pour le programme effectif, au lieu et avec le profil de la séance (exercices utilisables
+   * du slot ou de sa chaîne, puis remplaçants), sans l'exercice en cours. Vide hors programme, pour une instance qui
+   * n'est plus l'active ou un slot disparu.
+   */
+  swapCandidates(performedExerciseId: string): Promise<SwapCandidate[]>;
+}
+
+export interface SwapCandidate {
+  id: string;
+  name: string;
+  /** Même type de mouvement que l'exercice en cours : ceux que « Douleur » propose (05 §13.6). */
+  sameMovement: boolean;
 }
 
 /** Marque des copies provisoires : 1, IndexedDB n'indexe pas les booléens (index `provisional`). */
@@ -136,6 +152,37 @@ function changeOf(row: MirrorRow): InstanceChangeView | null {
   });
   return parsed.success ? parsed.data : null;
 }
+
+/** Changements de l'instance `instanceId` du membre, lisibles, dans l'ordre du miroir. */
+export async function changeViewsOf(
+  db: AppDb,
+  instanceId: string,
+  ownerId: string,
+): Promise<InstanceChangeView[]> {
+  const rows = await db.mirror('instance_change').where('instanceId').equals(instanceId).toArray();
+  return rows
+    .filter((r) => isLive(r) && r.ownerId === ownerId)
+    .flatMap((r) => {
+      const c = changeOf(r);
+      return c === null ? [] : [c];
+    });
+}
+
+/** Changements acceptés : entrées du programme effectif et du rejeu (D5). */
+export const acceptedOf = (views: readonly InstanceChangeView[]): AcceptedChange[] =>
+  views.flatMap((c) =>
+    c.status === 'accepted' && c.decidedAt !== null
+      ? [
+          {
+            id: c.id,
+            author: c.author,
+            reasonCode: c.reasonCode,
+            decidedAt: Date.parse(c.decidedAt),
+            operations: c.operations,
+          },
+        ]
+      : [],
+  );
 
 /** `slot_state` reçu du serveur, au format du domaine ; `painStreak` vide (sans accord) compte pour 0. */
 function slotStateOf(row: MirrorRow): SlotState | null {
@@ -280,25 +327,8 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
     const { instance, snapshot } = active;
     const owned = (r: MirrorRow) => isLive(r) && r.ownerId === ownerId;
 
-    const changeViews = (await db.mirror('instance_change').where('instanceId').equals(instance.id).toArray())
-      .filter(owned)
-      .flatMap((r) => {
-        const c = changeOf(r);
-        return c === null ? [] : [c];
-      });
-    const accepted: AcceptedChange[] = changeViews.flatMap((c) =>
-      c.status === 'accepted' && c.decidedAt !== null
-        ? [
-            {
-              id: c.id,
-              author: c.author,
-              reasonCode: c.reasonCode,
-              decidedAt: Date.parse(c.decidedAt),
-              operations: c.operations,
-            },
-          ]
-        : [],
-    );
+    const changeViews = await changeViewsOf(db, instance.id, ownerId);
+    const accepted = acceptedOf(changeViews);
     const deviceId = (await getMeta(db, 'deviceId')) ?? null;
     const sessionRows = await db
       .mirror('workout_session')
@@ -458,6 +488,41 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
     });
   }
 
+  async function swapCandidates(performedExerciseId: string): Promise<SwapCandidate[]> {
+    const ownerId = await currentUserId(db);
+    if (ownerId === null) return [];
+    const owned = (r: MirrorRow | undefined): r is MirrorRow => !!r && isLive(r) && r.ownerId === ownerId;
+    const performed = await db.mirror('performed_exercise').get(performedExerciseId);
+    if (!owned(performed)) return [];
+    const session = await db.mirror('workout_session').get(String(performed.sessionId));
+    const slotId = text(performed.slotId);
+    if (!owned(session) || slotId === null) return [];
+    const program = await view();
+    if (program === null || program.instance.id !== session.instanceId) return [];
+    const found = findSlot(program.program.template, slotId);
+    const place = (await placeContexts(ownerId)).get(String(session.placeId));
+    if (found === undefined || place === undefined) return [];
+    const { slot } = found;
+    const [sheets, member] = await Promise.all([catalog.sheets(), catalog.context()]);
+    const current = sheets.find((s) => s.id === performed.exerciseId);
+    const resolved = resolveSlot(slot, {
+      catalog: sheets,
+      place,
+      cautious: session.profile === 'cautious',
+      maxLevel: member.maxLevel,
+      // Une chaîne est tenue par son `chain_id` (spec §4.3.6) : sa variante sert de référence aux remplaçants.
+      state:
+        slot.chain === undefined
+          ? null
+          : (program.slotStates.find((st) => st.slotId === slotId && st.exerciseId === slot.chain) ?? null),
+      suspended: false,
+    });
+    const movement = current?.movement_pattern ?? slot.movementPattern;
+    return resolved.candidates
+      .filter((c) => c.id !== performed.exerciseId)
+      .map((c) => ({ id: c.id, name: c.name, sameMovement: c.movement_pattern === movement }));
+  }
+
   return {
     view,
     plannedWorkout,
@@ -466,6 +531,7 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
       const current = await view();
       if (current?.source === 'local') await storeProvisional(current.replay);
     },
+    swapCandidates,
   };
 }
 
@@ -490,6 +556,12 @@ function useProgramViewRepo(): ProgramViewRepo {
 export function useProgramView(): ProgramView | null | undefined {
   const repo = useProgramViewRepo();
   return useLive(() => repo.view(), [repo]);
+}
+
+/** Candidats de « Changer d'exercice » pour un exercice de la séance, observés ; `undefined` pendant la lecture. */
+export function useSwapCandidates(performedExerciseId: string): SwapCandidate[] | undefined {
+  const repo = useProgramViewRepo();
+  return useLive(() => repo.swapCandidates(performedExerciseId), [repo, performedExerciseId]);
 }
 
 /** Séance prévue au lieu et pour la séance donnés (null : lieu principal, séance de la rotation), observée. */

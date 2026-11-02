@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { type ReactNode, useId, useState } from 'react';
 import {
   type LiveContext,
   type SetInput,
@@ -6,19 +6,28 @@ import {
   type WorkoutExerciseView,
   type WorkoutSetView,
 } from '../../repos';
-import { Banner, BottomSheet, UNEXPECTED_ERROR_MESSAGE } from '../../ui';
+import { Banner, BottomSheet, NETWORK_REQUIRED_MESSAGE, UNEXPECTED_ERROR_MESSAGE } from '../../ui';
+import { ADJUSTMENT_NOTES, AdjustSheet } from './AdjustSheet';
 import styles from './live.module.css';
+import { MachineStepSheet } from './MachineStepSheet';
 import { NoteSheet } from './NoteSheet';
 import { gridFor, loadEntryOf } from './number-input';
+import { MINOR_BARBELL, PainSheet } from './PainSheet';
 import { MenuButton, useSheetAfterMenu } from './SessionMenu';
 import { SetRow } from './SetRow';
+import { SwapSheet } from './SwapSheet';
 import { targetSummary } from './workout-labels';
 
 /*
- * Carte d'un exercice de la séance en cours (spec brique 3 §7.3) : nom (vers la fiche), cible, « 2 / 3 » des séries
- * de travail faites, puis les lignes (échauffement d'abord). Repliée, elle ne garde que son en-tête ; ses champs restent
- * montés (une saisie en cours ne se perd pas). Menu « ⋯ » : Note, Ajouter une série, Retirer une série non faite.
+ * Carte d'un exercice de la séance en cours (spec brique 3 §7.3) : nom (vers la fiche), cible, messages (mineur à la
+ * barre, ajustement de la prochaine fois), « 2 / 3 » des séries de travail faites, puis les lignes (échauffement
+ * d'abord). Repliée, elle ne garde que son en-tête ; ses champs restent montés (une saisie en cours ne se perd pas).
+ * Menu « ⋯ » : Changer d'exercice, Douleur ou gêne, La prochaine fois, Note, Pas de cette machine, Ajouter une série,
+ * Retirer une série non faite ; chaque feuille s'ouvre une fois le menu fermé (`useSheetAfterMenu`).
  */
+
+/** Feuilles ouvertes depuis le menu ; `painSwap` suit « Douleur » (conseil et changement d'exercice). */
+type Sub = 'note' | 'swap' | 'pain' | 'painSwap' | 'adjust' | 'machine';
 
 const isDone = (set: WorkoutSetView) => set.loggedAt !== null;
 
@@ -52,6 +61,29 @@ export function workProgress(exercise: WorkoutExerciseView): { done: number; tot
 export const hasOpenWork = (exercise: WorkoutExerciseView): boolean =>
   exercise.sets.some((s) => s.kind === 'work' && !isDone(s));
 
+/** Entrée du menu « ⋯ » ; grisée, elle dit pourquoi sous son nom (`hint`). */
+function MenuItem(p: { children: ReactNode; onClick(): void; disabled?: boolean; hint?: string }) {
+  const hintId = useId();
+  return (
+    <li>
+      <button
+        type="button"
+        className={styles.menuItem}
+        disabled={p.disabled}
+        aria-describedby={p.hint ? hintId : undefined}
+        onClick={p.onClick}
+      >
+        {p.children}
+      </button>
+      {p.hint ? (
+        <span id={hintId} className={styles.menuHint}>
+          {p.hint}
+        </span>
+      ) : null}
+    </li>
+  );
+}
+
 function Chevron(p: { open: boolean }) {
   return (
     <svg
@@ -80,6 +112,10 @@ export interface ExerciseCardProps {
   context: LiveContext;
   open: boolean;
   readOnly: boolean;
+  /** Membre mineur (05 §14) : message à la barre, conseil de douleur. */
+  minor: boolean;
+  /** Hors ligne : « Pas de cette machine » (API en ligne) est grisé. */
+  offline: boolean;
   onToggle(): void;
   /** Le nom ouvre la fiche de l'exercice. */
   onOpenSheet(): void;
@@ -87,6 +123,11 @@ export interface ExerciseCardProps {
   onEffort(lines: WorkoutSetView[]): void;
   /** La dernière série de travail prévue vient d'être faite (exercice d'un programme) : l'effort est demandé. */
   onLastWorkDone(lines: WorkoutSetView[]): void;
+  /**
+   * Une série de travail vient d'être faite, ses deux côtés en unilatéral : le repos commence. Jamais après un
+   * échauffement ni après la correction d'une série déjà faite (ruling R43).
+   */
+  onWorkSetDone(): void;
 }
 
 export function ExerciseCard(p: ExerciseCardProps) {
@@ -95,8 +136,12 @@ export function ExerciseCard(p: ExerciseCardProps) {
   const bodyId = useId();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
-  const [note, openNoteAfterMenu, closeNote] = useSheetAfterMenu<'note'>(menu);
+  const [sub, openAfterMenu, closeSub] = useSheetAfterMenu<Sub>(menu);
   const [error, setError] = useState<string | null>(null);
+  const pick = (next: Sub) => {
+    setMenu(false);
+    openAfterMenu(next);
+  };
 
   const first = exercise.sets.find((s) => s.kind === 'work') ?? exercise.sets[0];
   const loadMode = first?.loadMode ?? 'bodyweight';
@@ -124,6 +169,12 @@ export function ExerciseCard(p: ExerciseCardProps) {
   const lastPosition = positions.at(-1);
   /** Dernière position de travail sans aucune ligne faite : « Retirer une série ». */
   const removable = [...positions].reverse().find((n) => !workLinesAt(exercise, n).some(isDone));
+  // Exercice d'un programme : changement parmi les candidats du slot, ajustement neutre, pas de machine.
+  const program = exercise.slotId !== null;
+  const swappable = program && open.length > 0;
+  const stateId = context.slotStateIds[exercise.id];
+  const machine = program && loadMode === 'machine' && stateId !== undefined;
+  const barbell = loadMode === 'barbell';
 
   const run = async (action: () => Promise<unknown>) => {
     setError(null);
@@ -135,12 +186,12 @@ export function ExerciseCard(p: ExerciseCardProps) {
   };
 
   const log = async (line: WorkoutSetView, values: SetInput) => {
-    // Une correction (série déjà faite) ne redemande pas l'effort.
-    const last =
-      line.kind === 'work' &&
-      !isDone(line) &&
-      !exercise.sets.some((s) => s.kind === 'work' && !isDone(s) && s.id !== line.id);
+    // Une correction (série déjà faite) ne redemande pas l'effort et ne relance pas le repos.
+    const fresh = line.kind === 'work' && !isDone(line);
+    const last = fresh && !exercise.sets.some((s) => s.kind === 'work' && !isDone(s) && s.id !== line.id);
+    const rest = fresh && workLinesAt(exercise, line.position).every((l) => l.id === line.id || isDone(l));
     await repos.workouts.logSet(line.id, values);
+    if (rest) p.onWorkSetDone();
     // L'effort se demande après la dernière série de travail d'un exercice du programme (05 §7) ; facultatif ailleurs.
     if (last && exercise.slotId !== null && lastPosition !== undefined) {
       p.onLastWorkDone(workLinesAt(exercise, lastPosition));
@@ -183,6 +234,10 @@ export function ExerciseCard(p: ExerciseCardProps) {
         {p.readOnly ? null : <MenuButton label={`Options pour ${p.name}`} onClick={() => setMenu(true)} />}
       </div>
       {summary ? <p className={styles.target}>{summary}</p> : null}
+      {p.minor && barbell ? <p className={styles.cardNote}>{MINOR_BARBELL}</p> : null}
+      {program && exercise.nextAdjustment ? (
+        <p className={styles.cardNote}>{ADJUSTMENT_NOTES[exercise.nextAdjustment]}</p>
+      ) : null}
       {exercise.sets.length > 0 ? (
         <button
           type="button"
@@ -218,53 +273,78 @@ export function ExerciseCard(p: ExerciseCardProps) {
       </div>
       <BottomSheet open={menu} title={p.name} onClose={() => setMenu(false)}>
         <ul className={styles.menuList}>
-          <li>
-            <button
-              type="button"
-              className={styles.menuItem}
-              onClick={() => {
-                setMenu(false);
-                openNoteAfterMenu('note');
-              }}
+          {swappable ? <MenuItem onClick={() => pick('swap')}>Changer d'exercice</MenuItem> : null}
+          <MenuItem onClick={() => pick('pain')}>Douleur ou gêne</MenuItem>
+          {program ? <MenuItem onClick={() => pick('adjust')}>La prochaine fois</MenuItem> : null}
+          <MenuItem onClick={() => pick('note')}>Note</MenuItem>
+          {machine ? (
+            <MenuItem
+              disabled={p.offline}
+              hint={p.offline ? NETWORK_REQUIRED_MESSAGE : undefined}
+              onClick={() => pick('machine')}
             >
-              Note
-            </button>
-          </li>
-          <li>
-            <button
-              type="button"
-              className={styles.menuItem}
-              onClick={() => {
-                setMenu(false);
-                void run(() => repos.workouts.addSet(exercise.id));
-              }}
-            >
-              Ajouter une série
-            </button>
-          </li>
+              Pas de cette machine
+            </MenuItem>
+          ) : null}
+          <MenuItem
+            onClick={() => {
+              setMenu(false);
+              void run(() => repos.workouts.addSet(exercise.id));
+            }}
+          >
+            Ajouter une série
+          </MenuItem>
           {removable !== undefined ? (
-            <li>
-              <button
-                type="button"
-                className={styles.menuItem}
-                onClick={() => {
-                  setMenu(false);
-                  const target = workLinesAt(exercise, removable)[0];
-                  if (target) void run(() => repos.workouts.removeSet(target.id));
-                }}
-              >
-                Retirer une série
-              </button>
-            </li>
+            <MenuItem
+              onClick={() => {
+                setMenu(false);
+                const target = workLinesAt(exercise, removable)[0];
+                if (target) void run(() => repos.workouts.removeSet(target.id));
+              }}
+            >
+              Retirer une série
+            </MenuItem>
           ) : null}
         </ul>
       </BottomSheet>
-      {note ? (
+      {sub === 'note' ? (
         <NoteSheet
           title={`Note : ${p.name}`}
           initial={exercise.note}
           onSave={(text) => repos.workouts.setNote({ kind: 'exercise', id: exercise.id }, text)}
-          onClose={closeNote}
+          onClose={closeSub}
+        />
+      ) : null}
+      {sub === 'swap' || sub === 'painSwap' ? (
+        <SwapSheet
+          exercise={exercise}
+          name={p.name}
+          pain={sub === 'painSwap' ? { minor: p.minor, barbell } : null}
+          swappable={swappable}
+          onClose={closeSub}
+        />
+      ) : null}
+      {sub === 'pain' ? (
+        <PainSheet
+          exercise={exercise}
+          name={p.name}
+          onPain={() => {
+            // Le conseil et le changement suivent, dans une feuille qui rendra le focus au « ⋯ ».
+            closeSub();
+            openAfterMenu('painSwap');
+          }}
+          onClose={closeSub}
+        />
+      ) : null}
+      {sub === 'adjust' ? <AdjustSheet exercise={exercise} name={p.name} onClose={closeSub} /> : null}
+      {sub === 'machine' && stateId !== undefined ? (
+        <MachineStepSheet
+          name={p.name}
+          stateId={stateId}
+          stepG={context.machineStepG[exercise.id] ?? null}
+          placeStepG={context.loadSettings.machineStepG}
+          offline={p.offline}
+          onClose={closeSub}
         />
       ) : null}
     </section>

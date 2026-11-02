@@ -539,6 +539,70 @@
   }
 }
 
+/* ——— Minuteur de repos : au-dessus de « Terminer » ; le texte passe au-dessus des boutons à 320 px ——— */
+
+.rest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.restText {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.restActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.restButton {
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0 var(--space-3);
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Barre du minuteur sous « Terminer » : jusqu'à 7,5 rem de plus à garder libres (texte et boutons sur deux rangs). */
+:global(html):has(.rest) {
+  scroll-padding-bottom: calc(73px + 2.7rem + 76px + 7.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 900px) {
+  :global(html):has(.rest) {
+    scroll-padding-bottom: calc(76px + 7.5rem);
+  }
+}
+
+/* ——— Messages d'une carte : mineurs à la barre, ajustement de la prochaine fois ——— */
+
+.cardNote {
+  margin: 0;
+  padding-inline: var(--space-1);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
 /* ——— Feuilles ——— */
 
 .menuList,
@@ -584,9 +648,81 @@
   cursor: default;
 }
 
+/* Grisée (hors ligne) : texte atténué, et la raison écrite dessous (`.menuHint`) ; le lieu actuel garde sa coche. */
+.menuItem:disabled:not([aria-current]) {
+  color: var(--text-muted);
+}
+
 .sheetDetail {
   margin: 0 0 var(--space-3);
   color: var(--text-muted);
+}
+
+.sheetSubtitle {
+  margin: var(--space-4) 0 var(--space-2);
+  padding: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* Raisons d'un changement : un `fieldset` sans cadre, nommé « Pourquoi ? ». */
+.reasons {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* Entrée grisée du menu : la raison sous son nom (« Nécessite le réseau »). */
+.menuHint {
+  display: block;
+  margin: var(--space-1) var(--space-4) 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+/* « Gêne » / « Douleur » : le nom, puis ce qui change la prochaine fois. */
+.choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 52px;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+
+.choiceHelp {
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* Conseil de sécurité (05 §13.6) : la paire de l'avertissement de la boîte à outils (Banner « warning »). */
+.advice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--warning-text);
+  border-radius: var(--radius-control);
+  background: var(--warning-bg);
+}
+
+.advice p {
+  margin: 0;
+}
+
+.advice p:first-child {
+  font-weight: 600;
 }
 
 .finishList {

@@ -20,6 +20,7 @@ export * from './errors';
 export * from './Field';
 export * from './format';
 export * from './HealthWarning';
+export { LIVE_REGION_ATTR } from './inert-outside';
 export * from './ListRow';
 export * from './Page';
 export * from './PageHeader';

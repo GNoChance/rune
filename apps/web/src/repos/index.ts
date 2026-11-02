@@ -34,6 +34,7 @@ export {
 } from './catalog-repo';
 export type { ConsentRepo, LimitationView } from './consent-repo';
 export type { CreditsRepo, CreditsView } from './credits-repo';
+export { type DeviceSettings, useDeviceSettings } from './device-settings';
 export type { GymsRepo } from './gyms-repo';
 export type { DeviceOwner, MeRepo } from './me-repo';
 export type { PlacesRepo, PlaceView } from './places-repo';
@@ -53,8 +54,10 @@ export {
   type PlannedSession,
   type ProgramView,
   type ProgramViewRepo,
+  type SwapCandidate,
   usePlannedWorkout,
   useProgramView,
+  useSwapCandidates,
 } from './program-view';
 export type { RejectionsRepo, RejectionView } from './rejections-repo';
 export {

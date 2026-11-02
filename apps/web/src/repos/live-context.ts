@@ -1,19 +1,22 @@
 import {
   defaultLoadSettings,
   type LoadSettings,
+  type ProgramTemplate,
   ProgramTemplateSchema,
   ServedSheetSchema,
 } from '@rune/contracts';
-import { slotStateId } from '@rune/domain';
+import { effectiveProgram, findSlot, slotStateId } from '@rune/domain';
 import type { AppDb, MirrorRow } from '../local-db/db';
 import { getMeta } from '../local-db/meta';
 import { placeView } from './places-repo';
+import { acceptedOf, changeViewsOf } from './program-view';
 import { currentUserId, isLive, parseJsonColumn, text } from './rows';
 import { composeSessions, type WorkoutSetView } from './session-records';
 
 /*
  * Ce que l'écran de séance lit en plus de la séance elle-même (spec brique 3 §7.3) : le nom de la séance du modèle,
- * les réglages de charge du lieu (pas réalisables de − / +), le pas fixé des machines et « Préc. ». Lecture seule.
+ * les réglages de charge du lieu (pas réalisables de − / +), le pas fixé des machines, « Préc. », le repos de chaque
+ * slot (minuteur) et l'état (slot, exercice) que vise « Pas de cette machine ». Lecture seule.
  */
 
 export interface LiveContext {
@@ -28,19 +31,66 @@ export interface LiveContext {
    * échauffement puis travail, par position, gauche avant droite. Absente si la fiche n'a jamais été faite.
    */
   previous: Record<string, WorkoutSetView[]>;
+  /**
+   * Repos après une série de travail (`restS` du slot dans le programme effectif, `set_rest` compris), par id
+   * d'exercice réalisé ; absent hors programme ou sans repos.
+   */
+  restS: Record<string, number>;
+  /**
+   * Id déterministe de l'état (slot, exercice) de chaque exercice d'un programme, par id d'exercice réalisé : celui de
+   * la chaîne pour une variante d'un slot `chain` (spec §4.3.6), sinon celui de la fiche.
+   */
+  slotStateIds: Record<string, string>;
 }
 
 const CLOSED = new Set(['completed', 'abandoned']);
 const int = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) ? v : null);
 
-async function workoutName(db: AppDb, session: MirrorRow, ownerId: string): Promise<string | null> {
+/**
+ * Programme effectif de l'instance de la séance : `snapshot` plus les changements acceptés (D5) ; le `snapshot` seul si
+ * ces changements ne s'y appliquent pas ; null hors programme ou pour un modèle illisible.
+ */
+async function programOf(db: AppDb, session: MirrorRow, ownerId: string): Promise<ProgramTemplate | null> {
   const instanceId = text(session.instanceId);
-  const workoutId = text(session.workoutId);
-  if (instanceId === null || workoutId === null) return null;
+  if (instanceId === null) return null;
   const instance = await db.mirror('program_instance').get(instanceId);
   if (!instance || instance.ownerId !== ownerId) return null;
   const snapshot = parseJsonColumn(instance.snapshot, ProgramTemplateSchema);
-  return snapshot?.workouts.find((w) => w.id === workoutId)?.name ?? null;
+  if (snapshot === null) return null;
+  const accepted = acceptedOf(await changeViewsOf(db, instanceId, ownerId));
+  try {
+    return effectiveProgram(snapshot, int(instance.daysPerWeek) ?? snapshot.daysPerWeek.default, accepted)
+      .template;
+  } catch {
+    return snapshot;
+  }
+}
+
+/** Repos de chaque slot et état (slot, exercice) de chaque exercice d'un programme. */
+async function slotFacts(
+  db: AppDb,
+  session: MirrorRow,
+  exercises: readonly MirrorRow[],
+  program: ProgramTemplate | null,
+): Promise<Pick<LiveContext, 'restS' | 'slotStateIds'>> {
+  const out: Pick<LiveContext, 'restS' | 'slotStateIds'> = { restS: {}, slotStateIds: {} };
+  const instanceId = text(session.instanceId);
+  if (instanceId === null) return out;
+  for (const exercise of exercises) {
+    const slotId = text(exercise.slotId);
+    const exerciseId = text(exercise.exerciseId);
+    if (slotId === null || exerciseId === null) continue;
+    const slot = program === null ? undefined : findSlot(program, slotId)?.slot;
+    const restS = slot?.sets.find((s) => s.kind === 'work')?.restS;
+    if (restS !== undefined && restS > 0) out.restS[exercise.id] = restS;
+    const sheet = ServedSheetSchema.safeParse(await db.table('exercises').get(exerciseId));
+    const key =
+      slot?.chain !== undefined && sheet.success && sheet.data.chain_id === slot.chain
+        ? slot.chain
+        : exerciseId;
+    out.slotStateIds[exercise.id] = slotStateId(instanceId, slotId, key);
+  }
+  return out;
 }
 
 /** Lieu supprimé compris : une séance peut citer un lieu retiré depuis. */
@@ -141,10 +191,13 @@ export async function readLiveContext(db: AppDb, sessionId: string): Promise<Liv
   const exerciseIds = new Set(
     exercises.flatMap((e) => (typeof e.exerciseId === 'string' ? [e.exerciseId] : [])),
   );
+  const program = await programOf(db, session, ownerId);
+  const workoutId = text(session.workoutId);
   return {
-    workoutName: await workoutName(db, session, ownerId),
+    workoutName: program?.workouts.find((w) => w.id === workoutId)?.name ?? null,
     loadSettings: await loadSettingsOf(db, session, ownerId),
     machineStepG: await machineSteps(db, session, exercises, ownerId),
     previous: await previousSets(db, sessionId, exerciseIds, ownerId, deviceId),
+    ...(await slotFacts(db, session, exercises, program)),
   };
 }

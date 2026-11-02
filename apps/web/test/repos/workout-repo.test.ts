@@ -416,6 +416,21 @@ describe('saisie des séries', () => {
     }
   });
 
+  it('swapExercise « pain » sans accord santé : raison vide (05 §13.8), même après un premier changement', async () => {
+    const { db, repos } = await setup();
+    const id = await repos.workouts.start(START);
+    const squatId = exerciseAt(await view(repos, id), 0).id;
+    await repos.workouts.swapExercise(squatId, 'goblet-squat', 'equipment');
+    await repos.workouts.swapExercise(squatId, 'bodyweight-squat', 'pain');
+    expect(exerciseAt(await view(repos, id), 0)).toMatchObject({
+      exerciseId: 'bodyweight-squat',
+      swapReason: null,
+    });
+    const patches = (await ops(db)).filter((o) => o.entity === 'performed_exercise' && o.kind === 'patch');
+    expect(patches.at(-1)?.fields).toEqual({ exerciseId: 'bodyweight-squat', swapReason: null });
+    expect(await dumpLocalDb(db)).not.toMatch(/"swapReason":"pain"/);
+  });
+
   it('markPain avec accord santé : painLevel et nextAdjustment ; un retrait dans le miroir suffit à ne plus rien stocker', async () => {
     const health = { active: true, textVersion: 'v1', at: '2026-10-01T10:00:00.000Z' };
     const me = makeMe({ consents: { health, aiCoach: { active: false, textVersion: null, at: null } } });
@@ -871,11 +886,15 @@ describe("contexte de l'écran de séance (spec §7.3)", () => {
         rulesVersion: '1',
       },
     ]);
+    const lunge = exerciseAt(await view(repos, id), 1);
     expect(await repos.workouts.liveContext(id)).toMatchObject({
       workoutName: 'Séance A',
       loadSettings: SETTINGS,
       machineStepG: { [squat.id]: 1000 },
       previous: {},
+      // Repos du slot A1 dans le modèle ; le slot A2 n'y est pas.
+      restS: { [squat.id]: 120 },
+      slotStateIds: { [squat.id]: 'i-1:A1:back-squat', [lunge.id]: 'i-1:A2:dumbbell-lunge' },
     });
     await repos.workouts.finish(id);
 
@@ -890,6 +909,8 @@ describe("contexte de l'écran de séance (spec §7.3)", () => {
       workoutName: null,
       loadSettings: defaultLoadSettings('gym'),
       machineStepG: {},
+      restS: {},
+      slotStateIds: {},
     });
     expect(await repos.workouts.liveContext('inconnue')).toBeNull();
   });

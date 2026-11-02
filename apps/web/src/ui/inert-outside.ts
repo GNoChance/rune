@@ -5,17 +5,25 @@ const heldBy = new Map<Element, number>();
 const SKIPPED = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'LINK', 'META', 'NOSCRIPT']);
 
 /**
+ * Région d'annonce posée à la racine du document (message d'état, WCAG 4.1.3, comme « Repos terminé ») : jamais rendue
+ * inerte ni cachée, pour qu'elle reste annoncée derrière un dialogue. Elle ne contient rien à atteindre.
+ */
+export const LIVE_REGION_ATTR = 'data-live-region';
+
+/**
  * Rend inerte et caché aux lecteurs d'écran (`inert`, `aria-hidden`) tout ce qui est hors de
  * `root` : les frères de `root` et de chacun de ses ancêtres jusqu'à `body`. Ni le curseur
  * virtuel d'un lecteur d'écran ni la recherche dans la page n'atteignent l'écran derrière un
  * dialogue modal. Renvoie de quoi tout rendre. Dialogues empilés : un élément reste inerte tant
- * qu'un dialogue le tient ; un élément déjà caché par la page n'est pas touché.
+ * qu'un dialogue le tient ; un élément déjà caché par la page n'est pas touché, une région
+ * d'annonce (`LIVE_REGION_ATTR`) non plus.
  */
 export function inertOutside(root: Element): () => void {
   const held: Element[] = [];
   for (let node: Element = root; node.parentElement && node !== document.body; node = node.parentElement) {
     for (const sibling of node.parentElement.children) {
-      if (sibling === node || SKIPPED.has(sibling.tagName)) continue;
+      if (sibling === node || SKIPPED.has(sibling.tagName) || sibling.hasAttribute(LIVE_REGION_ATTR))
+        continue;
       const count = heldBy.get(sibling);
       if (count === undefined) {
         if (sibling.hasAttribute('inert') || sibling.getAttribute('aria-hidden') === 'true') continue;

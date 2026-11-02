@@ -115,7 +115,7 @@ export interface WorkoutsRepo {
    * Autre fiche pour la suite de l'exercice : sans série faite, l'exercice change de fiche ; sinon les séries faites
    * restent à l'ancienne et un nouvel exercice du même slot reprend la suite. Les séries non faites sont réécrites
    * pour la nouvelle fiche (côtés, mode de charge, sans charge visée). Rend l'id de l'exercice qui porte la fiche.
-   * `pain` n'est gardé qu'avec l'accord santé. Pendant la séance seulement.
+   * `pain` n'est gardé qu'avec l'accord santé : sans, la raison est vide. Pendant la séance seulement.
    */
   swapExercise(performedExerciseId: string, exerciseId: string, reason: SwapReason): Promise<string>;
   /**
@@ -639,9 +639,12 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
       void s.sync.syncNow('set_logged');
     },
 
-    async swapExercise(performedExerciseId, exerciseId, reason) {
-      if (!SWAP_REASONS.includes(reason)) throw new WorkoutError('out_of_range');
+    async swapExercise(performedExerciseId, exerciseId, requested) {
+      if (!SWAP_REASONS.includes(requested)) throw new WorkoutError('out_of_range');
       const w = await writer();
+      // Sans accord santé, « douleur » devient une raison vide (05 §13.8), qui remplace aussi celle d'un changement
+      // précédent : aucune trace de douleur (R-SYN-10).
+      const reason = requested === 'pain' && !w.healthConsentActive ? null : requested;
       const id = await tx(async () => {
         const sheet = await sheetOf(exerciseId);
         if (sheet === undefined) throw new WorkoutError('unknown_exercise');

@@ -1,6 +1,8 @@
-import type { ProgramTemplate } from '@rune/contracts';
+import type { ProgramTemplate, SlotSpec } from '@rune/contracts';
+import type { PlannedExercise, PlannedSet } from '@rune/domain';
 import type { AppDb } from '../../src/local-db/db';
 import { setMeta } from '../../src/local-db/meta';
+import type { StartInput } from '../../src/repos';
 import { seedCatalog, seedTrainingProfile } from '../support/catalog';
 import { createTestLocalDb } from '../support/local-db';
 import { seedMirror } from '../support/seed';
@@ -13,13 +15,21 @@ export const LOAD_SETTINGS = {
   machineStepG: 5000,
 };
 
-const slot = (id: string, exercise: string, movementPattern: 'squat' | 'lunge') => ({
+/** Slot de test : 3 × 8–12, RIR 2, `restS` de repos (120 s par défaut), progression `double`. */
+export const slot = (
+  id: string,
+  exercise: string | string[],
+  movementPattern: 'squat' | 'lunge',
+  o: { restS?: number; count?: number } = {},
+): SlotSpec => ({
   id,
   movementPattern,
-  role: 'main' as const,
-  exercises: [exercise],
-  sets: [{ kind: 'work' as const, count: 3, reps: { min: 8, max: 12 }, targetRir: 2, restS: 120 }],
-  progression: { type: 'double' as const },
+  role: 'main',
+  exercises: typeof exercise === 'string' ? [exercise] : exercise,
+  sets: [
+    { kind: 'work', count: o.count ?? 3, reps: { min: 8, max: 12 }, targetRir: 2, restS: o.restS ?? 120 },
+  ],
+  progression: { type: 'double' },
 });
 
 export const TEMPLATE: ProgramTemplate = {
@@ -161,3 +171,63 @@ export async function seedSession(
     );
   }
 }
+
+/** A1 : squat goblet puis squat bulgare (fente) ; A2 : presse à cuisses (machine). */
+export const SWAP_TEMPLATE: ProgramTemplate = {
+  ...TEMPLATE,
+  workouts: [
+    {
+      id: 'A',
+      name: 'Séance A',
+      slots: [
+        slot('A1', ['goblet-squat', 'bulgarian-split-squat'], 'squat'),
+        slot('A2', 'leg-press', 'squat'),
+      ],
+    },
+    ...TEMPLATE.workouts.slice(1),
+  ],
+};
+
+const work = (position: number, targetLoadG: number): PlannedSet => ({
+  kind: 'work',
+  position,
+  side: null,
+  targetRepsMin: 8,
+  targetRepsMax: 12,
+  targetDurationS: null,
+  targetLoadG,
+  targetRir: 2,
+  targetVariant: null,
+});
+
+const exercise = (
+  slotId: string,
+  exerciseId: string,
+  loadMode: PlannedExercise['loadMode'],
+  loadG: number,
+): PlannedExercise => ({
+  slotId,
+  plannedExerciseId: exerciseId,
+  exerciseId,
+  resolution: 'planned',
+  loadMode,
+  measure: 'reps',
+  unilateral: false,
+  sets: [work(1, loadG), work(2, loadG)],
+  restS: 120,
+  platesPerSide: null,
+  calibration: false,
+  suggestionG: null,
+});
+
+export const GOBLET = exercise('A1', 'goblet-squat', 'dumbbell', 14_000);
+export const PRESS = exercise('A2', 'leg-press', 'machine', 50_000);
+
+export const SWAP_START: StartInput = {
+  plan: { workoutId: 'A', weekType: 'normal', rulesVersion: '1', notices: [], exercises: [GOBLET, PRESS] },
+  placeId: 'p-1',
+  instanceId: 'i-1',
+  workoutId: 'A',
+  profile: 'adult',
+  templateVersion: 1,
+};

@@ -1,10 +1,11 @@
 import type { Effort } from '@rune/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'wouter';
-import { useServices, useSyncState } from '../../app-services';
+import { useMe, useServices, useSyncState } from '../../app-services';
 import {
   type LiveContext,
   useCatalog,
+  useDeviceSettings,
   useLiveContext,
   useRepos,
   useSession,
@@ -19,14 +20,17 @@ import { ExerciseCard, hasOpenWork, measureOf, workLinesAt } from './ExerciseCar
 import { FinishSheet } from './FinishSheet';
 import styles from './live.module.css';
 import { ExerciseSheetSheet } from './PlanList';
+import { RestTimer } from './RestTimer';
+import { useRestTimer } from './rest-timer';
 import { SessionMenu } from './SessionMenu';
+import { useWakeLock } from './wake-lock';
 import { nameOf } from './workout-labels';
 
 /*
  * Séance en cours (`/workout/:id`, spec brique 3 §7.3) : en-tête collant (nom, durée, « N en attente », menu), cartes
- * d'exercice dans l'ordre, l'exercice en cours ouvert, puis « Terminer » en bas. Tout s'écrit en local (outbox) : la
- * séance se fait hors ligne. Une séance tenue par un autre appareil se lit seulement ; une séance close se corrige dans
- * l'historique.
+ * d'exercice dans l'ordre, l'exercice en cours ouvert, puis le minuteur de repos et « Terminer » en bas. L'écran reste
+ * allumé (D14, réglage de l'appareil). Tout s'écrit en local (outbox) : la séance se fait hors ligne. Une séance tenue
+ * par un autre appareil se lit seulement ; une séance close se corrige dans l'historique.
  */
 
 const READ_ONLY = 'Cette séance continue sur un autre appareil.';
@@ -162,6 +166,10 @@ function Live(p: {
 }) {
   const { session } = p;
   const repos = useRepos();
+  const me = useMe();
+  const { connection } = useSyncState();
+  const [settings] = useDeviceSettings();
+  const rest = useRestTimer(session.id);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [effort, setEffort] = useState<EffortTarget | null>(null);
   const [savingEffort, setSavingEffort] = useState(false);
@@ -173,6 +181,9 @@ function Live(p: {
   const finishButton = useRef<HTMLButtonElement>(null);
 
   const readOnly = !session.heldHere;
+  useWakeLock(!readOnly && settings.keepScreenOn);
+  // Faute de savoir, les messages aux mineurs s'affichent (comme la séance du jour).
+  const minor = (me?.ageBand ?? 'minor') === 'minor';
   const name = (e: WorkoutExerciseView) => nameOf(p.names, e.exerciseId);
   // L'exercice en cours : le premier qui a encore une série de travail à faire.
   const currentId = session.exercises.find(hasOpenWork)?.id ?? null;
@@ -270,15 +281,22 @@ function Live(p: {
             context={p.context}
             open={isOpen(exercise)}
             readOnly={readOnly}
+            minor={minor}
+            offline={connection === 'offline'}
             onToggle={() => setExpanded((x) => ({ ...x, [exercise.id]: !isOpen(exercise) }))}
             onOpenSheet={() => setSheet(exercise.exerciseId)}
             onEffort={(lines) => askEffort(exercise, lines)}
             onLastWorkDone={(lines) => askEffort(exercise, lines, { kind: 'next', done: exercise.id })}
+            onWorkSetDone={() => {
+              const restS = p.context.restS[exercise.id];
+              if (restS !== undefined) rest.start(restS);
+            }}
           />
         ))}
       </div>
       {readOnly ? null : (
         <div className={styles.footer}>
+          <RestTimer rest={rest} />
           <Button
             ref={finishButton}
             variant={remaining ? 'secondary' : 'primary'}
