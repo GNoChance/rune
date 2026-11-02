@@ -635,6 +635,22 @@ describe('Terminer', () => {
     await waitFor(() => expect(view.location()).toBe(`/workout/${s.id}/summary`));
     expect(screen.queryByRole('dialog', { name: 'Avant de terminer' })).toBeNull();
   });
+
+  it('« Terminer » touché sans attendre après l’effort : fin, sans feuille de fin restée ouverte sur une liste périmée', async () => {
+    const s = await started({
+      start: { plan: { ...PLAN, exercises: [{ ...SQUAT, sets: SQUAT.sets.slice(0, 2) }] } },
+    });
+    const view = await open(s);
+    fireEvent.click(within(card('Squat barre')).getByRole('button', { name: 'Valider la série 1' }));
+    const effort = await screen.findByRole('dialog', { name: 'Effort' });
+    // Aucune attente : la séance observée n'a pas encore l'effort quand « Terminer » est touché.
+    fireEvent.click(within(effort).getByRole('button', { name: 'Encore 2 ou 3' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Terminer' }));
+    await waitFor(() => expect(view.location()).toBe(`/workout/${s.id}/summary`));
+    expect(screen.queryByRole('dialog', { name: 'Avant de terminer' })).toBeNull();
+    expect((await setRow(s.db, 'back-squat', 'work', 1)).effort).toBe('ok');
+    expect((await s.db.mirror('workout_session').get(s.id))?.status).toBe('completed');
+  });
 });
 
 describe('focus entre les feuilles', () => {

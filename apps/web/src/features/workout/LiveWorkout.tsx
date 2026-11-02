@@ -191,6 +191,8 @@ function Live(p: {
   const [refocus, setRefocus] = useState<FocusAfter>(null);
   const root = useRef<HTMLElement>(null);
   const finishButton = useRef<HTMLButtonElement>(null);
+  // « Terminer » en cours de vérification : un second appui ne relance rien.
+  const checkingFinish = useRef(false);
 
   useWakeLock(!readOnly && settings.keepScreenOn);
   // Faute de savoir, les messages aux mineurs s'affichent (comme la séance du jour).
@@ -249,6 +251,30 @@ function Live(p: {
       return status === 'completed' ? `/workout/${session.id}/summary` : '/workout';
     });
   };
+
+  /**
+   * « Terminer » : les efforts manquants se lisent sur la séance relue en base, pas sur la séance observée, qui n'a pas
+   * encore l'effort noté juste avant tant que la requête vivante n'est pas repassée.
+   */
+  const tapFinish = async () => {
+    if (checkingFinish.current) return;
+    checkingFinish.current = true;
+    try {
+      const fresh = await repos.workouts.session(session.id).catch(() => null);
+      if (missingEffort(fresh ?? session).length > 0) setFinishing(true);
+      else finish();
+    } finally {
+      checkingFinish.current = false;
+    }
+  };
+
+  // Filet : la feuille de fin ouverte sur une liste qui se vide (l'effort est arrivé entre-temps) se ferme et termine.
+  const emptied = finishing && missing.length === 0;
+  const finishOnEmpty = useRef(finish);
+  finishOnEmpty.current = finish;
+  useEffect(() => {
+    if (emptied) finishOnEmpty.current();
+  }, [emptied]);
 
   /** « Noter maintenant » : l'effort de la dernière série de travail faite du premier exercice concerné. */
   const rateMissing = () => {
@@ -316,7 +342,7 @@ function Live(p: {
             ref={finishButton}
             variant={remaining ? 'secondary' : 'primary'}
             block
-            onClick={() => (missing.length > 0 ? setFinishing(true) : finish())}
+            onClick={() => void tapFinish()}
           >
             Terminer
           </Button>

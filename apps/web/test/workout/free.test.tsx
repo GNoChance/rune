@@ -221,6 +221,34 @@ describe('séance libre (spec §7.5)', () => {
     await waitFor(() => expect(view.location()).toBe(`/workout/${s.id}/summary`));
     expect(screen.queryByRole('dialog', { name: 'Avant de terminer' })).toBeNull();
   });
+
+  it('« Terminer » → « Noter maintenant » → effort, puis « Terminer » sans attendre : fin, sans feuille de fin périmée (ruling R48)', async () => {
+    const s = await freeSession();
+    const view = await open(s);
+    const card = await addBench();
+    fireEvent.change(within(card).getByRole('textbox', { name: 'Charge en kg, série 1' }), {
+      target: { value: '14' },
+    });
+    fireEvent.change(within(card).getByRole('textbox', { name: 'Répétitions, série 1' }), {
+      target: { value: '10' },
+    });
+    fireEvent.click(within(card).getByRole('button', { name: 'Valider la série 1' }));
+    await within(card).findByRole('button', { name: 'Corriger la série 1' });
+    fireEvent.click(screen.getByRole('button', { name: 'Terminer' }));
+    fireEvent.click(
+      within(await screen.findByRole('dialog', { name: 'Avant de terminer' })).getByRole('button', {
+        name: 'Noter maintenant',
+      }),
+    );
+    const effort = await screen.findByRole('dialog', { name: 'Effort' });
+    // Aucune attente : la séance observée n'a pas encore l'effort quand « Terminer » est touché.
+    fireEvent.click(within(effort).getByRole('button', { name: 'Encore 2 ou 3' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Terminer' }));
+    await waitFor(() => expect(view.location()).toBe(`/workout/${s.id}/summary`));
+    expect(screen.queryByRole('dialog', { name: 'Avant de terminer' })).toBeNull();
+    const [set] = await liveRows(s.db, 'performed_set');
+    expect(set?.effort).toBe('ok');
+  });
 });
 
 describe('live.module.css : cibles de la séance libre (écran de séance, 48 px)', () => {
