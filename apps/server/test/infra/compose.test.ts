@@ -94,6 +94,18 @@ describe('infra/Dockerfile', () => {
     expect(finalFrom).toBeGreaterThan(pnpmBuild);
   });
 
+  it('étape de build : la version de l’image passée à Vite (VITE_APP_VERSION) avant pnpm build', () => {
+    const buildStage = lines.indexOf('FROM node:24 AS build');
+    const versionArg = lines.indexOf('ARG VERSION=dev');
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: variable de Dockerfile, pas de JavaScript
+    const viteEnv = lines.indexOf('ENV VITE_APP_VERSION=${VERSION}');
+    const pnpmBuild = lines.indexOf('RUN pnpm build');
+    expect(versionArg).toBeGreaterThan(buildStage);
+    expect(viteEnv).toBeGreaterThan(versionArg);
+    expect(pnpmBuild).toBeGreaterThan(viteEnv);
+    expect(lines.indexOf('FROM node:24-slim')).toBeGreaterThan(pnpmBuild);
+  });
+
   it('étape finale node:24-slim : server.mjs, public/ et data/ seulement, sans node_modules', () => {
     expect(finalStage.match(/^FROM .*$/gm)).toEqual(['FROM node:24-slim']);
     expect(finalStage).not.toContain('node_modules');

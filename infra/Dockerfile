@@ -11,6 +11,9 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 # Prénom du porteur affiché par la page de confidentialité, lu par Vite au build.
 ARG VITE_OWNER_FIRST_NAME
+# Version de l'image, écrite par l'appli dans chaque séance (app_version), lue par Vite au build.
+ARG VERSION=dev
+ENV VITE_APP_VERSION=${VERSION}
 RUN pnpm build
 
 # Étape finale : server.mjs, la PWA et le contenu, sans node_modules.
