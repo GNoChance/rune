@@ -401,3 +401,133 @@ describe('performed_set au push', () => {
     expect(rowOf('performed_set', ok.id)?.reps).toBe(200);
   });
 });
+
+const del = (u: { id: string }, entity: string, id: string) =>
+  makeOp({ userId: u.id, entity, id, kind: 'delete' });
+
+describe('série faite jamais supprimée par un appareil en retard (ruling R49)', () => {
+  it('delete d’une série faite d’une séance vivante : ignoré, ligne gardée avec un rev neuf ; série jamais faite supprimée', async () => {
+    const a = await setup();
+    const running = sessionOps(a.id, {
+      status: 'in_progress',
+      endedAt: null,
+      exercises: [{ sets: [{}, { logged: false }] }],
+    });
+    const closed = sessionOps(a.id, { exercises: [{ sets: [{}] }] });
+    await syncPush(ctx, a.cookie, [...running.ops, ...closed.ops]);
+    const [done, open] = running.setIds[0] ?? [];
+    const [closedDone] = closed.setIds[0] ?? [];
+    if (!done || !open || !closedDone) throw new Error('séries absentes');
+    const before = Math.max(...rowsOf('performed_set').map((r) => r.rev as number));
+
+    const res = await syncPush(ctx, a.cookie, [
+      del(a, 'performed_set', done),
+      del(a, 'performed_set', open),
+      del(a, 'performed_set', closedDone),
+    ]);
+    expect(codes(res.body)).toEqual(['applied', 'applied', 'applied']);
+    for (const [i, id] of [done, closedDone].entries()) {
+      const row = rowOf('performed_set', id);
+      expect(row).toMatchObject({ deleted_at: null, logged_at: dayAt(0), load_g: 20_000 });
+      expect(row?.rev as number).toBeGreaterThan(before);
+      expect(res.body.results[i === 0 ? 0 : 2].rev).toBe(row?.rev);
+    }
+    expect(rowOf('performed_set', open)?.deleted_at).not.toBeNull();
+    expect(rowsOf('sync_rejection')).toEqual([]);
+  });
+
+  it('« Supprimer la séance » : ses séries faites partent avec elle, même quand leurs delete arrivent avant celui de la séance', async () => {
+    const a = await setup();
+    const s = sessionOps(a.id, { exercises: [{}, { sets: [{}, { logged: false }] }] });
+    await syncPush(ctx, a.cookie, s.ops);
+    const res = await syncPush(ctx, a.cookie, [
+      ...s.setIds.flat().map((id) => del(a, 'performed_set', id)),
+      ...s.exerciseIds.map((id) => del(a, 'performed_exercise', id)),
+      del(a, 'workout_session', s.sessionId),
+    ]);
+    expect(res.body.results.every((r: Row) => r.status === 'applied')).toBe(true);
+    const rows = [...rowsOf('workout_session'), ...rowsOf('performed_exercise'), ...rowsOf('performed_set')];
+    expect(rows).toHaveLength(8);
+    expect(rows.every((r) => r.deleted_at !== null)).toBe(true);
+  });
+});
+
+describe('D4 appliquée par le serveur (ruling R51)', () => {
+  it('séance abandoned qui reçoit une série de travail faite → completed (rev neuf, fin à la dernière série faite), puis rejouée', async () => {
+    const a = await setup();
+    const instanceId = await enroll(ctx, a.id, templateFixture('t'));
+    const s = sessionOps(a.id, {
+      instanceId,
+      status: 'abandoned',
+      endedAt: dayAt(0, 0.5),
+      exercises: [{ sets: [{ logged: false }, { logged: false }] }],
+    });
+    await syncPush(ctx, a.cookie, s.ops);
+    expect(rowOf('workout_session', s.sessionId)?.status).toBe('abandoned');
+    expect(rowsOf('engine_decision')).toEqual([]);
+    const before = rowOf('workout_session', s.sessionId)?.rev as number;
+
+    const [first, second] = s.setIds[0] ?? [];
+    const res = await syncPush(ctx, a.cookie, [
+      patch(a, 'performed_set', first ?? '', { loggedAt: dayAt(0, 1) }),
+      patch(a, 'performed_set', second ?? '', { loggedAt: dayAt(0, 0.75) }),
+    ]);
+    expect(codes(res.body)).toEqual(['applied', 'applied']);
+    const session = rowOf('workout_session', s.sessionId);
+    expect(session).toMatchObject({ status: 'completed', ended_at: dayAt(0, 1) });
+    expect(session?.rev as number).toBeGreaterThan(before);
+    expect(rowsOf('engine_decision').map((r) => [r.id, r.deleted_at])).toEqual([[s.exerciseIds[0], null]]);
+  });
+
+  it('la fin gardée si elle est plus tardive ; promue dans le lot qui la clôt abandoned', async () => {
+    const a = await setup();
+    const s = sessionOps(a.id, { status: 'in_progress', endedAt: null, exercises: [{}] });
+    await syncPush(ctx, a.cookie, s.ops);
+    await syncPush(ctx, a.cookie, [
+      patch(a, 'workout_session', s.sessionId, { status: 'abandoned', endedAt: dayAt(0, 2) }),
+    ]);
+    expect(rowOf('workout_session', s.sessionId)).toMatchObject({
+      status: 'completed',
+      ended_at: dayAt(0, 2),
+    });
+  });
+
+  it('reste abandoned : échauffement seul fait, série faite d’un exercice supprimé, séance supprimée ; une séance en cours reste en cours', async () => {
+    const a = await setup();
+    const warmup = sessionOps(a.id, {
+      status: 'abandoned',
+      exercises: [{ sets: [{ kind: 'warmup' }, { logged: false }] }],
+    });
+    const orphan = sessionOps(a.id, { status: 'abandoned', exercises: [{}] });
+    const running = sessionOps(a.id, { status: 'in_progress', endedAt: null, exercises: [{}] });
+    const removed = sessionOps(a.id, { status: 'abandoned', exercises: [{}] });
+    const sets = (ops: typeof orphan.ops) => ops.filter((o) => o.entity === 'performed_set');
+    await syncPush(ctx, a.cookie, [
+      ...warmup.ops,
+      ...running.ops,
+      // Exercice supprimé avant que ses séries faites arrivent.
+      ...orphan.ops.filter((o) => o.entity !== 'performed_set'),
+      del(a, 'performed_exercise', orphan.exerciseIds[0] ?? ''),
+      // Séance supprimée dans le lot qui l'apporte.
+      ...removed.ops,
+      del(a, 'workout_session', removed.sessionId),
+    ]);
+    await syncPush(ctx, a.cookie, [
+      ...sets(orphan.ops),
+      patch(a, 'workout_session', warmup.sessionId, { note: 'touchée' }),
+      patch(a, 'workout_session', running.sessionId, { note: 'touchée' }),
+    ]);
+    expect(rowOf('workout_session', warmup.sessionId)).toMatchObject({
+      status: 'abandoned',
+      note: 'touchée',
+    });
+    expect(rowOf('workout_session', orphan.sessionId)?.status).toBe('abandoned');
+    expect(rowOf('performed_set', orphan.setIds[0]?.[0] ?? '')?.deleted_at).toBeNull();
+    expect(rowOf('workout_session', running.sessionId)).toMatchObject({
+      status: 'in_progress',
+      note: 'touchée',
+    });
+    expect(rowOf('workout_session', removed.sessionId)).toMatchObject({ status: 'abandoned' });
+    expect(rowOf('workout_session', removed.sessionId)?.deleted_at).not.toBeNull();
+  });
+});

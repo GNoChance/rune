@@ -269,12 +269,18 @@ async function applyOp(b: Batch, raw: Raw): Promise<Applied> {
   // 10. Écriture.
   const hookCtx: HookCtx = { trx, deps, userId: user.id, op };
   await hooks?.beforeApply?.(hookCtx, fields);
+  // Suppression refusée par la table (ligne gardée, rev neuf) : seulement sur une ligne vivante.
+  const kept =
+    op.kind === 'delete' &&
+    existing !== undefined &&
+    existing.deletedAt === null &&
+    (await hooks?.keepOnDelete?.(hookCtx)) === true;
   const outcome =
     op.kind === 'restore_upsert'
       ? restoreOutcome(await applyRestoreUpsert(hookCtx, rule, fields, existing))
-      : await writeRow(b, op, existing, fields);
+      : await writeRow(b, op, existing, fields, kept);
   // 11.
-  if (outcome.wrote) await hooks?.afterApply?.(hookCtx);
+  if (outcome.wrote && !kept) await hooks?.afterApply?.(hookCtx);
   // 12.
   const status = droppedFields.length > 0 ? 'applied_partial' : 'applied';
   await recordAppliedOp(b, op.opId, op.entity, op.id, status, outcome.rev);
@@ -400,6 +406,8 @@ async function writeRow(
   op: SyncOp,
   existing: ExistingRow | undefined,
   fields: Record<string, unknown>,
+  /** `delete` refusé par `keepOnDelete` : la ligne ne prend qu'un rev neuf. */
+  kept = false,
 ): Promise<{ rev: number | null; wrote: boolean }> {
   const { trx, deps, user } = b;
   const table = sql.table(op.entity);
@@ -426,8 +434,9 @@ async function writeRow(
   }
   if (existing.deletedAt !== null) return { rev: existing.rev, wrote: false };
   const stamp = await writeStamp(trx, deps, user.id);
+  const written = op.kind !== 'delete' ? fields : kept ? {} : { deleted_at: stamp.updatedAt };
   const set: Record<string, unknown> = {
-    ...(op.kind === 'delete' ? { deleted_at: stamp.updatedAt } : fields),
+    ...written,
     rev: stamp.rev,
     updated_at: stamp.updatedAt,
     updated_by: stamp.updatedBy,

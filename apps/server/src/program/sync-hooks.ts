@@ -225,6 +225,27 @@ const performedSet: Omit<EntitySyncHooks, 'afterBatch'> = {
         throw new OpRejection('out_of_range', column);
     }
   },
+
+  /**
+   * Série faite d'une séance vivante (ruling R49) : un `delete` du client est ignoré, la ligne prend un rev neuf et
+   * revient à l'appareil qui l'a supprimée. Seul un miroir en retard sur un autre appareil en envoie un (« Terminer »
+   * d'un appareil qui croit encore tenir la séance, changement d'exercice ou de lieu sur une série faite ailleurs) :
+   * le téléphone ne supprime une série qu'il voit faite qu'avec sa séance (« Supprimer la séance »), et la
+   * suppression de la séance, qui suit dans l'outbox, emporte alors toutes ses séries (`afterApply` de la séance).
+   */
+  async keepOnDelete({ trx, userId, op }: HookCtx) {
+    const done = await trx
+      .selectFrom('performedSet as t')
+      .innerJoin('performedExercise as e', 'e.id', 't.performedExerciseId')
+      .innerJoin('workoutSession as s', 's.id', 'e.sessionId')
+      .select('t.id')
+      .where('t.id', '=', op.id)
+      .where('t.ownerId', '=', userId)
+      .where('t.loggedAt', 'is not', null)
+      .where('s.deletedAt', 'is', null)
+      .executeTakeFirst();
+    return done !== undefined;
+  },
 };
 
 /** Séances des exercices et des séries écrits par le lot, lignes supprimées comprises. */
@@ -258,11 +279,62 @@ async function sessionsOf(
 }
 
 /**
+ * D4 tenue par le serveur (ruling R51) : une séance touchée, vivante et `abandoned` qui a au moins une série de travail
+ * faite vivante (sous un exercice vivant) passe `completed`, avec un rev neuf ; sa fin devient la dernière série faite
+ * si elle est plus tardive (une série datée à plus de 10 min dans le futur compte pour maintenant, ruling R24 bis). Une
+ * clôture décidée sur un miroir en retard (« La terminer », séance oubliée, ruling R33) ignore les séries d'un autre
+ * appareil : elles terminent la séance en arrivant.
+ */
+async function completeAbandoned(
+  trx: Trx,
+  deps: BatchCtx['deps'],
+  userId: string,
+  touched: readonly string[],
+): Promise<void> {
+  const rows = await trx
+    .selectFrom('workoutSession as s')
+    .innerJoin('performedExercise as e', 'e.sessionId', 's.id')
+    .innerJoin('performedSet as t', 't.performedExerciseId', 'e.id')
+    .select(['s.id', 's.endedAt', 't.loggedAt'])
+    .where('s.id', 'in', touched)
+    .where('s.ownerId', '=', userId)
+    .where('s.status', '=', 'abandoned')
+    .where('s.deletedAt', 'is', null)
+    .where('e.deletedAt', 'is', null)
+    .where('t.deletedAt', 'is', null)
+    .where('t.kind', '=', 'work')
+    .where('t.loggedAt', 'is not', null)
+    .orderBy('s.id')
+    .execute();
+  const now = deps.clock.now().getTime();
+  const ends = new Map<string, number[]>();
+  for (const r of rows) {
+    const list = ends.get(r.id) ?? (r.endedAt === null ? [] : [Date.parse(r.endedAt)]);
+    const logged = Date.parse(r.loggedAt ?? '');
+    list.push(logged > now + CLOCK_SKEW_MS ? now : logged);
+    ends.set(r.id, list);
+  }
+  for (const [id, list] of ends) {
+    const known = list.filter(Number.isFinite);
+    const stamp = await writeStamp(trx, deps, userId);
+    await trx
+      .updateTable('workoutSession')
+      .set({
+        status: 'completed',
+        ...(known.length > 0 ? { endedAt: iso(Math.max(...known)) } : {}),
+        ...stamp,
+      })
+      .where('id', '=', id)
+      .execute();
+  }
+}
+
+/**
  * Rejeu des instances touchées par le lot (spec §5.3), une fois chacune, dans l'ordre de leur identifiant : celles des
  * séances écrites, ou dont un exercice ou une série l'a été (lignes supprimées comprises). Une séance en cours et
  * vivante n'est jamais évaluée : une instance que le lot ne touche que par de telles séances n'est pas rejouée (le
  * téléphone pousse 2 s après chaque série). Les rattachements étant immuables (ruling R30), aucune séance ne quitte
- * son instance : c'est la seule à rejouer.
+ * son instance : c'est la seule à rejouer. D4 est appliquée d'abord (`completeAbandoned`).
  */
 async function replayTouched({ trx, deps, userId, applied }: BatchCtx): Promise<void> {
   const idsOf = (entity: string) => applied.filter((a) => a.entity === entity).map((a) => a.id);
@@ -271,6 +343,7 @@ async function replayTouched({ trx, deps, userId, applied }: BatchCtx): Promise<
     ...(await sessionsOf(trx, userId, idsOf('performed_exercise'), idsOf('performed_set'))),
   ]);
   if (touched.size === 0) return;
+  await completeAbandoned(trx, deps, userId, [...touched]);
   const sessions = await trx
     .selectFrom('workoutSession')
     .select(['instanceId', 'status', 'deletedAt'])

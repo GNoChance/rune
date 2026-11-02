@@ -3,10 +3,12 @@ import { createMonotonicUuidV7 } from '@rune/domain';
 import {
   createTestContext,
   createUserAndLogin,
+  enroll,
   login,
   seedSheet,
   sheetFixture,
   type TestContext,
+  templateFixture,
 } from '@rune/server/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApiClient } from '../../src/api/client';
@@ -110,6 +112,45 @@ const liveSets = (c: TestContext) =>
   c.deps.sqlite
     .prepare('SELECT id, load_g, reps FROM performed_set WHERE deleted_at IS NULL ORDER BY id')
     .all();
+
+/** Séries faites vivantes du serveur : [id, charge, répétitions]. */
+const loggedSets = (c: TestContext) =>
+  c.deps.sqlite
+    .prepare(
+      'SELECT id, load_g, reps FROM performed_set WHERE deleted_at IS NULL AND logged_at IS NOT NULL ORDER BY id',
+    )
+    .all()
+    .map((r) => [r.id, r.load_g, r.reps]);
+
+const sessionRow = (c: TestContext, id: string) =>
+  c.deps.sqlite.prepare('SELECT status, ended_at FROM workout_session WHERE id = ?').get(id);
+
+/** Exercices de la séance qui portent une décision vivante du moteur (rejeu du serveur). */
+const decidedExercises = (c: TestContext, sessionId: string) =>
+  c.deps.sqlite
+    .prepare(
+      `SELECT d.id FROM engine_decision d JOIN performed_exercise e ON e.id = d.id
+       WHERE e.session_id = ? AND d.deleted_at IS NULL ORDER BY d.id`,
+    )
+    .all(sessionId)
+    .map((r) => r.id);
+
+/** Instance active dont le modèle porte les slots du plan (A1 squat, A2 fente). */
+const enrolled = (c: TestContext, userId: string) =>
+  enroll(
+    c,
+    userId,
+    templateFixture('two-devices', [{ exercises: ['back-squat'] }, { exercises: ['dumbbell-lunge'] }]),
+  );
+
+/** Deux premières séries de travail du squat. */
+const squatWorkSets = (view: WorkoutSessionView | null) => {
+  const [first, second] = view?.exercises[0]?.sets.filter((s) => s.kind === 'work') ?? [];
+  if (!first || !second) throw new Error('séries absentes');
+  return [first, second] as const;
+};
+
+const nowIso = (c: TestContext) => c.clock.now().toISOString();
 
 describe('même séance sur deux appareils (Review Focus 3)', () => {
   it('« Continuer ici » puis le premier continue hors ligne : aucune série en double, dernière écriture gagnante, lecture seule après le pull', async () => {
@@ -225,5 +266,146 @@ describe('même séance sur deux appareils (Review Focus 3)', () => {
       status: 'completed',
     });
     expect(liveSets(c)).toEqual(fromB);
+  });
+});
+
+describe('clôture depuis un miroir en retard sur l’autre appareil (rulings R49, R51)', () => {
+  it('« La terminer » sur l’appareil en ligne pendant que celui qui tient la séance saisit hors ligne : aucune série perdue, séance terminée, dans l’historique et rejouée', async () => {
+    const c = await server();
+    const user = await createUserAndLogin(c);
+    const instanceId = await enrolled(c, user.id);
+    const a = await device(c, user.id, user.cookie, { deviceId: 'dev-A' });
+    const b = await device(c, user.id, await login(c, user.username, user.password, IP), {
+      deviceId: 'dev-B',
+    });
+
+    const id = await a.repos.workouts.start({ ...START, instanceId });
+    await a.engine.syncNow('manual');
+    await b.engine.syncNow('manual');
+
+    // A perd le réseau en salle et saisit une série.
+    a.offline = true;
+    const [first, second] = squatWorkSets(await a.repos.workouts.session(id));
+    c.clock.advance(5 * 60_000);
+    await a.repos.workouts.logSet(first.id, { loadG: 60_000, reps: 6 });
+
+    // B, en ligne (un pull dans cette exécution), voit la séance de A sans série faite et la termine.
+    expect(b.engine.getState().pulledThisRun).toBe(true);
+    expect((await b.repos.workouts.otherDeviceSession())?.id).toBe(id);
+    c.clock.advance(60_000);
+    const closedByB = nowIso(c);
+    expect(await b.repos.workouts.finish(id)).toBe('abandoned');
+    await b.engine.syncNow('manual');
+    expect(liveSets(c)).toHaveLength(8);
+
+    // A, toujours hors ligne, saisit la série suivante, puis retrouve le réseau.
+    c.clock.advance(2 * 60_000);
+    const lastLogged = nowIso(c);
+    await a.repos.workouts.logSet(second.id, { loadG: 60_000, reps: 5 });
+    a.offline = false;
+    await a.engine.syncNow('manual');
+    await b.engine.syncNow('manual');
+
+    expect(loggedSets(c)).toEqual([
+      [first.id, 60_000, 6],
+      [second.id, 60_000, 5],
+    ]);
+    // D4 appliquée par le serveur : terminée, fin à la dernière série faite (plus tardive que la clôture de B).
+    expect(closedByB < lastLogged).toBe(true);
+    expect(sessionRow(c, id)).toEqual({ status: 'completed', ended_at: lastLogged });
+    const squat = (await a.repos.workouts.session(id))?.exercises[0]?.id;
+    expect(decidedExercises(c, id)).toContain(squat);
+    for (const d of [a, b]) {
+      const onDevice = await d.repos.workouts.session(id);
+      expect(onDevice?.status).toBe('completed');
+      expect(onDevice?.exercises[0]?.sets.map((s) => s.id)).toEqual([first.id, second.id]);
+      expect((await d.repos.workouts.history()).map((s) => [s.id, s.status])).toEqual([[id, 'completed']]);
+    }
+  });
+
+  it('A hors ligne, « Continuer ici » et deux séries sur B, puis A, qui croit tenir la séance, touche « Terminer » : les séries de B restent, séance terminée', async () => {
+    const c = await server();
+    const user = await createUserAndLogin(c);
+    const instanceId = await enrolled(c, user.id);
+    const a = await device(c, user.id, user.cookie, { deviceId: 'dev-A' });
+    const b = await device(c, user.id, await login(c, user.username, user.password, IP), {
+      deviceId: 'dev-B',
+    });
+
+    const id = await a.repos.workouts.start({ ...START, instanceId });
+    await a.engine.syncNow('manual');
+    await b.engine.syncNow('manual');
+
+    a.offline = true;
+    await b.repos.workouts.continueHere(id);
+    const [first, second] = squatWorkSets(await b.repos.workouts.session(id));
+    c.clock.advance(10 * 60_000);
+    await b.repos.workouts.logSet(first.id, { loadG: 62_500, reps: 6 });
+    c.clock.advance(2 * 60_000);
+    await b.repos.workouts.logSet(second.id, { loadG: 62_500, reps: 5 });
+    await b.engine.syncNow('manual');
+
+    // A n'a rien vu : son miroir date d'avant « Continuer ici », mais un pull a réussi dans cette exécution.
+    expect(a.engine.getState().pulledThisRun).toBe(true);
+    expect(await a.repos.workouts.session(id)).toMatchObject({ deviceId: 'dev-A', heldHere: true });
+    c.clock.advance(60_000);
+    const closedByA = nowIso(c);
+    expect(await a.repos.workouts.finish(id)).toBe('abandoned');
+    a.offline = false;
+    await a.engine.syncNow('manual');
+    await b.engine.syncNow('manual');
+
+    expect(loggedSets(c)).toEqual([
+      [first.id, 62_500, 6],
+      [second.id, 62_500, 5],
+    ]);
+    // Seules les séries jamais faites sont parties.
+    expect(liveSets(c)).toHaveLength(2);
+    expect(sessionRow(c, id)).toEqual({ status: 'completed', ended_at: closedByA });
+    const squat = (await b.repos.workouts.session(id))?.exercises[0]?.id;
+    expect(decidedExercises(c, id)).toContain(squat);
+    const onA = await a.repos.workouts.session(id);
+    const onB = await b.repos.workouts.session(id);
+    if (!onA || !onB) throw new Error('séance absente');
+    expect(shared(onA)).toEqual(shared(onB));
+    expect(onA.status).toBe('completed');
+    expect(onA.exercises[0]?.sets.map((s) => s.id)).toEqual([first.id, second.id]);
+    for (const d of [a, b]) {
+      expect((await d.repos.workouts.history()).map((s) => [s.id, s.status])).toEqual([[id, 'completed']]);
+    }
+  });
+
+  it('« Supprimer la séance » reste le seul chemin qui supprime des séries faites : tout part, sur le serveur et sur les deux appareils', async () => {
+    const c = await server();
+    const user = await createUserAndLogin(c);
+    const a = await device(c, user.id, user.cookie, { deviceId: 'dev-A' });
+    const b = await device(c, user.id, await login(c, user.username, user.password, IP), {
+      deviceId: 'dev-B',
+    });
+    const id = await a.repos.workouts.start(START);
+    const [first, second] = squatWorkSets(await a.repos.workouts.session(id));
+    c.clock.advance(10 * 60_000);
+    await a.repos.workouts.logSet(first.id, { loadG: 60_000, reps: 6 });
+    await a.repos.workouts.logSet(second.id, { loadG: 60_000, reps: 5 });
+    await a.engine.syncNow('manual');
+    expect(await a.repos.workouts.finish(id)).toBe('completed');
+    await a.engine.syncNow('manual');
+    await b.engine.syncNow('manual');
+    expect(loggedSets(c)).toHaveLength(2);
+
+    // Depuis l'historique de B : les delete des séries faites précèdent celui de la séance dans l'outbox.
+    await b.repos.workouts.remove(id);
+    await b.engine.syncNow('manual');
+    await a.engine.syncNow('manual');
+
+    expect(liveSets(c)).toEqual([]);
+    expect(c.deps.sqlite.prepare('SELECT deleted_at FROM workout_session WHERE id = ?').get(id)).not.toEqual({
+      deleted_at: null,
+    });
+    for (const d of [a, b]) {
+      expect(await d.repos.workouts.session(id)).toBeNull();
+      expect(await d.repos.workouts.history()).toEqual([]);
+      expect(await d.db.outbox.count()).toBe(0);
+    }
   });
 });

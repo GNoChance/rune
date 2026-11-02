@@ -631,6 +631,25 @@ describe('fin de séance (D2, D4)', () => {
     expect(closed?.exercises.flatMap((e) => e.sets).map((s) => s.id)).toEqual([done.id]);
   });
 
+  it('« La terminer » (séance tenue par un autre appareil), même après un pull : clôture sans supprimer aucune série (ruling R49)', async () => {
+    const { db, repos, sync, clock } = await setup();
+    sync.set({ pulledThisRun: true });
+    const id = await repos.workouts.start(START);
+    const done = workSet(await view(repos, id), 0, 0);
+    await repos.workouts.logSet(done.id, { loadG: 60_000, reps: 6 });
+    // Un autre appareil a repris la séance (« Continuer ici ») ; ce miroir peut ignorer ses séries.
+    await db.mirror('workout_session').update(id, { deviceId: 'dev-B' });
+    clock.now = DEFAULT_NOW + 45 * 60_000;
+    const before = await db.outbox.count();
+
+    expect(await repos.workouts.finish(id)).toBe('completed');
+    const written = (await ops(db)).slice(before);
+    expect(written.map((o) => [o.entity, o.kind, Object.keys(o.fields).sort()])).toEqual([
+      ['workout_session', 'patch', ['endedAt', 'status']],
+    ]);
+    expect((await rows(db, 'performed_set')).filter((r) => r.deletedAt != null)).toEqual([]);
+  });
+
   it('finish sans série de travail faite → abandoned', async () => {
     const { db, repos } = await setup();
     const id = await repos.workouts.start(START);

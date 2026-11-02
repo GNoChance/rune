@@ -43,7 +43,7 @@ export type { WorkoutExerciseView, WorkoutSessionView, WorkoutSetView } from './
  * Séances (spec brique 3 D2, D4, D12, §5.4, §7.1, §7.3) : tables J écrites hors ligne par `writeLocal`, chaque action
  * en une transaction Dexie (lignes et ops ensemble, R-SYN-11). « Commencer » fige le plan entier ; une série est faite
  * quand `loggedAt` est posé ; « Terminer » supprime logiquement les séries jamais faites (après un pull de cette
- * exécution, ruling R38).
+ * exécution, ruling R38, et sur l'appareil qui tient la séance, ruling R49).
  */
 
 /** Version de l'appli écrite dans chaque séance (`app_version`) : `VITE_APP_VERSION` au build, sinon « dev ». */
@@ -143,8 +143,9 @@ export interface WorkoutsRepo {
   /**
    * `completed` avec au moins une série de travail faite, sinon `abandoned` (D4) ; séance en cours effacée ; décisions
    * de fin gardées en copies provisoires. Séries jamais faites supprimées logiquement seulement si un pull a réussi dans
-   * cette exécution (`SyncState.pulledThisRun`, ruling R38) : sinon le miroir peut ignorer des séries faites ailleurs,
-   * et la séance se clôt sans rien supprimer (les lectures d'une séance close ignorent ses séries jamais faites).
+   * cette exécution (`SyncState.pulledThisRun`, ruling R38) et que la séance est tenue par cet appareil (ruling R49,
+   * « La terminer » d'une séance d'un autre appareil) : sinon le miroir peut ignorer des séries faites ailleurs, et la
+   * séance se clôt sans rien supprimer (les lectures d'une séance close ignorent ses séries jamais faites).
    */
   finish(sessionId: string): Promise<'completed' | 'abandoned'>;
   /** Suppression logique de la séance, de ses exercices et de ses séries (R-SYN-6). */
@@ -493,10 +494,12 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
 
   /**
    * Fin de séance (D4) dans la transaction en cours ; une séance déjà close rend son statut. « Terminer » (`prune`, après
-   * un pull de cette exécution, ruling R38) supprime aussi les séries jamais faites (D2). La clôture d'une séance oubliée
-   * n'en supprime aucune (ruling R33) :
+   * un pull de cette exécution, ruling R38) supprime aussi les séries jamais faites (D2), seulement si la séance est
+   * tenue par cet appareil (ruling R49) : « La terminer » depuis un autre appareil n'en supprime aucune. La clôture
+   * d'une séance oubliée n'en supprime aucune non plus (ruling R33) :
    * le miroir peut ignorer des séries faites sur un autre appareil ; elle n'écrit que le statut et la fin, et les
-   * lectures ignorent les séries jamais faites d'une séance close.
+   * lectures ignorent les séries jamais faites d'une séance close. Le serveur garde en plus toute série faite qu'un
+   * appareil en retard supprimerait, et termine une séance abandonnée qui a une série de travail faite (R49, R51).
    */
   async function close(
     w: Writer,
@@ -513,7 +516,9 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
       (await exercisesOf(sessionId, w)).map((e) => e.id),
       w,
     );
-    if (prune) for (const set of sets) if (!isDone(set)) await deleteRow(w, SET, set.id);
+    if (prune && session.deviceId === w.deviceId) {
+      for (const set of sets) if (!isDone(set)) await deleteRow(w, SET, set.id);
+    }
     const status = sets.some((set) => set.kind === 'work' && isDone(set)) ? 'completed' : 'abandoned';
     await w.put({ entity: SESSION, id: sessionId, kind: 'patch', fields: { status, endedAt } });
     await clearActiveIf(sessionId);
@@ -785,7 +790,8 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
 
     async finish(sessionId) {
       const w = await writer();
-      // Ruling R38 : pas de suppression sur un miroir qu'aucun pull de cette exécution n'a mis à jour.
+      // Ruling R38 : pas de suppression sur un miroir qu'aucun pull de cette exécution n'a mis à jour ; ni sur une
+      // séance tenue par un autre appareil (R49, vu par `close`).
       const prune = s.sync.getState().pulledThisRun;
       const closed = await tx(() => close(w, sessionId, nowIso(), prune));
       await afterCompleted([closed]);

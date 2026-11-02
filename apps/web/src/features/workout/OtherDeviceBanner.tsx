@@ -7,8 +7,9 @@ import styles from './workout.module.css';
 
 /**
  * Séance en cours sur un autre appareil (spec brique 3 §7.1, R-SYN-7) : « Continuer ici » la rapatrie (le
- * `device_id` est réécrit) et ouvre la séance, « La terminer » la clôt comme « Terminer », « La supprimer » la
- * retire après confirmation. Aucune de ces actions n'a besoin du réseau.
+ * `device_id` est réécrit) et ouvre la séance, « La terminer » la clôt sans supprimer aucune série (ruling R49 : ce
+ * miroir peut ignorer des séries faites sur l'autre appareil), « La supprimer » la retire après confirmation. Aucune de
+ * ces actions n'a besoin du réseau.
  */
 export function OtherDeviceBanner(p: { session: WorkoutSessionView }) {
   const repos = useRepos();

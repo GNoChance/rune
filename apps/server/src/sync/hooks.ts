@@ -28,6 +28,12 @@ export interface EntitySyncHooks {
   immutableColumns?: readonly string[];
   /** Dans le point de sauvegarde de l'op, avant l'écriture ; `fields` en snake_case, déjà filtrés. */
   beforeApply?(ctx: HookCtx, fields: Record<string, unknown>): Promise<void>;
+  /**
+   * `delete` d'une ligne vivante : vrai, la ligne reste vivante et prend seulement un rev neuf (l'op est acquittée
+   * `applied`, l'appareil qui l'a supprimée la récupère au pull suivant) ; `afterApply` n'est pas appelé, `afterBatch`
+   * reçoit la ligne comme écrite.
+   */
+  keepOnDelete?(ctx: HookCtx): Promise<boolean>;
   /** Après une écriture effective de l'op. */
   afterApply?(ctx: HookCtx): Promise<void>;
   /**
