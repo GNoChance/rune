@@ -965,6 +965,55 @@ describe('réouverture (Review Focus 1)', () => {
   });
 });
 
+describe('décisions du moteur (spec §7.4 « La prochaine fois »)', () => {
+  const TARGET = {
+    mode: 'linear',
+    loadG: 62_500,
+    repsMin: 6,
+    repsMax: 6,
+    targetReps: 6,
+    durationS: null,
+    variantId: null,
+    workSets: 3,
+  };
+  const decision = (id: string, o: Record<string, unknown>) => ({
+    id,
+    ownerId: 'u-1',
+    instanceId: 'i-1',
+    slotId: 'A1',
+    exerciseId: 'back-squat',
+    result: 'PROGRESS',
+    reasonCode: 'LOAD_UP',
+    nextTarget: TARGET,
+    profile: 'adult',
+    rulesVersion: '1',
+    ...o,
+  });
+
+  it('code, marque provisoire et cible suivante ; une cible illisible ou absente vaut null', async () => {
+    const { db, repos } = await setup();
+    const id = await repos.workouts.start(START);
+    const [squat, lunge] = (await view(repos, id)).exercises;
+    if (!squat || !lunge) throw new Error('exercices absents');
+    await seedMirror(db, 'engine_decision', [
+      decision(squat.id, { provisional: 1 }),
+      decision(lunge.id, { reasonCode: 'NO_DATA', nextTarget: { mode: 'linear', loadG: 'x' } }),
+    ]);
+    const byId = (a: { performedExerciseId: string }, b: { performedExerciseId: string }) =>
+      a.performedExerciseId < b.performedExerciseId ? -1 : 1;
+    expect((await repos.workouts.decisions(id)).sort(byId)).toEqual(
+      [
+        { performedExerciseId: squat.id, reasonCode: 'LOAD_UP', provisional: true, nextTarget: TARGET },
+        { performedExerciseId: lunge.id, reasonCode: 'NO_DATA', provisional: false, nextTarget: null },
+      ].sort(byId),
+    );
+    await seedMirror(db, 'engine_decision', [decision(lunge.id, { nextTarget: null })]);
+    expect(
+      (await repos.workouts.decisions(id)).find((d) => d.performedExerciseId === lunge.id)?.nextTarget,
+    ).toBe(null);
+  });
+});
+
 describe('lectures observées', () => {
   const wrapper =
     (services: AppServices) =>

@@ -500,6 +500,43 @@ describe('searchExercises', () => {
     expect(none).toEqual({ results: [], hiddenByFeasible: 1, hiddenByCautious: false });
   });
 
+  it('lieu donné (séance libre, spec brique 3 §7.5) : filtre et contexte à ce lieu, pas au principal ; null : aucun filtre', async () => {
+    const { db, repo } = await setup({ place: 'garage-secondary' });
+    await seedMirror(db, 'place', [
+      {
+        id: 'p-2',
+        ownerId: 'u-1',
+        kind: 'home',
+        gymId: null,
+        name: 'Salle du sous-sol',
+        isPrimary: true,
+        visibleAtGym: null,
+        loadSettings: null,
+      },
+    ]);
+    await seedMirror(db, 'home_equipment', [
+      { id: 'p-2:barbell', ownerId: 'u-1', placeId: 'p-2', equipmentCode: 'barbell' },
+      { id: 'p-2:squat_rack', ownerId: 'u-1', placeId: 'p-2', equipmentCode: 'squat_rack' },
+    ]);
+    // Lieu principal (la salle : barre et cage, pas d'haltères).
+    expect(ids((await repo.searchExercises('squat', { feasibleOnly: true })).results)).toEqual([
+      'bodyweight-squat',
+      'back-squat',
+    ]);
+    // Lieu de la séance : le Garage (haltères).
+    const garage = await repo.searchExercises('squat', { feasibleOnly: true, placeId: 'p-1' });
+    expect(ids(garage.results)).toEqual(['bodyweight-squat', 'goblet-squat']);
+    expect(garage.hiddenByFeasible).toBe(1);
+    expect((await repo.context('p-1')).place?.name).toBe('Garage');
+    // Séance sans lieu, ou lieu supprimé depuis : rien n'est masqué.
+    for (const placeId of [null, 'p-supprime']) {
+      const all = await repo.searchExercises('squat', { feasibleOnly: true, placeId });
+      expect(ids(all.results), String(placeId)).toEqual(['bodyweight-squat', 'back-squat', 'goblet-squat']);
+      expect((await repo.context(placeId)).place, String(placeId)).toBeNull();
+    }
+    expect((await repo.context()).place?.name).toBe('Salle du sous-sol');
+  });
+
   it('une fiche retirée n’est jamais trouvée ; recherche vide ou sans lettre : aucun résultat', async () => {
     const { repo } = await setup({ place: null });
     expect(ids((await repo.searchExercises('sauté', { feasibleOnly: false })).results)).toEqual([]);

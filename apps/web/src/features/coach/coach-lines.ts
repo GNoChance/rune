@@ -17,6 +17,11 @@ export interface CoachTexts {
   ready: string;
   /** Lignes du jour de l'accueil, une par jour civil de Paris, à tour de rôle. */
   daily: readonly string[];
+  /**
+   * Bulle de la fin de séance (moment `session_end`, spec brique 3 §7.4), une par jour civil de Paris de la séance,
+   * à tour de rôle : la régularité et la saisie, jamais la charge, l'échec ni un record (D8), et aucun chiffre.
+   */
+  sessionEnd: readonly string[];
 }
 
 /**
@@ -37,6 +42,11 @@ export const COACHES: Readonly<Record<CoachId, CoachTexts>> = {
       'Une quête attend. Ton rang aussi.',
       "Pas d'excuse aujourd'hui. Juste la suite.",
     ],
+    sessionEnd: [
+      'Travail noté. Récupère : la suite se gagne.',
+      'Une séance de plus. Le rang suit la régularité.',
+      "Discipline prouvée aujourd'hui. Recommence à la prochaine séance.",
+    ],
   },
   skald: {
     name: COACH_NAMES.skald,
@@ -51,6 +61,11 @@ export const COACHES: Readonly<Record<CoachId, CoachTexts>> = {
       'Chaque jour ajoute une ligne à ta saga.',
       'Les héros aussi ont commencé au rang E.',
     ],
+    sessionEnd: [
+      'Un chapitre de plus dans ta saga, {pseudo}. Repose-toi : le récit continue.',
+      'Belle séance, {pseudo}. Chaque série notée ajoute une ligne à ta saga.',
+      'Le chapitre du jour est écrit. Les grandes sagas se bâtissent séance après séance.',
+    ],
   },
   scribe: {
     name: COACH_NAMES.scribe,
@@ -64,6 +79,11 @@ export const COACHES: Readonly<Record<CoachId, CoachTexts>> = {
       'Profil complet, lieu noté, rythme de {jours} séances par semaine. Le plan arrivera ici.',
       'Point du jour : ton profil est à jour.',
       'Je consigne. Les premières séances arriveront bientôt.',
+    ],
+    sessionEnd: [
+      'Séance consignée. Ton bilan est à jour.',
+      'Tout est noté. La récupération fait aussi partie du plan.',
+      'Bilan enregistré. La régularité compte plus que tout le reste.',
     ],
   },
 };
@@ -84,19 +104,23 @@ export function coachText(
   return COACHES[coach][key].replaceAll('{pseudo}', pseudo);
 }
 
+/** Moments où le coach parle avec une ligne tournante : l'accueil, la fin d'une séance. */
+export type CoachMoment = 'daily' | 'session_end';
+
 /**
- * Ligne du jour de l'accueil : `daily[jourParis % daily.length]`, `{pseudo}` et `{jours}` (`daysPerWeek` du
- * profil, que l'accueil passe) remplacés. Sans rythme connu (null ou omis), une ligne qui dit `{jours}` cède la
- * place à la suivante : jamais de valeur inventée à l'écran.
+ * Ligne d'un moment, à tour de rôle par jour civil de Paris (`lignes[jourParis % lignes.length]`) : `daily` pour
+ * l'accueil (date du jour), `session_end` pour la fin de séance (début de la séance : rouvrir le résumé rend la même
+ * ligne). `{pseudo}` et `{jours}` (`daysPerWeek` du profil, que l'accueil passe) remplacés. Sans rythme connu (null ou
+ * omis), une ligne qui dit `{jours}` cède la place à la suivante : jamais de valeur inventée à l'écran.
  */
 export function coachLine(
   coach: CoachId,
-  _moment: 'daily',
+  moment: CoachMoment,
   date: Date,
   pseudo: string,
   daysPerWeek: number | null = null,
 ): string {
-  const lines = COACHES[coach].daily;
+  const lines = moment === 'daily' ? COACHES[coach].daily : COACHES[coach].sessionEnd;
   const day = parisDayNumber(date);
   for (let offset = 0; offset < lines.length; offset++) {
     // Modulo toujours positif, même avant 1970.

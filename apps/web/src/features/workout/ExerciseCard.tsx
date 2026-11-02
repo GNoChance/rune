@@ -128,6 +128,8 @@ export interface ExerciseCardProps {
    * échauffement ni après la correction d'une série déjà faite (ruling R43).
    */
   onWorkSetDone(): void;
+  /** Sous les lignes, dans le corps de la carte : « Ajouter une série » d'un exercice de séance libre. */
+  footer?: ReactNode;
 }
 
 export function ExerciseCard(p: ExerciseCardProps) {
@@ -270,6 +272,7 @@ export function ExerciseCard(p: ExerciseCardProps) {
           </>
         ) : null}
         <ol className={styles.lines}>{work.map(row)}</ol>
+        {p.footer}
       </div>
       <BottomSheet open={menu} title={p.name} onClose={() => setMenu(false)}>
         <ul className={styles.menuList}>

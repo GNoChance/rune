@@ -763,6 +763,58 @@
   font-weight: 600;
 }
 
+/* ——— Séance libre : ajouter un exercice, une série ——— */
+
+.free {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.freeHint {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+/* Sous les lignes d'un exercice libre : pleine largeur, 48 px de haut au moins (écran de séance). */
+.addSet {
+  min-height: 48px;
+  width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-control);
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.addSet:focus-visible,
+.textButton:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* « Les voir » : lien d'action dans une phrase, 48 px de haut pour le doigt. */
+.textButton {
+  min-height: 48px;
+  padding: 0 var(--space-1);
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .chevron,
   .check {

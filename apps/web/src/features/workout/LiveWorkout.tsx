@@ -18,6 +18,7 @@ import { clockText } from './DurationTimer';
 import { EffortSheet } from './EffortSheet';
 import { ExerciseCard, hasOpenWork, measureOf, workLinesAt } from './ExerciseCard';
 import { FinishSheet } from './FinishSheet';
+import { AddSetButton, FreeWorkout } from './FreeWorkout';
 import styles from './live.module.css';
 import { ExerciseSheetSheet } from './PlanList';
 import { RestTimer } from './RestTimer';
@@ -42,14 +43,18 @@ const titleOf = (session: WorkoutSessionView, context: LiveContext): string =>
 
 const isDone = (set: WorkoutSetView) => set.loggedAt !== null;
 
-/** Exercices d'un programme dont aucune série de travail faite n'a d'effort : la charge n'augmentera pas (05 §7). */
+/**
+ * Effort à demander avant la fin (05 §7 : au minimum sur la dernière série de travail). Programme : exercices dont
+ * aucune série de travail faite n'a d'effort, la charge n'augmentera pas. Séance libre : exercices dont la dernière
+ * série de travail faite n'en a pas (celle que compte l'XP) ; facultatif, rien n'en dépend d'autre (D7).
+ */
 const missingEffort = (session: WorkoutSessionView): WorkoutExerciseView[] =>
-  session.instanceId === null
-    ? []
-    : session.exercises.filter((e) => {
-        const done = e.sets.filter((s) => s.kind === 'work' && isDone(s));
-        return e.slotId !== null && done.length > 0 && !done.some((s) => s.effort !== null);
-      });
+  session.exercises.filter((e) => {
+    const done = e.sets.filter((s) => s.kind === 'work' && isDone(s));
+    if (done.length === 0) return false;
+    if (session.instanceId === null) return done.at(-1)?.effort === null;
+    return e.slotId !== null && !done.some((s) => s.effort !== null);
+  });
 
 /** « 0:00 », « 12:34 », « 1:02:03 » depuis le début de la séance. */
 function elapsedText(ms: number): string {
@@ -174,6 +179,8 @@ function Live(p: {
   const { connection } = useSyncState();
   const [settings] = useDeviceSettings();
   const readOnly = !session.heldHere;
+  // Séance libre (§7.5) : exercices ajoutés par recherche, séries ajoutées une à une.
+  const free = session.instanceId === null && !readOnly;
   const rest = useRestTimer(session.id, !readOnly);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [effort, setEffort] = useState<EffortTarget | null>(null);
@@ -295,9 +302,13 @@ function Live(p: {
               const restS = p.context.restS[exercise.id];
               if (restS !== undefined) rest.start(restS);
             }}
+            footer={free ? <AddSetButton performedExerciseId={exercise.id} /> : undefined}
           />
         ))}
       </div>
+      {free ? (
+        <FreeWorkout session={session} onAdded={(id) => setExpanded((x) => ({ ...x, [id]: true }))} />
+      ) : null}
       {readOnly ? null : (
         <div className={styles.footer}>
           <RestTimer rest={rest} />
@@ -321,6 +332,7 @@ function Live(p: {
       />
       <FinishSheet
         open={finishing}
+        free={session.instanceId === null}
         exercises={missing.map((e) => ({ id: e.id, name: name(e) }))}
         onRate={rateMissing}
         onFinish={finish}

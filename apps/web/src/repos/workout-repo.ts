@@ -10,11 +10,20 @@ import {
   type ServedSheet,
   ServedSheetSchema,
   type SessionProfile,
+  SLOT_MODES,
   SWAP_REASONS,
   type SwapReason,
 } from '@rune/contracts';
-import { currentRules, loadGrid, type PlannedSet, type PlannedWorkout, RULES_VERSION } from '@rune/domain';
+import {
+  currentRules,
+  loadGrid,
+  type NextTarget,
+  type PlannedSet,
+  type PlannedWorkout,
+  RULES_VERSION,
+} from '@rune/domain';
 import { useMemo } from 'react';
+import { z } from 'zod';
 import { type AppServices, useLive, useServices } from '../app-services';
 import { healthConsentCached } from '../local-db/consent';
 import type { MirrorRow } from '../local-db/db';
@@ -24,7 +33,7 @@ import { type LocalChange, writeLocal } from '../sync/outbox';
 import { catalogRepoFor } from './catalog-repo';
 import { type LiveContext, readLiveContext } from './live-context';
 import { programViewFor } from './program-view';
-import { currentUserId, isLive, oneOf, text } from './rows';
+import { currentUserId, isLive, oneOf, parseJsonColumn, text } from './rows';
 import { composeSessions, latestFirst, type WorkoutSessionView } from './session-records';
 
 export type { LiveContext } from './live-context';
@@ -179,7 +188,23 @@ export interface SessionDecision {
   reasonCode: ReasonCode;
   /** Copie calculée par le téléphone, pas encore remplacée par la ligne du serveur. */
   provisional: boolean;
+  /** Cible de la prochaine séance (« La prochaine fois », spec §7.4) ; null sans cible ou illisible. */
+  nextTarget: NextTarget | null;
 }
+
+const natural = z.number().int().nonnegative();
+
+/** `next_target` (colonne JSON, décodée par le pull ou écrite par le rejeu local) : le `NextTarget` du domaine. */
+const NextTargetSchema: z.ZodType<NextTarget> = z.object({
+  mode: z.enum(SLOT_MODES),
+  loadG: natural.nullable(),
+  repsMin: natural.nullable(),
+  repsMax: natural.nullable(),
+  targetReps: natural.nullable(),
+  durationS: natural.nullable(),
+  variantId: z.string().nullable(),
+  workSets: natural,
+});
 
 const SESSION = 'workout_session';
 const EXERCISE = 'performed_exercise';
@@ -904,7 +929,14 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
         const reasonCode = oneOf(REASON_CODES, r.reasonCode);
         return reasonCode === null
           ? []
-          : [{ performedExerciseId: r.id, reasonCode, provisional: r.provisional === 1 }];
+          : [
+              {
+                performedExerciseId: r.id,
+                reasonCode,
+                provisional: r.provisional === 1,
+                nextTarget: parseJsonColumn(r.nextTarget, NextTargetSchema),
+              },
+            ];
       });
     },
 

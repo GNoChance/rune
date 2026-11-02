@@ -604,7 +604,11 @@ describe('présentation du coach (CoachIntro)', () => {
 describe('textes des coachs (coach-lines)', () => {
   it('textes écrits à l’avance, mot pour mot', () => {
     expect(Object.keys(COACHES)).toEqual([...COACH_IDS]);
-    for (const id of COACH_IDS) expect(COACHES[id]).toEqual(TEXTS[id]);
+    // Le moment de fin de séance (brique 3) a ses propres tests : coach-lines.test.ts.
+    for (const id of COACH_IDS) {
+      const { sessionEnd: _, ...refonte } = COACHES[id];
+      expect(refonte).toEqual(TEXTS[id]);
+    }
   });
 
   it('coachText remplace {pseudo}', () => {

@@ -30,7 +30,10 @@ import { createConsentRepo } from './consent-repo';
 import { createPlacesRepo } from './places-repo';
 import { createProfileRepo } from './profile-repo';
 
-/** Lieu principal, matériel déjà passé par `expandEquipment` : `feasible(sheet, place.equipment)` s'en sert tel quel. */
+/**
+ * Lieu du filtre (le principal, sauf lieu demandé), matériel déjà passé par `expandEquipment` :
+ * `feasible(sheet, place.equipment)` s'en sert tel quel.
+ */
 export interface CatalogPlace {
   id: string;
   name: string;
@@ -39,7 +42,7 @@ export interface CatalogPlace {
 
 /** Ce que le membre voit du catalogue (spec brique 2 §4.1 et §4.2). */
 export interface MemberCatalogContext {
-  /** Null sans lieu principal : pas de filtre Faisable, tout le matériel. */
+  /** Null sans lieu principal (ou sans le lieu demandé) : pas de filtre Faisable, tout le matériel. */
   place: CatalogPlace | null;
   /** Profil prudent : mineur, mode prudent, ou questionnaire « prudence » avec l'accord santé actif. */
   cautious: boolean;
@@ -62,6 +65,11 @@ export interface ExerciseView extends MemberCatalogContext {
 export interface ExerciseFilter {
   /** Interrupteur « Faisable : <lieu> ». Sans lieu principal, il ne masque rien. */
   feasibleOnly: boolean;
+  /**
+   * Lieu du filtre (`searchExercises` seulement) : absent, le lieu principal ; donné, ce lieu-là (celui d'une séance
+   * libre, spec brique 3 §7.5) ; null ou lieu inconnu (supprimé depuis), aucun : le filtre ne masque rien.
+   */
+  placeId?: string | null;
 }
 
 export interface ExerciseSearch {
@@ -122,7 +130,8 @@ export function sheetIllustrations(
 export interface CatalogRepo {
   /** Fiches servies valides en local (publiées et retirées), par `id` ; les fiches illisibles sont écartées. */
   sheets(): Promise<ServedSheet[]>;
-  context(): Promise<MemberCatalogContext>;
+  /** `placeId` : comme `ExerciseFilter.placeId` (absent : le lieu principal). */
+  context(placeId?: string | null): Promise<MemberCatalogContext>;
   view(filter: ExerciseFilter): Promise<ExerciseView>;
   /** Fiches visibles d'un groupe, par niveau, nom (collation française) puis `id` ; null pour un code inconnu. */
   groupExercises(code: string, filter: ExerciseFilter): Promise<ServedSheet[] | null>;
@@ -185,14 +194,15 @@ export function createCatalogRepo(s: AppServices): CatalogRepo {
     });
   }
 
-  async function context(): Promise<MemberCatalogContext> {
+  async function context(placeId?: string | null): Promise<MemberCatalogContext> {
     const [me, profile, screening, all] = await Promise.all([
       getMeta(db, 'me'),
       profiles.get(),
       consent.screening(),
       places.list(),
     ]);
-    const primary = all.find((p) => p.isPrimary);
+    // Le lieu principal, ou celui qu'on demande (null : aucun).
+    const place = all.find((p) => (placeId === undefined ? p.isPrimary : p.id === placeId));
     // `me.cautious` vient du serveur ; on le recalcule aussi depuis les miroirs, qui peuvent être plus récents
     // (mode prudent, questionnaire). Prudent dès qu'une des deux sources le dit, et faute de savoir.
     const cautious =
@@ -205,9 +215,7 @@ export function createCatalogRepo(s: AppServices): CatalogRepo {
         caution: screening?.caution ?? null,
       });
     return {
-      place: primary
-        ? { id: primary.id, name: primary.name, equipment: expandEquipment(primary.equipment) }
-        : null,
+      place: place ? { id: place.id, name: place.name, equipment: expandEquipment(place.equipment) } : null,
       cautious,
       maxLevel: maxExerciseLevel(profile?.experience),
     };
@@ -251,7 +259,7 @@ export function createCatalogRepo(s: AppServices): CatalogRepo {
     async searchExercises(query, filter) {
       const matches = matcher(query);
       if (matches === null) return EMPTY_SEARCH;
-      const [all, ctx] = await Promise.all([sheets(), context()]);
+      const [all, ctx] = await Promise.all([sheets(), context(filter.placeId)]);
       const found = all.filter(matches);
       const visible = visibility(ctx, filter);
       const withoutFilter = visibility(ctx, { feasibleOnly: false });
