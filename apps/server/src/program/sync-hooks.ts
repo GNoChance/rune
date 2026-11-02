@@ -216,7 +216,10 @@ const performedSet: Omit<EntitySyncHooks, 'afterBatch'> = {
   // L'exercice d'une série est fixé à sa création (ruling R30).
   immutableColumns: ['performed_exercise_id'],
 
-  /** Bornes d'une série (spec §5.3) ; une valeur qui n'est pas un nombre est laissée aux contraintes SQL. */
+  /**
+   * Bornes d'une série (spec §5.3) ; une valeur qui n'est pas un nombre est laissée aux contraintes SQL. `logged_at`
+   * doit être un instant ISO, comme les dates d'une séance (sinon l'export CSV échouerait sur cette ligne).
+   */
   async beforeApply({ op }: HookCtx, fields: Fields) {
     if (op.kind === 'delete') return;
     for (const [column, [min, max]] of SET_BOUNDS) {
@@ -224,6 +227,7 @@ const performedSet: Omit<EntitySyncHooks, 'afterBatch'> = {
       if (typeof value === 'number' && (value < min || value > max))
         throw new OpRejection('out_of_range', column);
     }
+    instantOf(fields, 'logged_at');
   },
 
   /**

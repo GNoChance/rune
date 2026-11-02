@@ -405,6 +405,41 @@ describe('performed_set au push', () => {
 const del = (u: { id: string }, entity: string, id: string) =>
   makeOp({ userId: u.id, entity, id, kind: 'delete' });
 
+describe('logged_at au push (M4)', () => {
+  it('logged_at qui n’est pas un instant ISO → validation, à la création comme au patch ; null ou instant admis', async () => {
+    const a = await setup();
+    const s = sessionOps(a.id, { exercises: [{ sets: [{ logged: false }] }] });
+    await syncPush(ctx, a.cookie, s.ops);
+    const setId = s.setIds[0]?.[0] ?? '';
+    const create = (loggedAt: unknown) =>
+      makeOp({
+        userId: a.id,
+        entity: 'performed_set',
+        id: newId(),
+        kind: 'create',
+        fields: {
+          performedExerciseId: s.exerciseIds[0],
+          position: 2,
+          kind: 'work',
+          loadMode: 'dumbbell',
+          loadG: 20_000,
+          reps: 10,
+          loggedAt,
+        },
+      });
+    const res = await syncPush(ctx, a.cookie, [
+      create('hier soir'),
+      create(42),
+      patch(a, 'performed_set', setId, { loggedAt: '2026-10-06 09:00' }),
+      patch(a, 'performed_set', setId, { loggedAt: '2026-10-06T09:00:00.000Z' }),
+      patch(a, 'performed_set', setId, { loggedAt: null }),
+    ]);
+    expect(codes(res.body)).toEqual(['validation', 'validation', 'validation', 'applied', 'applied']);
+    expect(rowsOf('performed_set')).toHaveLength(1);
+    expect(rowOf('performed_set', setId)?.logged_at).toBeNull();
+  });
+});
+
 describe('série faite jamais supprimée par un appareil en retard (ruling R49)', () => {
   it('delete d’une série faite d’une séance vivante : ignoré, ligne gardée avec un rev neuf ; série jamais faite supprimée', async () => {
     const a = await setup();
