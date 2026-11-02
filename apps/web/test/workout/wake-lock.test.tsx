@@ -69,7 +69,8 @@ async function openSession() {
   const { services } = await createTestServices({ db });
   const id = await reposFor(services).workouts.start(START);
   const view = await renderApp({ path: `/workout/${id}`, db });
-  await screen.findByRole('heading', { level: 1, name: 'Séance A' });
+  // Premier rendu : l'écran de séance est chargé à la demande ; sous la charge de la suite complète, plus d'1 s.
+  await screen.findByRole('heading', { level: 1, name: 'Séance A' }, { timeout: 5000 });
   return view;
 }
 

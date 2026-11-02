@@ -11,7 +11,7 @@ import { SWAP_START, SWAP_TEMPLATE, seedBase } from './seed';
 
 const opened: AppDb[] = [];
 afterEach(async () => {
-  sessionStorage.clear();
+  localStorage.clear();
   for (const db of opened.splice(0)) await db.delete();
 });
 
@@ -21,7 +21,8 @@ async function openSession(o: Parameters<typeof renderApp>[0] = {}) {
   const { services } = await createTestServices({ db });
   const id = await reposFor(services).workouts.start(SWAP_START);
   const view = await renderApp({ path: `/workout/${id}`, db, ...o });
-  await screen.findByRole('heading', { level: 1, name: 'Séance A' });
+  // Premier rendu : l'écran de séance est chargé à la demande ; sous la charge de la suite complète, plus d'1 s.
+  await screen.findByRole('heading', { level: 1, name: 'Séance A' }, { timeout: 5000 });
   return { ...view, id };
 }
 

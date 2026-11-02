@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AppServices, ServicesProvider } from '../../src/app-services';
 import { RestTimer } from '../../src/features/workout/RestTimer';
 import { playRestSound } from '../../src/features/workout/rest-sound';
-import { REST_STORAGE_KEY, useRestTimer } from '../../src/features/workout/rest-timer';
+import { REST_STALE_MS, REST_STORAGE_KEY, useRestTimer } from '../../src/features/workout/rest-timer';
 import type { AppDb } from '../../src/local-db/db';
 import { reposFor, type StartInput } from '../../src/repos';
 import { writeDeviceSettings } from '../../src/repos/device-settings';
@@ -18,8 +18,10 @@ import { seedMirror } from '../support/seed';
 import { LUNGE, SQUAT } from '../support/workout';
 import { seedBase, slot, TEMPLATE } from './seed';
 
-// Minuteur de repos (spec brique 3 §7.3, D14, Review Focus 1) : heure de fin absolue, gardée dans `sessionStorage`,
-// recalculée au retour au premier plan ; « Repos terminé » annoncé et son court au premier plan seulement.
+// Minuteur de repos (spec brique 3 §7.3, D14, Review Focus 1, ruling R44) : heure de fin absolue, gardée dans
+// `localStorage` (elle survit à une appli tuée), recalculée au retour au premier plan ; « Repos terminé » annoncé et
+// son court au premier plan seulement ; une entrée d'une autre séance, d'une séance close ou d'une fin trop ancienne
+// ne montre rien.
 
 vi.mock('../../src/features/workout/rest-sound', () => ({
   playRestSound: vi.fn(),
@@ -51,7 +53,7 @@ const T0 = Date.parse('2026-10-06T12:00:00.000Z');
 
 /** Écran minimal : un bouton qui lance 2 min de repos, et la barre du minuteur. */
 function Harness(p: { sessionId: string }) {
-  const rest = useRestTimer(p.sessionId);
+  const rest = useRestTimer(p.sessionId, true);
   return (
     <>
       <button type="button" onClick={() => rest.start(120)}>
@@ -71,6 +73,14 @@ const mount = (sessionId = 's-1') =>
     </ServicesProvider>,
   );
 const bar = () => screen.queryByRole('group', { name: 'Minuteur de repos' });
+/** Entrée gardée sur l'appareil, ou null. */
+const stored = (): { sessionId: string; endsAt: number } | null =>
+  JSON.parse(localStorage.getItem(REST_STORAGE_KEY) ?? 'null');
+/** Appli tuée (batterie, appli balayée) : arbre démonté, `sessionStorage` perdu ; `localStorage` reste. */
+const kill = (view: { unmount(): void }) => {
+  view.unmount();
+  sessionStorage.clear();
+};
 const shown = () => screen.getByRole('timer').textContent;
 const announced = () => screen.getByRole('status').textContent;
 
@@ -94,22 +104,23 @@ describe('minuteur de repos : décompte et réglages', () => {
     expect(shown()).toBe('Repos 2:14');
     fireEvent.click(screen.getByRole('button', { name: 'Passer' }));
     expect(bar()).toBeNull();
-    expect(sessionStorage.getItem(REST_STORAGE_KEY)).toBeNull();
+    expect(stored()).toBeNull();
     expect(announced()).toBe('');
   });
 
-  it('heure de fin absolue dans sessionStorage ; −15 s ne passe pas sous zéro', () => {
+  it('heure de fin absolue sur l’appareil, suivie par −15 s ; jamais sous zéro ; effacée une fois la fin annoncée', () => {
     mount();
     fireEvent.click(screen.getByRole('button', { name: 'Lancer' }));
-    expect(JSON.parse(sessionStorage.getItem(REST_STORAGE_KEY) ?? 'null')).toMatchObject({
-      sessionId: 's-1',
-      endsAt: T0 + 120_000,
-    });
+    expect(stored()).toEqual({ sessionId: 's-1', endsAt: T0 + 120_000 });
     act(() => vi.advanceTimersByTime(110_000));
     expect(shown()).toBe('Repos 0:10');
+    fireEvent.click(screen.getByRole('button', { name: '+15 s' }));
+    expect(stored()?.endsAt).toBe(T0 + 135_000);
     fireEvent.click(screen.getByRole('button', { name: '−15 s' }));
-    expect(JSON.parse(sessionStorage.getItem(REST_STORAGE_KEY) ?? 'null').endsAt).toBe(T0 + 110_000);
+    fireEvent.click(screen.getByRole('button', { name: '−15 s' }));
+    // 10 s restaient : la fin arrive maintenant, pas avant.
     expect(announced()).toBe('Repos terminé');
+    expect(stored()).toBeNull();
   });
 
   it('arrière-plan (minuteurs gelés, Review Focus 1) : le temps est juste dès le retour au premier plan', () => {
@@ -122,10 +133,10 @@ describe('minuteur de repos : décompte et réglages', () => {
     expect(shown()).toBe('Repos 0:59');
   });
 
-  it('rechargement (appli déchargée, Review Focus 1) : il reprend à son heure de fin', () => {
+  it('appli tuée puis rouverte (Review Focus 1, ruling R44) : il reprend à son heure de fin', () => {
     const first = mount();
     fireEvent.click(screen.getByRole('button', { name: 'Lancer' }));
-    first.unmount();
+    kill(first);
     vi.setSystemTime(T0 + 30_500);
     mount();
     expect(shown()).toBe('Repos 1:30');
@@ -190,17 +201,60 @@ describe('minuteur de repos : fin', () => {
     expect(playRestSound).toHaveBeenCalledTimes(1);
   });
 
-  it('fin passée pendant que l’appli était déchargée : annoncée au rechargement, puis plus jamais', () => {
+  it('fin passée pendant que l’appli était tuée : annoncée à la réouverture, puis plus jamais', () => {
     const first = mount();
     fireEvent.click(screen.getByRole('button', { name: 'Lancer' }));
-    first.unmount();
-    vi.setSystemTime(T0 + 600_000);
+    kill(first);
+    vi.setSystemTime(T0 + 300_000);
     const second = mount();
     expect(announced()).toBe('Repos terminé');
     expect(playRestSound).toHaveBeenCalledTimes(1);
-    second.unmount();
+    expect(stored()).toBeNull();
+    kill(second);
     mount();
+    expect(bar()).toBeNull();
     expect(playRestSound).toHaveBeenCalledTimes(1);
+  });
+
+  it('fin passée depuis plus de 5 min à la réouverture : rien, ni barre, ni annonce, ni son ; entrée effacée', () => {
+    const first = mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Lancer' }));
+    kill(first);
+    vi.setSystemTime(T0 + 120_000 + REST_STALE_MS + 1000);
+    mount();
+    expect(bar()).toBeNull();
+    expect(announced()).toBe('');
+    expect(playRestSound).not.toHaveBeenCalled();
+    expect(stored()).toBeNull();
+  });
+
+  it('appli cachée plus de 5 min après la fin : rien au retour', () => {
+    mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Lancer' }));
+    setVisibility('hidden');
+    vi.setSystemTime(T0 + 120_000 + REST_STALE_MS + 1000);
+    act(() => vi.advanceTimersByTime(1000));
+    setVisibility('visible');
+    expect(bar()).toBeNull();
+    expect(announced()).toBe('');
+    expect(playRestSound).not.toHaveBeenCalled();
+    expect(stored()).toBeNull();
+  });
+
+  it('séance qui n’est plus tenue ici (inactive) : rien, même avec une entrée à elle', () => {
+    localStorage.setItem(REST_STORAGE_KEY, JSON.stringify({ sessionId: 's-1', endsAt: T0 + 60_000 }));
+    function Inactive() {
+      return <RestTimer rest={useRestTimer('s-1', false)} />;
+    }
+    render(
+      <ServicesProvider services={services}>
+        <Inactive />
+      </ServicesProvider>,
+    );
+    expect(bar()).toBeNull();
+    act(() => vi.advanceTimersByTime(120_000));
+    expect(announced()).toBe('');
+    expect(playRestSound).not.toHaveBeenCalled();
   });
 });
 
@@ -255,7 +309,8 @@ async function started(o: { start?: Partial<StartInput>; before?(db: AppDb): Pro
 
 async function open(s: { db: AppDb; id: string }, now = DEFAULT_NOW) {
   const view = await renderApp({ path: `/workout/${s.id}`, db: s.db, now });
-  await screen.findByRole('heading', { level: 1, name: 'Séance A' });
+  // Premier rendu : l'écran de séance est chargé à la demande ; sous la charge de la suite complète, plus d'1 s.
+  await screen.findByRole('heading', { level: 1, name: 'Séance A' }, { timeout: 5000 });
   return view;
 }
 
@@ -312,14 +367,61 @@ describe('minuteur sur l’écran de séance', () => {
     expect((await screen.findByRole('timer')).textContent).toBe('Repos 1:00');
   });
 
-  it('rechargement de la page (Review Focus 1) : le minuteur reprend à son heure de fin', async () => {
+  it('appli tuée (Review Focus 1, ruling R44) : rouverte sur la même base, le minuteur reprend à son heure de fin', async () => {
     const s = await started();
     const view = await open(s);
     await validate('Squat barre', 'la série 1');
     await screen.findByRole('timer');
-    view.unmount();
+    // Arbre démonté, `sessionStorage` perdu ; une nouvelle appli (services, dépôts) rouvre la même base Dexie.
+    kill(view);
     await open(s, DEFAULT_NOW + 100_000);
     expect((await screen.findByRole('timer')).textContent).toBe('Repos 0:20');
+  });
+
+  it('fin de la séance : l’entrée de son minuteur est effacée', async () => {
+    const s = await started();
+    const view = await open(s);
+    await validate('Squat barre', 'la série 1');
+    await screen.findByRole('timer');
+    expect(stored()?.sessionId).toBe(s.id);
+    fireEvent.click(screen.getByRole('button', { name: 'Terminer' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Terminer quand même' }));
+    await waitFor(() => expect(view.location()).toBe(`/workout/${s.id}/summary`));
+    expect(stored()).toBeNull();
+  });
+
+  it('entrée laissée par une séance terminée : ni barre ni son, sur elle comme sur la séance suivante', async () => {
+    const s = await started();
+    const { services } = await createTestServices({ db: s.db });
+    const repos = reposFor(services);
+    const squat = (await repos.workouts.session(s.id))?.exercises[0]?.sets.find((x) => x.kind === 'work');
+    await repos.workouts.logSet(squat?.id ?? '', { loadG: 60_000, reps: 6 });
+    await repos.workouts.finish(s.id);
+    // Comme si la séance avait été finie ailleurs, ou l'appli tuée avant le nettoyage.
+    localStorage.setItem(REST_STORAGE_KEY, JSON.stringify({ sessionId: s.id, endsAt: DEFAULT_NOW + 60_000 }));
+    const closed = await renderApp({ path: `/workout/${s.id}`, db: s.db, now: DEFAULT_NOW + 90_000 });
+    await screen.findByText('Cette séance est terminée.');
+    expect(bar()).toBeNull();
+    closed.unmount();
+
+    const next = await repos.workouts.start(START);
+    await open({ db: s.db, id: next }, DEFAULT_NOW + 90_000);
+    expect(bar()).toBeNull();
+    expect(document.querySelector('[data-live-region]')?.textContent).toBe('');
+    expect(playRestSound).not.toHaveBeenCalled();
+  });
+
+  it('fin passée depuis plus de 5 min : rien à l’ouverture de la séance, entrée effacée', async () => {
+    const s = await started();
+    localStorage.setItem(
+      REST_STORAGE_KEY,
+      JSON.stringify({ sessionId: s.id, endsAt: DEFAULT_NOW - REST_STALE_MS - 60_000 }),
+    );
+    await open(s);
+    expect(bar()).toBeNull();
+    expect(document.querySelector('[data-live-region]')?.textContent).toBe('');
+    expect(playRestSound).not.toHaveBeenCalled();
+    expect(stored()).toBeNull();
   });
 
   it('avec la feuille d’effort ouverte : il continue, et sa fin reste annoncée', async () => {

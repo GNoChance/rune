@@ -6,7 +6,7 @@ import { LIVE_REGION_ATTR } from '../../ui';
 import { clockText } from './DurationTimer';
 import styles from './live.module.css';
 import { playRestSound, unlockRestSound } from './rest-sound';
-import { REST_STEP_S, type RestTimerApi, restLeftS } from './rest-timer';
+import { isRestStale, REST_STEP_S, type RestTimerApi, restLeftS } from './rest-timer';
 
 export const REST_DONE = 'Repos terminé';
 
@@ -16,17 +16,25 @@ const isVisible = () => document.visibilityState === 'visible';
  * Barre du minuteur de repos, au-dessus de « Terminer » (spec brique 3 §7.3) : « Repos 1:45 », −15 s, +15 s,
  * « Passer ». Le reste se lit sur l'heure de fin à chaque seconde et au retour au premier plan ; à zéro, la barre dit
  * « Repos terminé », la région d'annonce aussi (une fois), et un son court part si l'appli est à l'écran et le son
- * activé. Une fin passée pendant que l'appli était cachée s'annonce à son retour. La région d'annonce est posée à la
- * racine du document : une feuille ouverte (l'effort, après la dernière série) ne la rend pas muette.
+ * activé. Une fin passée pendant que l'appli était cachée ou tuée s'annonce à son retour ; passée depuis plus de
+ * 5 min, elle s'efface sans rien montrer ni sonner. La région d'annonce est posée à la racine du document : une feuille
+ * ouverte (l'effort, après la dernière série) ne la rend pas muette.
  */
 export function RestTimer(p: { rest: RestTimerApi }) {
-  const { state, shift, stop, markAnnounced } = p.rest;
+  const { shift, stop, markAnnounced } = p.rest;
   const services = useServices();
   const [settings] = useDeviceSettings();
   const [visible, setVisible] = useState(isVisible);
   const [, tick] = useReducer((n: number) => n + 1, 0);
   const now = services.now();
+  // Fin trop ancienne (appli cachée longtemps) : rien à montrer ; l'effet ci-dessous l'efface.
+  const stale = p.rest.state !== null && isRestStale(p.rest.state, now);
+  const state = stale ? null : p.rest.state;
   const left = state === null ? null : restLeftS(state, now);
+
+  useEffect(() => {
+    if (stale) stop();
+  }, [stale, stop]);
 
   // Prochain tic au changement de seconde ; rien une fois à zéro.
   useEffect(() => {

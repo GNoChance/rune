@@ -21,7 +21,7 @@ import { FinishSheet } from './FinishSheet';
 import styles from './live.module.css';
 import { ExerciseSheetSheet } from './PlanList';
 import { RestTimer } from './RestTimer';
-import { useRestTimer } from './rest-timer';
+import { clearRest, useRestTimer } from './rest-timer';
 import { SessionMenu } from './SessionMenu';
 import { useWakeLock } from './wake-lock';
 import { nameOf } from './workout-labels';
@@ -97,7 +97,11 @@ export function LiveWorkout(p: { id: string }) {
     setLeaving(true);
     setError(null);
     action().then(
-      (to) => navigate(to),
+      (to) => {
+        // Séance finie ou supprimée : son repos ne servira plus (il serait de toute façon ignoré, ruling R44).
+        clearRest(p.id);
+        navigate(to);
+      },
       () => {
         setLeaving(false);
         setError(UNEXPECTED_ERROR_MESSAGE);
@@ -169,7 +173,8 @@ function Live(p: {
   const me = useMe();
   const { connection } = useSyncState();
   const [settings] = useDeviceSettings();
-  const rest = useRestTimer(session.id);
+  const readOnly = !session.heldHere;
+  const rest = useRestTimer(session.id, !readOnly);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [effort, setEffort] = useState<EffortTarget | null>(null);
   const [savingEffort, setSavingEffort] = useState(false);
@@ -180,7 +185,6 @@ function Live(p: {
   const root = useRef<HTMLElement>(null);
   const finishButton = useRef<HTMLButtonElement>(null);
 
-  const readOnly = !session.heldHere;
   useWakeLock(!readOnly && settings.keepScreenOn);
   // Faute de savoir, les messages aux mineurs s'affichent (comme la séance du jour).
   const minor = (me?.ageBand ?? 'minor') === 'minor';

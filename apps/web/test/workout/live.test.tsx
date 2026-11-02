@@ -99,7 +99,8 @@ async function started(
 
 async function open(s: Setup, opts: Parameters<typeof renderApp>[0] = {}) {
   const view = await renderApp({ path: `/workout/${s.id}`, db: s.db, ...opts });
-  await screen.findByRole('heading', { level: 1, name: 'Séance A' });
+  // Premier rendu : l'écran de séance est chargé à la demande ; sous la charge de la suite complète, plus d'1 s.
+  await screen.findByRole('heading', { level: 1, name: 'Séance A' }, { timeout: 5000 });
   return view;
 }
 
