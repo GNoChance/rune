@@ -1,6 +1,13 @@
 import { type AgeBand, FORBIDDEN_TERMS } from '@rune/contracts';
 import { describe, expect, it } from 'vitest';
-import { type FilterContext, type FilterRule, normalizeForTerms, outputFilter } from '../../src/coach/filter';
+import {
+  type FilterContext,
+  type FilterRule,
+  normalizeForTerms,
+  outputFilter,
+  outputFilterText,
+} from '../../src/coach/filter';
+import { SentenceBuffer } from '../../src/coach/sentences';
 import type { AllowedValues, UnitFamily } from '../../src/coach/values';
 
 const values = (v: Partial<Record<UnitFamily, string[]>> = {}): AllowedValues => ({
@@ -206,5 +213,40 @@ describe('ordre des règles', () => {
     expect(outputFilter('Bonne séance, garde une marge sur la dernière série.', ctx('minor'))).toEqual({
       ok: true,
     });
+  });
+});
+
+describe('outputFilterText, texte de plusieurs phrases', () => {
+  it.each(AUDIENCES)(
+    'filtre chaque phrase à part : « Appelle le 15. Fais 12 reps. » passe (%s)',
+    (audience) => {
+      expect(outputFilterText('Appelle le 15. Fais 12 reps.', ctx(audience))).toEqual({ ok: true });
+    },
+  );
+
+  it('rend la première violation, même dans une phrase suivante', () => {
+    expect(outputFilterText('Fais 12 reps. Appelle le 0123456789.', ctx('adult'))).toEqual(
+      blocked('phone', '0123456789'),
+    );
+    expect(outputFilterText('Bravo ! Ta sèche avance. Mets 65 kg.', ctx('adult'))).toEqual(
+      blocked('forbidden_term', 'sèche'),
+    );
+  });
+
+  it('laisse passer un texte vide', () => {
+    expect(outputFilterText('', ctx('minor'))).toEqual({ ok: true });
+  });
+});
+
+describe('flux découpé puis filtré phrase par phrase', () => {
+  it('« tél. 119 » poussé en morceaux reste une phrase, bloquée par la règle des numéros', () => {
+    const buffer = new SentenceBuffer();
+    const sentences = ['Mon tél', '. ', '11', '9 si besoin. ', 'Bonne séance.'].flatMap((d) =>
+      buffer.push(d),
+    );
+    sentences.push(...buffer.flush());
+    expect(sentences).toEqual(['Mon tél. 119 si besoin. ', 'Bonne séance.']);
+    const verdicts = sentences.map((s) => outputFilter(s, ctx('minor')));
+    expect(verdicts.find((v) => !v.ok)).toEqual(blocked('phone', '119'));
   });
 });

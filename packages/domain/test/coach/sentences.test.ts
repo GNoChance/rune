@@ -63,6 +63,28 @@ describe('SentenceBuffer', () => {
   });
 });
 
+describe('SentenceBuffer, abréviations qui annoncent un numéro', () => {
+  it('ne coupe pas après « tél. » : « Mon tél. 0612345678 ! » poussé caractère par caractère', () => {
+    expect(feed('Mon tél. 0612345678 !')).toEqual(['Mon tél. 0612345678 !']);
+  });
+
+  it.each(['tél.', 'tel.', 'TÉL.', 'Tél.', 'num.', 'Num.', 'no.', 'NO.', 'n°.', 'N°.', 'Nº.'])(
+    'ne coupe pas après « %s »',
+    (abbreviation) => {
+      expect(feed(`Mon ${abbreviation} 3114. Fin`)).toEqual([`Mon ${abbreviation} 3114. `, 'Fin']);
+    },
+  );
+
+  it("ne retient l'abréviation qu'en mot entier", () => {
+    expect(feed("Rentre à l'hôtel. Repose-toi.")).toEqual(["Rentre à l'hôtel. ", 'Repose-toi.']);
+    expect(feed('Joue du piano. Puis étire-toi.')).toEqual(['Joue du piano. ', 'Puis étire-toi.']);
+  });
+
+  it('laisse la découpe ordinaire inchangée', () => {
+    expect(feed('Bonjour. Ça va ?')).toEqual(['Bonjour. ', 'Ça va ?']);
+  });
+});
+
 describe('SentenceBuffer, limite de 400 et paires de substitution', () => {
   it('ne coupe pas un émoji au seuil de 400', () => {
     const buffer = new SentenceBuffer();
@@ -80,7 +102,26 @@ describe('SentenceBuffer, limite de 400 et paires de substitution', () => {
 });
 
 describe('SentenceBuffer, invariance au découpage du flux', () => {
-  const piece = fc.constantFrom('a', 'b', ' ', ' ', '.', '!', '?', '…', '\n', '1', '2', ',', '💪', '🏋️', 'é');
+  const piece = fc.constantFrom(
+    'a',
+    'b',
+    ' ',
+    ' ',
+    '.',
+    '!',
+    '?',
+    '…',
+    '\n',
+    '1',
+    '2',
+    ',',
+    '💪',
+    '🏋️',
+    'é',
+    'tél',
+    'no',
+    'n°',
+  );
   const textArb = fc.array(piece, { maxLength: 900 }).map((parts) => parts.join(''));
 
   it('même texte et mêmes phrases quel que soit le découpage en unités UTF-16', () => {

@@ -1,4 +1,5 @@
 import { type AgeBand, FORBIDDEN_TERMS, type ForbiddenTerm, HELP_PHONE_DIGITS } from '@rune/contracts';
+import { SentenceBuffer } from './sentences';
 import { type AllowedValues, findQuantities } from './values';
 
 /*
@@ -136,6 +137,21 @@ export function outputFilter(sentence: string, ctx: FilterContext): FilterVerdic
   if (!nutritionFull) {
     const term = termViolation(text, ctx.audience === 'minor' ? FOR_MINOR : FOR_ALL);
     if (term !== null) return { ok: false, rule: 'forbidden_term', detail: term };
+  }
+  return { ok: true };
+}
+
+/**
+ * Texte de plus d'une phrase (motif d'une proposition, textes de l'appli, réponse entière) : découpé par
+ * `SentenceBuffer` comme le flux, chaque phrase passée à `outputFilter`, première violation rendue. Tout texte de plus
+ * d'une phrase passe par cette fonction, jamais directement par `outputFilter`, dont la règle des numéros lit les mots
+ * qui précèdent un nombre jusque dans la phrase d'avant.
+ */
+export function outputFilterText(text: string, ctx: FilterContext): FilterVerdict {
+  const buffer = new SentenceBuffer();
+  for (const sentence of [...buffer.push(text), ...buffer.flush()]) {
+    const verdict = outputFilter(sentence, ctx);
+    if (!verdict.ok) return verdict;
   }
   return { ok: true };
 }

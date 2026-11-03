@@ -1,5 +1,14 @@
 const MAX_UNBROKEN = 400;
 const TERMINATORS = new Set(['.', '!', '?', '…']);
+// Abréviations qui annoncent un numéro (tél., tel., num., no., n°.), en mot entier, sans casse ni accents. Couper
+// après leur point séparerait le numéro du mot d'appel que lit le filtre (§11.3, règle 1).
+const NUMBER_ABBREVIATION = /(?:^|[^\p{L}\p{N}])(?:tel|num|no|n°)\.$/u;
+
+/** `head` finit-il par une abréviation de numéro ? Les 8 dernières unités suffisent (« tél. » décomposé en fait 5). */
+function endsWithNumberAbbreviation(head: string): boolean {
+  const tail = head.slice(-8).normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase();
+  return NUMBER_ABBREVIATION.test(tail);
+}
 
 /** Fin (exclue) de la première phrase complète du tampon, ou -1 si elle n'est pas finie. */
 function findCut(text: string): number {
@@ -11,7 +20,9 @@ function findCut(text: string): number {
     const next = text[i + 1];
     // Fin de tampon : on attend la suite (un « . » peut précéder un chiffre).
     if (next === undefined) return -1;
-    if (next === ' ') return i + 2 <= MAX_UNBROKEN ? i + 2 : -1;
+    if (next !== ' ') continue;
+    if (char === '.' && endsWithNumberAbbreviation(text.slice(0, i + 1))) continue;
+    return i + 2 <= MAX_UNBROKEN ? i + 2 : -1;
   }
   return -1;
 }
