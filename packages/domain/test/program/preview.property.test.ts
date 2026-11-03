@@ -1,15 +1,19 @@
 /*
- * Propriétés de `changePreview` (spec brique 4 §12.2 étape 6, choix C6), sur des historiques de salle et des suites
- * de 1 à 3 opérations du coach tirés au hasard, sur les slots et les fiches de la fixture :
- * - un changement du coach accepté par `validateChange` et sans hausse selon `loadIncreases` ne fait monter aucune
- *   charge de travail du plan recalculé sans l'aperçu (`effectiveProgram`, `replayInstance`, `planWorkout`) ;
- * - `changePreview` ne lève jamais et rend deux fois la même sortie.
+ * Propriétés de la garde de hausse (spec brique 4 §12.2 étape 6, choix C6), sur des historiques tirés au hasard (la
+ * salle, la maison et une salle à grille différente, avec souvent un slot déjà suspendu) et des suites de 1 à 3
+ * opérations du coach, sur les slots et les fiches de la fixture :
+ * - un changement du coach accepté par `validateChange` et sans hausse selon `coachLoadGuard` ne fait monter, dans
+ *   aucun lieu, aucune charge de travail du plan recalculé sans l'aperçu (`effectiveProgram`, `replayInstance`,
+ *   `planWorkout`, suspensions levées) ;
+ * - la garde voit au moins les hausses de l'aperçu au lieu principal ;
+ * - `changePreview` et `coachLoadGuard` ne lèvent jamais et rendent deux fois la même sortie.
  */
 import {
   CoachOperationSchema,
   type Effort,
   type InstanceChangeOperation,
   type LoadMode,
+  REFERENCE_PROFILES,
   type ServedProgramTemplate,
   type SessionProfile,
   type SlotSpec,
@@ -24,15 +28,21 @@ import { type PlanInput, planWorkout } from '../../src/program/plan';
 import {
   type ChangePreviewInput,
   changePreview,
+  coachLoadGuard,
   lastLoadsOf,
   loadIncreases,
-  type SlotLoadPreview,
 } from '../../src/program/preview';
 import { type ReplayInput, replayInstance } from '../../src/program/replay';
 import type { PlanSheet } from '../../src/program/resolve';
-import type { AcceptedChange, ExerciseRecord, SessionRecord, SetRecord } from '../../src/program/types';
+import type {
+  AcceptedChange,
+  ExerciseRecord,
+  PlaceContext,
+  SessionRecord,
+  SetRecord,
+} from '../../src/program/types';
 import { validateChange } from '../../src/program/validate-change';
-import { GYM_AB, gymAb, PLACES, PROGRAM_CATALOG } from '../fixtures/program';
+import { GYM_AB, gymAb, PLACES, PROGRAM_CATALOG, place } from '../fixtures/program';
 
 const fail = (what: string): never => {
   throw new Error(`${what} absent`);
@@ -45,14 +55,29 @@ const DAY = 24 * HOUR;
 /** Lundi 2 novembre 2026, 18 h à Paris (UTC+1). */
 const T0 = Date.UTC(2026, 10, 2, 17);
 const RUNS = { numRuns: 100 };
+/** Les propriétés tournent en moins de 1 s seules ; la suite complète, en parallèle, peut les ralentir. */
+const PROPERTY_TIMEOUT_MS = 20_000;
 
 /** Catalogue des programmes avec sa mesure : les gainages se tiennent en secondes, le reste se compte en répétitions. */
 const CATALOG: PlanSheet[] = PROGRAM_CATALOG.map((s) => ({
   ...s,
   measure: s.movement_pattern === 'core_anti_extension' ? 'duration' : 'reps',
 }));
-const GYM = PLACES.find((p) => p.id === 'gym') ?? fail('lieu gym');
-const PLACE_MAP = new Map(PLACES.map((p) => [p.id, p]));
+/** Salle de référence à une autre grille : barre de 15 kg, disques de 2,5 kg, haltères et machines plus espacés. */
+const GRID: PlaceContext = {
+  ...place('gym-grid', REFERENCE_PROFILES.gym_reference),
+  loadSettings: {
+    barG: 15_000,
+    smallestPlateG: 2500,
+    dumbbellsG: Array.from({ length: 8 }, (_, i) => 5000 * (i + 1)),
+    machineStepG: 10_000,
+  },
+};
+/** La salle et la maison des fixtures, puis la salle à grille différente. */
+const ALL_PLACES: readonly PlaceContext[] = [...PLACES, GRID];
+const PLACE_IDS = ALL_PLACES.map((p) => p.id);
+const PLACE_MAP = new Map(ALL_PLACES.map((p) => [p.id, p]));
+const placeOf = (id: string) => PLACE_MAP.get(id) ?? fail(`lieu ${id}`);
 const SLOTS = GYM_AB.workouts.flatMap((w) => w.slots);
 const SLOT_IDS = SLOTS.map((s) => s.id);
 const SHEET_IDS = PROGRAM_CATALOG.map((s) => s.id);
@@ -60,6 +85,7 @@ const PATTERNS = [...new Set(PROGRAM_CATALOG.map((s) => s.movement_pattern))];
 const sheetsOf = (pattern: string) =>
   PROGRAM_CATALOG.filter((s) => s.movement_pattern === pattern).map((s) => s.id);
 const patternOf = (slotId: string) => SLOTS.find((s) => s.id === slotId)?.movementPattern ?? fail(slotId);
+const headOf = (slotId: string) => SLOTS.find((s) => s.id === slotId)?.exercises?.[0];
 
 const SERVED: ServedProgramTemplate[] = [
   { template: GYM_AB, available: true },
@@ -72,7 +98,7 @@ const SERVED: ServedProgramTemplate[] = [
 ];
 
 // ---------------------------------------------------------------------------------------------------------------
-// Historiques : séances de salle, chaque slot fait avec l'une de ses fiches (« Changer d'exercice » compris)
+// Historiques : chaque slot fait avec l'une de ses fiches faisables au lieu (« Changer d'exercice » compris)
 // ---------------------------------------------------------------------------------------------------------------
 
 const weighted = <T>(...entries: [T, number][]) =>
@@ -89,26 +115,38 @@ type DoneSeed = typeof arbDone extends fc.Arbitrary<infer T> ? T : never;
 
 const arbSession = fc.record({
   workoutId: fc.constantFrom('A', 'B'),
+  placeId: weighted<string>(['gym', 4], ['home', 1], ['gym-grid', 2]),
   gapDays: fc.integer({ min: 1, max: 3 }),
   done: fc.array(arbDone, { minLength: 5, maxLength: 5 }),
 });
 
+/** Slot déjà suspendu (douleur) après la séance de rang `after`, modulo le nombre de séances ; trois fois sur quatre. */
+const arbSuspension = fc.option(
+  fc.record({ slot: fc.constantFrom(...SLOT_IDS), after: fc.nat({ max: 7 }) }),
+  {
+    nil: null,
+    freq: 4,
+  },
+);
+
 const arbHistory = fc.record({
   profile: weighted<SessionProfile>(['adult', 4], ['cautious', 1]),
+  main: fc.constantFrom(...PLACE_IDS),
   sessions: fc.array(arbSession, { maxLength: 8 }),
+  suspension: arbSuspension,
 });
 type HistorySeed = typeof arbHistory extends fc.Arbitrary<infer T> ? T : never;
 
-/** Fiches faisables à la salle d'un slot, dans l'ordre : sa liste, ou les variantes de sa chaîne. */
-function sheetsFor(slot: SlotSpec): CatalogSheet[] {
+/** Fiches d'un slot faisables au lieu, dans l'ordre : sa liste, ou les variantes de sa chaîne. */
+function sheetsFor(slot: SlotSpec, at: PlaceContext): CatalogSheet[] {
   const sheets =
     slot.chain === undefined
       ? (slot.exercises ?? []).map((id) => PROGRAM_CATALOG.find((s) => s.id === id) ?? fail(`fiche ${id}`))
       : PROGRAM_CATALOG.filter((s) => s.chain_id === slot.chain);
-  return sheets.filter((s) => feasible(s, GYM.equipment));
+  return sheets.filter((s) => feasible(s, at.equipment));
 }
 
-/** Charges faites par mode de charge, sur les grilles par défaut de la salle. */
+/** Charges faites par mode de charge. */
 function loadsFor(mode: LoadMode): readonly (number | null)[] {
   switch (mode) {
     case 'barbell':
@@ -121,8 +159,15 @@ function loadsFor(mode: LoadMode): readonly (number | null)[] {
   }
 }
 
-function performed(slot: SlotSpec, seed: DoneSeed, sessionId: string, startedAt: number, position: number) {
-  const choices = sheetsFor(slot);
+function performed(
+  slot: SlotSpec,
+  seed: DoneSeed,
+  at: PlaceContext,
+  sessionId: string,
+  startedAt: number,
+  position: number,
+): ExerciseRecord | null {
+  const choices = sheetsFor(slot, at);
   const sheet = choices[seed.pick % choices.length];
   if (seed.skipped || sheet === undefined) return null;
   const spec = slot.sets.find((s) => s.kind === 'work');
@@ -149,7 +194,7 @@ function performed(slot: SlotSpec, seed: DoneSeed, sessionId: string, startedAt:
       loggedAt: startedAt + (position * 3 + n) * 60_000,
     }),
   );
-  const exercise: ExerciseRecord = {
+  return {
     id: `${sessionId}-${slot.id}`,
     slotId: slot.id,
     plannedExerciseId: sheet.id,
@@ -160,7 +205,6 @@ function performed(slot: SlotSpec, seed: DoneSeed, sessionId: string, startedAt:
     nextAdjustment: null,
     sets,
   };
-  return exercise;
 }
 
 function sessionsOf(h: HistorySeed): SessionRecord[] {
@@ -168,16 +212,17 @@ function sessionsOf(h: HistorySeed): SessionRecord[] {
   return h.sessions.map((seed, i) => {
     startedAt += seed.gapDays * DAY;
     const id = `s-${i}`;
+    const at = placeOf(seed.placeId);
     const slots = GYM_AB.workouts.find((w) => w.id === seed.workoutId)?.slots ?? [];
     const exercises = slots.flatMap((slot, k) => {
-      const e = performed(slot, seed.done[k] ?? fail(`graine ${k}`), id, startedAt, k + 1);
+      const e = performed(slot, seed.done[k] ?? fail(`graine ${k}`), at, id, startedAt, k + 1);
       return e === null ? [] : [e];
     });
     return {
       id,
       instanceId: INSTANCE,
       workoutId: seed.workoutId,
-      placeId: 'gym',
+      placeId: at.id,
       startedAt,
       endedAt: startedAt + HOUR,
       status: 'completed',
@@ -187,6 +232,21 @@ function sessionsOf(h: HistorySeed): SessionRecord[] {
       exercises,
     };
   });
+}
+
+/** Suspension pour douleur acceptée juste après une séance de l'historique (au début, sans séance). */
+function changesOf(h: HistorySeed, sessions: readonly SessionRecord[]): AcceptedChange[] {
+  if (h.suspension === null) return [];
+  const after = sessions[h.suspension.after % Math.max(1, sessions.length)];
+  return [
+    {
+      id: 'pain-p',
+      author: 'engine',
+      reasonCode: 'PAIN_SUSPEND',
+      decidedAt: (after?.endedAt ?? T0) + 1,
+      operations: [{ op: 'suspend_slot', slot: h.suspension.slot }],
+    },
+  ];
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -241,8 +301,6 @@ const OPERATIONS: Readonly<Record<string, fc.Arbitrary<InstanceChangeOperation>>
   ),
 };
 
-const headOf = (slotId: string) => SLOTS.find((s) => s.id === slotId)?.exercises?.[0];
-
 /**
  * Suite d'opérations pour un historique. En plus des générations par opération, `replace_exercise` vise souvent une
  * fiche déjà faite dans le slot, autre que sa tête de liste : un retour à une charge peut-être plus lourde, le cas
@@ -268,7 +326,7 @@ const arbCase = arbHistory.chain((history) =>
 type Case = typeof arbCase extends fc.Arbitrary<infer T> ? T : never;
 
 // ---------------------------------------------------------------------------------------------------------------
-// Aperçu, validation et plan recalculé
+// Aperçu, garde, validation et plan recalculé
 // ---------------------------------------------------------------------------------------------------------------
 
 interface Built {
@@ -287,13 +345,13 @@ function build(c: Case): Built {
     replay: {
       instance: { id: INSTANCE, snapshot: GYM_AB, daysPerWeek: 3, startedAt: T0 },
       sessions,
-      changes: [],
+      changes: changesOf(c.history, sessions),
       catalog: CATALOG,
       places: PLACE_MAP,
       overrides: new Map(),
     },
     plan: {
-      place: GYM,
+      place: placeOf(c.history.main),
       catalog: CATALOG,
       profile,
       ageBand: profile === 'cautious' ? 'minor' : 'adult',
@@ -321,20 +379,24 @@ const acceptedByValidator = (b: Built): boolean =>
     revision: 0,
     change: { id: CHANGE, author: 'coach', baseRevision: 0, operations: b.operations },
     catalog: PROGRAM_CATALOG,
-    places: PLACES,
+    places: ALL_PLACES,
     profile: b.profile,
     level: 'beginner',
     servedTemplates: SERVED,
     instanceTemplateVersion: 1,
   }).ok;
 
-/** Charges de travail prévues de chaque slot, toutes séances du programme, calculées sans l'aperçu. */
-function workLoads(b: Built, changes: readonly AcceptedChange[]): Map<string, number[]> {
+/**
+ * Charges de travail prévues de chaque slot au lieu `at`, toutes séances du programme, calculées sans l'aperçu et
+ * comme si aucun slot n'était suspendu (la charge qui reviendra à la reprise).
+ */
+function workLoads(b: Built, changes: readonly AcceptedChange[], at: PlaceContext): Map<string, number[]> {
   const { snapshot, daysPerWeek } = b.replay.instance;
-  const replay = replayInstance({ ...b.replay, changes });
+  const replayed = replayInstance({ ...b.replay, changes });
+  const replay = { ...replayed, program: { ...replayed.program, suspended: new Set<string>() } };
   const loads = new Map<string, number[]>();
   for (const workout of effectiveProgram(snapshot, daysPerWeek, changes).template.workouts) {
-    for (const e of planWorkout({ ...b.plan, replay, workoutId: workout.id }).exercises) {
+    for (const e of planWorkout({ ...b.plan, place: at, replay, workoutId: workout.id }).exercises) {
       const work = e.sets.flatMap((s) =>
         s.kind === 'work' && s.targetLoadG !== null ? [s.targetLoadG] : [],
       );
@@ -346,57 +408,78 @@ function workLoads(b: Built, changes: readonly AcceptedChange[]): Map<string, nu
 
 type Verdict = 'refused' | 'increase' | 'passed';
 
-/** Aperçu (deux fois, comparés) et verdict du gestionnaire : validateur, puis garde de hausse. */
-function judge(b: Built): { previews: SlotLoadPreview[]; verdict: Verdict } {
-  const previews = changePreview(previewInput(b));
-  expect(changePreview(previewInput(b))).toEqual(previews);
-  if (!acceptedByValidator(b)) return { previews, verdict: 'refused' };
-  return { previews, verdict: loadIncreases(previews).length > 0 ? 'increase' : 'passed' };
+/**
+ * Aperçu et garde (deux fois chacun, comparés), puis verdict du gestionnaire : validateur, puis garde. `hidden` : la
+ * garde trouve une hausse que l'aperçu au lieu principal ne montre pas (autre lieu, suspension).
+ */
+function judge(b: Built): { verdict: Verdict; hidden: boolean } {
+  const input = previewInput(b);
+  const previews = changePreview(input);
+  expect(changePreview(input)).toEqual(previews);
+  const guard = coachLoadGuard(input, ALL_PLACES);
+  expect(coachLoadGuard(input, ALL_PLACES)).toEqual(guard);
+  const shown = loadIncreases(previews);
+  for (const slotId of shown) expect(guard).toContain(slotId);
+  if (!acceptedByValidator(b)) return { verdict: 'refused', hidden: false };
+  return { verdict: guard.length > 0 ? 'increase' : 'passed', hidden: guard.length > shown.length };
 }
 
-describe('changePreview : propriétés de la garde de hausse', () => {
+describe('coachLoadGuard : propriétés de la garde de hausse', () => {
   it('chaque opération ouverte au coach a sa génération, et rien d’autre', () => {
     expect(Object.keys(OPERATIONS).sort()).toEqual(
       CoachOperationSchema.options.map((o) => o.shape.op.value).sort(),
     );
   });
 
-  it('accepté et sans hausse selon l’aperçu : aucune charge de travail recalculée au-dessus de celle d’avant', () => {
-    fc.assert(
-      fc.property(arbCase, (c) => {
-        for (const op of c.operations) expect(CoachOperationSchema.safeParse(op).success, op.op).toBe(true);
-        const b = build(c);
-        if (judge(b).verdict !== 'passed') return;
-        // `switch_template` termine l'instance : la suivante part en calibration, il n'y a pas de séance d'après.
-        if (b.operations.some((op) => op.op === 'switch_template')) return;
-        const change: AcceptedChange = {
-          id: CHANGE,
-          author: 'coach',
-          reasonCode: 'COACH_PROPOSAL',
-          decidedAt: b.decidedAt,
-          operations: b.operations,
-        };
-        const before = workLoads(b, []);
-        for (const [slotId, after] of workLoads(b, [change])) {
-          const was = before.get(slotId) ?? [];
-          if (after.length === 0 || was.length === 0) continue;
-          expect(Math.max(...after), slotId).toBeLessThanOrEqual(Math.min(...was));
-        }
-      }),
-      RUNS,
-    );
-  });
+  it(
+    'accepté et sans hausse selon la garde : dans aucun lieu, aucune charge de travail recalculée ne monte',
+    () => {
+      fc.assert(
+        fc.property(arbCase, (c) => {
+          for (const op of c.operations) expect(CoachOperationSchema.safeParse(op).success, op.op).toBe(true);
+          const b = build(c);
+          if (judge(b).verdict !== 'passed') return;
+          // `switch_template` termine l'instance : la suivante part en calibration, il n'y a pas de séance d'après.
+          if (b.operations.some((op) => op.op === 'switch_template')) return;
+          const change: AcceptedChange = {
+            id: CHANGE,
+            author: 'coach',
+            reasonCode: 'COACH_PROPOSAL',
+            decidedAt: b.decidedAt,
+            operations: b.operations,
+          };
+          for (const at of ALL_PLACES) {
+            const before = workLoads(b, b.replay.changes, at);
+            for (const [slotId, after] of workLoads(b, [...b.replay.changes, change], at)) {
+              const was = before.get(slotId) ?? [];
+              if (after.length === 0 || was.length === 0) continue;
+              expect(Math.max(...after), `${at.id} ${slotId}`).toBeLessThanOrEqual(Math.min(...was));
+            }
+          }
+        }),
+        RUNS,
+      );
+    },
+    PROPERTY_TIMEOUT_MS,
+  );
 
-  it('les cas tirés sont refusés par le validateur, arrêtés par la garde ou acceptés', () => {
-    const seen: Record<Verdict, number> = { refused: 0, increase: 0, passed: 0 };
-    fc.assert(
-      fc.property(arbCase, (c) => {
-        seen[judge(build(c)).verdict] += 1;
-      }),
-      { numRuns: 200, seed: 20261103 },
-    );
-    expect(seen.refused).toBeGreaterThan(0);
-    expect(seen.increase).toBeGreaterThan(0);
-    expect(seen.passed).toBeGreaterThan(0);
-  });
+  it(
+    'les cas tirés sont refusés par le validateur, arrêtés par la garde, parfois hors de l’aperçu, ou acceptés',
+    () => {
+      const seen = { refused: 0, increase: 0, passed: 0, hidden: 0 };
+      fc.assert(
+        fc.property(arbCase, (c) => {
+          const { verdict, hidden } = judge(build(c));
+          seen[verdict] += 1;
+          if (hidden) seen.hidden += 1;
+        }),
+        { numRuns: 300, seed: 20261103 },
+      );
+      expect(seen.refused).toBeGreaterThan(0);
+      expect(seen.increase).toBeGreaterThan(0);
+      expect(seen.hidden).toBeGreaterThan(0);
+      expect(seen.passed).toBeGreaterThan(0);
+    },
+    PROPERTY_TIMEOUT_MS,
+  );
 });

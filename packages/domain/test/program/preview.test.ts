@@ -1,11 +1,13 @@
 /*
  * `changePreview` et `loadIncreases` (spec brique 4 §12.2 étape 6, §12.4, choix C6) : charge prévue de chaque slot à
- * sa prochaine séance au lieu principal, avant et après un changement, et slots où elle monte. `lastLoadsOf` :
- * dernière charge de travail faite par exercice (calibration, spec brique 3 §4.3.5).
+ * sa prochaine séance au lieu principal, avant et après un changement, et slots où elle monte. `coachLoadGuard` : la
+ * garde du serveur, dans chaque lieu et sans les suspensions. `lastLoadsOf` : dernière charge de travail faite par
+ * exercice (calibration, spec brique 3 §4.3.5).
  */
 import {
   type ChangeAuthor,
   defaultLoadSettings,
+  type EquipmentCode,
   type InstanceChangeOperation,
   REFERENCE_PROFILES,
   type SetKind,
@@ -14,13 +16,20 @@ import { describe, expect, it } from 'vitest';
 import {
   type ChangePreviewInput,
   changePreview,
+  coachLoadGuard,
   lastLoadsOf,
   loadIncreases,
   type SlotLoadPreview,
 } from '../../src/program/preview';
 import type { PlanSheet } from '../../src/program/resolve';
-import type { ExerciseRecord, SessionRecord, SetRecord } from '../../src/program/types';
-import { GYM_AB, PLACES, PROGRAM_CATALOG, place } from '../fixtures/program';
+import type {
+  AcceptedChange,
+  ExerciseRecord,
+  PlaceContext,
+  SessionRecord,
+  SetRecord,
+} from '../../src/program/types';
+import { accepted, GYM_AB, PROGRAM_CATALOG, place } from '../fixtures/program';
 
 const fail = (what: string): never => {
   throw new Error(`${what} absent`);
@@ -47,6 +56,17 @@ const GYM = {
   ...place('gym', REFERENCE_PROFILES.gym_reference),
   loadSettings: { ...defaultLoadSettings('gym'), barG: 20_000, smallestPlateG: 1250 },
 };
+/** Maison avec des haltères de 10, 20 et 30 kg : ni barre ni presse à cuisses. */
+const HOME = {
+  ...place('home', REFERENCE_PROFILES.home_small_equipment, 'home'),
+  loadSettings: { ...defaultLoadSettings('home'), dumbbellsG: [10_000, 20_000, 30_000] },
+};
+/** La salle sans un appareil. */
+const gymWithout = (id: string, code: EquipmentCode): PlaceContext => ({
+  ...GYM,
+  id,
+  equipment: new Set([...GYM.equipment].filter((c) => c !== code)),
+});
 
 // ---------------------------------------------------------------------------------------------------------------
 // Séances
@@ -96,24 +116,35 @@ function exercise(slotId: string | null, exerciseId: string, sets: SetRecord[]):
   };
 }
 
-/** 3 × 6 faites à `loadG`, effort « correct » sur la dernière : la calibration se termine à cette charge. */
-function done(slotId: string, exerciseId: string, loadG: number, loggedAt: number): ExerciseRecord {
+/** Séries faites à `loadG`, effort « correct » sur la dernière : la calibration se termine à cette charge. */
+function done(slotId: string, exerciseId: string, loadG: number, loggedAt: number, reps = 6): ExerciseRecord {
   const loadMode = CATALOG.find((s) => s.id === exerciseId)?.load_mode ?? fail(`fiche ${exerciseId}`);
   return exercise(
     slotId,
     exerciseId,
     [1, 2, 3].map((position) =>
-      set('work', loadG, loggedAt + position, { position, loadMode, effort: position === 3 ? 'ok' : null }),
+      set('work', loadG, loggedAt + position, {
+        position,
+        loadMode,
+        reps,
+        effort: position === 3 ? 'ok' : null,
+      }),
     ),
   );
 }
 
-function session(id: string, day: number, workoutId: string, exercises: ExerciseRecord[]): SessionRecord {
+function session(
+  id: string,
+  day: number,
+  workoutId: string,
+  exercises: ExerciseRecord[],
+  placeId = 'gym',
+): SessionRecord {
   return {
     id,
     instanceId: INSTANCE,
     workoutId,
-    placeId: 'gym',
+    placeId,
     startedAt: at(day),
     endedAt: at(day) + HOUR,
     status: 'completed',
@@ -131,25 +162,37 @@ const PRESS_60_THEN_SQUAT_40 = [
   session('s-0', 0, 'A', [done('A1', 'leg-press', 60_000, at(0))]),
   ...SQUAT_40,
 ];
+/** La même chose, avec un goblet squat à 20 kg fait à la maison entre les deux. */
+const PRESS_60_GOBLET_20_SQUAT_40 = [
+  session('s-0', 0, 'A', [done('A1', 'leg-press', 60_000, at(0))]),
+  session('s-1', 1, 'A', [done('A1', 'goblet-squat', 20_000, at(1))], 'home'),
+  ...SQUAT_40,
+];
+
+type InputOptions = {
+  author?: ChangeAuthor;
+  place?: PlaceContext;
+  changes?: AcceptedChange[];
+};
 
 function previewInput(
   sessions: readonly SessionRecord[],
   operations: InstanceChangeOperation[],
-  author: ChangeAuthor = 'coach',
+  o: InputOptions = {},
 ): ChangePreviewInput {
   return {
     replay: {
       instance: { id: INSTANCE, snapshot: GYM_AB, daysPerWeek: 3, startedAt: at(-1) },
       sessions,
-      changes: [],
+      changes: o.changes ?? [],
       catalog: CATALOG,
-      places: new Map([GYM, ...PLACES.filter((p) => p.id !== 'gym')].map((p) => [p.id, p])),
+      places: new Map([GYM, HOME].map((p) => [p.id, p])),
       overrides: new Map(),
     },
-    change: { id: CHANGE, author, operations },
+    change: { id: CHANGE, author: o.author ?? 'coach', operations },
     decidedAt: at(5),
     plan: {
-      place: GYM,
+      place: o.place ?? GYM,
       catalog: CATALOG,
       profile: 'adult',
       ageBand: 'adult',
@@ -167,6 +210,8 @@ const touchedIds = (previews: readonly SlotLoadPreview[]) =>
   previews.filter((p) => p.touched).map((p) => p.slotId);
 
 const ALL_SLOTS = GYM_AB.workouts.flatMap((w) => w.slots.map((s) => s.id));
+
+const TO_LEG_PRESS: InstanceChangeOperation = { op: 'replace_exercise', slot: 'A1', exercise: 'leg-press' };
 
 // ---------------------------------------------------------------------------------------------------------------
 // Cas
@@ -211,8 +256,7 @@ describe('changePreview : charge prévue avant et après', () => {
   });
 
   it('remplacement vers une fiche déjà faite à 60 kg dans ce slot, la courante à 40 kg : hausse', () => {
-    const op: InstanceChangeOperation = { op: 'replace_exercise', slot: 'A1', exercise: 'leg-press' };
-    const previews = changePreview(previewInput(PRESS_60_THEN_SQUAT_40, [op]));
+    const previews = changePreview(previewInput(PRESS_60_THEN_SQUAT_40, [TO_LEG_PRESS]));
     expect(slotOf(previews, 'A1')).toMatchObject({
       touched: true,
       before: { kind: 'load', loadG: 40_000 },
@@ -222,10 +266,13 @@ describe('changePreview : charge prévue avant et après', () => {
   });
 
   it('la même hausse proposée par le moteur ou l’utilisateur : le même aperçu', () => {
-    const op: InstanceChangeOperation = { op: 'replace_exercise', slot: 'A1', exercise: 'leg-press' };
-    const coach = changePreview(previewInput(PRESS_60_THEN_SQUAT_40, [op], 'coach'));
-    expect(changePreview(previewInput(PRESS_60_THEN_SQUAT_40, [op], 'engine'))).toEqual(coach);
-    expect(changePreview(previewInput(PRESS_60_THEN_SQUAT_40, [op], 'user'))).toEqual(coach);
+    const coach = changePreview(previewInput(PRESS_60_THEN_SQUAT_40, [TO_LEG_PRESS]));
+    expect(changePreview(previewInput(PRESS_60_THEN_SQUAT_40, [TO_LEG_PRESS], { author: 'engine' }))).toEqual(
+      coach,
+    );
+    expect(changePreview(previewInput(PRESS_60_THEN_SQUAT_40, [TO_LEG_PRESS], { author: 'user' }))).toEqual(
+      coach,
+    );
   });
 
   it('chaîne de gainage remplacée par une fiche lestée jamais faite : sans charge → calibration', () => {
@@ -311,6 +358,7 @@ describe('changePreview : charge prévue avant et après', () => {
     const input = previewInput(SQUAT_40, [{ op: 'lighten_exercise', slot: 'A1' }]);
     const copy = structuredClone(input);
     changePreview(input);
+    coachLoadGuard(input, [GYM, HOME]);
     expect(input).toEqual(copy);
   });
 });
@@ -337,6 +385,92 @@ describe('loadIncreases', () => {
         preview('up-2', { kind: 'load', loadG: 8000 }, { kind: 'load', loadG: 10_000 }),
       ]),
     ).toEqual(['up', 'up-2']);
+  });
+});
+
+describe('coachLoadGuard : la garde du serveur, dans chaque lieu, sans les suspensions', () => {
+  it('la hausse au lieu principal : la même que loadIncreases, même si la liste des lieux l’oublie', () => {
+    const input = previewInput(PRESS_60_THEN_SQUAT_40, [TO_LEG_PRESS]);
+    expect(coachLoadGuard(input, [GYM])).toEqual(['A1']);
+    expect(coachLoadGuard(input, [HOME])).toEqual(['A1']);
+    expect(coachLoadGuard(input, [])).toEqual(['A1']);
+  });
+
+  it('hausse dans un autre lieu que le principal : la salle passe de 40 à 60 kg, la maison ne bouge pas', () => {
+    const input = previewInput(PRESS_60_GOBLET_20_SQUAT_40, [TO_LEG_PRESS], { place: HOME });
+    // Au lieu principal (la maison), le goblet squat reste à 20 kg : l'aperçu ne voit rien.
+    expect(slotOf(changePreview(input), 'A1')).toMatchObject({
+      before: { kind: 'load', loadG: 20_000 },
+      after: { kind: 'load', loadG: 20_000 },
+    });
+    expect(loadIncreases(changePreview(input))).toEqual([]);
+    // À la salle, la presse à cuisses à 60 kg remplace le squat à 40 kg.
+    expect(slotOf(changePreview({ ...input, plan: { ...input.plan, place: GYM } }), 'A1')).toMatchObject({
+      before: { kind: 'load', loadG: 40_000 },
+      after: { kind: 'load', loadG: 60_000 },
+    });
+    expect(coachLoadGuard(input, [HOME, GYM])).toEqual(['A1']);
+  });
+
+  it('remplacement et suspension dans le même changement : la suspension ne masque pas la hausse', () => {
+    const input = previewInput(PRESS_60_THEN_SQUAT_40, [TO_LEG_PRESS, { op: 'suspend_slot', slot: 'A1' }]);
+    // L'aperçu affiché garde la suspension.
+    expect(slotOf(changePreview(input), 'A1')).toMatchObject({
+      before: { kind: 'load', loadG: 40_000 },
+      after: { kind: 'none' },
+    });
+    expect(loadIncreases(changePreview(input))).toEqual([]);
+    expect(coachLoadGuard(input, [GYM])).toEqual(['A1']);
+  });
+
+  it('slot déjà suspendu pour douleur, remplacé par le coach : la hausse se voit à la reprise', () => {
+    const changes: AcceptedChange[] = [
+      {
+        ...accepted('pain-1', at(3), [{ op: 'suspend_slot', slot: 'A1' }], 'engine'),
+        reasonCode: 'PAIN_SUSPEND',
+      },
+    ];
+    const input = previewInput(PRESS_60_THEN_SQUAT_40, [TO_LEG_PRESS], { changes });
+    expect(slotOf(changePreview(input), 'A1')).toMatchObject({
+      before: { kind: 'none' },
+      after: { kind: 'none' },
+    });
+    expect(loadIncreases(changePreview(input))).toEqual([]);
+    expect(coachLoadGuard(input, [GYM])).toEqual(['A1']);
+  });
+
+  it('aucune hausse dans aucun lieu : rien', () => {
+    const input = previewInput(PRESS_60_GOBLET_20_SQUAT_40, [{ op: 'lighten_exercise', slot: 'A1' }], {
+      place: HOME,
+    });
+    expect(coachLoadGuard(input, [HOME, GYM])).toEqual([]);
+    expect(coachLoadGuard(input, [])).toEqual([]);
+  });
+
+  it('slots de tous les lieux réunis, triés et sans doublon', () => {
+    // A1 monte là où la presse à cuisses existe ; A3 là où le tirage horizontal à la poulie existe.
+    const sessions = [
+      session('s-0', 0, 'A', [
+        done('A1', 'leg-press', 60_000, at(0)),
+        done('A3', 'seated-cable-row', 60_000, at(0), 10),
+      ]),
+      session('s-2', 2, 'A', [
+        done('A1', 'back-squat', 40_000, at(2)),
+        done('A3', 'barbell-row', 40_000, at(2), 10),
+      ]),
+    ];
+    const operations: InstanceChangeOperation[] = [
+      { op: 'replace_exercise', slot: 'A3', exercise: 'seated-cable-row' },
+      TO_LEG_PRESS,
+    ];
+    const noLegPress = gymWithout('gym-no-leg-press', 'leg_press');
+    const noSeatedRow = gymWithout('gym-no-seated-row', 'seated_row');
+    const input = previewInput(sessions, operations, { place: noLegPress });
+    expect(coachLoadGuard(input, [noLegPress])).toEqual(['A3']);
+    expect(coachLoadGuard({ ...input, plan: { ...input.plan, place: noSeatedRow } }, [noSeatedRow])).toEqual([
+      'A1',
+    ]);
+    expect(coachLoadGuard(input, [noLegPress, noSeatedRow, GYM])).toEqual(['A1', 'A3']);
   });
 });
 
@@ -371,5 +505,18 @@ describe('lastLoadsOf', () => {
     // L'ordre des séances ne compte pas : seule l'heure des séries.
     expect(lastLoadsOf([newer, older])).toEqual(expected);
     expect(lastLoadsOf([])).toEqual(new Map());
+  });
+
+  it('à la même heure, la série au plus grand identifiant (ordre binaire), quel que soit l’ordre de lecture', () => {
+    const loggedAt = at(1);
+    const a = session('s-a', 1, 'A', [
+      exercise('A1', 'back-squat', [set('work', 50_000, loggedAt, { id: 'set-B' })]),
+    ]);
+    // « set-a » > « set-B » en ordre binaire (minuscule après majuscule), contrairement à `localeCompare`.
+    const b = session('s-b', 1, 'A', [
+      exercise('A1', 'back-squat', [set('work', 45_000, loggedAt, { id: 'set-a' })]),
+    ]);
+    expect(lastLoadsOf([a, b])).toEqual(new Map([['back-squat', 45_000]]));
+    expect(lastLoadsOf([b, a])).toEqual(new Map([['back-squat', 45_000]]));
   });
 });
