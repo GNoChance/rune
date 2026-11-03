@@ -1,3 +1,4 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { SentenceBuffer } from '../../src/coach/sentences';
 
@@ -59,5 +60,47 @@ describe('SentenceBuffer', () => {
     buffer.push('Salut');
     expect(buffer.flush()).toEqual(['Salut']);
     expect(buffer.flush()).toEqual([]);
+  });
+});
+
+describe('SentenceBuffer, limite de 400 et paires de substitution', () => {
+  it('ne coupe pas un émoji au seuil de 400', () => {
+    const buffer = new SentenceBuffer();
+    const text = `${'a'.repeat(399)}💪${'b'.repeat(10)}`;
+    const out = buffer.push(text);
+    expect(out).toEqual(['a'.repeat(399)]);
+    expect(buffer.flush()).toEqual([`💪${'b'.repeat(10)}`]);
+  });
+
+  it('garde un émoji entier quand il tient dans les 400', () => {
+    const buffer = new SentenceBuffer();
+    const out = buffer.push(`${'a'.repeat(398)}💪${'b'.repeat(10)}`);
+    expect(out).toEqual([`${'a'.repeat(398)}💪`]);
+  });
+});
+
+describe('SentenceBuffer, invariance au découpage du flux', () => {
+  const piece = fc.constantFrom('a', 'b', ' ', ' ', '.', '!', '?', '…', '\n', '1', '2', ',', '💪', '🏋️', 'é');
+  const textArb = fc.array(piece, { maxLength: 900 }).map((parts) => parts.join(''));
+
+  it('même texte et mêmes phrases quel que soit le découpage en unités UTF-16', () => {
+    fc.assert(
+      fc.property(textArb, fc.array(fc.nat(1800), { maxLength: 40 }), (text, rawCuts) => {
+        const cuts = [...new Set(rawCuts.map((c) => Math.min(c, text.length)))].sort((a, b) => a - b);
+        const chunked = new SentenceBuffer();
+        const sentences: string[] = [];
+        let from = 0;
+        for (const cut of [...cuts, text.length]) {
+          sentences.push(...chunked.push(text.slice(from, cut)));
+          from = cut;
+        }
+        sentences.push(...chunked.flush());
+
+        const whole = new SentenceBuffer();
+        const expected = [...whole.push(text), ...whole.flush()];
+        expect(sentences.join('')).toBe(text);
+        expect(sentences).toEqual(expected);
+      }),
+    );
   });
 });

@@ -11,7 +11,7 @@ function findCut(text: string): number {
     const next = text[i + 1];
     // Fin de tampon : on attend la suite (un « . » peut précéder un chiffre).
     if (next === undefined) return -1;
-    if (next === ' ') return i + 2;
+    if (next === ' ') return i + 2 <= MAX_UNBROKEN ? i + 2 : -1;
   }
   return -1;
 }
@@ -29,8 +29,11 @@ export class SentenceBuffer {
         out.push(this.pending.slice(0, cut));
         this.pending = this.pending.slice(cut);
       } else if (this.pending.length >= MAX_UNBROKEN) {
-        out.push(this.pending.slice(0, MAX_UNBROKEN));
-        this.pending = this.pending.slice(MAX_UNBROKEN);
+        // Ne jamais couper une paire de substitution UTF-16 en deux.
+        const last = this.pending.charCodeAt(MAX_UNBROKEN - 1);
+        const size = last >= 0xd800 && last <= 0xdbff ? MAX_UNBROKEN - 1 : MAX_UNBROKEN;
+        out.push(this.pending.slice(0, size));
+        this.pending = this.pending.slice(size);
       } else {
         return out;
       }

@@ -9,7 +9,9 @@ export interface Quantity {
 
 export type AllowedValues = Readonly<Record<UnitFamily, ReadonlySet<string>>>;
 
-const THOUSANDS_SPACES = /[    ]/g;
+// Espaces admises : normale, insécable, fine insécable, fine.
+const SPACES = /[    ]+/g;
+const SP = '[ \\u00a0\\u202f\\u2009]';
 
 const UNIT_FAMILIES: Readonly<Record<string, UnitFamily>> = {
   kg: 'mass',
@@ -19,6 +21,7 @@ const UNIT_FAMILIES: Readonly<Record<string, UnitFamily>> = {
   kilogrammes: 'mass',
   '%': 'percent',
   'pour cent': 'percent',
+  pourcent: 'percent',
   kcal: 'nutrition',
   cal: 'nutrition',
   calorie: 'nutrition',
@@ -29,12 +32,19 @@ const UNIT_FAMILIES: Readonly<Record<string, UnitFamily>> = {
   grammes: 'nutrition',
 };
 
-// Nombre (milliers par espaces, décimale « , » ou « . »), puis unité en fin de mot.
-const QUANTITY =
-  /(?<![\d.,])(\d+(?:[    ]\d{3})*(?:[.,]\d+)?)[    ]?(kilogrammes?|kilos?|kg|kcal|calories?|cal|grammes?|gr|g|%|pour[  ]cent)(?![\p{L}\d])/giu;
+const NUMBER = `\\d+(?:${SP}\\d{3})*(?:[.,]\\d+)?`;
+// « 8 à 10 », « 10-15 », « 10–15 », « entre 8 et 10 » : les deux nombres sont contrôlés.
+const RANGE_SEPARATOR = `${SP}*(?:-|\\u2013|\\u2014|à|et)${SP}*`;
+// Nombre (ou fourchette) puis unité en fin de mot. Le nombre n'est précédé ni d'un chiffre,
+// ni d'un chiffre suivi d'un séparateur décimal.
+const QUANTITY = new RegExp(
+  `(?<!\\d)(?<!\\d[.,])(?:(${NUMBER})${RANGE_SEPARATOR})?(${NUMBER})${SP}*` +
+    `(kilogrammes?|kilos?|kg|kcal|calories?|cal|grammes?|gr|g|%|pour${SP}*cent|pourcent)(?![\\p{L}\\d])`,
+  'giud',
+);
 
 export function normalizeNumber(raw: string): string {
-  const compact = raw.replace(THOUSANDS_SPACES, '').replace(',', '.');
+  const compact = raw.replace(SPACES, '').replace(',', '.');
   if (!compact.includes('.')) return compact;
   return compact.replace(/0+$/, '').replace(/\.$/, '');
 }
@@ -42,10 +52,15 @@ export function normalizeNumber(raw: string): string {
 export function findQuantities(text: string): Quantity[] {
   const found: Quantity[] = [];
   for (const match of text.matchAll(QUANTITY)) {
-    const unit = match[2] as string;
-    const family = UNIT_FAMILIES[unit.toLowerCase().replace(/[ ]/g, ' ')];
+    const unit = match[3] as string;
+    const family = UNIT_FAMILIES[unit.toLowerCase().replace(SPACES, ' ')];
     if (!family) continue;
-    found.push({ value: normalizeNumber(match[1] as string), unit, family, index: match.index });
+    for (const group of [1, 2]) {
+      const raw = match[group];
+      const at = match.indices?.[group];
+      if (raw === undefined || at === undefined) continue;
+      found.push({ value: normalizeNumber(raw), unit, family, index: at[0] });
+    }
   }
   return found;
 }
@@ -58,6 +73,8 @@ function familyOfKey(key: string | undefined): UnitFamily | undefined {
   return undefined;
 }
 
+const NUMERIC_STRING = new RegExp(`^[-+]?${NUMBER}$`);
+
 export function allowedValues(sources: {
   brief: unknown;
   toolResults: readonly unknown[];
@@ -69,23 +86,32 @@ export function allowedValues(sources: {
     percent: new Set(),
     nutrition: new Set(),
   };
-  const add = (family: UnitFamily, value: number | string) => {
+  // Le signe est ignoré (comme dans `findQuantities`) ; arrondi à 3 décimales (0.1 + 0.2 -> 0.3).
+  const addNumber = (family: UnitFamily, value: number) => {
     if (family === 'nutrition' && !sources.nutritionFull) return;
-    sets[family].add(normalizeNumber(String(value)));
+    sets[family].add(normalizeNumber(String(Math.abs(Math.round(value * 1000) / 1000))));
   };
 
   // `key` est la clé la plus proche, transmise à travers les tableaux.
   const walk = (node: unknown, key: string | undefined): void => {
     if (typeof node === 'number') {
       const family = familyOfKey(key);
-      if (family) add(family, node);
+      if (family) addNumber(family, node);
     } else if (typeof node === 'string') {
-      for (const quantity of findQuantities(node)) add(quantity.family, quantity.value);
+      const family = familyOfKey(key);
+      const text = node.trim();
+      if (family && NUMERIC_STRING.test(text)) {
+        addNumber(family, Number(normalizeNumber(text)));
+      } else {
+        for (const quantity of findQuantities(node)) {
+          addNumber(quantity.family, Number(quantity.value));
+        }
+      }
     } else if (Array.isArray(node)) {
       for (const item of node) {
         // Série en tuple [load_kg, reps, duration_s, effort] : seule la position 0 est une masse.
         if (key === 'sets' && Array.isArray(item)) {
-          if (typeof item[0] === 'number') add('mass', item[0]);
+          if (typeof item[0] === 'number') addNumber('mass', item[0]);
         } else {
           walk(item, key);
         }
@@ -97,6 +123,6 @@ export function allowedValues(sources: {
 
   walk(sources.brief, undefined);
   for (const result of sources.toolResults) walk(result, undefined);
-  for (const constant of sources.constants) add('percent', constant);
+  for (const constant of sources.constants) addNumber('percent', constant);
   return sets;
 }

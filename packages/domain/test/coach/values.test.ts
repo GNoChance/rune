@@ -112,3 +112,118 @@ describe('allowedValues', () => {
     expect(allowed.mass.size).toBe(0);
   });
 });
+
+describe('findQuantities, fourchettes et variantes', () => {
+  const pairs = (text: string) => findQuantities(text).map((q) => [q.value, q.family]);
+
+  it.each([
+    [
+      'de 8 à 10 kg',
+      [
+        ['8', 'mass'],
+        ['10', 'mass'],
+      ],
+    ],
+    [
+      '8 à 10 kg',
+      [
+        ['8', 'mass'],
+        ['10', 'mass'],
+      ],
+    ],
+    [
+      '10-15 %',
+      [
+        ['10', 'percent'],
+        ['15', 'percent'],
+      ],
+    ],
+    [
+      '10–15 %',
+      [
+        ['10', 'percent'],
+        ['15', 'percent'],
+      ],
+    ],
+    [
+      'entre 8 et 10 kg',
+      [
+        ['8', 'mass'],
+        ['10', 'mass'],
+      ],
+    ],
+    [
+      'entre 100 et 150 g',
+      [
+        ['100', 'nutrition'],
+        ['150', 'nutrition'],
+      ],
+    ],
+  ])('rend les deux nombres de « %s »', (text, expected) => {
+    expect(pairs(text)).toEqual(expected);
+  });
+
+  it("donne l'index de chaque nombre de la fourchette", () => {
+    const found = findQuantities('de 8 à 10 kg');
+    expect(found.map((q) => q.index)).toEqual([3, 7]);
+  });
+
+  it('reconnaît « pourcent » en un mot', () => {
+    expect(pairs('12 pourcent')).toEqual([['12', 'percent']]);
+    expect(pairs('12 pour cent')).toEqual([['12', 'percent']]);
+  });
+
+  it.each([' ', ' ', ' ', ' ', '     '])(
+    "admet une suite d'espaces entre le nombre et l'unité (%j)",
+    (spaces) => {
+      expect(pairs(`Mets 80${spaces}kg`)).toEqual([['80', 'mass']]);
+    },
+  );
+
+  it("ne lit qu'un nombre pour « 62,5 kg » mais contrôle « poids,62 kg »", () => {
+    expect(pairs('62,5 kg')).toEqual([['62.5', 'mass']]);
+    expect(pairs('poids,62 kg')).toEqual([['62', 'mass']]);
+  });
+
+  it('ignore le signe', () => {
+    expect(pairs('tu as pris -2,5 kg')).toEqual([['2.5', 'mass']]);
+  });
+});
+
+describe('allowedValues, signe, arrondi et chaînes numériques', () => {
+  it('stocke la valeur absolue (le signe est ignoré des deux côtés)', () => {
+    const allowed = allowedValues({ ...NO_SOURCES, brief: { delta_kg: -2.5 } });
+    expect(allowed.mass.has('2.5')).toBe(true);
+    expect(allowed.mass.has('-2.5')).toBe(false);
+    const sets = allowedValues({ ...NO_SOURCES, brief: { sets: [[-10, 5, null, null]] } });
+    expect(sets.mass.has('10')).toBe(true);
+  });
+
+  it('arrondit à 3 décimales avant de normaliser', () => {
+    const allowed = allowedValues({ ...NO_SOURCES, brief: { total_kg: 0.1 + 0.2 } });
+    expect(allowed.mass.has('0.3')).toBe(true);
+  });
+
+  it('compte une chaîne numérique sous une clé à unité comme le nombre', () => {
+    const allowed = allowedValues({
+      ...NO_SOURCES,
+      nutritionFull: true,
+      brief: { y_kg: '62.5', z_pct: '15', w_kcal: '2 000', v_g: '-3,5' },
+    });
+    expect(allowed.mass.has('62.5')).toBe(true);
+    expect(allowed.percent.has('15')).toBe(true);
+    expect(allowed.nutrition.has('2000')).toBe(true);
+    expect(allowed.nutrition.has('3.5')).toBe(true);
+  });
+
+  it('laisse une chaîne numérique sans clé à unité sans famille', () => {
+    const allowed = allowedValues({ ...NO_SOURCES, brief: { reps: '8' } });
+    expect(allowed.mass.size + allowed.percent.size + allowed.nutrition.size).toBe(0);
+  });
+
+  it('autorise « 2,5 kg » quand le dossier porte -2.5 (pas de faux positif)', () => {
+    const allowed = allowedValues({ ...NO_SOURCES, brief: { delta_kg: -2.5 } });
+    const [quantity] = findQuantities('tu as pris 2,5 kg');
+    expect(allowed[quantity?.family ?? 'mass'].has(quantity?.value ?? '')).toBe(true);
+  });
+});
