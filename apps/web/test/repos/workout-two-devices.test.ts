@@ -1,102 +1,13 @@
 // @vitest-environment node
-import { createMonotonicUuidV7 } from '@rune/domain';
-import {
-  createTestContext,
-  createUserAndLogin,
-  enroll,
-  login,
-  seedSheet,
-  sheetFixture,
-  type TestContext,
-  templateFixture,
-} from '@rune/server/testing';
-import { afterEach, describe, expect, it } from 'vitest';
-import { createApiClient } from '../../src/api/client';
-import type { AppServices } from '../../src/app-services';
+import { createUserAndLogin, enroll, login, type TestContext, templateFixture } from '@rune/server/testing';
+import { describe, expect, it } from 'vitest';
 import { nextLines } from '../../src/features/workout/summary-model';
-import { type AppDb, createAppDb } from '../../src/local-db/db';
-import { setMeta } from '../../src/local-db/meta';
-import { createRepos, type Repos } from '../../src/repos';
 import type { WorkoutSessionView } from '../../src/repos/workout-repo';
-import { createSyncEngine, type SyncEngine } from '../../src/sync/engine';
-import type { SyncTransport } from '../../src/sync/transport';
-import { createFakeSyncEngine } from '../support/fake-api';
-import { inProcessTransport } from '../support/in-process-transport';
+import { createDevice, startServerWith } from '../support/two-devices';
 import { PLAN } from '../support/workout';
 
 const IP = '100.64.0.2';
 const HOUR = 3_600_000;
-const randomBytes = (n: number) => crypto.getRandomValues(new Uint8Array(n));
-
-interface Device {
-  db: AppDb;
-  engine: SyncEngine;
-  repos: Repos;
-  cookie: string;
-  /** Réseau coupé : chaque requête échoue comme un `fetch` hors ligne. */
-  offline: boolean;
-}
-
-let ctx: TestContext | undefined;
-const devices: Device[] = [];
-const databases = new Set<AppDb>();
-
-afterEach(async () => {
-  for (const d of devices.splice(0)) d.engine.stop();
-  for (const db of databases) await db.delete();
-  databases.clear();
-  ctx?.close();
-  ctx = undefined;
-});
-
-/** Vrai serveur en mémoire, contrôles des séances compris (`SYNC_HOOKS`), avec les fiches du plan publiées. */
-async function server(): Promise<TestContext> {
-  ctx = await createTestContext();
-  for (const id of ['back-squat', 'dumbbell-lunge']) await seedSheet(ctx, sheetFixture(id));
-  return ctx;
-}
-
-/**
- * Un appareil : sa base, son moteur, ses dépôts. `db` donné : la même base rouverte (appli relancée), avec un moteur
- * neuf. Les dépôts demandent la synchro à un faux moteur (le test la lance lui-même, appareil par appareil) mais lisent
- * l'état du vrai (`pulledThisRun`).
- */
-async function device(
-  c: TestContext,
-  userId: string,
-  cookie: string,
-  o: { deviceId?: string; db?: AppDb; offline?: boolean } = {},
-): Promise<Device> {
-  const now = () => c.clock.now().getTime();
-  const db = o.db ?? createAppDb(`two-devices-${o.deviceId}-${crypto.randomUUID()}`);
-  databases.add(db);
-  if (!o.db) {
-    await setMeta(db, 'userId', userId);
-    await setMeta(db, 'deviceId', o.deviceId ?? 'dev');
-  }
-  const newOpId = createMonotonicUuidV7(now, randomBytes);
-  const d = { db, cookie, offline: o.offline ?? false } as Device;
-  const inner = inProcessTransport(c, () => d.cookie);
-  const transport: SyncTransport = {
-    fetch: (path, init) =>
-      d.offline ? Promise.reject(new TypeError('Failed to fetch')) : inner.fetch(path, init),
-  };
-  d.engine = createSyncEngine({ db, transport, now, newOpId, triggers: () => () => {} });
-  const fake = createFakeSyncEngine();
-  const services: AppServices = {
-    db,
-    api: createApiClient(transport, { onUnauthenticated: () => {}, onAccountDeleted: () => {} }),
-    sync: { ...fake, getState: () => d.engine.getState(), subscribe: (fn) => d.engine.subscribe(fn) },
-    transport,
-    now,
-    newOpId,
-    swStatus: async () => null,
-  };
-  d.repos = createRepos(services);
-  devices.push(d);
-  return d;
-}
-
 /** Séance telle que la montrent les deux appareils, sans ce qui dépend de l'appareil qui la lit. */
 const shared = ({ heldHere: _heldHere, ...rest }: WorkoutSessionView) => rest;
 
@@ -155,10 +66,10 @@ const nowIso = (c: TestContext) => c.clock.now().toISOString();
 
 describe('même séance sur deux appareils (Review Focus 3)', () => {
   it('« Continuer ici » puis le premier continue hors ligne : aucune série en double, dernière écriture gagnante, lecture seule après le pull', async () => {
-    const c = await server();
+    const c = await startServerWith(['back-squat', 'dumbbell-lunge']);
     const user = await createUserAndLogin(c);
-    const a = await device(c, user.id, user.cookie, { deviceId: 'dev-A' });
-    const b = await device(c, user.id, await login(c, user.username, user.password, IP), {
+    const a = await createDevice(c, user.id, user.cookie, { deviceId: 'dev-A' });
+    const b = await createDevice(c, user.id, await login(c, user.username, user.password, IP), {
       deviceId: 'dev-B',
     });
 
@@ -222,10 +133,10 @@ describe('même séance sur deux appareils (Review Focus 3)', () => {
   });
 
   it('A rouvre l’appli hors ligne après que B a repris, saisi et terminé : aucune clôture avant un pull, rien de B supprimé (R33)', async () => {
-    const c = await server();
+    const c = await startServerWith(['back-squat', 'dumbbell-lunge']);
     const user = await createUserAndLogin(c);
-    const a = await device(c, user.id, user.cookie, { deviceId: 'dev-A' });
-    const b = await device(c, user.id, await login(c, user.username, user.password, IP), {
+    const a = await createDevice(c, user.id, user.cookie, { deviceId: 'dev-A' });
+    const b = await createDevice(c, user.id, await login(c, user.username, user.password, IP), {
       deviceId: 'dev-B',
     });
 
@@ -245,7 +156,7 @@ describe('même séance sur deux appareils (Review Focus 3)', () => {
     // 7 h plus tard, A relance l'appli sans réseau : son miroir date d'avant « Continuer ici ».
     a.engine.stop();
     c.clock.advance(7 * HOUR);
-    const a2 = await device(c, user.id, user.cookie, { db: a.db, offline: true });
+    const a2 = await createDevice(c, user.id, user.cookie, { db: a.db, offline: true });
     await a2.engine.syncNow('manual');
     expect(await a2.repos.workouts.session(id)).toMatchObject({
       status: 'in_progress',
@@ -272,11 +183,11 @@ describe('même séance sur deux appareils (Review Focus 3)', () => {
 
 describe('clôture depuis un miroir en retard sur l’autre appareil (rulings R49, R51)', () => {
   it('« La terminer » sur l’appareil en ligne pendant que celui qui tient la séance saisit hors ligne : aucune série perdue, séance terminée, dans l’historique et rejouée', async () => {
-    const c = await server();
+    const c = await startServerWith(['back-squat', 'dumbbell-lunge']);
     const user = await createUserAndLogin(c);
     const instanceId = await enrolled(c, user.id);
-    const a = await device(c, user.id, user.cookie, { deviceId: 'dev-A' });
-    const b = await device(c, user.id, await login(c, user.username, user.password, IP), {
+    const a = await createDevice(c, user.id, user.cookie, { deviceId: 'dev-A' });
+    const b = await createDevice(c, user.id, await login(c, user.username, user.password, IP), {
       deviceId: 'dev-B',
     });
 
@@ -325,11 +236,11 @@ describe('clôture depuis un miroir en retard sur l’autre appareil (rulings R4
   });
 
   it('A hors ligne, « Continuer ici » et deux séries sur B, puis A, qui croit tenir la séance, touche « Terminer » : les séries de B restent, séance terminée', async () => {
-    const c = await server();
+    const c = await startServerWith(['back-squat', 'dumbbell-lunge']);
     const user = await createUserAndLogin(c);
     const instanceId = await enrolled(c, user.id);
-    const a = await device(c, user.id, user.cookie, { deviceId: 'dev-A' });
-    const b = await device(c, user.id, await login(c, user.username, user.password, IP), {
+    const a = await createDevice(c, user.id, user.cookie, { deviceId: 'dev-A' });
+    const b = await createDevice(c, user.id, await login(c, user.username, user.password, IP), {
       deviceId: 'dev-B',
     });
 
@@ -377,10 +288,10 @@ describe('clôture depuis un miroir en retard sur l’autre appareil (rulings R4
   });
 
   it('« Supprimer la séance » reste le seul chemin qui supprime des séries faites : tout part, sur le serveur et sur les deux appareils', async () => {
-    const c = await server();
+    const c = await startServerWith(['back-squat', 'dumbbell-lunge']);
     const user = await createUserAndLogin(c);
-    const a = await device(c, user.id, user.cookie, { deviceId: 'dev-A' });
-    const b = await device(c, user.id, await login(c, user.username, user.password, IP), {
+    const a = await createDevice(c, user.id, user.cookie, { deviceId: 'dev-A' });
+    const b = await createDevice(c, user.id, await login(c, user.username, user.password, IP), {
       deviceId: 'dev-B',
     });
     const id = await a.repos.workouts.start(START);
@@ -413,11 +324,11 @@ describe('clôture depuis un miroir en retard sur l’autre appareil (rulings R4
 
 describe('« Changer de lieu » depuis un miroir en retard sur l’autre appareil', () => {
   it('« Continuer ici » et deux séries sur B, puis A, qui croit tenir la séance sans série faite, change de lieu : l’exercice des séries de B reste, visible sur les deux appareils et rejoué', async () => {
-    const c = await server();
+    const c = await startServerWith(['back-squat', 'dumbbell-lunge']);
     const user = await createUserAndLogin(c);
     const instanceId = await enrolled(c, user.id);
-    const a = await device(c, user.id, user.cookie, { deviceId: 'dev-A' });
-    const b = await device(c, user.id, await login(c, user.username, user.password, IP), {
+    const a = await createDevice(c, user.id, user.cookie, { deviceId: 'dev-A' });
+    const b = await createDevice(c, user.id, await login(c, user.username, user.password, IP), {
       deviceId: 'dev-B',
     });
 

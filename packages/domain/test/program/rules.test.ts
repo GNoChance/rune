@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { currentRules, RULES_BY_VERSION, RULES_VERSION, rulesFor } from '../../src/program/rules';
 
@@ -45,5 +46,18 @@ describe('règles versionnées', () => {
       maxSlotsPerWorkout: 8,
       days: [2, 4],
     });
+  });
+});
+
+describe('lecture des règles versionnée (garde-fou M8)', () => {
+  it('une seconde version des règles exige un pas versionné', () => {
+    const effective = readFileSync(new URL('../../src/program/effective.ts', import.meta.url), 'utf8');
+    const readsCurrent = 'currentRules().stepS';
+    // (a) Le garde-fou a un objet : le programme effectif lit encore le pas dans les règles courantes. À retirer
+    // quand la lecture sera versionnée (cette moitié échoue alors).
+    expect(effective).toContain(readsCurrent);
+    // (b) Avec deux versions, un programme rejoué sous l'ancienne prendrait le pas de la nouvelle : la lecture doit
+    // alors suivre la version de la séance.
+    if (Object.keys(RULES_BY_VERSION).length >= 2) expect(effective).not.toContain(readsCurrent);
   });
 });
