@@ -5,31 +5,31 @@ modèle home-intermediate-upper-lower · profil never_logs_effort · 4 séances 
 -- Séance 1 · H1 · 2026-01-05 · normale
 H1-1 wall-push-up : 4×6-10 rép. (RIR 2, calibration)
     fait 11/11/11/11 (sans effort)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 6-10 rép. (cible 6), 4 séries, wall-push-up
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 6-10 rép. (cible 10), 4 séries, wall-push-up
 H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (RIR 2, calibration)
     fait 11/11/11/11/11 (sans effort)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 6-10 rép. (cible 6), 5 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 6-10 rép. (cible 10), 5 séries
 H1-3 negative-pull-up : not_feasible_here
 H1-4 pike-push-up : 3×6-10 rép. (RIR 2, calibration)
     fait 11/11/11 (sans effort)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 6-10 rép. (cible 6), 3 séries, pike-push-up
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 6-10 rép. (cible 10), 3 séries, pike-push-up
 H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (RIR 1, calibration)
     fait 16/16 (sans effort)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 10-15 rép. (cible 10), 2 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10-15 rép. (cible 15), 2 séries
 
 -- Séance 2 · B1 · 2026-01-07 · normale
 B1-1 chair-squat : 4×6-10 rép. (RIR 2, calibration)
     fait 11/11/11/11 (sans effort)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 6-10 rép. (cible 6), 4 séries, chair-squat
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 6-10 rép. (cible 10), 4 séries, chair-squat
 B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (RIR 2, calibration)
     fait 11/11/11/11/11/11 (sans effort)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 6-10 rép. (cible 6), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 6-10 rép. (cible 10), 3 séries
 B1-3 assisted-nordic-curl : 3×5-8 rép. (RIR 2, calibration)
     fait 9/9/9 (sans effort)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 5-8 rép. (cible 8), 3 séries, assisted-nordic-curl
 B1-4 standing-calf-raise : 3×10-15 rép. (RIR 2, calibration)
     fait 16/16/16 (sans effort)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 10-15 rép. (cible 10), 3 séries, standing-calf-raise
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10-15 rép. (cible 15), 3 séries, standing-calf-raise
 B1-5 knee-plank : 3×30 s (RIR 2, calibration)
     fait 30 s/30 s/30 s (sans effort)
     -> CALIBRATION CALIBRATION_DONE ; prochain : 30 s, 3 séries, knee-plank
@@ -37,29 +37,29 @@ B1-5 knee-plank : 3×30 s (RIR 2, calibration)
 -- Séance 3 · H2 · 2026-01-09 · normale
 H2-1 wall-push-up : 4×10-15 rép. (RIR 2, calibration)
     fait 16/16/16/16 (sans effort)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 10-15 rép. (cible 10), 4 séries, wall-push-up
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10-15 rép. (cible 15), 4 séries, wall-push-up
 H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (RIR 2, calibration)
     fait 16/16/16/16/16 (sans effort)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 10-15 rép. (cible 10), 5 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10-15 rép. (cible 15), 5 séries
 H2-3 band-lat-pulldown : not_feasible_here
 H2-4 pike-push-up : 3×10-15 rép. (RIR 2, calibration)
     fait 16/16/16 (sans effort)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 10-15 rép. (cible 10), 3 séries, pike-push-up
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10-15 rép. (cible 15), 3 séries, pike-push-up
 H2-5 dumbbell-lateral-raise : not_feasible_here
 
 -- Séance 4 · B2 · 2026-01-11 · normale
 B2-1 chair-squat : 4×10-15 rép. (RIR 2, calibration)
     fait 16/16/16/16 (sans effort)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 10-15 rép. (cible 10), 4 séries, chair-squat
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10-15 rép. (cible 15), 4 séries, chair-squat
 B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (RIR 2, calibration)
     fait 13/13/13/13/13/13 (sans effort)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 8-12 rép. (cible 8), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 8-12 rép. (cible 12), 3 séries
 B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (RIR 2, calibration)
     fait 16/16/16/16/16/16 (sans effort)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 10-15 rép. (cible 10), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10-15 rép. (cible 15), 3 séries
 B2-4 assisted-nordic-curl : 2×5-8 rép. (RIR 2, calibration)
     fait 9/9 (sans effort)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 5-8 rép. (cible 5), 2 séries, assisted-nordic-curl
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 5-8 rép. (cible 8), 2 séries, assisted-nordic-curl
 B2-5 side-plank : 3×20 s par côté (RIR 2, calibration)
     fait 20 s/20 s/20 s/20 s/20 s/20 s (sans effort)
     -> CALIBRATION CALIBRATION_DONE ; prochain : 20 s, 3 séries
@@ -67,63 +67,63 @@ B2-5 side-plank : 3×20 s par côté (RIR 2, calibration)
 == Semaine 2 (semaine 2 du bloc) ==
 
 -- Séance 5 · H1 · 2026-01-13 · normale
-H1-1 wall-push-up : 4×6-10 rép. (visée 6, RIR 2)
+H1-1 wall-push-up : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 4 séries, wall-push-up
-H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 6, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 4 séries, wall-push-up
+H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 5 séries
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 5 séries
 H1-3 negative-pull-up : not_feasible_here
-H1-4 pike-push-up : 3×6-10 rép. (visée 6, RIR 2)
+H1-4 pike-push-up : 3×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 3 séries, pike-push-up
-H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 10, RIR 1)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 3 séries, pike-push-up
+H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 15, RIR 1)
     fait 16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 2 séries
 
 -- Séance 6 · B1 · 2026-01-15 · normale
-B1-1 chair-squat : 4×6-10 rép. (visée 6, RIR 2)
+B1-1 chair-squat : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 4 séries, chair-squat
-B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 4 séries, chair-squat
+B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 10, RIR 2)
     fait 11/11/11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 3 séries
-B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 3 séries
+B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 8, RIR 2)
     fait 9/9/9 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
-B1-4 standing-calf-raise : 3×10-15 rép. (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 8), 3 séries, assisted-nordic-curl
+B1-4 standing-calf-raise : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries, standing-calf-raise
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries, standing-calf-raise
 B1-5 knee-plank : 3×30 s (RIR 2)
     fait 30 s/30 s/30 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 30 s, 3 séries, knee-plank
 
 -- Séance 7 · H2 · 2026-01-17 · normale
-H2-1 wall-push-up : 4×10-15 rép. (visée 10, RIR 2)
+H2-1 wall-push-up : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 4 séries, wall-push-up
-H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 4 séries, wall-push-up
+H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 5 séries
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 5 séries
 H2-3 band-lat-pulldown : not_feasible_here
-H2-4 pike-push-up : 3×10-15 rép. (visée 10, RIR 2)
+H2-4 pike-push-up : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries, pike-push-up
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries, pike-push-up
 H2-5 dumbbell-lateral-raise : not_feasible_here
 
 -- Séance 8 · B2 · 2026-01-19 · normale
-B2-1 chair-squat : 4×10-15 rép. (visée 10, RIR 2)
+B2-1 chair-squat : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 4 séries, chair-squat
-B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 4 séries, chair-squat
+B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 12, RIR 2)
     fait 13/13/13/13/13/13 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 8-12 rép. (cible 8), 3 séries
-B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 8-12 rép. (cible 12), 3 séries
+B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 15, RIR 2)
     fait 16/16/16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries
-B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 5, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries
+B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 8, RIR 2)
     fait 9/9 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 5), 2 séries, assisted-nordic-curl
+    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 8), 2 séries, assisted-nordic-curl
 B2-5 side-plank : 3×20 s par côté (RIR 2)
     fait 20 s/20 s/20 s/20 s/20 s/20 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 20 s, 3 séries
@@ -131,63 +131,63 @@ B2-5 side-plank : 3×20 s par côté (RIR 2)
 == Semaine 3 (semaine 3 du bloc) ==
 
 -- Séance 9 · H1 · 2026-01-21 · normale
-H1-1 wall-push-up : 4×6-10 rép. (visée 6, RIR 2)
+H1-1 wall-push-up : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 4 séries, wall-push-up
-H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 6, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 4 séries, wall-push-up
+H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 5 séries
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 5 séries
 H1-3 negative-pull-up : not_feasible_here
-H1-4 pike-push-up : 3×6-10 rép. (visée 6, RIR 2)
+H1-4 pike-push-up : 3×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 3 séries, pike-push-up
-H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 10, RIR 1)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 3 séries, pike-push-up
+H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 15, RIR 1)
     fait 16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 2 séries
 
 -- Séance 10 · B1 · 2026-01-23 · normale
-B1-1 chair-squat : 4×6-10 rép. (visée 6, RIR 2)
+B1-1 chair-squat : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 4 séries, chair-squat
-B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 4 séries, chair-squat
+B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 10, RIR 2)
     fait 11/11/11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 3 séries
-B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 3 séries
+B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 8, RIR 2)
     fait 9/9/9 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
-B1-4 standing-calf-raise : 3×10-15 rép. (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 8), 3 séries, assisted-nordic-curl
+B1-4 standing-calf-raise : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries, standing-calf-raise
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries, standing-calf-raise
 B1-5 knee-plank : 3×30 s (RIR 2)
     fait 30 s/30 s/30 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 30 s, 3 séries, knee-plank
 
 -- Séance 11 · H2 · 2026-01-25 · normale
-H2-1 wall-push-up : 4×10-15 rép. (visée 10, RIR 2)
+H2-1 wall-push-up : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 4 séries, wall-push-up
-H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 4 séries, wall-push-up
+H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 5 séries
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 5 séries
 H2-3 band-lat-pulldown : not_feasible_here
-H2-4 pike-push-up : 3×10-15 rép. (visée 10, RIR 2)
+H2-4 pike-push-up : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries, pike-push-up
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries, pike-push-up
 H2-5 dumbbell-lateral-raise : not_feasible_here
 
 -- Séance 12 · B2 · 2026-01-27 · normale
-B2-1 chair-squat : 4×10-15 rép. (visée 10, RIR 2)
+B2-1 chair-squat : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 4 séries, chair-squat
-B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 4 séries, chair-squat
+B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 12, RIR 2)
     fait 13/13/13/13/13/13 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 8-12 rép. (cible 8), 3 séries
-B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 8-12 rép. (cible 12), 3 séries
+B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 15, RIR 2)
     fait 16/16/16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries
-B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 5, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries
+B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 8, RIR 2)
     fait 9/9 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 5), 2 séries, assisted-nordic-curl
+    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 8), 2 séries, assisted-nordic-curl
 B2-5 side-plank : 3×20 s par côté (RIR 2)
     fait 20 s/20 s/20 s/20 s/20 s/20 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 20 s, 3 séries
@@ -195,32 +195,32 @@ B2-5 side-plank : 3×20 s par côté (RIR 2)
 == Semaine 4 (semaine 4 du bloc) ==
 
 -- Séance 13 · H1 · 2026-01-29 · normale
-H1-1 wall-push-up : 4×6-10 rép. (visée 6, RIR 2)
+H1-1 wall-push-up : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
     -> STALL STALL_RESET_MIN ; prochain : 6-10 rép. (cible 6), 4 séries, wall-push-up
-H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 6, RIR 2)
+H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11/11 (sans effort)
-    -> STALL STALL_1_LIGHTEN ; prochain : 6-10 rép. (cible 6), 5 séries
+    -> STALL STALL_1_LIGHTEN ; prochain : 6-10 rép. (cible 10), 5 séries
 H1-3 negative-pull-up : not_feasible_here
-H1-4 pike-push-up : 3×6-10 rép. (visée 6, RIR 2)
+H1-4 pike-push-up : 3×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11 (sans effort)
     -> STALL STALL_RESET_MIN ; prochain : 6-10 rép. (cible 6), 3 séries, pike-push-up
-H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 10, RIR 1)
+H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 15, RIR 1)
     fait 16/16 (sans effort)
-    -> STALL STALL_1_LIGHTEN ; prochain : 10-15 rép. (cible 10), 2 séries
+    -> STALL STALL_1_LIGHTEN ; prochain : 10-15 rép. (cible 15), 2 séries
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 14 · B1 · 2026-01-31 · normale
-B1-1 chair-squat : 4×6-10 rép. (visée 6, RIR 2)
+B1-1 chair-squat : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
     -> STALL STALL_RESET_MIN ; prochain : 6-10 rép. (cible 6), 4 séries, chair-squat
-B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
+B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 10, RIR 2)
     fait 11/11/11/11/11/11 (sans effort)
-    -> STALL STALL_1_LIGHTEN ; prochain : 6-10 rép. (cible 6), 3 séries
-B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
+    -> STALL STALL_1_LIGHTEN ; prochain : 6-10 rép. (cible 10), 3 séries
+B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 8, RIR 2)
     fait 9/9/9 (sans effort)
     -> STALL STALL_RESET_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
-B1-4 standing-calf-raise : 3×10-15 rép. (visée 10, RIR 2)
+B1-4 standing-calf-raise : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
     -> STALL STALL_RESET_MIN ; prochain : 10-15 rép. (cible 10), 3 séries, standing-calf-raise
 B1-5 knee-plank : 3×30 s (RIR 2)
@@ -229,30 +229,30 @@ B1-5 knee-plank : 3×30 s (RIR 2)
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 15 · H2 · 2026-02-02 · normale
-H2-1 wall-push-up : 4×10-15 rép. (visée 10, RIR 2)
+H2-1 wall-push-up : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
     -> STALL STALL_RESET_MIN ; prochain : 10-15 rép. (cible 10), 4 séries, wall-push-up
-H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 10, RIR 2)
+H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16/16 (sans effort)
-    -> STALL STALL_1_LIGHTEN ; prochain : 10-15 rép. (cible 10), 5 séries
+    -> STALL STALL_1_LIGHTEN ; prochain : 10-15 rép. (cible 15), 5 séries
 H2-3 band-lat-pulldown : not_feasible_here
-H2-4 pike-push-up : 3×10-15 rép. (visée 10, RIR 2)
+H2-4 pike-push-up : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
     -> STALL STALL_RESET_MIN ; prochain : 10-15 rép. (cible 10), 3 séries, pike-push-up
 H2-5 dumbbell-lateral-raise : not_feasible_here
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 16 · B2 · 2026-02-04 · normale
-B2-1 chair-squat : 4×10-15 rép. (visée 10, RIR 2)
+B2-1 chair-squat : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
     -> STALL STALL_RESET_MIN ; prochain : 10-15 rép. (cible 10), 4 séries, chair-squat
-B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 8, RIR 2)
+B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 12, RIR 2)
     fait 13/13/13/13/13/13 (sans effort)
-    -> STALL STALL_1_LIGHTEN ; prochain : 8-12 rép. (cible 8), 3 séries
-B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 10, RIR 2)
+    -> STALL STALL_1_LIGHTEN ; prochain : 8-12 rép. (cible 12), 3 séries
+B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 15, RIR 2)
     fait 16/16/16/16/16/16 (sans effort)
-    -> STALL STALL_1_LIGHTEN ; prochain : 10-15 rép. (cible 10), 3 séries
-B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 5, RIR 2)
+    -> STALL STALL_1_LIGHTEN ; prochain : 10-15 rép. (cible 15), 3 séries
+B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 8, RIR 2)
     fait 9/9 (sans effort)
     -> STALL STALL_RESET_MIN ; prochain : 5-8 rép. (cible 5), 2 séries, assisted-nordic-curl
 B2-5 side-plank : 3×20 s par côté (RIR 2)
@@ -267,14 +267,14 @@ H1-1 wall-push-up : 2×6-10 rép. (RIR 4)
     -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 6), 4 séries, wall-push-up
 H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×6-10 rép. (RIR 4)
     fait 11/11/11 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 6), 5 séries
+    -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 10), 5 séries
 H1-3 negative-pull-up : not_feasible_here
 H1-4 pike-push-up : 2×6-10 rép. (RIR 4)
     fait 11/11 (sans effort)
     -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 6), 3 séries, pike-push-up
 H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 1×10-15 rép. (RIR 3)
     fait 16 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 10), 2 séries
+    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 15), 2 séries
 
 -- Séance 18 · B1 · 2026-02-08 · ALLÉGÉE · avis deload
 B1-1 chair-squat : 2×6-10 rép. (RIR 4)
@@ -282,7 +282,7 @@ B1-1 chair-squat : 2×6-10 rép. (RIR 4)
     -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 6), 4 séries, chair-squat
 B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×6-10 rép. par côté (RIR 4)
     fait 11/11/11/11 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 6), 3 séries
+    -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 10), 3 séries
 B1-3 assisted-nordic-curl : 2×5-8 rép. (RIR 4)
     fait 9/9 (sans effort)
     -> DELOAD DELOAD_WEEK ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
@@ -299,7 +299,7 @@ H2-1 wall-push-up : 2×10-15 rép. (RIR 4)
     -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 10), 4 séries, wall-push-up
 H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×10-15 rép. (RIR 4)
     fait 16/16/16 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 10), 5 séries
+    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 15), 5 séries
 H2-3 band-lat-pulldown : not_feasible_here
 H2-4 pike-push-up : 2×10-15 rép. (RIR 4)
     fait 16/16 (sans effort)
@@ -312,10 +312,10 @@ B2-1 chair-squat : 2×10-15 rép. (RIR 4)
     -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 10), 4 séries, chair-squat
 B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 2×8-12 rép. par côté (RIR 4)
     fait 13/13/13/13 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 8-12 rép. (cible 8), 3 séries
+    -> DELOAD DELOAD_WEEK ; prochain : 8-12 rép. (cible 12), 3 séries
 B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 4)
     fait 16/16/16/16 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 10), 3 séries
+    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 15), 3 séries
 B2-4 assisted-nordic-curl : 1×5-8 rép. (RIR 4)
     fait 9 (sans effort)
     -> DELOAD DELOAD_WEEK ; prochain : 5-8 rép. (cible 5), 2 séries, assisted-nordic-curl
@@ -328,31 +328,31 @@ B2-5 side-plank : 2×20 s par côté (RIR 4)
 -- Séance 21 · H1 · 2026-02-14 · normale
 H1-1 wall-push-up : 4×6-10 rép. (visée 6, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 4 séries, wall-push-up
-H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 6, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 4 séries, wall-push-up
+H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 5 séries
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 5 séries
 H1-3 negative-pull-up : not_feasible_here
 H1-4 pike-push-up : 3×6-10 rép. (visée 6, RIR 2)
     fait 11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 3 séries, pike-push-up
-H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 10, RIR 1)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 3 séries, pike-push-up
+H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 15, RIR 1)
     fait 16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 2 séries
 
 -- Séance 22 · B1 · 2026-02-16 · normale
 B1-1 chair-squat : 4×6-10 rép. (visée 6, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 4 séries, chair-squat
-B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 4 séries, chair-squat
+B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 10, RIR 2)
     fait 11/11/11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 3 séries
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 3 séries
 B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
     fait 9/9/9 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
+    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 8), 3 séries, assisted-nordic-curl
 B1-4 standing-calf-raise : 3×10-15 rép. (visée 10, RIR 2)
     fait 16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries, standing-calf-raise
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries, standing-calf-raise
 B1-5 knee-plank : 3×30 s (RIR 2)
     fait 30 s/30 s/30 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 30 s, 3 séries, knee-plank
@@ -360,29 +360,29 @@ B1-5 knee-plank : 3×30 s (RIR 2)
 -- Séance 23 · H2 · 2026-02-18 · normale
 H2-1 wall-push-up : 4×10-15 rép. (visée 10, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 4 séries, wall-push-up
-H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 4 séries, wall-push-up
+H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 5 séries
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 5 séries
 H2-3 band-lat-pulldown : not_feasible_here
 H2-4 pike-push-up : 3×10-15 rép. (visée 10, RIR 2)
     fait 16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries, pike-push-up
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries, pike-push-up
 H2-5 dumbbell-lateral-raise : not_feasible_here
 
 -- Séance 24 · B2 · 2026-02-20 · normale
 B2-1 chair-squat : 4×10-15 rép. (visée 10, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 4 séries, chair-squat
-B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 4 séries, chair-squat
+B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 12, RIR 2)
     fait 13/13/13/13/13/13 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 8-12 rép. (cible 8), 3 séries
-B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 8-12 rép. (cible 12), 3 séries
+B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 15, RIR 2)
     fait 16/16/16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries
 B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 5, RIR 2)
     fait 9/9 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 5), 2 séries, assisted-nordic-curl
+    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 8), 2 séries, assisted-nordic-curl
 B2-5 side-plank : 3×20 s par côté (RIR 2)
     fait 20 s/20 s/20 s/20 s/20 s/20 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 20 s, 3 séries
@@ -390,63 +390,63 @@ B2-5 side-plank : 3×20 s par côté (RIR 2)
 == Semaine 7 (semaine 2 du bloc) ==
 
 -- Séance 25 · H1 · 2026-02-22 · normale
-H1-1 wall-push-up : 4×6-10 rép. (visée 6, RIR 2)
+H1-1 wall-push-up : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 4 séries, wall-push-up
-H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 6, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 4 séries, wall-push-up
+H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 5 séries
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 5 séries
 H1-3 negative-pull-up : not_feasible_here
-H1-4 pike-push-up : 3×6-10 rép. (visée 6, RIR 2)
+H1-4 pike-push-up : 3×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 3 séries, pike-push-up
-H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 10, RIR 1)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 3 séries, pike-push-up
+H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 15, RIR 1)
     fait 16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 2 séries
 
 -- Séance 26 · B1 · 2026-02-24 · normale
-B1-1 chair-squat : 4×6-10 rép. (visée 6, RIR 2)
+B1-1 chair-squat : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 4 séries, chair-squat
-B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 4 séries, chair-squat
+B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 10, RIR 2)
     fait 11/11/11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 3 séries
-B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 3 séries
+B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 8, RIR 2)
     fait 9/9/9 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
-B1-4 standing-calf-raise : 3×10-15 rép. (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 8), 3 séries, assisted-nordic-curl
+B1-4 standing-calf-raise : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries, standing-calf-raise
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries, standing-calf-raise
 B1-5 knee-plank : 3×30 s (RIR 2)
     fait 30 s/30 s/30 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 30 s, 3 séries, knee-plank
 
 -- Séance 27 · H2 · 2026-02-26 · normale
-H2-1 wall-push-up : 4×10-15 rép. (visée 10, RIR 2)
+H2-1 wall-push-up : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 4 séries, wall-push-up
-H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 4 séries, wall-push-up
+H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 5 séries
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 5 séries
 H2-3 band-lat-pulldown : not_feasible_here
-H2-4 pike-push-up : 3×10-15 rép. (visée 10, RIR 2)
+H2-4 pike-push-up : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries, pike-push-up
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries, pike-push-up
 H2-5 dumbbell-lateral-raise : not_feasible_here
 
 -- Séance 28 · B2 · 2026-02-28 · normale
-B2-1 chair-squat : 4×10-15 rép. (visée 10, RIR 2)
+B2-1 chair-squat : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 4 séries, chair-squat
-B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 4 séries, chair-squat
+B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 12, RIR 2)
     fait 13/13/13/13/13/13 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 8-12 rép. (cible 8), 3 séries
-B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 8-12 rép. (cible 12), 3 séries
+B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 15, RIR 2)
     fait 16/16/16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries
-B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 5, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries
+B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 8, RIR 2)
     fait 9/9 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 5), 2 séries, assisted-nordic-curl
+    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 8), 2 séries, assisted-nordic-curl
 B2-5 side-plank : 3×20 s par côté (RIR 2)
     fait 20 s/20 s/20 s/20 s/20 s/20 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 20 s, 3 séries
@@ -454,36 +454,36 @@ B2-5 side-plank : 3×20 s par côté (RIR 2)
 == Semaine 8 (semaine 3 du bloc) ==
 
 -- Séance 29 · H1 · 2026-03-02 · normale
-H1-1 wall-push-up : 4×6-10 rép. (visée 6, RIR 2)
+H1-1 wall-push-up : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 6), 4 séries, wall-push-up
-H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 6, RIR 2)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 10), 4 séries, wall-push-up
+H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11/11 (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-10 rép. (cible 6), 5 séries
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-10 rép. (cible 10), 5 séries
 H1-3 negative-pull-up : not_feasible_here
-H1-4 pike-push-up : 3×6-10 rép. (visée 6, RIR 2)
+H1-4 pike-push-up : 3×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11 (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries, pike-push-up
-H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 10, RIR 1)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-10 rép. (cible 10), 3 séries, pike-push-up
+H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 15, RIR 1)
     fait 16/16 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 10), 2 séries
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 15), 2 séries
    ! propose_replace ENGINE_STALL_REPLACE slot H1-2 table-row [{"op":"replace_exercise","slot":"H1-2","exercise":"door-frame-row"}]
    ! propose_replace ENGINE_STALL_REPLACE slot H1-4 pike-push-up [{"op":"replace_exercise","slot":"H1-4","exercise":"kneeling-pike-push-up"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 30 · B1 · 2026-03-04 · normale
-B1-1 chair-squat : 4×6-10 rép. (visée 6, RIR 2)
+B1-1 chair-squat : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 6), 4 séries, chair-squat
-B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 10), 4 séries, chair-squat
+B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 10, RIR 2)
     fait 11/11/11/11/11/11 (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries
-B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-10 rép. (cible 10), 3 séries
+B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 8, RIR 2)
     fait 9/9/9 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
-B1-4 standing-calf-raise : 3×10-15 rép. (visée 10, RIR 2)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 5-8 rép. (cible 8), 3 séries, assisted-nordic-curl
+B1-4 standing-calf-raise : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 10), 3 séries, standing-calf-raise
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 15), 3 séries, standing-calf-raise
 B1-5 knee-plank : 3×30 s (RIR 2)
     fait 30 s/30 s/30 s (sans effort)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 30 s, 3 séries, knee-plank
@@ -491,34 +491,34 @@ B1-5 knee-plank : 3×30 s (RIR 2)
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 31 · H2 · 2026-03-06 · normale
-H2-1 wall-push-up : 4×10-15 rép. (visée 10, RIR 2)
+H2-1 wall-push-up : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 10), 4 séries, wall-push-up
-H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 10, RIR 2)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 15), 4 séries, wall-push-up
+H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16/16 (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 10-15 rép. (cible 10), 5 séries
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 10-15 rép. (cible 15), 5 séries
 H2-3 band-lat-pulldown : not_feasible_here
-H2-4 pike-push-up : 3×10-15 rép. (visée 10, RIR 2)
+H2-4 pike-push-up : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 10-15 rép. (cible 10), 3 séries, pike-push-up
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 10-15 rép. (cible 15), 3 séries, pike-push-up
 H2-5 dumbbell-lateral-raise : not_feasible_here
    ! propose_replace ENGINE_STALL_REPLACE slot H2-2 table-row [{"op":"replace_exercise","slot":"H2-2","exercise":"door-frame-row"}]
    ! propose_replace ENGINE_STALL_REPLACE slot H2-4 pike-push-up [{"op":"replace_exercise","slot":"H2-4","exercise":"kneeling-pike-push-up"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 32 · B2 · 2026-03-08 · normale
-B2-1 chair-squat : 4×10-15 rép. (visée 10, RIR 2)
+B2-1 chair-squat : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 10), 4 séries, chair-squat
-B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 8, RIR 2)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 15), 4 séries, chair-squat
+B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 12, RIR 2)
     fait 13/13/13/13/13/13 (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
-B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 10, RIR 2)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 12), 3 séries
+B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 15, RIR 2)
     fait 16/16/16/16/16/16 (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 10-15 rép. (cible 10), 3 séries
-B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 5, RIR 2)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 10-15 rép. (cible 15), 3 séries
+B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 8, RIR 2)
     fait 9/9 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 5-8 rép. (cible 5), 2 séries, assisted-nordic-curl
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 5-8 rép. (cible 8), 2 séries, assisted-nordic-curl
 B2-5 side-plank : 3×20 s par côté (RIR 2)
     fait 20 s/20 s/20 s/20 s/20 s/20 s (sans effort)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 s, 3 séries
@@ -530,63 +530,63 @@ B2-5 side-plank : 3×20 s par côté (RIR 2)
 == Semaine 9 (semaine 4 du bloc) ==
 
 -- Séance 33 · H1 · 2026-03-10 · normale
-H1-1 wall-push-up : 4×6-10 rép. (visée 6, RIR 2)
+H1-1 wall-push-up : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 4 séries, wall-push-up
-H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 6, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 4 séries, wall-push-up
+H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 5 séries
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 5 séries
 H1-3 negative-pull-up : not_feasible_here
-H1-4 pike-push-up : 3×6-10 rép. (visée 6, RIR 2)
+H1-4 pike-push-up : 3×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 3 séries, pike-push-up
-H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 10, RIR 1)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 3 séries, pike-push-up
+H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 15, RIR 1)
     fait 16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 2 séries
 
 -- Séance 34 · B1 · 2026-03-12 · normale
-B1-1 chair-squat : 4×6-10 rép. (visée 6, RIR 2)
+B1-1 chair-squat : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 4 séries, chair-squat
-B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 4 séries, chair-squat
+B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 10, RIR 2)
     fait 11/11/11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 3 séries
-B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 3 séries
+B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 8, RIR 2)
     fait 9/9/9 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
-B1-4 standing-calf-raise : 3×10-15 rép. (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 8), 3 séries, assisted-nordic-curl
+B1-4 standing-calf-raise : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries, standing-calf-raise
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries, standing-calf-raise
 B1-5 knee-plank : 3×30 s (RIR 2)
     fait 30 s/30 s/30 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 30 s, 3 séries, knee-plank
 
 -- Séance 35 · H2 · 2026-03-14 · normale
-H2-1 wall-push-up : 4×10-15 rép. (visée 10, RIR 2)
+H2-1 wall-push-up : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 4 séries, wall-push-up
-H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 4 séries, wall-push-up
+H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 5 séries
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 5 séries
 H2-3 band-lat-pulldown : not_feasible_here
-H2-4 pike-push-up : 3×10-15 rép. (visée 10, RIR 2)
+H2-4 pike-push-up : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries, pike-push-up
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries, pike-push-up
 H2-5 dumbbell-lateral-raise : not_feasible_here
 
 -- Séance 36 · B2 · 2026-03-16 · normale
-B2-1 chair-squat : 4×10-15 rép. (visée 10, RIR 2)
+B2-1 chair-squat : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 4 séries, chair-squat
-B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 4 séries, chair-squat
+B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 12, RIR 2)
     fait 13/13/13/13/13/13 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 8-12 rép. (cible 8), 3 séries
-B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 8-12 rép. (cible 12), 3 séries
+B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 15, RIR 2)
     fait 16/16/16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries
-B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 5, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries
+B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 8, RIR 2)
     fait 9/9 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 5), 2 séries, assisted-nordic-curl
+    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 8), 2 séries, assisted-nordic-curl
 B2-5 side-plank : 3×20 s par côté (RIR 2)
     fait 20 s/20 s/20 s/20 s/20 s/20 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 20 s, 3 séries
@@ -596,31 +596,31 @@ B2-5 side-plank : 3×20 s par côté (RIR 2)
 -- Séance 37 · H1 · 2026-03-18 · ALLÉGÉE · avis deload
 H1-1 wall-push-up : 2×6-10 rép. (RIR 4)
     fait 11/11 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 6), 4 séries, wall-push-up
+    -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 10), 4 séries, wall-push-up
 H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×6-10 rép. (RIR 4)
     fait 11/11/11 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 6), 5 séries
+    -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 10), 5 séries
 H1-3 negative-pull-up : not_feasible_here
 H1-4 pike-push-up : 2×6-10 rép. (RIR 4)
     fait 11/11 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 6), 3 séries, pike-push-up
+    -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 10), 3 séries, pike-push-up
 H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 1×10-15 rép. (RIR 3)
     fait 16 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 10), 2 séries
+    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 15), 2 séries
 
 -- Séance 38 · B1 · 2026-03-20 · ALLÉGÉE · avis deload
 B1-1 chair-squat : 2×6-10 rép. (RIR 4)
     fait 11/11 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 6), 4 séries, chair-squat
+    -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 10), 4 séries, chair-squat
 B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×6-10 rép. par côté (RIR 4)
     fait 11/11/11/11 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 6), 3 séries
+    -> DELOAD DELOAD_WEEK ; prochain : 6-10 rép. (cible 10), 3 séries
 B1-3 assisted-nordic-curl : 2×5-8 rép. (RIR 4)
     fait 9/9 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
+    -> DELOAD DELOAD_WEEK ; prochain : 5-8 rép. (cible 8), 3 séries, assisted-nordic-curl
 B1-4 standing-calf-raise : 2×10-15 rép. (RIR 4)
     fait 16/16 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 10), 3 séries, standing-calf-raise
+    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 15), 3 séries, standing-calf-raise
 B1-5 knee-plank : 2×30 s (RIR 4)
     fait 30 s/30 s (sans effort)
     -> DELOAD DELOAD_WEEK ; prochain : 30 s, 3 séries, knee-plank
@@ -628,29 +628,29 @@ B1-5 knee-plank : 2×30 s (RIR 4)
 -- Séance 39 · H2 · 2026-03-22 · ALLÉGÉE · avis deload
 H2-1 wall-push-up : 2×10-15 rép. (RIR 4)
     fait 16/16 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 10), 4 séries, wall-push-up
+    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 15), 4 séries, wall-push-up
 H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 3×10-15 rép. (RIR 4)
     fait 16/16/16 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 10), 5 séries
+    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 15), 5 séries
 H2-3 band-lat-pulldown : not_feasible_here
 H2-4 pike-push-up : 2×10-15 rép. (RIR 4)
     fait 16/16 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 10), 3 séries, pike-push-up
+    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 15), 3 séries, pike-push-up
 H2-5 dumbbell-lateral-raise : not_feasible_here
 
 -- Séance 40 · B2 · 2026-03-24 · ALLÉGÉE · avis deload
 B2-1 chair-squat : 2×10-15 rép. (RIR 4)
     fait 16/16 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 10), 4 séries, chair-squat
+    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 15), 4 séries, chair-squat
 B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 2×8-12 rép. par côté (RIR 4)
     fait 13/13/13/13 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 8-12 rép. (cible 8), 3 séries
+    -> DELOAD DELOAD_WEEK ; prochain : 8-12 rép. (cible 12), 3 séries
 B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 2×10-15 rép. par côté (RIR 4)
     fait 16/16/16/16 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 10), 3 séries
+    -> DELOAD DELOAD_WEEK ; prochain : 10-15 rép. (cible 15), 3 séries
 B2-4 assisted-nordic-curl : 1×5-8 rép. (RIR 4)
     fait 9 (sans effort)
-    -> DELOAD DELOAD_WEEK ; prochain : 5-8 rép. (cible 5), 2 séries, assisted-nordic-curl
+    -> DELOAD DELOAD_WEEK ; prochain : 5-8 rép. (cible 8), 2 séries, assisted-nordic-curl
 B2-5 side-plank : 2×20 s par côté (RIR 4)
     fait 20 s/20 s/20 s/20 s (sans effort)
     -> DELOAD DELOAD_WEEK ; prochain : 20 s, 3 séries
@@ -658,63 +658,63 @@ B2-5 side-plank : 2×20 s par côté (RIR 4)
 == Semaine 11 (semaine 1 du bloc) ==
 
 -- Séance 41 · H1 · 2026-03-26 · normale
-H1-1 wall-push-up : 4×6-10 rép. (visée 6, RIR 2)
+H1-1 wall-push-up : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 4 séries, wall-push-up
-H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 6, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 4 séries, wall-push-up
+H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 5 séries
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 5 séries
 H1-3 negative-pull-up : not_feasible_here
-H1-4 pike-push-up : 3×6-10 rép. (visée 6, RIR 2)
+H1-4 pike-push-up : 3×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 3 séries, pike-push-up
-H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 10, RIR 1)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 3 séries, pike-push-up
+H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 15, RIR 1)
     fait 16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 2 séries
 
 -- Séance 42 · B1 · 2026-03-28 · normale
-B1-1 chair-squat : 4×6-10 rép. (visée 6, RIR 2)
+B1-1 chair-squat : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 4 séries, chair-squat
-B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 4 séries, chair-squat
+B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 10, RIR 2)
     fait 11/11/11/11/11/11 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 6), 3 séries
-B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6-10 rép. (cible 10), 3 séries
+B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 8, RIR 2)
     fait 9/9/9 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
-B1-4 standing-calf-raise : 3×10-15 rép. (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 8), 3 séries, assisted-nordic-curl
+B1-4 standing-calf-raise : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries, standing-calf-raise
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries, standing-calf-raise
 B1-5 knee-plank : 3×30 s (RIR 2)
     fait 30 s/30 s/30 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 30 s, 3 séries, knee-plank
 
 -- Séance 43 · H2 · 2026-03-30 · normale
-H2-1 wall-push-up : 4×10-15 rép. (visée 10, RIR 2)
+H2-1 wall-push-up : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 4 séries, wall-push-up
-H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 4 séries, wall-push-up
+H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 5 séries
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 5 séries
 H2-3 band-lat-pulldown : not_feasible_here
-H2-4 pike-push-up : 3×10-15 rép. (visée 10, RIR 2)
+H2-4 pike-push-up : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries, pike-push-up
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries, pike-push-up
 H2-5 dumbbell-lateral-raise : not_feasible_here
 
 -- Séance 44 · B2 · 2026-04-01 · normale
-B2-1 chair-squat : 4×10-15 rép. (visée 10, RIR 2)
+B2-1 chair-squat : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 4 séries, chair-squat
-B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 4 séries, chair-squat
+B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 12, RIR 2)
     fait 13/13/13/13/13/13 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 8-12 rép. (cible 8), 3 séries
-B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 10, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 8-12 rép. (cible 12), 3 séries
+B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 15, RIR 2)
     fait 16/16/16/16/16/16 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 10), 3 séries
-B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 5, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10-15 rép. (cible 15), 3 séries
+B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 8, RIR 2)
     fait 9/9 (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 5), 2 séries, assisted-nordic-curl
+    -> HOLD EFFORT_MISSING ; prochain : 5-8 rép. (cible 8), 2 séries, assisted-nordic-curl
 B2-5 side-plank : 3×20 s par côté (RIR 2)
     fait 20 s/20 s/20 s/20 s/20 s/20 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 20 s, 3 séries
@@ -722,66 +722,66 @@ B2-5 side-plank : 3×20 s par côté (RIR 2)
 == Semaine 12 (semaine 2 du bloc) ==
 
 -- Séance 45 · H1 · 2026-04-03 · normale
-H1-1 wall-push-up : 4×6-10 rép. (visée 6, RIR 2)
+H1-1 wall-push-up : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 6), 4 séries, wall-push-up
-H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 6, RIR 2)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 10), 4 séries, wall-push-up
+H1-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11/11 (sans effort)
-    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-10 rép. (cible 6), 5 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-10 rép. (cible 10), 5 séries
 H1-3 negative-pull-up : not_feasible_here
-H1-4 pike-push-up : 3×6-10 rép. (visée 6, RIR 2)
+H1-4 pike-push-up : 3×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11 (sans effort)
-    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries, pike-push-up
-H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 10, RIR 1)
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-10 rép. (cible 10), 3 séries, pike-push-up
+H1-5 bodyweight-triceps-extension [prévu overhead-dumbbell-triceps-extension] {replaced_not_feasible} : 2×10-15 rép. (visée 15, RIR 1)
     fait 16/16 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 10), 2 séries
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 15), 2 séries
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 46 · B1 · 2026-04-05 · normale
-B1-1 chair-squat : 4×6-10 rép. (visée 6, RIR 2)
+B1-1 chair-squat : 4×6-10 rép. (visée 10, RIR 2)
     fait 11/11/11/11 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 6), 4 séries, chair-squat
-B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 6-10 rép. (cible 10), 4 séries, chair-squat
+B1-2 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 10, RIR 2)
     fait 11/11/11/11/11/11 (sans effort)
-    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries
-B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-10 rép. (cible 10), 3 séries
+B1-3 assisted-nordic-curl : 3×5-8 rép. (visée 8, RIR 2)
     fait 9/9/9 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
-B1-4 standing-calf-raise : 3×10-15 rép. (visée 10, RIR 2)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 5-8 rép. (cible 8), 3 séries, assisted-nordic-curl
+B1-4 standing-calf-raise : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 10), 3 séries, standing-calf-raise
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 15), 3 séries, standing-calf-raise
 B1-5 knee-plank : 3×30 s (RIR 2)
     fait 30 s/30 s/30 s (sans effort)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 30 s, 3 séries, knee-plank
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 47 · H2 · 2026-04-07 · normale
-H2-1 wall-push-up : 4×10-15 rép. (visée 10, RIR 2)
+H2-1 wall-push-up : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 10), 4 séries, wall-push-up
-H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 10, RIR 2)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 15), 4 séries, wall-push-up
+H2-2 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 5×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16/16 (sans effort)
-    -> STALL STALL_ALREADY_PROPOSED ; prochain : 10-15 rép. (cible 10), 5 séries
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 10-15 rép. (cible 15), 5 séries
 H2-3 band-lat-pulldown : not_feasible_here
-H2-4 pike-push-up : 3×10-15 rép. (visée 10, RIR 2)
+H2-4 pike-push-up : 3×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16 (sans effort)
-    -> STALL STALL_ALREADY_PROPOSED ; prochain : 10-15 rép. (cible 10), 3 séries, pike-push-up
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 10-15 rép. (cible 15), 3 séries, pike-push-up
 H2-5 dumbbell-lateral-raise : not_feasible_here
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 48 · B2 · 2026-04-09 · normale
-B2-1 chair-squat : 4×10-15 rép. (visée 10, RIR 2)
+B2-1 chair-squat : 4×10-15 rép. (visée 15, RIR 2)
     fait 16/16/16/16 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 10), 4 séries, chair-squat
-B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 8, RIR 2)
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 10-15 rép. (cible 15), 4 séries, chair-squat
+B2-2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×8-12 rép. par côté (visée 12, RIR 2)
     fait 13/13/13/13/13/13 (sans effort)
-    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
-B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 10, RIR 2)
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 12), 3 séries
+B2-3 single-leg-romanian-deadlift [prévu dumbbell-romanian-deadlift] {replaced_not_feasible} : 3×10-15 rép. par côté (visée 15, RIR 2)
     fait 16/16/16/16/16/16 (sans effort)
-    -> STALL STALL_ALREADY_PROPOSED ; prochain : 10-15 rép. (cible 10), 3 séries
-B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 5, RIR 2)
+    -> STALL STALL_ALREADY_PROPOSED ; prochain : 10-15 rép. (cible 15), 3 séries
+B2-4 assisted-nordic-curl : 2×5-8 rép. (visée 8, RIR 2)
     fait 9/9 (sans effort)
-    -> STALL STALL_NO_REPLACEMENT ; prochain : 5-8 rép. (cible 5), 2 séries, assisted-nordic-curl
+    -> STALL STALL_NO_REPLACEMENT ; prochain : 5-8 rép. (cible 8), 2 séries, assisted-nordic-curl
 B2-5 side-plank : 3×20 s par côté (RIR 2)
     fait 20 s/20 s/20 s/20 s/20 s/20 s (sans effort)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 s, 3 séries

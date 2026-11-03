@@ -12,7 +12,7 @@ import type {
 } from '@rune/contracts';
 import { initialMode, stateExerciseId } from './evaluate';
 import { type LoadGrid, lightest, loadGrid, platesPerSide, roundDown } from './loads';
-import { clamp, type Measure, repRange, slotMeasure, slotShape, workSpec } from './primitives';
+import { aimBounds, clamp, type Measure, repRange, slotMeasure, slotShape, workSpec } from './primitives';
 import { parisDaysUntil, upcomingWeekType } from './program-state';
 import type { ReplayResult } from './replay';
 import { type PlanSheet, profileChain, resolveSlot, type SlotResolutionKind } from './resolve';
@@ -243,7 +243,7 @@ function planSlot(slot: SlotSpec, env: Env): PlannedExercise {
     deload ||
     resume !== null
       ? null
-      : clamp(state.targetReps, reps.min, reps.max);
+      : clamp(state.targetReps, reps.min, aimBounds(shape, mode, rank).max);
   const rir = deload ? Math.min(shape.targetRir + rules.deloadRirPlus, rules.deloadRirMax) : shape.targetRir;
   const variant = rank === null ? null : ex.id;
 

@@ -54,6 +54,8 @@ describe('targetSummary', () => {
       work({ ...LUNGE, sets: LUNGE.sets.map((s) => ({ ...s, targetReps })) });
     expect(targetSummary(aimed(10))).toBe('2 × 10 (8–12) · 14 kg par main');
     expect(targetSummary(aimed(12))).toBe('2 × 12 (8–12) · 14 kg par main');
+    // Mode somme : la visée peut dépasser la fourchette d'une répétition (ruling R58).
+    expect(targetSummary(aimed(13))).toBe('2 × 13 (8–12) · 14 kg par main');
     // Au bas de la fourchette ou sans visée : la fourchette seule.
     expect(targetSummary(aimed(8))).toBe('2 × 8–12 · 14 kg par main');
     expect(targetSummary(aimed(null))).toBe('2 × 8–12 · 14 kg par main');

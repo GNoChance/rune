@@ -11,10 +11,10 @@ A2 bench-press : 3×6 rép. (échauffement 2, RIR 3, calibration)
     -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 6 rép. (cible 6), 3 séries
 A3 seated-cable-row : 3×8-12 rép. (RIR 3, calibration)
     fait 13/13/13 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
 A4 leg-curl : 2×8-12 rép. (RIR 3, calibration)
     fait 13/13 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 8), 2 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 13), 2 séries
 A5 knee-plank : 3×20 s (RIR 3, calibration)
     fait 20 s/20 s/20 s (ok)
     -> CALIBRATION CALIBRATION_DONE ; prochain : 20 s, 3 séries, knee-plank
@@ -28,13 +28,13 @@ B2 overhead-press : 3×6 rép. (échauffement 2, RIR 3, calibration)
     -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 6 rép. (cible 6), 3 séries
 B3 lat-pulldown : 3×8-12 rép. (RIR 3, calibration)
     fait 13/13/13 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
 B4 dumbbell-reverse-lunge : 2×8-12 rép. par côté (RIR 3, calibration)
     fait 13/13/13/13 @ 10 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 8-12 rép. (cible 13), 2 séries
 B5 dumbbell-bench-press : 2×8-12 rép. (RIR 3, calibration)
     fait 13/13 @ 10 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 8-12 rép. (cible 13), 2 séries
 
 -- Séance 3 · A · 2026-01-09 · normale · avis minor_barbell:back-squat, minor_barbell:bench-press
 A1 back-squat : 3×6 rép. @ 30 kg (échauffement 2, RIR 3)
@@ -43,10 +43,10 @@ A1 back-squat : 3×6 rép. @ 30 kg (échauffement 2, RIR 3)
 A2 bench-press : 3×6 rép. @ 30 kg (échauffement 2, RIR 3)
     fait 6/6/6 @ 30 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 30 kg (visée 8, RIR 3)
+A3 seated-cable-row : 3×8-12 rép. @ 30 kg (visée 13, RIR 3)
     fait 13/13/13 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 30 kg (visée 8, RIR 3)
+A4 leg-curl : 2×8-12 rép. @ 30 kg (visée 13, RIR 3)
     fait 13/13 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 3)
@@ -62,13 +62,13 @@ B1 romanian-deadlift : 3×6 rép. @ 30 kg (échauffement 2, RIR 3)
 B2 overhead-press : 3×6 rép. @ 30 kg (échauffement 2, RIR 3)
     fait 6/6/6 @ 30 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 30 kg (visée 8, RIR 3)
+B3 lat-pulldown : 3×8-12 rép. @ 30 kg (visée 13, RIR 3)
     fait 13/13/13 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 10 kg par côté (visée 8, RIR 3)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 10 kg par côté (visée 13, RIR 3)
     fait 13/13/13/13 @ 10 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 12 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 10 kg (visée 8, RIR 3)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 10 kg (visée 13, RIR 3)
     fait 13/13 @ 10 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 12 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -597,10 +597,10 @@ B3 lat-pulldown : 3×8-12 rép. @ 105 kg (visée 8, RIR 3)
     -> PROGRESS LOAD_UP ; prochain : 110 kg, 8-12 rép. (cible 8), 3 séries
 B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 40 kg par côté (visée 8, RIR 3)
     fait 13/13/13/13 @ 40 kg (ok)
-    -> HOLD REPS_MAX_REACHED ; prochain : 40 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD REPS_MAX_REACHED ; prochain : 40 kg, 8-12 rép. (cible 12), 2 séries
 B5 dumbbell-bench-press : 2×8-12 rép. @ 40 kg (visée 8, RIR 3)
     fait 13/13 @ 40 kg (ok)
-    -> HOLD REPS_MAX_REACHED ; prochain : 40 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD REPS_MAX_REACHED ; prochain : 40 kg, 8-12 rép. (cible 12), 2 séries
 
 -- Séance 35 · A · 2026-03-14 · normale · avis minor_barbell:back-squat, minor_barbell:bench-press
 A1 back-squat : 3×6 rép. @ 70 kg (échauffement 2, RIR 3)
@@ -629,11 +629,11 @@ B2 overhead-press : 3×6 rép. @ 70 kg (échauffement 2, RIR 3)
 B3 lat-pulldown : 3×8-12 rép. @ 110 kg (visée 8, RIR 3)
     fait 13/13/13 @ 110 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 115 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 40 kg par côté (visée 8, RIR 3)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 40 kg par côté (visée 12, RIR 3)
     fait 13/13/13/13 @ 40 kg (ok)
-    -> HOLD REPS_MAX_REACHED ; prochain : 40 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 40 kg (visée 8, RIR 3)
+    -> HOLD REPS_MAX_REACHED ; prochain : 40 kg, 8-12 rép. (cible 12), 2 séries
+B5 dumbbell-bench-press : 2×8-12 rép. @ 40 kg (visée 12, RIR 3)
     fait 13/13 @ 40 kg (ok)
-    -> HOLD REPS_MAX_REACHED ; prochain : 40 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD REPS_MAX_REACHED ; prochain : 40 kg, 8-12 rép. (cible 12), 2 séries
 
 état final : semaine 13, séance suivante A, suspendus []

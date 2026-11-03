@@ -442,8 +442,9 @@ describe('evaluateExercise : propriétés, à chaque séance rejouée', () => {
         const t = out.decision.nextTarget ?? fail();
         expect(t.workSets).toBeLessThanOrEqual(planned);
         if (t.repsMin !== null && t.repsMax !== null && t.targetReps !== null) {
+          // En somme, la visée va jusqu'à max + 1 : la moyenne qui déclenche la hausse (ruling R58).
           expect(t.repsMin).toBeLessThanOrEqual(t.targetReps);
-          expect(t.targetReps).toBeLessThanOrEqual(t.repsMax);
+          expect(t.targetReps).toBeLessThanOrEqual(t.mode === 'sum' ? t.repsMax + 1 : t.repsMax);
         }
         expect(out.state.noProgressCount).toBeLessThan(rules.stallSessions);
         expect(out.state.stallRank).toBeLessThanOrEqual(3);

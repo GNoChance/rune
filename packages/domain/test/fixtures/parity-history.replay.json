@@ -244,7 +244,7 @@
         "loadG": 30000,
         "repsMin": 8,
         "repsMax": 12,
-        "targetReps": 8,
+        "targetReps": 13,
         "durationS": null,
         "variantId": null,
         "workSets": 3
@@ -264,7 +264,7 @@
         "loadG": 30000,
         "repsMin": 8,
         "repsMax": 12,
-        "targetReps": 8,
+        "targetReps": 13,
         "durationS": null,
         "variantId": null,
         "workSets": 2
@@ -344,7 +344,7 @@
         "loadG": 30000,
         "repsMin": 8,
         "repsMax": 12,
-        "targetReps": 8,
+        "targetReps": 13,
         "durationS": null,
         "variantId": null,
         "workSets": 3
@@ -364,7 +364,7 @@
         "loadG": 10000,
         "repsMin": 8,
         "repsMax": 12,
-        "targetReps": 8,
+        "targetReps": 13,
         "durationS": null,
         "variantId": null,
         "workSets": 2
@@ -384,7 +384,7 @@
         "loadG": 10000,
         "repsMin": 8,
         "repsMax": 12,
-        "targetReps": 8,
+        "targetReps": 13,
         "durationS": null,
         "variantId": null,
         "workSets": 2

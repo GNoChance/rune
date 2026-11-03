@@ -321,7 +321,14 @@ describe('linear, r = 6, incrementG 5 000, barre 20 kg / disque 1,25 kg (05 §8)
     const out = s.run(sets([6, 6, 6], { load: 40000 }));
     expect(outcome(out)).toEqual(['HOLD', 'LINEAR_TO_DOUBLE']);
     expect(out.state.mode).toBe('double');
-    expect(out.decision.nextTarget).toMatchObject({ mode: 'double', loadG: 40000, repsMin: 6, repsMax: 10 });
+    // Passé en double [6, 10] : la visée suit ce qui vient d'être fait, 6 (ruling R58).
+    expect(out.decision.nextTarget).toMatchObject({
+      mode: 'double',
+      loadG: 40000,
+      repsMin: 6,
+      repsMax: 10,
+      targetReps: 6,
+    });
   });
 
   it('linearRaise : null quand même un pas dépasse le plafond, jamais un pas trop grand', () => {
@@ -366,11 +373,12 @@ describe('double [8, 12] × 3 (05 §8)', () => {
     });
   });
 
+  // Calibration finie à 9, 9, 9 : la visée part de ce qui a été fait, 9 (ruling R58) ; un maintien ou un échec la garde.
   it.each<[string, number[], DecisionResult, ReasonCode, number]>([
     ['10, 10, 9 après 9, 9, 9', [10, 10, 9], 'PROGRESS', 'REPS_UP', 10],
-    ['total égal', [9, 9, 9], 'HOLD', 'NO_PROGRESS', 8],
-    ['total en baisse', [9, 9, 8], 'HOLD', 'NO_PROGRESS', 8],
-    ['une série à 7', [12, 12, 7], 'FAIL', 'REPS_UNDER_MIN', 8],
+    ['total égal', [9, 9, 9], 'HOLD', 'NO_PROGRESS', 9],
+    ['total en baisse', [9, 9, 8], 'HOLD', 'NO_PROGRESS', 9],
+    ['une série à 7', [12, 12, 7], 'FAIL', 'REPS_UNDER_MIN', 9],
   ])('%s', (_, reps, result, code, targetReps) => {
     const out = ready().run(sets(reps, { load: 60000 }));
     expect(outcome(out)).toEqual([result, code]);
@@ -900,12 +908,122 @@ describe('calibration', () => {
     ]);
   });
 
-  it('sans charge : la première séance fixe le niveau de départ', () => {
+  it('sans charge : la première séance fixe le niveau de départ, et la visée sur la plus faible série (R58)', () => {
     const out = scenario({ slot: CHAIN, exercise: PUSH_UP, grid: NONE, chainSteps: PUSH_UP_CHAIN }).run(
       sets([11, 10, 10], { effort: null }),
     );
     expect(outcome(out)).toEqual(['CALIBRATION', 'CALIBRATION_DONE']);
-    expect(out.state).toMatchObject({ variantRank: 3, targetReps: 8, calibrationLeft: 0 });
+    expect(out.state).toMatchObject({ variantRank: 3, targetReps: 10, calibrationLeft: 0 });
+  });
+});
+
+describe('visée recalée sur ce qui a été fait (ruling R58)', () => {
+  const BAR_DOUBLE: Scenario = { slot: DOUBLE, exercise: SQUAT, grid: BAR };
+  /** Squat barre calibré à 9, 9, 9 sur 60 kg, puis 10, 10, 9 : REPS_UP, visée 10. */
+  const aimingTen = () => {
+    const s = calibrated(BAR_DOUBLE, sets([9, 9, 9], { load: 60000 }));
+    expect(outcome(s.run(sets([10, 10, 9], { load: 60000 })))).toEqual(['PROGRESS', 'REPS_UP']);
+    expect(s.state.targetReps).toBe(10);
+    return s;
+  };
+
+  it('poids du corps, première séance au sommet : visée 12, que le sommet tenu garde (le pont fait 12, 12)', () => {
+    const s = scenario({ slot: DOUBLE, exercise: PUSH_UP, grid: NONE });
+    const first = s.run(sets([12, 12, 12]));
+    expect(outcome(first)).toEqual(['CALIBRATION', 'CALIBRATION_DONE']);
+    expect(first.decision.nextTarget).toMatchObject({ repsMin: 8, repsMax: 12, targetReps: 12 });
+    const again = s.run(sets([12, 12, 12]));
+    expect(outcome(again)).toEqual(['HOLD', 'REPS_MAX_REACHED']);
+    expect(again.decision.nextTarget).toMatchObject({ repsMin: 8, repsMax: 12, targetReps: 12 });
+  });
+
+  it('sommet sans effort noté : pas de hausse de charge, mais la visée monte au sommet fait', () => {
+    const s = calibrated(BAR_DOUBLE, sets([9, 9, 9], { load: 60000 }));
+    const out = s.run(sets([12, 12, 12], { load: 60000, effort: null }));
+    expect(outcome(out)).toEqual(['HOLD', 'EFFORT_MISSING']);
+    expect(out.decision.nextTarget).toMatchObject({ loadG: 60000, targetReps: 12 });
+  });
+
+  it('charge plus lourde que prévue : la visée devient la plus faible série faite à cette charge', () => {
+    const out = aimingTen().run(sets([9, 9, 8], { load: 62500 }));
+    expect(outcome(out)).toEqual(['HOLD', 'NO_PROGRESS']);
+    expect(out.decision.nextTarget).toMatchObject({ loadG: 62500, targetReps: 8 });
+  });
+
+  it('charge plus légère que prévue : la visée monte à ce qui a été fait, même au-dessus de la visée', () => {
+    const out = aimingTen().run(sets([12, 12, 11], { load: 55000 }));
+    expect(outcome(out)).toEqual(['HOLD', 'NO_PROGRESS']);
+    expect(out.decision.nextTarget).toMatchObject({ loadG: 55000, targetReps: 11 });
+  });
+
+  it('échec à une charge nouvelle : la visée repart du bas de la fourchette', () => {
+    const out = aimingTen().run(sets([9, 8, 7], { load: 62500 }));
+    expect(outcome(out)).toEqual(['FAIL', 'REPS_UNDER_MIN']);
+    expect(out.decision.nextTarget).toMatchObject({ loadG: 62500, targetReps: 8 });
+  });
+
+  it('séance incomplète : la visée ne bouge pas', () => {
+    const out = aimingTen().run(sets([12, 12], { load: 60000 }));
+    expect(outcome(out)).toEqual(['HOLD', 'SETS_MISSING']);
+    expect(out.decision.nextTarget).toMatchObject({ loadG: 60000, targetReps: 10 });
+  });
+
+  it('calibration : la visée suit la séance tenue, et repart du bas quand la charge monte ou baisse', () => {
+    const s = scenario(BAR_DOUBLE);
+    const hard = s.run(sets([12, 12, 12], { load: 60000, effort: 'hard' }));
+    expect(outcome(hard)).toEqual(['CALIBRATION', 'CALIBRATION_HOLD']);
+    expect(hard.decision.nextTarget).toMatchObject({ loadG: 60000, targetReps: 12 });
+    const easy = s.run(sets([12, 12, 12], { load: 60000, effort: 'easy' }));
+    expect(outcome(easy)).toEqual(['CALIBRATION', 'CALIBRATION_UP']);
+    expect(easy.decision.nextTarget).toMatchObject({ loadG: 65000, targetReps: 8 });
+    const failed = scenario(BAR_DOUBLE).run(sets([9, 7, 6], { load: 60000 }));
+    expect(outcome(failed)).toEqual(['CALIBRATION', 'CALIBRATION_DOWN']);
+    expect(failed.decision.nextTarget).toMatchObject({ loadG: 52500, targetReps: 8 });
+  });
+
+  it('« ne pas augmenter » : la visée suit une autre charge choisie, jamais vers le haut à la même charge', () => {
+    const other = aimingTen().run(sets([7, 7, 6], { load: 70000 }), { adj: 'hold' });
+    expect(outcome(other)).toEqual(['ADJUSTED_HOLD', 'USER_HOLD']);
+    expect(other.decision.nextTarget).toMatchObject({ loadG: 70000, targetReps: 8 });
+    const same = aimingTen().run(sets([12, 12, 12], { load: 60000 }), { adj: 'hold' });
+    expect(outcome(same)).toEqual(['ADJUSTED_HOLD', 'USER_HOLD']);
+    expect(same.decision.nextTarget).toMatchObject({ loadG: 60000, targetReps: 10 });
+  });
+
+  it('allègement demandé ou de stagnation : la visée repart du bas de la fourchette', () => {
+    const lighten = aimingTen().run(sets([10, 10, 10], { load: 60000 }), { adj: 'lighten' });
+    expect(outcome(lighten)).toEqual(['ADJUSTED_LIGHTEN', 'USER_LIGHTEN']);
+    expect(lighten.decision.nextTarget).toMatchObject({ loadG: 52500, targetReps: 8 });
+    const s = aimingTen();
+    const k1 = s.repeat(3, () => sets([10, 10, 9], { load: 60000 }));
+    expect(outcome(k1)).toEqual(['STALL', 'STALL_1_LIGHTEN']);
+    expect(k1.decision.nextTarget).toMatchObject({ loadG: 52500, targetReps: 8 });
+  });
+
+  it("mode somme : la visée va jusqu'à 13, la moyenne qui déclenche la hausse (3 × 12 + 3)", () => {
+    const s = calibrated(
+      { slot: DOUBLE, exercise: CURL, grid: DUMBBELLS },
+      sets([10, 10, 10], { load: 14000 }),
+    );
+    expect(s.state).toMatchObject({ mode: 'sum', targetReps: 10 });
+    const up = s.run(sets([12, 12, 12], { load: 14000 }));
+    expect(outcome(up)).toEqual(['PROGRESS', 'REPS_UP']);
+    expect(up.decision.nextTarget).toMatchObject({ mode: 'sum', repsMin: 8, repsMax: 12, targetReps: 13 });
+    const top = s.run(sets([13, 13, 13], { load: 14000 }));
+    expect(outcome(top)).toEqual(['PROGRESS', 'SUM_LOAD_UP']);
+    expect(top.decision.nextTarget).toMatchObject({ loadG: 16000, targetReps: 8 });
+  });
+
+  it('chaîne, variante plus dure choisie : la visée part de ce qui a été fait sur elle', () => {
+    const s = calibrated(
+      { slot: CHAIN, exercise: INCLINE, grid: NONE, chainSteps: PUSH_UP_CHAIN },
+      sets([10, 10, 10]),
+    );
+    const out = s.run(sets([9, 9, 8]), { exercise: PUSH_UP });
+    expect(out.state).toMatchObject({ variantRank: 3, targetReps: 8 });
+    const next = s.run(sets([10, 10, 9]), { exercise: PUSH_UP });
+    expect(outcome(next)).toEqual(['PROGRESS', 'REPS_UP']);
+    expect(next.state).toMatchObject({ variantRank: 3, targetReps: 10 });
   });
 });
 
@@ -977,7 +1095,8 @@ describe('stagnation', () => {
     expect(k2.stalled).toEqual({ rank: 2, propose: true });
     const beyond = s.repeat(3, () => sets([11, 11, 11]));
     expect(beyond.stalled).toEqual({ rank: 2, propose: true });
-    expect(beyond.state).toMatchObject({ variantRank: 2, targetReps: 8 });
+    // Après le retour au minimum, 11, 11, 11 refaits : la visée suit ce qui a été fait (ruling R58).
+    expect(beyond.state).toMatchObject({ variantRank: 2, targetReps: 11 });
   });
 
   it('duration : k = 1 STALL_RESET_MIN, k = 2 proposition', () => {

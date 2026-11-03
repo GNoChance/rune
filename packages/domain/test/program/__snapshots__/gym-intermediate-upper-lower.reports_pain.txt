@@ -5,36 +5,36 @@ modèle gym-intermediate-upper-lower · profil reports_pain · 4 séances par se
 -- Séance 1 · H1 · 2026-01-05 · normale
 H1-1 bench-press : 4×4-6 rép. (échauffement 2, RIR 2, calibration)
     fait 7/7/7/7 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 4-6 rép. (cible 4), 4 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 4-6 rép. (cible 6), 4 séries
 H1-2 barbell-row : 4×4-6 rép. (échauffement 2, RIR 2, calibration)
     fait 7/7/7/7 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 4-6 rép. (cible 4), 4 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 4-6 rép. (cible 6), 4 séries
 H1-3 overhead-press : 3×6-8 rép. (RIR 2, calibration)
     fait 9/9/9 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 6-8 rép. (cible 6), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 6-8 rép. (cible 8), 3 séries
 H1-4 lat-pulldown : 3×6-8 rép. (RIR 2, calibration)
     fait 9/9/9 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 6-8 rép. (cible 6), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 6-8 rép. (cible 9), 3 séries
 H1-5 dumbbell-curl : 2×8-12 rép. (RIR 1, calibration)
     fait 13/13 @ 10 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 8-12 rép. (cible 13), 2 séries
 H1-6 cable-triceps-pushdown : 2×8-12 rép. (RIR 1, calibration)
     fait 13/13 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 8), 2 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 13), 2 séries
 
 -- Séance 2 · B1 · 2026-01-07 · normale
 B1-1 back-squat : 4×4-6 rép. (échauffement 2, RIR 2, calibration)
     fait 7/7/7/7 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 4-6 rép. (cible 4), 4 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 4-6 rép. (cible 6), 4 séries
 B1-2 deadlift : 3×4-6 rép. (échauffement 2, RIR 2, calibration)
     fait 7/7/7 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 4-6 rép. (cible 4), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 4-6 rép. (cible 6), 3 séries
 B1-3 leg-curl : 3×8-12 rép. (RIR 2, calibration)
     fait 13/13/13 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
 B1-4 leg-press-calf-raise : 3×8-12 rép. (RIR 1, calibration)
     fait 13/13/13 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
 B1-5 knee-plank : 3×30 s (RIR 2, calibration)
     fait 30 s/30 s/30 s (ok)
     -> CALIBRATION CALIBRATION_DONE ; prochain : 30 s, 3 séries, knee-plank
@@ -42,76 +42,76 @@ B1-5 knee-plank : 3×30 s (RIR 2, calibration)
 -- Séance 3 · H2 · 2026-01-09 · normale
 H2-1 incline-dumbbell-bench-press : 4×8-12 rép. (RIR 2, calibration)
     fait 13/13/13/13 @ 10 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 8-12 rép. (cible 8), 4 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 8-12 rép. (cible 13), 4 séries
 H2-2 seated-cable-row : 3×8-12 rép. (RIR 2, calibration)
     fait 13/13/13 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
 H2-3 machine-chest-press : 4×10-15 rép. (RIR 2, calibration)
     fait 16/16/16/16 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 10-15 rép. (cible 10), 4 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 10-15 rép. (cible 16), 4 séries
 H2-4 lat-pulldown : 3×10-15 rép. (RIR 2, calibration, suggestion 30 kg)
     fait 16/16/16 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 10-15 rép. (cible 10), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 10-15 rép. (cible 16), 3 séries
 H2-5 dumbbell-lateral-raise : 3×12-15 rép. (RIR 1, calibration)
     fait 16/16/16 @ 10 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 12-15 rép. (cible 12), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 12-15 rép. (cible 16), 3 séries
 H2-6 face-pull : 2×12-15 rép. (RIR 1, calibration)
     fait 16/16 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 12-15 rép. (cible 12), 2 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 12-15 rép. (cible 16), 2 séries
 
 -- Séance 4 · B2 · 2026-01-11 · normale
 B2-1 leg-press : 3×10-15 rép. (RIR 2, calibration)
     fait 16/16/16 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 10-15 rép. (cible 10), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 10-15 rép. (cible 16), 3 séries
 B2-2 romanian-deadlift : 3×8-12 rép. (RIR 2, calibration)
     fait 13/13/13 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 12), 3 séries
 B2-3 dumbbell-reverse-lunge : 3×8-12 rép. par côté (RIR 2, calibration)
     fait 13/13/13/13/13/13 @ 10 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 10 kg, 8-12 rép. (cible 13), 3 séries
 B2-4 leg-curl : 3×10-15 rép. (RIR 2, calibration, suggestion 30 kg)
     fait 16/16/16 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 10-15 rép. (cible 10), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 10-15 rép. (cible 16), 3 séries
 B2-5 leg-extension : 2×12-15 rép. (RIR 1, calibration)
     fait 16/16 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 12-15 rép. (cible 12), 2 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 12-15 rép. (cible 16), 2 séries
 B2-6 cable-pallof-press : 3×8-12 rép. par côté (RIR 2, calibration)
     fait 13/13/13/13/13/13 @ 30 kg (ok)
-    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
+    -> CALIBRATION CALIBRATION_DONE ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
 
 == Semaine 2 (semaine 2 du bloc) ==
 
 -- Séance 5 · H1 · 2026-01-13 · normale
-H1-1 bench-press : 4×4-6 rép. @ 30 kg (visée 4, échauffement 2, RIR 2)
+H1-1 bench-press : 4×4-6 rép. @ 30 kg (visée 6, échauffement 2, RIR 2)
     fait 7/7/7/7 @ 30 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 4-6 rép. (cible 4), 4 séries
-H1-2 barbell-row : 4×4-6 rép. @ 30 kg (visée 4, échauffement 2, RIR 2)
+H1-2 barbell-row : 4×4-6 rép. @ 30 kg (visée 6, échauffement 2, RIR 2)
     fait 7/7/7/7 @ 30 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 4-6 rép. (cible 4), 4 séries
-H1-3 overhead-press : 3×6-8 rép. @ 30 kg (visée 6, RIR 2)
+H1-3 overhead-press : 3×6-8 rép. @ 30 kg (visée 8, RIR 2)
     fait 9/9/9 @ 30 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 6-8 rép. (cible 6), 3 séries
-H1-4 lat-pulldown : 3×6-8 rép. @ 30 kg (visée 6, RIR 2)
+H1-4 lat-pulldown : 3×6-8 rép. @ 30 kg (visée 9, RIR 2)
     fait 9/9/9 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 6-8 rép. (cible 6), 3 séries
-H1-5 dumbbell-curl : 2×8-12 rép. @ 10 kg (visée 8, RIR 1)
+H1-5 dumbbell-curl : 2×8-12 rép. @ 10 kg (visée 13, RIR 1)
     fait 13/13 @ 10 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 12 kg, 8-12 rép. (cible 8), 2 séries
-H1-6 cable-triceps-pushdown : 2×8-12 rép. @ 30 kg (visée 8, RIR 1)
+H1-6 cable-triceps-pushdown : 2×8-12 rép. @ 30 kg (visée 13, RIR 1)
     fait 13/13 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 2 séries
 
 -- Séance 6 · B1 · 2026-01-15 · normale
-B1-1 back-squat : 4×4-6 rép. @ 30 kg (visée 4, échauffement 2, RIR 2)
+B1-1 back-squat : 4×4-6 rép. @ 30 kg (visée 6, échauffement 2, RIR 2)
     fait 7/7/7/7 @ 30 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 4-6 rép. (cible 4), 4 séries
-B1-2 deadlift : 3×4-6 rép. @ 30 kg (visée 4, échauffement 2, RIR 2)
+B1-2 deadlift : 3×4-6 rép. @ 30 kg (visée 6, échauffement 2, RIR 2)
     fait 7/7/7 @ 30 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 4-6 rép. (cible 4), 3 séries
-B1-3 leg-curl : 3×8-12 rép. @ 30 kg (visée 8, RIR 2)
+B1-3 leg-curl : 3×8-12 rép. @ 30 kg (visée 13, RIR 2)
     fait 13/13/13 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 3 séries
-B1-4 leg-press-calf-raise : 3×8-12 rép. @ 30 kg (visée 8, RIR 1)
+B1-4 leg-press-calf-raise : 3×8-12 rép. @ 30 kg (visée 13, RIR 1)
     fait 13/13/13 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 3 séries
 B1-5 knee-plank : 3×30 s (RIR 2)
@@ -119,42 +119,42 @@ B1-5 knee-plank : 3×30 s (RIR 2)
     -> PROGRESS DURATION_UP ; prochain : 35 s, 3 séries, knee-plank
 
 -- Séance 7 · H2 · 2026-01-17 · normale
-H2-1 incline-dumbbell-bench-press : 4×8-12 rép. @ 10 kg (visée 8, RIR 2)
+H2-1 incline-dumbbell-bench-press : 4×8-12 rép. @ 10 kg (visée 13, RIR 2)
     fait 13/13/13/13 @ 10 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 12 kg, 8-12 rép. (cible 8), 4 séries
-H2-2 seated-cable-row : 3×8-12 rép. @ 30 kg (visée 8, RIR 2)
+H2-2 seated-cable-row : 3×8-12 rép. @ 30 kg (visée 13, RIR 2)
     fait 13/13/13 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 3 séries
-H2-3 machine-chest-press : 4×10-15 rép. @ 30 kg (visée 10, RIR 2)
+H2-3 machine-chest-press : 4×10-15 rép. @ 30 kg (visée 16, RIR 2)
     fait 16/16/16/16 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 10-15 rép. (cible 10), 4 séries
-H2-4 lat-pulldown : 3×10-15 rép. @ 30 kg (visée 10, RIR 2)
+H2-4 lat-pulldown : 3×10-15 rép. @ 30 kg (visée 16, RIR 2)
     fait 16/16/16 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 10-15 rép. (cible 10), 3 séries
-H2-5 dumbbell-lateral-raise : 3×12-15 rép. @ 10 kg (visée 12, RIR 1)
+H2-5 dumbbell-lateral-raise : 3×12-15 rép. @ 10 kg (visée 16, RIR 1)
     fait 16/16/16 @ 10 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 12 kg, 12-15 rép. (cible 12), 3 séries
-H2-6 face-pull : 2×12-15 rép. @ 30 kg (visée 12, RIR 1)
+H2-6 face-pull : 2×12-15 rép. @ 30 kg (visée 16, RIR 1)
     fait 16/16 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 12-15 rép. (cible 12), 2 séries
 
 -- Séance 8 · B2 · 2026-01-19 · normale
-B2-1 leg-press : 3×10-15 rép. @ 30 kg (visée 10, RIR 2)
+B2-1 leg-press : 3×10-15 rép. @ 30 kg (visée 16, RIR 2)
     fait 16/16/16 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 10-15 rép. (cible 10), 3 séries
-B2-2 romanian-deadlift : 3×8-12 rép. @ 30 kg (visée 8, RIR 2)
+B2-2 romanian-deadlift : 3×8-12 rép. @ 30 kg (visée 12, RIR 2)
     fait 13/13/13 @ 30 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 8-12 rép. (cible 8), 3 séries
-B2-3 dumbbell-reverse-lunge : 3×8-12 rép. @ 10 kg par côté (visée 8, RIR 2)
+B2-3 dumbbell-reverse-lunge : 3×8-12 rép. @ 10 kg par côté (visée 13, RIR 2)
     fait 13/13/13/13/13/13 @ 10 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 12 kg, 8-12 rép. (cible 8), 3 séries
-B2-4 leg-curl : 3×10-15 rép. @ 30 kg (visée 10, RIR 2)
+B2-4 leg-curl : 3×10-15 rép. @ 30 kg (visée 16, RIR 2)
     fait 16/16/16 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 10-15 rép. (cible 10), 3 séries
-B2-5 leg-extension : 2×12-15 rép. @ 30 kg (visée 12, RIR 1)
+B2-5 leg-extension : 2×12-15 rép. @ 30 kg (visée 16, RIR 1)
     fait 16/16 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 12-15 rép. (cible 12), 2 séries
-B2-6 cable-pallof-press : 3×8-12 rép. @ 30 kg par côté (visée 8, RIR 2)
+B2-6 cable-pallof-press : 3×8-12 rép. @ 30 kg par côté (visée 13, RIR 2)
     fait 13/13/13/13/13/13 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 3 séries
 

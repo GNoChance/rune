@@ -11,10 +11,10 @@ A2 bench-press : 3×6 rép. (échauffement 2, RIR 2, calibration)
     -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 6 rép. (cible 6), 3 séries
 A3 seated-cable-row : 3×8-12 rép. (RIR 2, calibration)
     fait 13/13/13 @ 30 kg (sans effort)
-    -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
+    -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
 A4 leg-curl : 2×8-12 rép. (RIR 2, calibration)
     fait 13/13 @ 30 kg (sans effort)
-    -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 8-12 rép. (cible 8), 2 séries
+    -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 8-12 rép. (cible 13), 2 séries
 A5 knee-plank : 3×20 s (RIR 2, calibration)
     fait 20 s/20 s/20 s (sans effort)
     -> CALIBRATION CALIBRATION_DONE ; prochain : 20 s, 3 séries, knee-plank
@@ -28,13 +28,13 @@ B2 overhead-press : 3×6 rép. (échauffement 2, RIR 2, calibration)
     -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 6 rép. (cible 6), 3 séries
 B3 lat-pulldown : 3×8-12 rép. (RIR 2, calibration)
     fait 13/13/13 @ 30 kg (sans effort)
-    -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
+    -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
 B4 dumbbell-reverse-lunge : 2×8-12 rép. par côté (RIR 2, calibration)
     fait 13/13/13/13 @ 10 kg (sans effort)
-    -> CALIBRATION CALIBRATION_HOLD ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
+    -> CALIBRATION CALIBRATION_HOLD ; prochain : 10 kg, 8-12 rép. (cible 13), 2 séries
 B5 dumbbell-bench-press : 2×8-12 rép. (RIR 2, calibration)
     fait 13/13 @ 10 kg (sans effort)
-    -> CALIBRATION CALIBRATION_HOLD ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
+    -> CALIBRATION CALIBRATION_HOLD ; prochain : 10 kg, 8-12 rép. (cible 13), 2 séries
 
 -- Séance 3 · A · 2026-01-09 · normale
 A1 back-squat : 3×6 rép. @ 30 kg (échauffement 2, RIR 2, calibration)
@@ -43,12 +43,12 @@ A1 back-squat : 3×6 rép. @ 30 kg (échauffement 2, RIR 2, calibration)
 A2 bench-press : 3×6 rép. @ 30 kg (échauffement 2, RIR 2, calibration)
     fait 6/6/6 @ 30 kg (sans effort)
     -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 30 kg (visée 8, RIR 2, calibration)
+A3 seated-cable-row : 3×8-12 rép. @ 30 kg (visée 13, RIR 2, calibration)
     fait 13/13/13 @ 30 kg (sans effort)
-    -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 30 kg (visée 8, RIR 2, calibration)
+    -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
+A4 leg-curl : 2×8-12 rép. @ 30 kg (visée 13, RIR 2, calibration)
     fait 13/13 @ 30 kg (sans effort)
-    -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 8-12 rép. (cible 8), 2 séries
+    -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 8-12 rép. (cible 13), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 20 s, 3 séries, knee-plank
@@ -62,15 +62,15 @@ B1 romanian-deadlift : 3×6 rép. @ 30 kg (échauffement 2, RIR 2, calibration)
 B2 overhead-press : 3×6 rép. @ 30 kg (échauffement 2, RIR 2, calibration)
     fait 6/6/6 @ 30 kg (sans effort)
     -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 30 kg (visée 8, RIR 2, calibration)
+B3 lat-pulldown : 3×8-12 rép. @ 30 kg (visée 13, RIR 2, calibration)
     fait 13/13/13 @ 30 kg (sans effort)
-    -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 10 kg par côté (visée 8, RIR 2, calibration)
+    -> CALIBRATION CALIBRATION_HOLD ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 10 kg par côté (visée 13, RIR 2, calibration)
     fait 13/13/13/13 @ 10 kg (sans effort)
-    -> CALIBRATION CALIBRATION_HOLD ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 10 kg (visée 8, RIR 2, calibration)
+    -> CALIBRATION CALIBRATION_HOLD ; prochain : 10 kg, 8-12 rép. (cible 13), 2 séries
+B5 dumbbell-bench-press : 2×8-12 rép. @ 10 kg (visée 13, RIR 2, calibration)
     fait 13/13 @ 10 kg (sans effort)
-    -> CALIBRATION CALIBRATION_HOLD ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
+    -> CALIBRATION CALIBRATION_HOLD ; prochain : 10 kg, 8-12 rép. (cible 13), 2 séries
 
 -- Séance 5 · A · 2026-01-13 · normale
 A1 back-squat : 3×6 rép. @ 30 kg (échauffement 2, RIR 2, calibration)
@@ -79,12 +79,12 @@ A1 back-squat : 3×6 rép. @ 30 kg (échauffement 2, RIR 2, calibration)
 A2 bench-press : 3×6 rép. @ 30 kg (échauffement 2, RIR 2, calibration)
     fait 6/6/6 @ 30 kg (sans effort)
     -> CALIBRATION CALIBRATION_END ; prochain : 30 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 30 kg (visée 8, RIR 2, calibration)
+A3 seated-cable-row : 3×8-12 rép. @ 30 kg (visée 13, RIR 2, calibration)
     fait 13/13/13 @ 30 kg (sans effort)
-    -> CALIBRATION CALIBRATION_END ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 30 kg (visée 8, RIR 2, calibration)
+    -> CALIBRATION CALIBRATION_END ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
+A4 leg-curl : 2×8-12 rép. @ 30 kg (visée 13, RIR 2, calibration)
     fait 13/13 @ 30 kg (sans effort)
-    -> CALIBRATION CALIBRATION_END ; prochain : 30 kg, 8-12 rép. (cible 8), 2 séries
+    -> CALIBRATION CALIBRATION_END ; prochain : 30 kg, 8-12 rép. (cible 13), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 20 s, 3 séries, knee-plank
@@ -96,15 +96,15 @@ B1 romanian-deadlift : 3×6 rép. @ 30 kg (échauffement 2, RIR 2, calibration)
 B2 overhead-press : 3×6 rép. @ 30 kg (échauffement 2, RIR 2, calibration)
     fait 6/6/6 @ 30 kg (sans effort)
     -> CALIBRATION CALIBRATION_END ; prochain : 30 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 30 kg (visée 8, RIR 2, calibration)
+B3 lat-pulldown : 3×8-12 rép. @ 30 kg (visée 13, RIR 2, calibration)
     fait 13/13/13 @ 30 kg (sans effort)
-    -> CALIBRATION CALIBRATION_END ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 10 kg par côté (visée 8, RIR 2, calibration)
+    -> CALIBRATION CALIBRATION_END ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 10 kg par côté (visée 13, RIR 2, calibration)
     fait 13/13/13/13 @ 10 kg (sans effort)
-    -> CALIBRATION CALIBRATION_END ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 10 kg (visée 8, RIR 2, calibration)
+    -> CALIBRATION CALIBRATION_END ; prochain : 10 kg, 8-12 rép. (cible 13), 2 séries
+B5 dumbbell-bench-press : 2×8-12 rép. @ 10 kg (visée 13, RIR 2, calibration)
     fait 13/13 @ 10 kg (sans effort)
-    -> CALIBRATION CALIBRATION_END ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
+    -> CALIBRATION CALIBRATION_END ; prochain : 10 kg, 8-12 rép. (cible 13), 2 séries
 
 == Semaine 3 (bloc réactif) ==
 
@@ -115,12 +115,12 @@ A1 back-squat : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
 A2 bench-press : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 30 kg (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 30 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 30 kg (visée 8, RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 30 kg (visée 13, RIR 2)
     fait 13/13/13 @ 30 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 30 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
+A4 leg-curl : 2×8-12 rép. @ 30 kg (visée 13, RIR 2)
     fait 13/13 @ 30 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 30 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 30 kg, 8-12 rép. (cible 13), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (sans effort)
     -> STALL STALL_RESET_MIN ; prochain : 20 s, 3 séries, knee-plank
@@ -132,15 +132,15 @@ B1 romanian-deadlift : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 30 kg (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 30 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 30 kg (visée 8, RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 30 kg (visée 13, RIR 2)
     fait 13/13/13 @ 30 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 10 kg par côté (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 10 kg par côté (visée 13, RIR 2)
     fait 13/13/13/13 @ 10 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 10 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10 kg, 8-12 rép. (cible 13), 2 séries
+B5 dumbbell-bench-press : 2×8-12 rép. @ 10 kg (visée 13, RIR 2)
     fait 13/13 @ 10 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 10 kg, 8-12 rép. (cible 13), 2 séries
 
 -- Séance 9 · A · 2026-01-21 · normale
 A1 back-squat : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
@@ -149,12 +149,12 @@ A1 back-squat : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
 A2 bench-press : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 30 kg (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 30 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 30 kg (visée 8, RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 30 kg (visée 13, RIR 2)
     fait 13/13/13 @ 30 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 30 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
+A4 leg-curl : 2×8-12 rép. @ 30 kg (visée 13, RIR 2)
     fait 13/13 @ 30 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 30 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 30 kg, 8-12 rép. (cible 13), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 20 s, 3 séries, knee-plank
@@ -168,15 +168,15 @@ B1 romanian-deadlift : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 30 kg (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 30 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 30 kg (visée 8, RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 30 kg (visée 13, RIR 2)
     fait 13/13/13 @ 30 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 30 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 10 kg par côté (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 30 kg, 8-12 rép. (cible 13), 3 séries
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 10 kg par côté (visée 13, RIR 2)
     fait 13/13/13/13 @ 10 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 10 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 10 kg, 8-12 rép. (cible 13), 2 séries
+B5 dumbbell-bench-press : 2×8-12 rép. @ 10 kg (visée 13, RIR 2)
     fait 13/13 @ 10 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 10 kg, 8-12 rép. (cible 13), 2 séries
 
 -- Séance 11 · A · 2026-01-25 · normale
 A1 back-squat : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
@@ -185,10 +185,10 @@ A1 back-squat : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
 A2 bench-press : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 30 kg (sans effort)
     -> STALL STALL_1_LIGHTEN ; prochain : 25 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 30 kg (visée 8, RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 30 kg (visée 13, RIR 2)
     fait 13/13/13 @ 30 kg (sans effort)
     -> STALL STALL_1_LIGHTEN ; prochain : 25 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 30 kg (visée 8, RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 30 kg (visée 13, RIR 2)
     fait 13/13 @ 30 kg (sans effort)
     -> STALL STALL_1_LIGHTEN ; prochain : 25 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -203,13 +203,13 @@ B1 romanian-deadlift : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 30 kg (sans effort)
     -> STALL STALL_1_LIGHTEN ; prochain : 25 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 30 kg (visée 8, RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 30 kg (visée 13, RIR 2)
     fait 13/13/13 @ 30 kg (sans effort)
     -> STALL STALL_1_LIGHTEN ; prochain : 25 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 10 kg par côté (visée 8, RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 10 kg par côté (visée 13, RIR 2)
     fait 13/13/13/13 @ 10 kg (sans effort)
     -> STALL STALL_1_LIGHTEN ; prochain : 8 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 10 kg (visée 8, RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 10 kg (visée 13, RIR 2)
     fait 13/13 @ 10 kg (sans effort)
     -> STALL STALL_1_LIGHTEN ; prochain : 8 kg, 8-12 rép. (cible 8), 2 séries
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
@@ -225,10 +225,10 @@ A2 bench-press : 3×6 rép. @ 25 kg (échauffement 2, RIR 2)
     -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6 rép. (cible 6), 3 séries
 A3 seated-cable-row : 3×8-12 rép. @ 25 kg (visée 8, RIR 2)
     fait 13/13/13 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 8), 3 séries
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 13), 3 séries
 A4 leg-curl : 2×8-12 rép. @ 25 kg (visée 8, RIR 2)
     fait 13/13 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 13), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (sans effort)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 20 s, 3 séries, knee-plank
@@ -242,13 +242,13 @@ B2 overhead-press : 3×6 rép. @ 25 kg (échauffement 2, RIR 2)
     -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6 rép. (cible 6), 3 séries
 B3 lat-pulldown : 3×8-12 rép. @ 25 kg (visée 8, RIR 2)
     fait 13/13/13 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 8), 3 séries
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 13), 3 séries
 B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 8 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 8 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 13), 2 séries
 B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (visée 8, RIR 2)
     fait 13/13 @ 8 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 13), 2 séries
 
 -- Séance 15 · A · 2026-02-02 · normale
 A1 back-squat : 3×6 rép. @ 25 kg (échauffement 2, RIR 2)
@@ -257,12 +257,12 @@ A1 back-squat : 3×6 rép. @ 25 kg (échauffement 2, RIR 2)
 A2 bench-press : 3×6 rép. @ 25 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 25 kg (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 25 kg (visée 8, RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 25 kg (visée 13, RIR 2)
     fait 13/13/13 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 25 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 13), 3 séries
+A4 leg-curl : 2×8-12 rép. @ 25 kg (visée 13, RIR 2)
     fait 13/13 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 13), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 20 s, 3 séries, knee-plank
@@ -276,15 +276,15 @@ B1 romanian-deadlift : 3×6 rép. @ 25 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 25 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 25 kg (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 25 kg (visée 8, RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 25 kg (visée 13, RIR 2)
     fait 13/13/13 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 8 kg par côté (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 13), 3 séries
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 8 kg par côté (visée 13, RIR 2)
     fait 13/13/13/13 @ 8 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 13), 2 séries
+B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (visée 13, RIR 2)
     fait 13/13 @ 8 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 13), 2 séries
 
 -- Séance 17 · A · 2026-02-06 · normale
 A1 back-squat : 3×6 rép. @ 25 kg (échauffement 2, RIR 2)
@@ -293,12 +293,12 @@ A1 back-squat : 3×6 rép. @ 25 kg (échauffement 2, RIR 2)
 A2 bench-press : 3×6 rép. @ 25 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 25 kg (sans effort)
     -> STALL STALL_2_DOUBLE ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 25 kg (visée 8, RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 25 kg (visée 13, RIR 2)
     fait 13/13/13 @ 25 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 25 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 25 kg (visée 8, RIR 2)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 25 kg, 8-12 rép. (cible 13), 3 séries
+A4 leg-curl : 2×8-12 rép. @ 25 kg (visée 13, RIR 2)
     fait 13/13 @ 25 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 25 kg, 8-12 rép. (cible 8), 2 séries
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 25 kg, 8-12 rép. (cible 13), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 20 s, 3 séries, knee-plank
@@ -313,15 +313,15 @@ B1 romanian-deadlift : 3×6 rép. @ 25 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 25 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 25 kg (sans effort)
     -> STALL STALL_2_DOUBLE ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 25 kg (visée 8, RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 25 kg (visée 13, RIR 2)
     fait 13/13/13 @ 25 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 25 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 8 kg par côté (visée 8, RIR 2)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 25 kg, 8-12 rép. (cible 13), 3 séries
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 8 kg par côté (visée 13, RIR 2)
     fait 13/13/13/13 @ 8 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (visée 8, RIR 2)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8 kg, 8-12 rép. (cible 13), 2 séries
+B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (visée 13, RIR 2)
     fait 13/13 @ 8 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8 kg, 8-12 rép. (cible 8), 2 séries
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 8 kg, 8-12 rép. (cible 13), 2 séries
    ! propose_replace ENGINE_STALL_REPLACE slot B3 lat-pulldown [{"op":"replace_exercise","slot":"B3","exercise":"negative-pull-up"}]
    ! propose_replace ENGINE_STALL_REPLACE slot B4 dumbbell-reverse-lunge [{"op":"replace_exercise","slot":"B4","exercise":"reverse-lunge"}]
    ! propose_replace ENGINE_STALL_REPLACE slot B5 dumbbell-bench-press [{"op":"replace_exercise","slot":"B5","exercise":"machine-chest-press"}]
@@ -332,16 +332,16 @@ B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (visée 8, RIR 2)
 -- Séance 19 · A · 2026-02-10 · normale
 A1 back-squat : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
 A2 bench-press : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 25 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+A3 seated-cable-row : 3×8-12 rép. @ 25 kg (visée 13, RIR 2)
     fait 13/13/13 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 25 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 13), 3 séries
+A4 leg-curl : 2×8-12 rép. @ 25 kg (visée 13, RIR 2)
     fait 13/13 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 13), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (sans effort)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 20 s, 3 séries, knee-plank
@@ -349,33 +349,33 @@ A5 knee-plank : 3×20 s (RIR 2)
 -- Séance 20 · B · 2026-02-12 · normale
 B1 romanian-deadlift : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
 B2 overhead-press : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 25 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+B3 lat-pulldown : 3×8-12 rép. @ 25 kg (visée 13, RIR 2)
     fait 13/13/13 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 8 kg par côté (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 13), 3 séries
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 8 kg par côté (visée 13, RIR 2)
     fait 13/13/13/13 @ 8 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 13), 2 séries
+B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (visée 13, RIR 2)
     fait 13/13 @ 8 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 13), 2 séries
 
 -- Séance 21 · A · 2026-02-14 · normale
-A1 back-squat : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+A2 bench-press : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 25 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+A3 seated-cable-row : 3×8-12 rép. @ 25 kg (visée 13, RIR 2)
     fait 13/13/13 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 25 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 13), 3 séries
+A4 leg-curl : 2×8-12 rép. @ 25 kg (visée 13, RIR 2)
     fait 13/13 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 13), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 20 s, 3 séries, knee-plank
@@ -383,33 +383,33 @@ A5 knee-plank : 3×20 s (RIR 2)
 == Semaine 8 (bloc réactif) ==
 
 -- Séance 22 · B · 2026-02-16 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+B2 overhead-press : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 25 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+B3 lat-pulldown : 3×8-12 rép. @ 25 kg (visée 13, RIR 2)
     fait 13/13/13 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 8 kg par côté (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 8-12 rép. (cible 13), 3 séries
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 8 kg par côté (visée 13, RIR 2)
     fait 13/13/13/13 @ 8 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 13), 2 séries
+B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (visée 13, RIR 2)
     fait 13/13 @ 8 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 8 kg, 8-12 rép. (cible 13), 2 séries
 
 -- Séance 23 · A · 2026-02-18 · normale
-A1 back-squat : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+A2 bench-press : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 25 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+A3 seated-cable-row : 3×8-12 rép. @ 25 kg (visée 13, RIR 2)
     fait 13/13/13 @ 25 kg (sans effort)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 25 kg (visée 8, RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 25 kg (visée 13, RIR 2)
     fait 13/13 @ 25 kg (sans effort)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -418,19 +418,19 @@ A5 knee-plank : 3×20 s (RIR 2)
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 24 · B · 2026-02-20 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+B2 overhead-press : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 25 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+B3 lat-pulldown : 3×8-12 rép. @ 25 kg (visée 13, RIR 2)
     fait 13/13/13 @ 25 kg (sans effort)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 8 kg par côté (visée 8, RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 8 kg par côté (visée 13, RIR 2)
     fait 13/13/13/13 @ 8 kg (sans effort)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 6 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (visée 8, RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (visée 13, RIR 2)
     fait 13/13 @ 8 kg (sans effort)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 6 kg, 8-12 rép. (cible 8), 2 séries
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
@@ -438,18 +438,18 @@ B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (visée 8, RIR 2)
 == Semaine 9 (bloc réactif) ==
 
 -- Séance 25 · A · 2026-02-22 · normale
-A1 back-squat : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+A2 bench-press : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
 A3 seated-cable-row : 3×8-12 rép. @ 20 kg (visée 8, RIR 2)
     fait 13/13/13 @ 20 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 20 kg, 8-12 rép. (cible 8), 3 séries
+    -> HOLD EFFORT_MISSING ; prochain : 20 kg, 8-12 rép. (cible 13), 3 séries
 A4 leg-curl : 2×8-12 rép. @ 20 kg (visée 8, RIR 2)
     fait 13/13 @ 20 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 20 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 20 kg, 8-12 rép. (cible 13), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (sans effort)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 20 s, 3 séries, knee-plank
@@ -458,38 +458,38 @@ A5 knee-plank : 3×20 s (RIR 2)
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 26 · B · 2026-02-24 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+B2 overhead-press : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> STALL STALL_REPLACE_PROPOSED ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
+    -> STALL STALL_REPLACE_PROPOSED ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
 B3 lat-pulldown : 3×8-12 rép. @ 20 kg (visée 8, RIR 2)
     fait 13/13/13 @ 20 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 20 kg, 8-12 rép. (cible 8), 3 séries
+    -> HOLD EFFORT_MISSING ; prochain : 20 kg, 8-12 rép. (cible 13), 3 séries
 B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 6 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 6 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 6 kg, 8-12 rép. (cible 13), 2 séries
 B5 dumbbell-bench-press : 2×8-12 rép. @ 6 kg (visée 8, RIR 2)
     fait 13/13 @ 6 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 6 kg, 8-12 rép. (cible 13), 2 séries
    ! propose_replace ENGINE_STALL_REPLACE slot B1 romanian-deadlift [{"op":"replace_exercise","slot":"B1","exercise":"dumbbell-romanian-deadlift"}]
    ! propose_replace ENGINE_STALL_REPLACE slot B2 overhead-press [{"op":"replace_exercise","slot":"B2","exercise":"seated-dumbbell-shoulder-press"}]
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 27 · A · 2026-02-26 · normale
-A1 back-squat : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+A2 bench-press : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 20 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+A3 seated-cable-row : 3×8-12 rép. @ 20 kg (visée 13, RIR 2)
     fait 13/13/13 @ 20 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 20 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 20 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 20 kg, 8-12 rép. (cible 13), 3 séries
+A4 leg-curl : 2×8-12 rép. @ 20 kg (visée 13, RIR 2)
     fait 13/13 @ 20 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 20 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 20 kg, 8-12 rép. (cible 13), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 20 s, 3 séries, knee-plank
@@ -497,33 +497,33 @@ A5 knee-plank : 3×20 s (RIR 2)
 == Semaine 10 (bloc réactif) ==
 
 -- Séance 28 · B · 2026-02-28 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+B2 overhead-press : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 20 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+B3 lat-pulldown : 3×8-12 rép. @ 20 kg (visée 13, RIR 2)
     fait 13/13/13 @ 20 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 20 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 6 kg par côté (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 20 kg, 8-12 rép. (cible 13), 3 séries
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 6 kg par côté (visée 13, RIR 2)
     fait 13/13/13/13 @ 6 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 6 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 6 kg, 8-12 rép. (cible 13), 2 séries
+B5 dumbbell-bench-press : 2×8-12 rép. @ 6 kg (visée 13, RIR 2)
     fait 13/13 @ 6 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 6 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 6 kg, 8-12 rép. (cible 13), 2 séries
 
 -- Séance 29 · A · 2026-03-02 · normale
-A1 back-squat : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+A2 bench-press : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 20 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+A3 seated-cable-row : 3×8-12 rép. @ 20 kg (visée 13, RIR 2)
     fait 13/13/13 @ 20 kg (sans effort)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 15 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 20 kg (visée 8, RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 20 kg (visée 13, RIR 2)
     fait 13/13 @ 20 kg (sans effort)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 15 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -534,19 +534,19 @@ A5 knee-plank : 3×20 s (RIR 2)
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 30 · B · 2026-03-04 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+B2 overhead-press : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 20 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 25 kg, 6-10 rép. (cible 10), 3 séries
+B3 lat-pulldown : 3×8-12 rép. @ 20 kg (visée 13, RIR 2)
     fait 13/13/13 @ 20 kg (sans effort)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 15 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 6 kg par côté (visée 8, RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 6 kg par côté (visée 13, RIR 2)
     fait 13/13/13/13 @ 6 kg (sans effort)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 4 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 6 kg (visée 8, RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 6 kg (visée 13, RIR 2)
     fait 13/13 @ 6 kg (sans effort)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 4 kg, 8-12 rép. (cible 8), 2 séries
    ! propose_replace ENGINE_STALL_REPLACE slot B3 lat-pulldown [{"op":"replace_exercise","slot":"B3","exercise":"negative-pull-up"}]
@@ -557,54 +557,54 @@ B5 dumbbell-bench-press : 2×8-12 rép. @ 6 kg (visée 8, RIR 2)
 == Semaine 11 (bloc réactif) ==
 
 -- Séance 31 · A · 2026-03-06 · normale
-A1 back-squat : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+A2 bench-press : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
 A3 seated-cable-row : 3×8-12 rép. @ 15 kg (visée 8, RIR 2)
     fait 13/13/13 @ 15 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 15 kg, 8-12 rép. (cible 8), 3 séries
+    -> HOLD EFFORT_MISSING ; prochain : 15 kg, 8-12 rép. (cible 13), 3 séries
 A4 leg-curl : 2×8-12 rép. @ 15 kg (visée 8, RIR 2)
     fait 13/13 @ 15 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 15 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 15 kg, 8-12 rép. (cible 13), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (sans effort)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 20 s, 3 séries, knee-plank
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 32 · B · 2026-03-08 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 25 kg (visée 6, échauffement 2, RIR 2)
+B2 overhead-press : 3×6-10 rép. @ 25 kg (visée 10, échauffement 2, RIR 2)
     fait 11/11/11 @ 25 kg (sans effort)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
 B3 lat-pulldown : 3×8-12 rép. @ 15 kg (visée 8, RIR 2)
     fait 13/13/13 @ 15 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 15 kg, 8-12 rép. (cible 8), 3 séries
+    -> HOLD EFFORT_MISSING ; prochain : 15 kg, 8-12 rép. (cible 13), 3 séries
 B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 4 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 4 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 4 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 4 kg, 8-12 rép. (cible 13), 2 séries
 B5 dumbbell-bench-press : 2×8-12 rép. @ 4 kg (visée 8, RIR 2)
     fait 13/13 @ 4 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 4 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 4 kg, 8-12 rép. (cible 13), 2 séries
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 33 · A · 2026-03-10 · normale
 A1 back-squat : 3×6-10 rép. @ 22,5 kg (visée 6, échauffement 2, RIR 2)
     fait 11/11/11 @ 22,5 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
+    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 11), 3 séries
 A2 bench-press : 3×6-10 rép. @ 22,5 kg (visée 6, échauffement 2, RIR 2)
     fait 11/11/11 @ 22,5 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 15 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 11), 3 séries
+A3 seated-cable-row : 3×8-12 rép. @ 15 kg (visée 13, RIR 2)
     fait 13/13/13 @ 15 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 15 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 15 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 15 kg, 8-12 rép. (cible 13), 3 séries
+A4 leg-curl : 2×8-12 rép. @ 15 kg (visée 13, RIR 2)
     fait 13/13 @ 15 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 15 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 15 kg, 8-12 rép. (cible 13), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
     fait 20 s/20 s/20 s (sans effort)
     -> HOLD EFFORT_MISSING ; prochain : 20 s, 3 séries, knee-plank
@@ -614,31 +614,31 @@ A5 knee-plank : 3×20 s (RIR 2)
 -- Séance 34 · B · 2026-03-12 · normale
 B1 romanian-deadlift : 3×6-10 rép. @ 22,5 kg (visée 6, échauffement 2, RIR 2)
     fait 11/11/11 @ 22,5 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
+    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 11), 3 séries
 B2 overhead-press : 3×6-10 rép. @ 22,5 kg (visée 6, échauffement 2, RIR 2)
     fait 11/11/11 @ 22,5 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 15 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 11), 3 séries
+B3 lat-pulldown : 3×8-12 rép. @ 15 kg (visée 13, RIR 2)
     fait 13/13/13 @ 15 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 15 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 4 kg par côté (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 15 kg, 8-12 rép. (cible 13), 3 séries
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 4 kg par côté (visée 13, RIR 2)
     fait 13/13/13/13 @ 4 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 4 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 4 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 4 kg, 8-12 rép. (cible 13), 2 séries
+B5 dumbbell-bench-press : 2×8-12 rép. @ 4 kg (visée 13, RIR 2)
     fait 13/13 @ 4 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 4 kg, 8-12 rép. (cible 8), 2 séries
+    -> HOLD EFFORT_MISSING ; prochain : 4 kg, 8-12 rép. (cible 13), 2 séries
 
 -- Séance 35 · A · 2026-03-14 · normale
-A1 back-squat : 3×6-10 rép. @ 22,5 kg (visée 6, échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 22,5 kg (visée 11, échauffement 2, RIR 2)
     fait 11/11/11 @ 22,5 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 22,5 kg (visée 6, échauffement 2, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 11), 3 séries
+A2 bench-press : 3×6-10 rép. @ 22,5 kg (visée 11, échauffement 2, RIR 2)
     fait 11/11/11 @ 22,5 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 15 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 11), 3 séries
+A3 seated-cable-row : 3×8-12 rép. @ 15 kg (visée 13, RIR 2)
     fait 13/13/13 @ 15 kg (sans effort)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 15 kg (visée 8, RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 15 kg (visée 13, RIR 2)
     fait 13/13 @ 15 kg (sans effort)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -649,19 +649,19 @@ A5 knee-plank : 3×20 s (RIR 2)
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 36 · B · 2026-03-16 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 22,5 kg (visée 6, échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 22,5 kg (visée 11, échauffement 2, RIR 2)
     fait 11/11/11 @ 22,5 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 22,5 kg (visée 6, échauffement 2, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 11), 3 séries
+B2 overhead-press : 3×6-10 rép. @ 22,5 kg (visée 11, échauffement 2, RIR 2)
     fait 11/11/11 @ 22,5 kg (sans effort)
-    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 15 kg (visée 8, RIR 2)
+    -> HOLD EFFORT_MISSING ; prochain : 22,5 kg, 6-10 rép. (cible 11), 3 séries
+B3 lat-pulldown : 3×8-12 rép. @ 15 kg (visée 13, RIR 2)
     fait 13/13/13 @ 15 kg (sans effort)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 4 kg par côté (visée 8, RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 4 kg par côté (visée 13, RIR 2)
     fait 13/13/13/13 @ 4 kg (sans effort)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 4 kg (visée 8, RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 4 kg (visée 13, RIR 2)
     fait 13/13 @ 4 kg (sans effort)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
    ! propose_replace ENGINE_STALL_REPLACE slot B3 lat-pulldown [{"op":"replace_exercise","slot":"B3","exercise":"negative-pull-up"}]

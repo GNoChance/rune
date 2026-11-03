@@ -13,6 +13,7 @@ import type { CatalogSheet } from '../catalog/usable';
 import { effortValidated, rirEval } from './effort';
 import type { LoadGrid } from './loads';
 import {
+  aimBounds,
   calibrationRaise,
   clamp,
   type ExercisePerformance,
@@ -145,7 +146,7 @@ function normalize(t: SlotTargets, shape: SlotShape): SlotTargets {
     const { min, max } = shape.durations;
     return { ...t, variantRank, targetReps: null, durationS: clamp(t.durationS ?? min, min, max) };
   }
-  const r = repRange(shape, t.mode, variantRank);
+  const r = aimBounds(shape, t.mode, variantRank);
   const targetReps = t.mode === 'linear' ? r.min : clamp(t.targetReps ?? r.min, r.min, r.max);
   return { ...t, variantRank, targetReps, durationS: null };
 }
@@ -259,6 +260,42 @@ function runPrimitive(input: PrimitiveInput): PrimitiveOutcome {
 const higher = (a: number | null, b: number | null) =>
   (a ?? Number.NEGATIVE_INFINITY) > (b ?? Number.NEGATIVE_INFINITY);
 
+/**
+ * Ce que la décision fait de la visée par série (ruling R58) : `own`, elle la fixe elle-même (hausse, retour au
+ * minimum, passage en double) ; `follow`, elle suit ce qui a été fait ; `hold`, « ne pas augmenter » ; `ease`,
+ * allègement demandé.
+ */
+type AimRule = 'own' | 'follow' | 'hold' | 'ease';
+
+/**
+ * Visée par série après la décision (ruling R58), répétitions seulement (`double`, `sum`, `chain`) :
+ * - allègement demandé, ou décision qui change la charge ou la variante sans fixer la visée (calibration, allègement de
+ *   stagnation) : le bas de la fourchette du nouveau niveau ;
+ * - niveau de la séance gardé, séance complète : à un niveau encore sans référence (`fresh` : première séance, autre
+ *   charge ou autre variante choisie), la plus faible série faite ; à un niveau connu, au moins elle (un échec, dont
+ *   la plus faible série est sous la fourchette, ne la change donc pas) ; avec « ne pas augmenter », seulement à un
+ *   niveau sans référence.
+ * Toujours dans `aimBounds` (jusqu'à max + 1 en somme). Séance incomplète : la visée ne bouge pas.
+ */
+function settleAim(
+  t: SlotTargets,
+  base: SlotTargets,
+  perf: ExercisePerformance,
+  shape: SlotShape,
+  fresh: boolean,
+  rule: AimRule,
+): SlotTargets {
+  if (rule === 'own' || shape.measure !== 'reps' || t.mode === 'linear' || t.mode === 'duration') return t;
+  const { min, max } = aimBounds(shape, t.mode, t.variantRank);
+  const moved = t.loadG !== base.loadG || t.variantRank !== base.variantRank;
+  if (rule === 'ease' || moved) return { ...t, targetReps: min };
+  if (perf.values.length < shape.planned) return t;
+  const done = clamp(perf.lowest, min, max);
+  if (fresh) return { ...t, targetReps: done };
+  if (rule === 'hold') return t;
+  return { ...t, targetReps: Math.max(t.targetReps ?? min, done) };
+}
+
 /** Les cibles montent : charge, variante ou durée visée. */
 const raises = (t: SlotTargets, from: SlotTargets) =>
   higher(t.loadG, from.loadG) ||
@@ -343,7 +380,11 @@ export function evaluateExercise(input: EvaluateInput): EvaluateResult {
   // 2. Semaine allégée : l'état ne change pas, mais l'ajustement demandé s'applique quand même.
   if (session.weekType === 'deload') {
     if (performed.nextAdjustment !== 'lighten') return finish(touched, 'DELOAD', 'DELOAD_WEEK');
-    const lightened = normalize(lightenTargets(targetsOf(prev), shape), shape);
+    const from = targetsOf(prev);
+    const lightened = normalize(
+      settleAim(lightenTargets(from, shape), from, perf, shape, false, 'ease'),
+      shape,
+    );
     return finish({ ...touched, ...lightened }, 'DELOAD', 'DELOAD_WEEK');
   }
 
@@ -367,16 +408,18 @@ export function evaluateExercise(input: EvaluateInput): EvaluateResult {
     best: { ...best, level: after },
   });
   const keep = { atTop: level.atTop, fails: level.fails, raised: level.raised };
+  const fresh = level.bestTotal === null;
+  const aim = (t: SlotTargets, rule: AimRule) => settleAim(t, base, perf, shape, fresh, rule);
 
   // 3. Ajustement demandé (bouton douleur ou choix manuel, 05 §13) : ne compte pas pour la stagnation.
   if (performed.nextAdjustment !== null) {
     const pain = performed.painLevel === 'discomfort' || performed.painLevel === 'pain';
     const after = leaveLevel(level, perf, keep, false);
     if (performed.nextAdjustment === 'hold') {
-      return finish(save(base, after), 'ADJUSTED_HOLD', pain ? 'PAIN_HOLD' : 'USER_HOLD');
+      return finish(save(aim(base, 'hold'), after), 'ADJUSTED_HOLD', pain ? 'PAIN_HOLD' : 'USER_HOLD');
     }
     return finish(
-      save(lightenTargets(base, shape), after),
+      save(aim(lightenTargets(base, shape), 'ease'), after),
       'ADJUSTED_LIGHTEN',
       pain ? 'PAIN_LIGHTEN' : 'USER_LIGHTEN',
     );
@@ -387,7 +430,7 @@ export function evaluateExercise(input: EvaluateInput): EvaluateResult {
   if (slot.progression.type !== 'fixed' && (prev.calibrationLeft > 0 || resume)) {
     const c = calibrate(shape, perf, base, prev.calibrationLeft, raiseAllowed);
     const after = leaveLevel(level, perf, { atTop: 0, fails: 0, raised: false }, complete);
-    return finish(save(c.targets, after, { calibrationLeft: c.left }), 'CALIBRATION', c.code);
+    return finish(save(aim(c.targets, 'follow'), after, { calibrationLeft: c.left }), 'CALIBRATION', c.code);
   }
 
   // 5. Primitive. `fixed` ne change rien et ne stagne pas.
@@ -410,7 +453,10 @@ export function evaluateExercise(input: EvaluateInput): EvaluateResult {
   if (noProgressCount >= rules.stallSessions) {
     const s = stallResponse(stallLadder(slot.progression.type, o.targets.mode), stallRank, o.targets, shape);
     const after = leaveLevel(level, perf, { atTop: 0, fails: 0, raised: level.raised }, complete);
-    return finish(save(s.targets, after, { noProgressCount: 0, stallRank: s.rank }), 'STALL', s.code, {
+    // Retour au minimum et passage en double fixent la visée ; allègement et proposition la laissent suivre.
+    const own = s.code === 'STALL_RESET_MIN' || s.code === 'STALL_2_DOUBLE';
+    const targets = aim(s.targets, own ? 'own' : 'follow');
+    return finish(save(targets, after, { noProgressCount: 0, stallRank: s.rank }), 'STALL', s.code, {
       rank: s.rank,
       propose: s.propose,
     });
@@ -421,5 +467,8 @@ export function evaluateExercise(input: EvaluateInput): EvaluateResult {
     { atTop: o.atTop, fails: o.fails, raised: o.result === 'PROGRESS' ? false : level.raised },
     complete,
   );
-  return finish(save(o.targets, after, { noProgressCount, stallRank }), o.result, o.code);
+  // Une hausse fixe la visée ; un maintien ou un échec la laisse suivre ce qui a été fait (`LINEAR_TO_DOUBLE`
+  // compris : passé en double, on vise ce qui vient d'être fait).
+  const targets = aim(o.targets, o.result === 'PROGRESS' ? 'own' : 'follow');
+  return finish(save(targets, after, { noProgressCount, stallRank }), o.result, o.code);
 }

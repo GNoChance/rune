@@ -107,6 +107,17 @@ export function repRange(shape: SlotShape, mode: SlotMode, variantRank: number |
   return cautious ? cautiousRange({ min, max }, rules) : { min, max };
 }
 
+/**
+ * Bornes de la visée par série (`targetReps`, rulings R57, R58) : la fourchette ; en mode somme, jusqu'à max + 1,
+ * la moyenne par série qui déclenche la hausse de charge (`n × max + n`), sans dépasser la borne prudente (05 §14).
+ */
+export function aimBounds(shape: SlotShape, mode: SlotMode, variantRank: number | null): Bounds {
+  const r = repRange(shape, mode, variantRank);
+  if (mode !== 'sum') return r;
+  const cap = shape.cautious ? shape.rules.cautious.repsMax : Number.POSITIVE_INFINITY;
+  return { min: r.min, max: Math.max(r.max, Math.min(r.max + 1, cap)) };
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Ce qui a été fait
 // ---------------------------------------------------------------------------------------------------------------
@@ -356,7 +367,8 @@ export function progressDouble({ shape, perf, base, level, validated }: Primitiv
   if (top && perf.rir === null) return outcome('HOLD', 'EFFORT_MISSING', base);
   if (top && !validated) return outcome('HOLD', 'EFFORT_NOT_VALIDATED', base);
   if (level.bestTotal !== null && perf.total > level.bestTotal) {
-    return outcome('PROGRESS', 'REPS_UP', { ...base, targetReps: clamp(perf.lowest + 1, min, max) });
+    const aim = aimBounds(shape, base.mode, base.variantRank);
+    return outcome('PROGRESS', 'REPS_UP', { ...base, targetReps: clamp(perf.lowest + 1, aim.min, aim.max) });
   }
   return outcome('HOLD', top ? 'REPS_MAX_REACHED' : 'NO_PROGRESS', base);
 }

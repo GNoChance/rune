@@ -408,11 +408,24 @@ describe('planWorkout : répétitions visées par série (ruling R57)', () => {
     );
   });
 
+  it("mode somme : jusqu'à max + 1, la moyenne qui déclenche la hausse (ruling R58)", () => {
+    for (const [targetReps, aim] of [
+      [13, 13],
+      [15, 13],
+    ] as const) {
+      const row = { ...ROW, mode: 'sum' as const, targetReps };
+      const e = exerciseOf(plan({ replay: replayOf(GYM_AB, { states: [row] }) }), 'A3');
+      expect(workSets(e).map((s) => [s.targetRepsMin, s.targetRepsMax, s.targetReps])).toEqual(
+        Array(3).fill([8, 12, aim]),
+      );
+    }
+  });
+
   it('ramenée dans la fourchette du jour : 15 → 12, 6 → 8', () => {
     for (const [targetReps, aim] of [
       [15, 12],
       [6, 8],
-    ]) {
+    ] as const) {
       const row = { ...ROW, targetReps };
       const e = exerciseOf(plan({ replay: replayOf(GYM_AB, { states: [row] }) }), 'A3');
       expect(workSets(e).map((s) => s.targetReps)).toEqual([aim, aim, aim]);
