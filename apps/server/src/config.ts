@@ -73,7 +73,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   const secure = origin.protocol === 'https:';
   const dataDir = dataDirFrom(env);
   const coachDevAllowUnevaluated = env.COACH_DEV_ALLOW_UNEVALUATED === '1';
-  if (coachDevAllowUnevaluated && secure) {
+  if (coachDevAllowUnevaluated && !(origin.protocol === 'http:' && LOCAL_HOSTS.has(origin.hostname))) {
     throw new ConfigError(
       'COACH_DEV_ALLOW_UNEVALUATED est réservé au développement (APP_ORIGIN en http://localhost ou http://127.0.0.1).',
     );

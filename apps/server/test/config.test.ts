@@ -82,9 +82,15 @@ describe('COACH_DEV_ALLOW_UNEVALUATED', () => {
     expect(loadConfig({ APP_ORIGIN: 'http://localhost:3000' }).coachDevAllowUnevaluated).toBe(false);
   });
 
-  it('refusée avec une APP_ORIGIN en https', () => {
-    expect(() =>
-      loadConfig({ APP_ORIGIN: 'https://rune.test.ts.net', COACH_DEV_ALLOW_UNEVALUATED: '1' }),
-    ).toThrow(/réservé au développement/);
+  it('vrai aussi en http://127.0.0.1', () => {
+    const on = loadConfig({ APP_ORIGIN: 'http://127.0.0.1:3000', COACH_DEV_ALLOW_UNEVALUATED: '1' });
+    expect(on.coachDevAllowUnevaluated).toBe(true);
+  });
+
+  it('refusée avec une APP_ORIGIN en https : ConfigError', () => {
+    const load = () =>
+      loadConfig({ APP_ORIGIN: 'https://rune.test.ts.net', COACH_DEV_ALLOW_UNEVALUATED: '1' });
+    expect(load).toThrow(ConfigError);
+    expect(load).toThrow(/réservé au développement/);
   });
 });

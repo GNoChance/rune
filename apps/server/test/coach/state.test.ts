@@ -159,6 +159,14 @@ describe('état et catalogue', () => {
       .where('type', '=', 'coach_suspended')
       .execute();
     expect(events).toHaveLength(1);
+    const full = await deps.db
+      .selectFrom('securityEvent')
+      .selectAll()
+      .where('type', '=', 'coach_suspended')
+      .executeTakeFirstOrThrow();
+    expect(full.details).toBe('{"until":"2026-11-30T23:00:00.000Z"}');
+    expect(full.actorId).toBeNull();
+    expect(full.outcome).toBe('success');
   });
 
   it('resumeCoach lève la suspension', async () => {
@@ -166,5 +174,12 @@ describe('état et catalogue', () => {
     await deps.db.transaction().execute((trx) => suspendCoach(trx, deps, new Date('2026-10-31T23:30:00Z')));
     await deps.db.transaction().execute((trx) => resumeCoach(trx, deps, 'admin-1'));
     expect((await readCoachState(deps.db)).suspendedUntil).toBeNull();
+    const resumed = await deps.db
+      .selectFrom('securityEvent')
+      .selectAll()
+      .where('type', '=', 'coach_state_changed')
+      .executeTakeFirstOrThrow();
+    expect(resumed.actorId).toBe('admin-1');
+    expect(resumed.details).toBe('{"resumed":true}');
   });
 });

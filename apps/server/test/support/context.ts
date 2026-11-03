@@ -75,6 +75,7 @@ export async function createTestContext(
       ids,
       logger: createLogger(() => {}),
       coachThinkingBinding: 'error',
+      ...(opts.deps?.coachConfig ? { coachConfig: opts.deps.coachConfig } : {}),
       ...(opts.entityRules ? { entityRules: opts.entityRules } : {}),
     }),
     ...opts.deps,

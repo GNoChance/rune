@@ -1,4 +1,4 @@
-import { isEvaluated, nextParisMonthStart } from '@rune/domain';
+import { type CoachConfig, isEvaluated, nextParisMonthStart } from '@rune/domain';
 import { MODEL_PRICES } from '../ai/client';
 import { logSecurityEvent } from '../auth/security-log';
 import type { DbExecutor } from '../db/schema';
@@ -20,14 +20,14 @@ export interface CoachRuntime {
   exchanges: ExchangeRegistry;
 }
 
-/** Modèle autorisé et au prix connu ; sinon `chat()` ne saurait pas chiffrer un échange. */
-function modelUsable(deps: AppDeps): boolean {
-  const model = deps.config.coachModel;
-  return deps.coachConfig.allowedModels.includes(model) && Object.hasOwn(MODEL_PRICES, model);
+/** Modèle de la liste blanche et au prix connu ; sinon `chat()` ne saurait pas chiffrer un échange. */
+export function isUsableModel(config: CoachConfig, model: string): boolean {
+  return config.allowedModels.includes(model) && Object.hasOwn(MODEL_PRICES, model);
 }
 
 export function checkCoachConfig(deps: AppDeps, catalogVersion: string): CoachConfigCheck {
-  if (!modelUsable(deps)) return { ok: false, cause: 'model_not_allowed' };
+  if (!isUsableModel(deps.coachConfig, deps.config.coachModel))
+    return { ok: false, cause: 'model_not_allowed' };
   if (deps.ai === null) return { ok: false, cause: 'no_key' };
   const config = deps.coachConfig;
   const evaluated = isEvaluated(config, {

@@ -14,11 +14,18 @@ export interface ExchangeLease {
 }
 
 export interface ExchangeRegistry {
-  /** Bail de l'échange, ou null si le membre en a déjà un en cours. */
+  /**
+   * Bail de l'échange, ou null si le membre en a déjà un en cours. Le membre reste « en cours » jusqu'au `done`,
+   * même après un délai dépassé ou un `abortFor` : le consommateur appelle toujours `done` dans un `finally`.
+   * Une fois `abortAll` appelé, `begin` rend un bail déjà aborté (`shutdown`) dont `done` est sans effet, jamais null.
+   */
   begin(userId: string): ExchangeLease | null;
   inProgress(userId: string): boolean;
   abortFor(userId: string, reason: 'consent_withdrawn'): void;
-  /** Aborte tous les échanges puis attend leurs `done`, 2 s au plus. */
+  /**
+   * Ferme le registre (définitivement), aborte les échanges pas encore avortés puis attend leurs `done`, 2 s au plus.
+   * Un second appel ne réattend pas les entrées déjà avortées.
+   */
   abortAll(reason: 'shutdown'): Promise<void>;
 }
 
@@ -29,8 +36,14 @@ type Entry = { controller: AbortController; timer: NodeJS.Timeout; finished: Pro
 /** `_clock` : horloge de l'application, gardée pour la signature ; les délais passent par les minuteurs du processus. */
 export function createExchangeRegistry(_clock: Clock, timeoutMs: number): ExchangeRegistry {
   const active = new Map<string, Entry>();
+  let closing = false;
   return {
     begin(userId) {
+      if (closing) {
+        const refused = new AbortController();
+        refused.abort('shutdown' satisfies ExchangeAbortReason);
+        return { signal: refused.signal, done() {} };
+      }
       if (active.has(userId)) return null;
       const controller = new AbortController();
       const { promise: finished, resolve: release } = Promise.withResolvers<void>();
@@ -52,7 +65,8 @@ export function createExchangeRegistry(_clock: Clock, timeoutMs: number): Exchan
       active.get(userId)?.controller.abort(reason);
     },
     async abortAll(reason) {
-      const entries = [...active.values()];
+      closing = true;
+      const entries = [...active.values()].filter((entry) => !entry.controller.signal.aborted);
       if (entries.length === 0) return;
       for (const entry of entries) entry.controller.abort(reason);
       let timer: NodeJS.Timeout | undefined;

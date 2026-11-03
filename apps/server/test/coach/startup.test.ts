@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { COACH_CONFIG } from '@rune/domain';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runCli } from '../../src/cli';
 import { createAppDeps } from '../../src/deps';
@@ -83,6 +84,31 @@ describe('démarrage et coach', () => {
     await running.close();
     running = undefined;
     expect(lease?.signal.reason).toBe('shutdown');
+  });
+
+  it("l'arrêt appelle abortAll avant la fermeture HTTP", async () => {
+    running = await startServer(env);
+    const { port, deps } = running;
+    let healthDuringAbort: number | undefined;
+    const original = deps.coach.exchanges.abortAll;
+    deps.coach.exchanges.abortAll = async (reason) => {
+      healthDuringAbort = (await fetch(`http://127.0.0.1:${port}/api/health`)).status;
+      await original(reason);
+    };
+    await running.close();
+    running = undefined;
+    expect(healthDuringAbort).toBe(200);
+  });
+
+  it('createTestContext suit exchangeTimeoutMs de coachConfig', async () => {
+    const ctx = await createTestContext({
+      deps: { coachConfig: { ...COACH_CONFIG, limits: { ...COACH_CONFIG.limits, exchangeTimeoutMs: 50 } } },
+    });
+    const lease = ctx.deps.coach.exchanges.begin('u1');
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(lease?.signal.reason).toBe('timeout');
+    lease?.done();
+    ctx.close();
   });
 
   it('createAppDeps seul : défauts de production', async () => {

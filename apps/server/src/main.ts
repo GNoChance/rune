@@ -2,9 +2,10 @@ import type { AddressInfo } from 'node:net';
 import { pathToFileURL } from 'node:url';
 import { serve } from '@hono/node-server';
 import { COACH_CONFIG } from '@rune/domain';
-import { type AiClient, createAnthropicClient, MODEL_PRICES } from './ai/client';
+import { type AiClient, createAnthropicClient } from './ai/client';
 import { createApp } from './app';
 import { runCli } from './cli';
+import { isUsableModel } from './coach/state';
 import { type AppConfig, loadConfig } from './config';
 import { type AppDeps, createAppDeps } from './deps';
 import { DAILY_JOBS } from './jobs/registry';
@@ -26,7 +27,7 @@ export interface RunningServer {
 function defaultAiClient(config: AppConfig): AiClient | null {
   const model = config.coachModel;
   if (config.anthropicApiKey === null) return null;
-  if (!COACH_CONFIG.allowedModels.includes(model) || !Object.hasOwn(MODEL_PRICES, model)) return null;
+  if (!isUsableModel(COACH_CONFIG, model)) return null;
   return createAnthropicClient({ apiKey: config.anthropicApiKey, model });
 }
 

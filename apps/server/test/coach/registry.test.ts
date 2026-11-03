@@ -79,4 +79,76 @@ describe('registre des échanges', () => {
   it('abortAll sans échange rend la main aussitôt', async () => {
     await make().abortAll('shutdown');
   });
+
+  it("begin pendant l'attente d'abortAll rend un bail déjà aborté shutdown, jamais null", async () => {
+    vi.useFakeTimers();
+    const registry = make();
+    registry.begin('a');
+    const all = registry.abortAll('shutdown');
+    const late = registry.begin('b');
+    expect(late?.signal.aborted).toBe(true);
+    expect(late?.signal.reason).toBe('shutdown');
+    late?.done();
+    expect(registry.begin('a')?.signal.reason).toBe('shutdown');
+    await vi.advanceTimersByTimeAsync(2000);
+    await all;
+  });
+
+  it('begin après abortAll rend un bail déjà aborté shutdown, sans occuper le membre', async () => {
+    const registry = make();
+    await registry.abortAll('shutdown');
+    const lease = registry.begin('a');
+    expect(lease?.signal.reason).toBe('shutdown');
+    expect(registry.inProgress('a')).toBe(false);
+    expect(registry.begin('a')?.signal.reason).toBe('shutdown');
+  });
+
+  it("le bail reste en cours jusqu'au done, même après un délai dépassé ou un abortFor", () => {
+    vi.useFakeTimers();
+    const registry = make(1000);
+    const first = registry.begin('a');
+    vi.advanceTimersByTime(1000);
+    expect(first?.signal.reason).toBe('timeout');
+    expect(registry.inProgress('a')).toBe(true);
+    expect(registry.begin('a')).toBeNull();
+    first?.done();
+    const second = registry.begin('a');
+    registry.abortFor('a', 'consent_withdrawn');
+    expect(registry.inProgress('a')).toBe(true);
+    second?.done();
+    expect(registry.inProgress('a')).toBe(false);
+  });
+
+  it('done efface le minuteur', () => {
+    vi.useFakeTimers();
+    const registry = make();
+    registry.begin('a')?.done();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('un double done est sans effet sur le bail suivant', () => {
+    const registry = make();
+    const first = registry.begin('a');
+    first?.done();
+    const second = registry.begin('a');
+    first?.done();
+    expect(registry.inProgress('a')).toBe(true);
+    second?.done();
+  });
+
+  it('un second abortAll ne réattend pas les entrées déjà avortées', async () => {
+    vi.useFakeTimers();
+    const registry = make();
+    registry.begin('a');
+    const first = registry.abortAll('shutdown');
+    await vi.advanceTimersByTimeAsync(2000);
+    await first;
+    let settled = false;
+    const second = registry.abortAll('shutdown').then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(true);
+    await second;
+  });
 });
