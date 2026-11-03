@@ -9,18 +9,9 @@ import {
   useSessionDecisions,
   type WorkoutSessionView,
 } from '../../repos';
-import {
-  Button,
-  CoachBubble,
-  EmptyState,
-  formatInt,
-  formatLifted,
-  Page,
-  RankBadge,
-  SystemPanel,
-} from '../../ui';
+import { Button, CoachBubble, EmptyState, formatInt, Page, RankBadge, SystemPanel } from '../../ui';
 import { coachLine } from '../coach/coach-lines';
-import { sessionName } from '../history/history-format';
+import { sessionName, workStat } from '../history/history-format';
 import styles from './summary.module.css';
 import {
   groupLabel,
@@ -35,7 +26,8 @@ import { nameOf } from './workout-labels';
 
 /*
  * Fin de séance (`/workout/:id/summary`, spec brique 3 §7.4) : la fenêtre du Système « Séance gravée. » (durée, séries
- * de travail, kg soulevés, XP gagnée, rang et sa barre qui se remplit, rangs gagnés dont la pierre se grave comme
+ * de travail, kg soulevés, ou sans charge les répétitions ou le temps d'effort (ruling R56), XP gagnée, rang et sa
+ * barre qui se remplit, rangs gagnés dont la pierre se grave comme
  * « Éveil terminé »), les records battus, « La prochaine fois » (séance de programme seulement, D7), la bulle du coach,
  * puis « Terminé » vers l'accueil. Tout se lit en local : le résumé s'ouvre hors ligne. Une séance encore en cours
  * renvoie à son écran ; une séance abandonnée n'a pas de résumé (ruling R39).
@@ -140,6 +132,7 @@ function Stone(p: { children: ReactNode; global?: boolean }) {
 function Engraved(p: { summary: SessionSummary }) {
   const { summary } = p;
   const { after, rankUp } = summary;
+  const work = workStat(summary.work);
   const next = after.nextRankXp;
   const xpText = next === null ? formatInt(after.xp) : `${formatInt(after.xp)} / ${formatInt(next)}`;
   const rankText = `Rang ${after.rank} · ${xpText} XP`;
@@ -157,8 +150,8 @@ function Engraved(p: { summary: SessionSummary }) {
           <dd>{formatInt(summary.sets)}</dd>
         </div>
         <div className={styles.stat}>
-          <dt>Total soulevé</dt>
-          <dd>{formatLifted(summary.liftedG)}</dd>
+          <dt>{work.term}</dt>
+          <dd>{work.value}</dd>
         </div>
         <div className={styles.stat}>
           <dt>XP gagnée</dt>

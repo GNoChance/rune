@@ -14,7 +14,7 @@ import {
 } from '@rune/domain';
 import type { SessionDecision } from '../../repos';
 import { formatKg, formatKgGrouped, formatSeconds, plural } from '../../ui';
-import { minutesOf, showsDecision, totalsOf } from '../history/history-format';
+import { minutesOf, type SessionWork, showsDecision, totalsOf } from '../history/history-format';
 import { targetSummary } from './workout-labels';
 
 /*
@@ -35,7 +35,8 @@ export interface SessionSummary {
   minutes: number | null;
   /** Séries de travail faites (une paire gauche/droite compte pour une). */
   sets: number;
-  liftedG: number;
+  /** Travail de la séance : kg soulevés, sinon répétitions, sinon temps d'effort (ruling R56). */
+  work: SessionWork;
   /** XP de la séance (10 / 5 / 20, plafond 300). */
   xp: number;
   before: ProgressSummary;
@@ -98,7 +99,7 @@ export function sessionSummary(
   return {
     minutes: minutesOf(session),
     sets: totals.sets,
-    liftedG: totals.liftedG,
+    work: totals.work,
     xp: sessionXp(session),
     before,
     after,

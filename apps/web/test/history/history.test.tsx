@@ -242,6 +242,42 @@ describe('historique : liste', () => {
     expect(flat(await screen.findByRole('link', { name: /22 oct\./ }))).toContain('1 série · 300 kg');
   });
 
+  it('séance sans charge : les répétitions, ou le temps d’effort, à la place de « 0 kg » (ruling R56)', async () => {
+    await openList([
+      {
+        id: 's-bw',
+        startedAt: '2025-10-23T08:00:00.000Z',
+        exercises: [
+          {
+            id: 'pe-bw',
+            exerciseId: 'back-squat',
+            sets: [
+              { loadG: null, reps: 12 },
+              { loadG: null, reps: 1 },
+            ],
+          },
+        ],
+      },
+      {
+        id: 's-one',
+        startedAt: '2025-10-24T08:00:00.000Z',
+        exercises: [{ id: 'pe-one', exerciseId: 'back-squat', sets: [{ loadG: null, reps: 1 }] }],
+      },
+      {
+        id: 's-dur',
+        startedAt: '2025-10-25T08:00:00.000Z',
+        exercises: [
+          { id: 'pe-dur', exerciseId: 'back-squat', sets: [{ loadG: null, reps: null, durationS: 40 }] },
+        ],
+      },
+    ]);
+    expect(flat(await screen.findByRole('link', { name: /23 oct\./ }))).toMatch(
+      /· 2 séries · 13 répétitions$/,
+    );
+    expect(flat(screen.getByRole('link', { name: /24 oct\./ }))).toMatch(/· 1 série · 1 répétition$/);
+    expect(flat(screen.getByRole('link', { name: /25 oct\./ }))).toMatch(/· 1 série · 40 s d'effort$/);
+  });
+
   it('sans séance : un état vide', async () => {
     await openList([]);
     expect(await screen.findByText('Pas encore de séance')).toBeTruthy();

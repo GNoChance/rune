@@ -5,13 +5,13 @@ import { EmptyState, Page } from '../../ui';
 import styles from './history.module.css';
 import {
   dayLabel,
-  liftedLabel,
   minutesOf,
   monthKey,
   monthLabel,
   sessionName,
   setsLabel,
   totalsOf,
+  workLabel,
 } from './history-format';
 
 /** Retour : Progression, d'où l'historique s'ouvre (spec brique 3 §7.6). */
@@ -57,9 +57,9 @@ function Chevron() {
   );
 }
 
-/** « mar. 28 oct. · Séance A · Salle du centre · 52 min · 15 séries · 3 200 kg ». */
+/** « mar. 28 oct. · Séance A · Salle du centre · 52 min · 15 séries · 3 200 kg » (ou « 61 répétitions », R56). */
 function rowText(s: WorkoutSessionView, placeName: string): string {
-  const { sets, liftedG } = totalsOf(s);
+  const { sets, work } = totalsOf(s);
   const minutes = minutesOf(s);
   return [
     dayLabel(s.startedAt),
@@ -67,7 +67,7 @@ function rowText(s: WorkoutSessionView, placeName: string): string {
     placeName,
     ...(minutes === null ? [] : [`${minutes} min`]),
     setsLabel(sets),
-    liftedLabel(liftedG),
+    workLabel(work),
   ].join(' · ');
 }
 

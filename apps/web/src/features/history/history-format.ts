@@ -1,5 +1,5 @@
-import { type SessionRecord, tonnageG, workSetUnits } from '@rune/domain';
-import { formatLifted, plural } from '../../ui';
+import { doneWorkSets, type SessionRecord, tonnageG, workSetUnits } from '@rune/domain';
+import { formatInt, formatLifted, formatSeconds, plural } from '../../ui';
 
 const TIME_ZONE = 'Europe/Paris';
 
@@ -54,12 +54,52 @@ export function minutesOf(s: Pick<SessionRecord, 'startedAt' | 'endedAt'>): numb
   return Math.max(1, Math.round((s.endedAt - s.startedAt) / 60_000));
 }
 
+/**
+ * Travail d'une séance, tel qu'on le montre (ruling R56) : les kg soulevés dès qu'une charge a bougé ; sinon (poids du
+ * corps, élastique) les répétitions des séries de travail faites ; sans répétition, leur temps d'effort. Une séance
+ * sans rien de tout cela garde « 0 kg ».
+ */
+export type SessionWork =
+  | { kind: 'lifted'; grams: number }
+  | { kind: 'reps'; reps: number }
+  | { kind: 'duration'; seconds: number };
+
 export interface SessionTotals {
   sets: number;
-  liftedG: number;
+  work: SessionWork;
 }
 
-/** Séries de travail faites (une paire gauche/droite compte pour une) et charge × répétitions. */
+/** Séries de travail faites (une paire gauche/droite compte pour une) et travail de la séance (`SessionWork`). */
 export function totalsOf(s: SessionRecord): SessionTotals {
-  return { sets: s.exercises.reduce((n, e) => n + workSetUnits(e), 0), liftedG: tonnageG([s]) };
+  const sets = s.exercises.reduce((n, e) => n + workSetUnits(e), 0);
+  const grams = tonnageG([s]);
+  const done = s.exercises.flatMap(doneWorkSets);
+  const reps = done.reduce((n, set) => n + (set.reps ?? 0), 0);
+  const seconds = done.reduce((n, set) => n + (set.durationS ?? 0), 0);
+  if (grams > 0 || (reps === 0 && seconds === 0)) return { sets, work: { kind: 'lifted', grams } };
+  return { sets, work: reps > 0 ? { kind: 'reps', reps } : { kind: 'duration', seconds } };
+}
+
+/** Case de la fenêtre du Système : « Total soulevé · 1 080 kg », « Répétitions · 61 », « Temps d'effort · 1 min 15 s ». */
+export function workStat(work: SessionWork): { term: string; value: string } {
+  switch (work.kind) {
+    case 'lifted':
+      return { term: 'Total soulevé', value: formatLifted(work.grams) };
+    case 'reps':
+      return { term: 'Répétitions', value: formatInt(work.reps) };
+    case 'duration':
+      return { term: "Temps d'effort", value: formatSeconds(work.seconds) };
+  }
+}
+
+/** Fin de ligne de l'historique : « 3 200 kg », « 61 répétitions », « 1 min 15 s d'effort ». */
+export function workLabel(work: SessionWork): string {
+  switch (work.kind) {
+    case 'lifted':
+      return liftedLabel(work.grams);
+    case 'reps':
+      return `${formatInt(work.reps)} ${plural(work.reps, 'répétition', 'répétitions')}`;
+    case 'duration':
+      return `${formatSeconds(work.seconds)} d'effort`;
+  }
 }

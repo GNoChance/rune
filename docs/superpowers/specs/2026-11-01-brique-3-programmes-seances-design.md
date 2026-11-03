@@ -231,7 +231,7 @@ Routes nouvelles : `/workout`, `/workout/:id`, `/workout/:id/summary`, `/history
 
 ### 7.4 Fin de séance (`/workout/:id/summary`)
 
-- Fenêtre du Système : « Séance gravée. », durée, séries de travail, kg soulevés.
+- Fenêtre du Système : « Séance gravée. », durée, séries de travail, kg soulevés ; une séance sans charge (poids du corps, élastique) montre à la place ses répétitions de travail faites (« Répétitions »), ou sans répétition son temps d'effort (« Temps d'effort ») (ruling R56).
 - XP gagnée et barre du rang qui se remplit ; passage de rang (global ou d'un groupe) : la pierre se grave, comme « Éveil terminé » (refonte §7), en fondu sous mouvement réduit.
 - Records battus (« Nouveau record : 62,5 kg × 6 ») ; un premier passage sur un exercice n'est pas un record.
 - « La prochaine fois » : une ligne par exercice, cible et phrase du code raison, marquée « provisoire » tant que le serveur n'a pas répondu.
@@ -244,7 +244,7 @@ Depuis la séance du jour : on ajoute des exercices par recherche dans le catalo
 
 ### 7.6 Historique (`/history`, `/history/:id`)
 
-- Liste par mois : date (« mar. 28 oct. »), nom de la séance ou « Séance libre », lieu, durée, séries, kg soulevés. Accès depuis Progression.
+- Liste par mois : date (« mar. 28 oct. »), nom de la séance ou « Séance libre », lieu, durée, séries, kg soulevés (sans charge : « 61 répétitions » ou « 1 min 15 s d'effort », ruling R56). Accès depuis Progression.
 - Détail : exercices, séries, efforts, décision du moteur en une phrase, notes ; douleur affichée seulement si elle est stockée. « Modifier » rouvre les séries faites (corrections champ par champ, puis rejeu par le serveur). « Supprimer la séance » avec confirmation.
 
 ### 7.7 Mon programme (`/program`)

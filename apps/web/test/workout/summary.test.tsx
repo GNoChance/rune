@@ -201,6 +201,53 @@ describe('fenêtre du Système (spec §7.4)', () => {
     expect(term('Total soulevé')).toBe('1 080 kg');
   });
 
+  it('séance sans charge (poids du corps) : les répétitions faites à la place des kg soulevés (ruling R56)', async () => {
+    const db = await seedAll([
+      {
+        id: 's-bw',
+        startedAt: '2026-10-06T10:00:00.000Z',
+        minutes: 30,
+        exercises: [
+          {
+            id: 'pe-bw',
+            exerciseId: 'back-squat',
+            sets: [
+              { loadG: null, reps: 12 },
+              { loadG: null, reps: 11, effort: 'ok' },
+            ],
+          },
+          { id: 'pe-plank', exerciseId: 'lat-pulldown', sets: [{ loadG: null, reps: null, durationS: 40 }] },
+        ],
+      },
+    ]);
+    await openSummary('s-bw', db);
+    expect(term('Répétitions')).toBe('23');
+    expect(within(panel()).queryByText('Total soulevé', { selector: 'dt' })).toBeNull();
+  });
+
+  it('séance en durée seulement : le temps d’effort (ruling R56)', async () => {
+    const db = await seedAll([
+      {
+        id: 's-dur',
+        startedAt: '2026-10-06T10:00:00.000Z',
+        minutes: 10,
+        exercises: [
+          {
+            id: 'pe-dur',
+            exerciseId: 'back-squat',
+            sets: [
+              { loadG: null, reps: null, durationS: 40 },
+              { loadG: null, reps: null, durationS: 35, effort: 'ok' },
+            ],
+          },
+        ],
+      },
+    ]);
+    await openSummary('s-dur', db);
+    expect(term("Temps d'effort")).toBe('1 min 15 s');
+    expect(within(panel()).queryByText('Total soulevé', { selector: 'dt' })).toBeNull();
+  });
+
   it('XP gagnée (20 + 3 × 10 + 5 pour l’effort) et rang global avec sa barre', async () => {
     const db = await seedAll([TODAY]);
     await openSummary('s-now', db);
