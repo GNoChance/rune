@@ -7,7 +7,6 @@ export {
   buildChatParams,
   chatCost,
   classifyAiError,
-  usedFallback,
 } from './chat';
 export {
   type AiClient,

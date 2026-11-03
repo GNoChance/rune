@@ -39,15 +39,17 @@ export type FakeAiResponses =
 /**
  * Tour scripté de `chat()` : des événements puis le message final, complété par défaut (modèle de la requête,
  * usage nul, coût par `chatCost`, repli par `usedFallback`) ; `gate` retient le dernier événement et le final.
- * Ou une erreur, levée après `afterEvents`.
+ * Ou une erreur, levée après `afterEvents`. `abortCostUsd` : coût de l'`AiError('aborted')` si `req.signal`
+ * interrompt le tour ; à défaut `final.costUsd`, sinon 0 ; toujours avec `costPartial`, comme le vrai client.
  */
 export type FakeChatTurn =
   | {
       events?: AiChatEvent[];
       final: Partial<AiChatFinal> & Pick<AiChatFinal, 'blocks' | 'stopReason'>;
       gate?: Promise<void>;
+      abortCostUsd?: number;
     }
-  | { error: AiError; afterEvents?: AiChatEvent[] };
+  | { error: AiError; afterEvents?: AiChatEvent[]; abortCostUsd?: number };
 
 type ScriptedFinal = Extract<FakeChatTurn, { final: unknown }>['final'];
 
@@ -60,32 +62,32 @@ export type FakeAiClient = AiClient & {
   readonly chatParams: readonly ReturnType<typeof buildChatParams>[];
 };
 
-const aborted = () => new AiError('aborted', 'Appel interrompu.');
+/** Interruption d'un tour : son `signal` et le coût de l'`AiError('aborted')` qu'elle lève. */
+type Abort = { signal: AbortSignal; costUsd: number };
 
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) throw aborted();
+const aborted = (abort: Abort) =>
+  new AiError('aborted', 'Appel interrompu.', { costUsd: abort.costUsd, costPartial: true });
+
+function throwIfAborted(abort: Abort): void {
+  if (abort.signal.aborted) throw aborted(abort);
 }
 
 /** Rend les événements un par un ; `signal` aborté (avant, entre deux, ou par l'un d'eux) arrête l'appel. */
-function replay(
-  events: readonly AiChatEvent[],
-  signal: AbortSignal,
-  onEvent: (e: AiChatEvent) => void,
-): void {
+function replay(events: readonly AiChatEvent[], abort: Abort, onEvent: (e: AiChatEvent) => void): void {
   for (const event of events) {
-    throwIfAborted(signal);
+    throwIfAborted(abort);
     onEvent(event);
   }
-  throwIfAborted(signal);
+  throwIfAborted(abort);
 }
 
 /** Attend `gate`, sauf si `signal` interrompt l'appel avant. */
-function waitFor(gate: Promise<void>, signal: AbortSignal): Promise<void> {
-  throwIfAborted(signal);
+function waitFor(gate: Promise<void>, abort: Abort): Promise<void> {
+  throwIfAborted(abort);
   return new Promise((resolve, reject) => {
-    const onAbort = () => reject(aborted());
-    signal.addEventListener('abort', onAbort, { once: true });
-    gate.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+    const onAbort = () => reject(aborted(abort));
+    abort.signal.addEventListener('abort', onAbort, { once: true });
+    gate.then(resolve, reject).finally(() => abort.signal.removeEventListener('abort', onAbort));
   });
 }
 
@@ -144,22 +146,32 @@ export function createFakeAiClient(
     },
     /** Rejoue le tour : ses événements sauf le dernier, `gate`, le dernier, puis le final ; `req.signal` l'arrête. */
     async chat(req: AiChatRequest, onEvent: (e: AiChatEvent) => void): Promise<AiChatFinal> {
-      const params = buildChatParams(req);
+      let params: ReturnType<typeof buildChatParams>;
+      try {
+        params = buildChatParams(req);
+      } catch (error) {
+        // Comme le vrai client : rien n'est envoyé, donc rien n'est enregistré.
+        const message = error instanceof Error ? error.message : String(error);
+        throw new AiError('bad_request', `Requête invalide, non envoyée : ${message}`, { cause: error });
+      }
       const call = chatCalls.length;
       chatCalls.push(req);
       chatParams.push(params);
       const turn = typeof options.chat === 'function' ? options.chat(req, call) : options.chat?.[call];
       if (turn === undefined) {
+        // Erreur du script du test, pas de l'appel : elle reste une `Error` simple, bien visible.
         throw new Error(`Faux client IA : aucun tour prévu pour l'appel ${call + 1} de chat().`);
       }
+      const finalCost = 'final' in turn ? turn.final.costUsd : undefined;
+      const abort: Abort = { signal: req.signal, costUsd: turn.abortCostUsd ?? finalCost ?? 0 };
       if ('error' in turn) {
-        replay(turn.afterEvents ?? [], req.signal, onEvent);
+        replay(turn.afterEvents ?? [], abort, onEvent);
         throw turn.error;
       }
       const events = turn.events ?? [];
-      replay(events.slice(0, -1), req.signal, onEvent);
-      if (turn.gate !== undefined) await waitFor(turn.gate, req.signal);
-      replay(events.slice(-1), req.signal, onEvent);
+      replay(events.slice(0, -1), abort, onEvent);
+      if (turn.gate !== undefined) await waitFor(turn.gate, abort);
+      replay(events.slice(-1), abort, onEvent);
       return completeFinal(turn.final, req);
     },
   };

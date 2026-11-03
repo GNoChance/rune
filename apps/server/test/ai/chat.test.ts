@@ -14,8 +14,9 @@ import {
   MODEL_PRICES,
   type TokenUsage,
   toStructuredSchema,
-  usedFallback,
 } from '../../src/ai';
+import { usedFallback } from '../../src/ai/chat';
+import * as ai from '../../src/ai/index';
 
 /** JSON Schema d'entrée d'un outil, tel que `z.toJSONSchema` le produit (bornes que l'API refuse comprises). */
 const readTrainingSchema = {
@@ -517,18 +518,48 @@ describe('createAnthropicClient().chat (fetch injecté, flux rejoué)', () => {
     expect(final.fallbackUsed).toBe(false);
   });
 
-  it('timeoutMs dépassé pendant le flux → AiError timeout, après les événements déjà reçus', async () => {
+  it('début de bloc redacted_thinking, et other pour un type que le coach ne lit pas', async () => {
+    const { fetch } = stubFetch({
+      events: [
+        messageStart(),
+        blockStart(0, { type: 'redacted_thinking', data: 'chiffré' }),
+        blockStop(0),
+        blockStart(1, { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: {} }),
+        blockStop(1),
+        ...textBlock(2, 'Oui.'),
+        messageDelta('end_turn', { output_tokens: 5 }),
+        messageStop,
+      ],
+    });
+    const starts: AiChatEvent[] = [];
+    await client(fetch).chat(request(), (e) => {
+      if (e.type === 'block_start') starts.push(e);
+    });
+    expect(starts).toEqual([
+      { type: 'block_start', index: 0, block: 'redacted_thinking' },
+      { type: 'block_start', index: 1, block: 'other' },
+      { type: 'block_start', index: 2, block: 'text' },
+    ]);
+  });
+
+  /** Entrée de `message_start` (120 × 4 $ + 6 000 × 0,20 $, par million de jetons). */
+  const knownInputUsd = (480 + 1200) / 1_000_000;
+  /** Sortie estimée d'un texte relayé : un jeton pour 3 caractères, au prix de sortie d'Opus 5.5 (20 $). */
+  const relayedOutputUsd = (text: string) => (Math.ceil(text.length / 3) * 20) / 1_000_000;
+
+  it('timeoutMs dépassé pendant le flux → AiError timeout, après les événements reçus, coût estimé', async () => {
     const { fetch } = stubFetch({ events: [messageStart(), ...textBlock(0, 'Je réfléchis')], stall: true });
     const events: AiChatEvent[] = [];
     const error = await client(fetch)
       .chat(request({ timeoutMs: 50 }), (e) => events.push(e))
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AiError);
-    expect(error).toMatchObject({ code: 'timeout' });
+    expect(error).toMatchObject({ code: 'timeout', costPartial: true });
     expect(events).toContainEqual({ type: 'text_delta', text: 'Je réfléchis' });
+    expect((error as AiError).costUsd).toBeCloseTo(knownInputUsd + relayedOutputUsd('Je réfléchis'), 12);
   });
 
-  it('signal aborté pendant le flux → AiError aborted, plus aucun événement, coût partiel gardé', async () => {
+  it('signal aborté après « Mets 65 kg. » relayé → aborted, plus aucun événement, sortie au moins le texte relayé', async () => {
     const { fetch } = stubFetch({ events: textStream('Mets ', '65 kg.', ' Puis ', 'repose-toi.') });
     const controller = new AbortController();
     const events: AiChatEvent[] = [];
@@ -539,23 +570,52 @@ describe('createAnthropicClient().chat (fetch injecté, flux rejoué)', () => {
       })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AiError);
-    expect(error).toMatchObject({ code: 'aborted' });
+    expect(error).toMatchObject({ code: 'aborted', costPartial: true });
     expect(events.at(-1)).toEqual({ type: 'text_delta', text: '65 kg.' });
-    // Entrée de message_start (120 × 4 $ + 6 000 × 0,20 $) et sortie connue (1 × 20 $), par million.
-    expect((error as AiError).costUsd).toBeCloseTo((480 + 1200 + 20) / 1_000_000, 10);
+    // message_start ne compte qu'un jeton de sortie : le texte relayé (11 caractères, 4 jetons) l'emporte.
+    expect((error as AiError).costUsd).toBeCloseTo(knownInputUsd + relayedOutputUsd('Mets 65 kg.'), 12);
   });
 
-  it('signal déjà aborté → AiError aborted, sans requête', async () => {
+  it('signal aborté avant message_start → coût de la requête sérialisée estimé, jamais nul', async () => {
+    const { fetch } = stubFetch({ events: [], stall: true });
+    const controller = new AbortController();
+    const req = request({ signal: controller.signal });
+    const pending = client(fetch).chat(req, () => {});
+    setTimeout(() => controller.abort(), 20);
+    const error = await pending.catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'aborted', costPartial: true });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    // Entrée estimée : un jeton pour 3 caractères de la requête sérialisée, au prix d'entrée d'Opus 5.5 (4 $).
+    const inputTokens = Math.ceil(JSON.stringify(buildChatParams(req).body).length / 3);
+    expect((error as AiError).costUsd).toBeGreaterThan(0);
+    expect((error as AiError).costUsd).toBeCloseTo((inputTokens * 4) / 1_000_000, 12);
+  });
+
+  it('signal déjà aborté → AiError aborted, sans requête ni coût', async () => {
     const { fetch } = stubFetch({ events: textStream('Oui.') });
     const controller = new AbortController();
     controller.abort();
     await expect(client(fetch).chat(request({ signal: controller.signal }), () => {})).rejects.toMatchObject({
       code: 'aborted',
+      costUsd: 0,
+      costPartial: true,
     });
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('erreur dans le flux (event: error) ou à la réponse : AiError du code classé', async () => {
+  it('requête impossible à construire → AiError bad_request, jamais une Error simple, sans requête', async () => {
+    const { fetch } = stubFetch({ events: textStream('Oui.') });
+    const system = Array.from({ length: 4 }, (_, i) => ({ text: `Bloc ${i}`, cache: true }));
+    const error = await client(fetch)
+      .chat(request({ system }), () => {})
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AiError);
+    expect(error).toMatchObject({ code: 'bad_request', costUsd: 0, costPartial: false });
+    expect((error as AiError).message).toMatch(/4 points de cache/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('erreur dans le flux (event: error) ou à la réponse : AiError du code classé, coût estimé', async () => {
     const overloaded = {
       type: 'error',
       error: { type: 'overloaded_error', message: 'Overloaded' },
@@ -565,8 +625,14 @@ describe('createAnthropicClient().chat (fetch injecté, flux rejoué)', () => {
       { status: 429, json: { type: 'error', error: { type: 'rate_limit_error', message: 'Trop.' } } },
     );
     const ai = client(fetch);
-    await expect(ai.chat(request(), () => {})).rejects.toMatchObject({ code: 'overloaded' });
-    await expect(ai.chat(request(), () => {})).rejects.toMatchObject({ code: 'rate_limited' });
+    await expect(ai.chat(request(), () => {})).rejects.toMatchObject({
+      code: 'overloaded',
+      costPartial: true,
+      costUsd: expect.closeTo(knownInputUsd + relayedOutputUsd('Je'), 12),
+    });
+    const rateLimited = await ai.chat(request(), () => {}).catch((e: unknown) => e);
+    expect(rateLimited).toMatchObject({ code: 'rate_limited', costPartial: true });
+    expect((rateLimited as AiError).costUsd).toBeGreaterThan(0);
   });
 });
 
@@ -645,6 +711,10 @@ describe('usedFallback', () => {
   ] as const)('%s → %s', (_, expected, blocks, its) => {
     expect(usedFallback(blocks, its)).toBe(expected);
   });
+
+  it("n'est pas exporté par l'index : fallbackUsed se lit dans le final, jamais recalculé (P26)", () => {
+    expect(ai).not.toHaveProperty('usedFallback');
+  });
 });
 
 /** Erreur du SDK telle qu'il la lève pour une réponse HTTP (statut, corps JSON de l'API). */
@@ -669,6 +739,8 @@ describe('classifyAiError (statut, type, message)', () => {
     ],
     [400, 'invalid_request_error', 'messages.1.content.0: unexpected block', 'bad_request'],
     [404, 'not_found_error', 'model: claude-inconnu', 'bad_request'],
+    [408, 'timeout_error', 'Request timed out', 'timeout'],
+    [409, 'conflict_error', 'Conflict', 'server'],
     [401, 'authentication_error', 'invalid x-api-key', 'auth'],
     [403, 'permission_error', 'Your API key does not have permission', 'auth'],
     [500, 'api_error', 'Internal server error', 'server'],

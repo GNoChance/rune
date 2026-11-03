@@ -149,24 +149,35 @@ export type AiErrorCode =
 
 /**
  * Échec d'un appel. `fatal` : la même requête échouera pour tout le lot (clé refusée, requête invalide), inutile
- * de continuer. `costUsd` : ce que l'appel a coûté malgré l'échec (sortie coupée, refus).
+ * de continuer. `costUsd` : ce que l'appel a coûté malgré l'échec ; exact pour `complete()` (sortie coupée, refus,
+ * lus dans `usage`). `costPartial` : `costUsd` n'est qu'une estimation prudente, pour un appel de `chat()`
+ * interrompu (`aborted`, `timeout`) ou en erreur après l'envoi de la requête ; la réflexion non relayée ne s'y
+ * mesure pas.
  */
 export class AiError extends Error {
   readonly code: AiErrorCode;
   readonly stopReason: string | undefined;
   readonly costUsd: number;
+  readonly costPartial: boolean;
   readonly fatal: boolean;
 
   constructor(
     code: AiErrorCode,
     message: string,
-    details: { stopReason?: string; costUsd?: number; fatal?: boolean; cause?: unknown } = {},
+    details: {
+      stopReason?: string;
+      costUsd?: number;
+      costPartial?: boolean;
+      fatal?: boolean;
+      cause?: unknown;
+    } = {},
   ) {
     super(message, { cause: details.cause });
     this.name = 'AiError';
     this.code = code;
     this.stopReason = details.stopReason;
     this.costUsd = details.costUsd ?? 0;
+    this.costPartial = details.costPartial ?? false;
     this.fatal = details.fatal ?? false;
   }
 }

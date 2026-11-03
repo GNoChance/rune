@@ -176,11 +176,12 @@ const textOf = (e: unknown): string => apiError(e)?.message ?? '';
 /**
  * Cas du classement, dans l'ordre : le premier qui correspond donne le code. Les classes de connexion d'abord
  * (une interruption ou un délai du SDK sont des `APIConnectionError` sans statut), puis le statut HTTP ou, pour
- * une erreur reçue dans le flux, le type d'erreur de l'API.
+ * une erreur reçue dans le flux, le type d'erreur de l'API. 408 et 409 n'arrivent qu'après les nouveaux essais
+ * du SDK : délai pour l'un, conflit passager du serveur pour l'autre.
  */
 const AI_ERROR_CASES: readonly (readonly [AiErrorCode, (e: unknown) => boolean])[] = [
   ['aborted', (e) => e instanceof Anthropic.APIUserAbortError],
-  ['timeout', (e) => e instanceof Anthropic.APIConnectionTimeoutError],
+  ['timeout', (e) => e instanceof Anthropic.APIConnectionTimeoutError || statusOf(e) === 408],
   ['network', (e) => e instanceof Anthropic.APIConnectionError],
   [
     'spend_limit',
@@ -195,7 +196,10 @@ const AI_ERROR_CASES: readonly (readonly [AiErrorCode, (e: unknown) => boolean])
     (e) =>
       [401, 403].includes(statusOf(e)) || ['authentication_error', 'permission_error'].includes(typeOf(e)),
   ],
-  ['server', (e) => statusOf(e) >= 500 || ['api_error', 'timeout_error'].includes(typeOf(e))],
+  [
+    'server',
+    (e) => statusOf(e) >= 500 || statusOf(e) === 409 || ['api_error', 'timeout_error'].includes(typeOf(e)),
+  ],
   [
     'bad_request',
     (e) => statusOf(e) >= 400 || ['invalid_request_error', 'not_found_error'].includes(typeOf(e)),
@@ -270,12 +274,33 @@ function iterationsOf(message: SdkMessage): AiIteration[] | null {
   );
 }
 
-/** Coût de ce que le flux a déjà compté (entrée de `message_start`, sortie jusque-là), pour un appel interrompu. */
-function partialCost(message: SdkMessage | undefined): number {
-  return message === undefined
-    ? 0
-    : chatCost(message.model, tokenUsage(message.usage), iterationsOf(message)).costUsd;
+/** Jetons estimés d'un texte : un pour 3 caractères, arrondi au-dessus. */
+const estimatedTokens = (chars: number): number => Math.ceil(chars / 3);
+
+/**
+ * Coût estimé, par excès, d'un appel interrompu ou en erreur après l'envoi de la requête (`costPartial`).
+ * Entrée : l'usage de `message_start` s'il est arrivé, sinon la requête sérialisée (`estimatedTokens`) au prix
+ * d'entrée du modèle demandé, sans remise du cache. Sortie : le plus grand de l'usage connu (un jeton à
+ * `message_start`, le total au `message_delta` final) et du texte déjà relayé. La réflexion produite mais non
+ * relayée ne se mesure pas : elle manque à l'estimation, ce que `costPartial` signale.
+ */
+function partialCost(
+  req: AiChatRequest,
+  body: Record<string, unknown>,
+  message: SdkMessage | undefined,
+  relayedChars: number,
+): number {
+  const relayedTokens = estimatedTokens(relayedChars);
+  if (message === undefined) {
+    const input = estimatedTokens(JSON.stringify(body).length);
+    return chatCost(req.model, { input_tokens: input, output_tokens: relayedTokens }, null).costUsd;
+  }
+  const usage = tokenUsage(message.usage);
+  const output = Math.max(usage.output_tokens, relayedTokens);
+  return chatCost(message.model, { ...usage, output_tokens: output }, iterationsOf(message)).costUsd;
 }
+
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 function readFinal(message: SdkMessage): AiChatFinal {
   // JSON simple : le SDK pose des propriétés non énumérables et des accesseurs sur ses blocs.
@@ -306,14 +331,23 @@ function readFinal(message: SdkMessage): AiChatFinal {
 /**
  * `AiClient.chat()` du client réel. Un seul délai couvre tout l'appel (nouveaux essais du SDK et lecture du flux,
  * que le délai du SDK ne couvre pas) ; `req.signal` l'interrompt. Après une interruption, plus aucun événement
- * n'est rendu, même déjà reçu. Toute erreur devient une `AiError` du code classé, avec le coût déjà compté.
+ * n'est rendu, même déjà reçu. Ne rejette qu'avec une `AiError` : `bad_request` si la requête ne se construit
+ * pas (rien n'est envoyé, coût nul), sinon le code classé, avec un coût estimé (`partialCost`, `costPartial`).
  */
 export async function streamChat(
   sdk: Anthropic,
   req: AiChatRequest,
   onEvent: (e: AiChatEvent) => void,
 ): Promise<AiChatFinal> {
-  const { body, betas } = buildChatParams(req);
+  let built: ReturnType<typeof buildChatParams>;
+  try {
+    built = buildChatParams(req);
+  } catch (error) {
+    throw new AiError('bad_request', `Requête invalide, non envoyée : ${messageOf(error)}`, { cause: error });
+  }
+  // Rien n'est encore envoyé : aucun coût.
+  if (req.signal.aborted) throw new AiError('aborted', 'Appel interrompu.', { costPartial: true });
+  const { body, betas } = built;
   const controller = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -322,28 +356,31 @@ export async function streamChat(
   }, req.timeoutMs);
   const forward = () => controller.abort();
   req.signal.addEventListener('abort', forward, { once: true });
-  if (req.signal.aborted) controller.abort();
   let stream: ReturnType<typeof sdk.beta.messages.stream> | undefined;
+  let relayedChars = 0;
   try {
     const params = { ...body, betas } as unknown as Parameters<typeof sdk.beta.messages.stream>[0];
     stream = sdk.beta.messages.stream(params, { signal: controller.signal });
     for await (const event of stream) {
       if (controller.signal.aborted) break;
       const relayed = chatEvent(event);
-      if (relayed !== null) onEvent(relayed);
+      if (relayed === null) continue;
+      if (relayed.type === 'text_delta') relayedChars += relayed.text.length;
+      onEvent(relayed);
     }
     if (controller.signal.aborted) throw new Anthropic.APIUserAbortError();
     return readFinal(await stream.finalMessage());
   } catch (error) {
-    const costUsd = partialCost(stream?.currentMessage ?? stream?.receivedMessages.at(-1));
-    if (timedOut) {
-      throw new AiError('timeout', `Délai de ${req.timeoutMs} ms dépassé.`, { cause: error, costUsd });
-    }
-    if (req.signal.aborted) throw new AiError('aborted', 'Appel interrompu.', { cause: error, costUsd });
-    if (error instanceof AiError) throw error;
+    const snapshot = stream?.currentMessage ?? stream?.receivedMessages.at(-1);
+    const details = {
+      cause: error,
+      costUsd: partialCost(req, body, snapshot, relayedChars),
+      costPartial: true,
+    };
+    if (timedOut) throw new AiError('timeout', `Délai de ${req.timeoutMs} ms dépassé.`, details);
+    if (req.signal.aborted) throw new AiError('aborted', 'Appel interrompu.', details);
     const code = classifyAiError(error);
-    const message = error instanceof Error ? error.message : String(error);
-    throw new AiError(code, `Erreur de l'API Anthropic (${code}) : ${message}`, { cause: error, costUsd });
+    throw new AiError(code, `Erreur de l'API Anthropic (${code}) : ${messageOf(error)}`, details);
   } finally {
     clearTimeout(timer);
     req.signal.removeEventListener('abort', forward);

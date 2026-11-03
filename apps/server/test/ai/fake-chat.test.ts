@@ -214,4 +214,51 @@ describe('createFakeAiClient : chat()', () => {
     expect(relayed.events.at(-1)).toEqual({ type: 'text_delta', text: ' kg. Pu' });
     expect(fake.chatCalls).toHaveLength(3);
   });
+
+  it('coût d’un appel interrompu : abortCostUsd, sinon final.costUsd, sinon 0, toujours costPartial', async () => {
+    const fake = createFakeAiClient([], {
+      chat: [
+        { ...fakeText('Mets 65 kg. Puis repose-toi.', { costUsd: 0.04 }), abortCostUsd: 0.01 },
+        fakeText('Mets 65 kg. Puis repose-toi.', { costUsd: 0.04 }),
+        fakeText('Mets 65 kg. Puis repose-toi.'),
+        {
+          error: new AiError('server', 'Panne.'),
+          afterEvents: [{ type: 'text_delta', text: 'Mets' }],
+          abortCostUsd: 0.02,
+        },
+      ],
+    });
+    const abortOn = (word: string) => {
+      const controller = new AbortController();
+      const onEvent = (e: AiChatEvent) => {
+        if (e.type === 'text_delta' && e.text.includes(word)) controller.abort();
+      };
+      return { signal: controller.signal, onEvent };
+    };
+    for (const expected of [0.01, 0.04, 0]) {
+      const { signal, onEvent } = abortOn('kg');
+      await expect(fake.chat(request({ signal }), onEvent)).rejects.toMatchObject({
+        code: 'aborted',
+        costUsd: expected,
+        costPartial: true,
+      });
+    }
+    const { signal, onEvent } = abortOn('Mets');
+    await expect(fake.chat(request({ signal }), onEvent)).rejects.toMatchObject({
+      code: 'aborted',
+      costUsd: 0.02,
+      costPartial: true,
+    });
+  });
+
+  it('requête impossible à construire → AiError bad_request, rien d’enregistré', async () => {
+    const fake = createFakeAiClient([], { chat: [fakeText('Oui.')] });
+    const system = Array.from({ length: 4 }, (_, i) => ({ text: `Bloc ${i}`, cache: true }));
+    const error = await fake.chat(request({ system }), () => {}).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AiError);
+    expect(error).toMatchObject({ code: 'bad_request', costUsd: 0, costPartial: false });
+    expect((error as AiError).message).toMatch(/4 points de cache/);
+    expect(fake.chatCalls).toEqual([]);
+    expect(fake.chatParams).toEqual([]);
+  });
 });
