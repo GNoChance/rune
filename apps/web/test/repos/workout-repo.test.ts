@@ -346,21 +346,26 @@ describe('saisie des séries', () => {
     ).toEqual(Array(3).fill([8, 12, null]));
   });
 
-  it('swapExercise sans série faite : même exercice réalisé, séries non faites réécrites pour la nouvelle fiche', async () => {
-    const { repos } = await setup();
+  it('swapExercise sans série faite : nouvel exercice dans le slot, ancien supprimé, aucun patch de exerciseId (I3)', async () => {
+    const { db, repos } = await setup();
     const id = await repos.workouts.start(START);
     const v = await view(repos, id);
 
     const squatId = exerciseAt(v, 0).id;
-    expect(await repos.workouts.swapExercise(squatId, 'goblet-squat', 'equipment')).toBe(squatId);
+    const newSquat = await repos.workouts.swapExercise(squatId, 'goblet-squat', 'equipment');
+    expect(newSquat).not.toBe(squatId);
     const lungeId = exerciseAt(v, 1).id;
-    expect(await repos.workouts.swapExercise(lungeId, 'goblet-squat', 'preference')).toBe(lungeId);
+    const newLunge = await repos.workouts.swapExercise(lungeId, 'goblet-squat', 'preference');
+    expect(newLunge).not.toBe(lungeId);
 
     const after = await view(repos, id);
+    expect(after.exercises.map((e) => e.id)).toEqual([newSquat, newLunge]);
     expect(exerciseAt(after, 0)).toMatchObject({
-      id: squatId,
+      id: newSquat,
+      slotId: 'A1',
       exerciseId: 'goblet-squat',
       plannedExerciseId: 'back-squat',
+      position: 1,
       swapReason: 'equipment',
     });
     // Haltères : l'échauffement reste ; la charge visée de la barre ne vaut plus.
@@ -377,14 +382,19 @@ describe('saisie des séries', () => {
       [2, null, 12],
     ]);
 
+    // L'ancien exercice est supprimé logiquement ; l'outbox ne patche jamais exerciseId.
+    expect((await db.mirror('performed_exercise').get(squatId))?.deletedAt).not.toBeNull();
+    const patches = (await ops(db)).filter((o) => o.entity === 'performed_exercise' && o.kind === 'patch');
+    expect(patches.filter((o) => 'exerciseId' in o.fields)).toEqual([]);
+
     // Sans charge : pas d'échauffement (R29).
-    await repos.workouts.swapExercise(squatId, 'bodyweight-squat', 'busy');
+    await repos.workouts.swapExercise(newSquat, 'bodyweight-squat', 'busy');
     expect(exerciseAt(await view(repos, id), 0).sets.map((s) => [s.kind, s.loadMode])).toEqual([
       ['work', 'bodyweight'],
       ['work', 'bodyweight'],
       ['work', 'bodyweight'],
     ]);
-    await expect(repos.workouts.swapExercise(squatId, 'inconnu', 'busy')).rejects.toMatchObject({
+    await expect(repos.workouts.swapExercise(newSquat, 'inconnu', 'busy')).rejects.toMatchObject({
       code: 'unknown_exercise',
     });
   });
@@ -407,6 +417,7 @@ describe('saisie des séries', () => {
     expect(exerciseAt(after, 0).sets.map((s) => [s.kind, s.position, s.loggedAt])).toEqual([
       ['work', 1, DEFAULT_NOW],
     ]);
+    expect(exerciseAt(after, 0).sets.map((s) => s.id)).toEqual([workSet(v, 0, 0).id]);
     expect(exerciseAt(after, 1)).toMatchObject({ plannedExerciseId: 'back-squat', position: 1 });
     expect(exerciseAt(after, 1).sets.map((s) => [s.kind, s.position, s.loadMode, s.loggedAt])).toEqual([
       ['warmup', 1, 'dumbbell', null],
@@ -441,14 +452,15 @@ describe('saisie des séries', () => {
     const { db, repos } = await setup();
     const id = await repos.workouts.start(START);
     const squatId = exerciseAt(await view(repos, id), 0).id;
-    await repos.workouts.swapExercise(squatId, 'goblet-squat', 'equipment');
-    await repos.workouts.swapExercise(squatId, 'bodyweight-squat', 'pain');
+    const second = await repos.workouts.swapExercise(squatId, 'goblet-squat', 'equipment');
+    const third = await repos.workouts.swapExercise(second, 'bodyweight-squat', 'pain');
     expect(exerciseAt(await view(repos, id), 0)).toMatchObject({
+      id: third,
       exerciseId: 'bodyweight-squat',
       swapReason: null,
     });
-    const patches = (await ops(db)).filter((o) => o.entity === 'performed_exercise' && o.kind === 'patch');
-    expect(patches.at(-1)?.fields).toEqual({ exerciseId: 'bodyweight-squat', swapReason: null });
+    const creates = (await ops(db)).filter((o) => o.entity === 'performed_exercise' && o.kind === 'create');
+    expect(creates.at(-1)?.fields).toMatchObject({ exerciseId: 'bodyweight-squat', swapReason: null });
     expect(await dumpLocalDb(db)).not.toMatch(/"swapReason":"pain"/);
   });
 

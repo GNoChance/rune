@@ -18,9 +18,15 @@ function DotsIcon() {
 }
 
 /** Bouton « ⋯ » de 48 px, nommé par `label`. */
-export function MenuButton(p: { label: string; onClick(): void }) {
+export function MenuButton(p: { label: string; onClick(): void; menuFor?: string }) {
   return (
-    <button type="button" className={styles.menuButton} aria-label={p.label} onClick={p.onClick}>
+    <button
+      type="button"
+      className={styles.menuButton}
+      aria-label={p.label}
+      data-menu-for={p.menuFor}
+      onClick={p.onClick}
+    >
       <DotsIcon />
     </button>
   );

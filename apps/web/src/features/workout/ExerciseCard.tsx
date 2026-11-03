@@ -117,6 +117,8 @@ export interface ExerciseCardProps {
   /** Hors ligne : « Pas de cette machine » (API en ligne) est grisé. */
   offline: boolean;
   onToggle(): void;
+  /** L'exercice a été changé : `id` est le nouvel exercice du slot, qui remplace cette carte. */
+  onSwapped(id: string): void;
   /** Le nom ouvre la fiche de l'exercice. */
   onOpenSheet(): void;
   /** Effort à noter pour ces lignes : une série de travail, ses deux côtés en unilatéral. */
@@ -233,7 +235,9 @@ export function ExerciseCard(p: ExerciseCardProps) {
             {p.name}
           </button>
         </h2>
-        {p.readOnly ? null : <MenuButton label={`Options pour ${p.name}`} onClick={() => setMenu(true)} />}
+        {p.readOnly ? null : (
+          <MenuButton label={`Options pour ${p.name}`} menuFor={exercise.id} onClick={() => setMenu(true)} />
+        )}
       </div>
       {summary ? <p className={styles.target}>{summary}</p> : null}
       {p.minor && barbell ? <p className={styles.cardNote}>{MINOR_BARBELL}</p> : null}
@@ -324,6 +328,7 @@ export function ExerciseCard(p: ExerciseCardProps) {
           name={p.name}
           pain={sub === 'painSwap' ? { minor: p.minor, barbell } : null}
           swappable={swappable}
+          onSwapped={p.onSwapped}
           onClose={closeSub}
         />
       ) : null}

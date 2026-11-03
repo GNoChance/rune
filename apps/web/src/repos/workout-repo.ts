@@ -451,6 +451,9 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
       exerciseId: string;
       swapReason: SwapReason | null;
       position: number;
+      nextAdjustment?: NextAdjustment | null;
+      painLevel?: string | null;
+      note?: string | null;
     },
   ): Promise<string> {
     const id = newId();
@@ -458,7 +461,7 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
       entity: EXERCISE,
       id,
       kind: 'create',
-      fields: { ...fields, nextAdjustment: null, note: null },
+      fields: { nextAdjustment: null, note: null, ...fields },
     });
     return id;
   }
@@ -689,30 +692,32 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
         const sets = await setsOf([performedExerciseId], w);
         const open = sets.filter((r) => !isDone(r));
         const previous = await sheetOf(String(exercise.exerciseId));
-        const split = sets.some(isDone);
-        let target = performedExerciseId;
-        if (split) {
-          // Les séries faites restent à l'ancienne fiche ; la suite passe à un nouvel exercice du même slot.
-          target = await createExercise(w, {
-            sessionId: String(exercise.sessionId),
-            slotId: text(exercise.slotId),
-            plannedExerciseId: text(exercise.plannedExerciseId),
-            exerciseId,
-            swapReason: reason,
-            position: num(exercise.position) ?? 1,
-          });
-        } else {
-          await w.put({
-            entity: EXERCISE,
-            id: performedExerciseId,
-            kind: 'patch',
-            fields: { exerciseId, swapReason: reason },
-          });
-        }
+        // Toujours un nouvel exercice dans le même slot (I3) : un miroir en retard peut ignorer des séries faites par
+        // un autre appareil, qu'un patch de `exerciseId` renommerait. Les séries faites restent à l'ancienne fiche.
+        const kept = sets.some(isDone);
+        const fresh = await createExercise(w, {
+          sessionId: String(exercise.sessionId),
+          slotId: text(exercise.slotId),
+          plannedExerciseId: text(exercise.plannedExerciseId),
+          exerciseId,
+          swapReason: reason,
+          position: num(exercise.position) ?? 1,
+          // L'ancien exercice disparaît : sa douleur signalée, son ajustement et sa note passent au nouveau.
+          ...(kept
+            ? {}
+            : {
+                nextAdjustment: text(exercise.nextAdjustment) as NextAdjustment | null,
+                ...(w.healthConsentActive && exercise.painLevel != null
+                  ? { painLevel: text(exercise.painLevel) }
+                  : {}),
+                note: text(exercise.note),
+              }),
+        });
+        if (!kept) await deleteRow(w, EXERCISE, performedExerciseId);
         for (const row of open) await deleteRow(w, SET, row.id);
-        for (const set of rewrite(open, sheet, previous, split))
-          await createSet(w, target, sheet.load_mode, set);
-        return target;
+        for (const set of rewrite(open, sheet, previous, true))
+          await createSet(w, fresh, sheet.load_mode, set);
+        return fresh;
       });
       void s.sync.syncNow('set_logged');
       return id;

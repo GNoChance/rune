@@ -189,6 +189,8 @@ function Live(p: {
   const [sheet, setSheet] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refocus, setRefocus] = useState<FocusAfter>(null);
+  // Exercice changé : la carte est remplacée, le focus va au « ⋯ » de la nouvelle dès qu'elle est affichée.
+  const [swapped, setSwapped] = useState<string | null>(null);
   const root = useRef<HTMLElement>(null);
   const finishButton = useRef<HTMLButtonElement>(null);
   // « Terminer » en cours de vérification : un second appui ne relance rien.
@@ -228,6 +230,14 @@ function Live(p: {
     (nextId === null ? finishButton.current : toggle(nextId))?.focus();
     setRefocus(null);
   }, [refocus, effort, session]);
+
+  useEffect(() => {
+    if (swapped === null || !session.exercises.some((e) => e.id === swapped)) return;
+    const menu = root.current?.querySelector<HTMLElement>(`[data-menu-for="${swapped}"]`);
+    if (!menu) return;
+    menu.focus();
+    setSwapped(null);
+  }, [swapped, session]);
 
   const pickEffort = async (value: Effort) => {
     if (!effort) return;
@@ -320,6 +330,7 @@ function Live(p: {
             readOnly={readOnly}
             minor={minor}
             offline={connection === 'offline'}
+            onSwapped={setSwapped}
             onToggle={() => setExpanded((x) => ({ ...x, [exercise.id]: !isOpen(exercise) }))}
             onOpenSheet={() => setSheet(exercise.exerciseId)}
             onEffort={(lines) => askEffort(exercise, lines)}

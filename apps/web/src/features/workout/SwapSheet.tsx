@@ -29,6 +29,8 @@ export function SwapSheet(p: {
   pain: { minor: boolean; barbell: boolean } | null;
   /** Il reste des séries à faire : un autre exercice peut prendre la suite. */
   swappable: boolean;
+  /** L'exercice est changé : rend le nouvel exercice du slot. */
+  onSwapped(id: string): void;
   onClose(): void;
 }) {
   const repos = useRepos();
@@ -49,7 +51,7 @@ export function SwapSheet(p: {
     setPending(true);
     setError(null);
     try {
-      await repos.workouts.swapExercise(p.exercise.id, exerciseId, reason);
+      p.onSwapped(await repos.workouts.swapExercise(p.exercise.id, exerciseId, reason));
       p.onClose();
     } catch {
       setError(NOT_SWAPPED);
