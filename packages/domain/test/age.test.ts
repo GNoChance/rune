@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ageBandOn, ageOn, parisDate } from '../src/age';
+import { ageBandOn, ageOn, coachAgeBand, parisDate } from '../src/age';
 
 describe('ageOn', () => {
   it('années révolues', () => {
@@ -44,5 +44,27 @@ describe('public du coach', () => {
   it('né le 2008-02-29 : majeur le 01/03 en année non bissextile', () => {
     expect(ageBandOn('2008-02-29', '2026-02-28')).toBe('minor');
     expect(ageBandOn('2008-02-29', '2026-03-01')).toBe('adult');
+  });
+});
+
+describe('tranche du coach', () => {
+  it.each([
+    ['2009-06-15', '17 ans', '16-17'],
+    ['2008-11-04', 'la veille des 18 ans', '16-17'],
+    ['2008-11-03', 'le jour des 18 ans', '18-29'],
+    ['1996-11-04', '29 ans', '18-29'],
+    ['1996-11-03', '30 ans', '30-39'],
+    ['1986-11-03', '40 ans', '40-49'],
+    ['1976-11-03', '50 ans', '50-59'],
+    ['1966-11-04', '59 ans', '50-59'],
+    ['1966-11-03', '60 ans', '60+'],
+    ['1940-01-01', '86 ans', '60+'],
+  ] as const)('né le %s (%s le 2026-11-03) : %s', (birth, _age, band) => {
+    expect(coachAgeBand(birth, '2026-11-03')).toBe(band);
+  });
+
+  it('29 février : 18 ans le 01/03 en année non bissextile', () => {
+    expect(coachAgeBand('2008-02-29', '2026-02-28')).toBe('16-17');
+    expect(coachAgeBand('2008-02-29', '2026-03-01')).toBe('18-29');
   });
 });

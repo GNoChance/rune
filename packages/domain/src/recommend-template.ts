@@ -39,13 +39,21 @@ const OTHER_LEVEL: Record<TrainingLevel, TrainingLevel> = {
   intermediate: 'beginner',
 };
 
+/** Contexte du modèle (R-REC-1) : `sport` pour un objectif sport avec un sport choisi, sinon le lieu principal. */
+export function templateContext(
+  goal: Goal | null,
+  sportCode: string | null,
+  primaryPlaceKind: 'gym' | 'home',
+): TemplateContext {
+  return goal === 'sport_support' && sportCode?.trim() ? 'sport' : primaryPlaceKind;
+}
+
 /** R-REC-1 à R-REC-6 : ni âge ni prudence en entrée. */
 export function recommendTemplate(
   input: RecommendInput,
   templates: readonly TemplateDescriptor[],
 ): Recommendation {
-  const context: TemplateContext =
-    input.goal === 'sport_support' && input.sportCode?.trim() ? 'sport' : input.primaryPlaceKind;
+  const context = templateContext(input.goal, input.sportCode, input.primaryPlaceKind);
   const reasons: RecommendReason[] = [];
 
   let level = levelFromExperience(input.experience);

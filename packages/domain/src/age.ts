@@ -1,4 +1,4 @@
-import { ADULT_AGE, type AgeBand, PARIS_TZ } from '@rune/contracts';
+import { ADULT_AGE, type AgeBand, type CoachAgeBand, PARIS_TZ } from '@rune/contracts';
 
 const CIVIL_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -40,4 +40,18 @@ export function ageOn(birthDate: string, today: string): number {
 
 export function ageBandOn(birthDate: string, today: string): AgeBand {
   return ageOn(birthDate, today) >= ADULT_AGE ? 'adult' : 'minor';
+}
+
+/**
+ * Tranche d'âge du dossier du coach (`age_band`, spec brique 4 §9), seule trace de la date de naissance qu'il reçoit.
+ * Sous 18 ans, `16-17` : l'inscription n'admet personne plus jeune.
+ */
+export function coachAgeBand(birthDate: string, today: string): CoachAgeBand {
+  const age = ageOn(birthDate, today);
+  if (age < ADULT_AGE) return '16-17';
+  if (age < 30) return '18-29';
+  if (age < 40) return '30-39';
+  if (age < 50) return '40-49';
+  if (age < 60) return '50-59';
+  return '60+';
 }
