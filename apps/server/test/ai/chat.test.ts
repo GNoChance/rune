@@ -615,24 +615,49 @@ describe('createAnthropicClient().chat (fetch injecté, flux rejoué)', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('erreur dans le flux (event: error) ou à la réponse : AiError du code classé, coût estimé', async () => {
+  it('overloaded_error reçu dans le flux après message_start → overloaded, coût estimé', async () => {
     const overloaded = {
       type: 'error',
       error: { type: 'overloaded_error', message: 'Overloaded' },
     } as ApiEvent;
-    const { fetch } = stubFetch(
-      { events: [messageStart(), ...textBlock(0, 'Je'), overloaded] },
-      { status: 429, json: { type: 'error', error: { type: 'rate_limit_error', message: 'Trop.' } } },
-    );
-    const ai = client(fetch);
-    await expect(ai.chat(request(), () => {})).rejects.toMatchObject({
+    const { fetch } = stubFetch({ events: [messageStart(), ...textBlock(0, 'Je'), overloaded] });
+    await expect(client(fetch).chat(request(), () => {})).rejects.toMatchObject({
       code: 'overloaded',
       costPartial: true,
       costUsd: expect.closeTo(knownInputUsd + relayedOutputUsd('Je'), 12),
     });
-    const rateLimited = await ai.chat(request(), () => {}).catch((e: unknown) => e);
-    expect(rateLimited).toMatchObject({ code: 'rate_limited', costPartial: true });
-    expect((rateLimited as AiError).costUsd).toBeGreaterThan(0);
+  });
+
+  it.each([
+    [429, 'rate_limit_error', 'rate_limited'],
+    [529, 'overloaded_error', 'overloaded'],
+  ] as const)(
+    'erreur HTTP %i (%s) avant tout flux, non facturée : coût 0, costPartial faux',
+    async (status, type, code) => {
+      const { fetch } = stubFetch({
+        status,
+        json: { type: 'error', error: { type, message: 'Plus tard.' } },
+      });
+      await expect(client(fetch).chat(request(), () => {})).rejects.toMatchObject({
+        code,
+        costUsd: 0,
+        costPartial: false,
+      });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('erreur réseau après l’envoi → network, coût de la requête estimé par prudence', async () => {
+    const fetch = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+    const req = request();
+    const error = await client(fetch)
+      .chat(req, () => {})
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'network', costPartial: true });
+    const inputTokens = Math.ceil(JSON.stringify(buildChatParams(req).body).length / 3);
+    expect((error as AiError).costUsd).toBeCloseTo((inputTokens * 4) / 1_000_000, 12);
   });
 });
 

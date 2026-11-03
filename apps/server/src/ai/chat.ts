@@ -278,7 +278,9 @@ function iterationsOf(message: SdkMessage): AiIteration[] | null {
 const estimatedTokens = (chars: number): number => Math.ceil(chars / 3);
 
 /**
- * Coût estimé, par excès, d'un appel interrompu ou en erreur après l'envoi de la requête (`costPartial`).
+ * Coût estimé, par excès (`costPartial`), d'un appel dont l'API a pu traiter la requête : interrompu (`aborted`,
+ * `timeout`, même avant `message_start`), en erreur après l'ouverture du flux, ou en erreur réseau après l'envoi.
+ * Une erreur HTTP reçue avant tout flux n'est pas facturée et n'arrive pas ici (`streamChat`).
  * Entrée : l'usage de `message_start` s'il est arrivé, sinon la requête sérialisée (`estimatedTokens`) au prix
  * d'entrée du modèle demandé, sans remise du cache. Sortie : le plus grand de l'usage connu (un jeton à
  * `message_start`, le total au `message_delta` final) et du texte déjà relayé. La réflexion produite mais non
@@ -331,8 +333,10 @@ function readFinal(message: SdkMessage): AiChatFinal {
 /**
  * `AiClient.chat()` du client réel. Un seul délai couvre tout l'appel (nouveaux essais du SDK et lecture du flux,
  * que le délai du SDK ne couvre pas) ; `req.signal` l'interrompt. Après une interruption, plus aucun événement
- * n'est rendu, même déjà reçu. Ne rejette qu'avec une `AiError` : `bad_request` si la requête ne se construit
- * pas (rien n'est envoyé, coût nul), sinon le code classé, avec un coût estimé (`partialCost`, `costPartial`).
+ * n'est rendu, même déjà reçu. Ne rejette qu'avec une `AiError` du code classé. Coût de l'erreur : nul et exact
+ * (`costPartial` faux) si rien n'a pu être facturé, soit une requête qui ne se construit pas (`bad_request`, rien
+ * n'est envoyé) ou une erreur HTTP reçue avant tout flux (429, 5xx, 529…, que le SDK a déjà réessayée) ; sinon
+ * estimé par excès (`partialCost`, `costPartial` vrai).
  */
 export async function streamChat(
   sdk: Anthropic,
@@ -372,15 +376,18 @@ export async function streamChat(
     return readFinal(await stream.finalMessage());
   } catch (error) {
     const snapshot = stream?.currentMessage ?? stream?.receivedMessages.at(-1);
-    const details = {
+    const estimated = () => ({
       cause: error,
       costUsd: partialCost(req, body, snapshot, relayedChars),
       costPartial: true,
-    };
-    if (timedOut) throw new AiError('timeout', `Délai de ${req.timeoutMs} ms dépassé.`, details);
-    if (req.signal.aborted) throw new AiError('aborted', 'Appel interrompu.', details);
+    });
+    if (timedOut) throw new AiError('timeout', `Délai de ${req.timeoutMs} ms dépassé.`, estimated());
+    if (req.signal.aborted) throw new AiError('aborted', 'Appel interrompu.', estimated());
     const code = classifyAiError(error);
-    throw new AiError(code, `Erreur de l'API Anthropic (${code}) : ${messageOf(error)}`, details);
+    const message = `Erreur de l'API Anthropic (${code}) : ${messageOf(error)}`;
+    // Seule la réponse initiale porte un statut HTTP ; une erreur du flux (event: error) n'en a pas.
+    const refusedBeforeStream = apiError(error)?.status !== undefined && snapshot === undefined;
+    throw new AiError(code, message, refusedBeforeStream ? { cause: error } : estimated());
   } finally {
     clearTimeout(timer);
     req.signal.removeEventListener('abort', forward);
