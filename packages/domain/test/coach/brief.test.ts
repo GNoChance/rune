@@ -10,10 +10,15 @@ import {
   type CoachBriefInput,
   cleanFreeText,
   estimateTokens,
+  resolveSlotAlias,
   sortedJson,
 } from '../../src/coach/brief';
+import { addedSlotId, effectiveProgram } from '../../src/program/effective';
 import { parisDaysUntil } from '../../src/program/program-state';
 import {
+  ADDED_CHANGE_ID,
+  ADDED_SLOT_ID,
+  addSlotChange,
   BRIEF_CATALOG,
   briefInput,
   briefSession,
@@ -23,7 +28,9 @@ import {
   inputIds,
   PRIMARY_ID,
   TODAY,
+  UUID_ANYWHERE,
 } from '../fixtures/coach-brief';
+import { GYM_AB, gymAb } from '../fixtures/program';
 
 const build = (edit?: (input: CoachBriefInput) => void) => buildCoachBrief(briefInput(edit));
 
@@ -54,6 +61,8 @@ describe('canaris', () => {
         'place-canari-1',
         'place-canari-supprime',
         'session-canari-3',
+        ADDED_CHANGE_ID,
+        ADDED_SLOT_ID,
       ]),
     );
     expect(ids.some((id) => id.includes('session-canari-1'))).toBe(true);
@@ -62,7 +71,102 @@ describe('canaris', () => {
     const { json } = buildCoachBrief(input);
     expect(json).not.toContain('Canari');
     expect(json).not.toMatch(/canari/i);
+    expect(json).not.toMatch(UUID_ANYWHERE);
     for (const id of ids) expect(json, id).not.toContain(id);
+  });
+});
+
+describe("alias des slots ajoutés (identifiant d'un changement)", () => {
+  it('slot A-<uuidv7> : A-x1 dans le JSON, slotAliases le retraduit', () => {
+    const { brief, json, slotAliases } = build();
+    expect(ADDED_SLOT_ID).toBe(`A-${ADDED_CHANGE_ID}`);
+    expect(json).not.toContain(ADDED_CHANGE_ID);
+    expect(brief.program?.workouts[0]?.slots.map((s) => s.id)).toEqual([
+      'A1',
+      'A2',
+      'A3',
+      'A4',
+      'A5',
+      'A-x1',
+    ]);
+    expect(slotOf(brief, 'A-x1')).toMatchObject({
+      exercise: { id: 'calf-raise', name: 'Mollets debout' },
+      last_decision: { days_ago: 7 },
+    });
+    expect(slotAliases.get('A-x1')).toBe(ADDED_SLOT_ID);
+    expect([...slotAliases]).toEqual([['A-x1', ADDED_SLOT_ID]]);
+  });
+
+  it("proposition en attente sur ce slot : la référence est l'alias", () => {
+    const { brief } = build();
+    expect(brief.program?.pending_proposals[1]).toEqual({
+      author: 'coach',
+      operations: [{ op: 'set_rest', slot: 'A-x1', seconds: 45 }],
+      days_left: 6,
+    });
+  });
+
+  it("alias par séance, dans l'ordre du programme effectif ; référence d'un slot disparu aliasée aussi", () => {
+    const later = '019a4b2c-3d4e-7f60-8a1b-2c3d4e5f6a7c';
+    const inB = '019a4b2c-3d4e-7f60-8a1b-2c3d4e5f6a7d';
+    const gone = '019a4b2c-3d4e-7f60-8a1b-2c3d4e5f6a7e';
+    const { brief, json, slotAliases } = build((i) => {
+      if (i.program === null) return;
+      i.program.program = effectiveProgram(GYM_AB, 3, [
+        addSlotChange(later, daysBefore(14)),
+        addSlotChange(ADDED_CHANGE_ID, daysBefore(15)),
+        addSlotChange(inB, daysBefore(13), 'B'),
+      ]);
+      i.program.pending.push({
+        author: 'user',
+        operations: [{ op: 'remove_slot', slot: addedSlotId('A', gone) }],
+        expiresAt: daysBefore(-1),
+      });
+    });
+    expect(brief.program?.workouts.map((w) => w.slots.map((s) => s.id).slice(-2))).toEqual([
+      ['A-x1', 'A-x2'],
+      ['B4', 'B-x1'],
+    ]);
+    expect(Object.fromEntries(slotAliases)).toEqual({
+      'A-x1': ADDED_SLOT_ID,
+      'A-x2': addedSlotId('A', later),
+      'B-x1': addedSlotId('B', inB),
+      'A-x3': addedSlotId('A', gone),
+    });
+    expect(brief.program?.pending_proposals[2]?.operations).toEqual([{ op: 'remove_slot', slot: 'A-x3' }]);
+    expect(json).not.toMatch(UUID_ANYWHERE);
+  });
+
+  it("un alias ne prend jamais l'identifiant d'un slot du modèle", () => {
+    const { brief, slotAliases } = build((i) => {
+      if (i.program === null) return;
+      const template = gymAb((t) => {
+        const a5 = t.workouts[0]?.slots[4];
+        if (a5) a5.id = 'A-x1';
+      });
+      i.program.program = effectiveProgram(template, 3, [addSlotChange(ADDED_CHANGE_ID, daysBefore(15))]);
+    });
+    expect(brief.program?.workouts[0]?.slots.map((s) => s.id).slice(-2)).toEqual(['A-x1', 'A-x2']);
+    expect(slotAliases.get('A-x2')).toBe(ADDED_SLOT_ID);
+    expect(slotAliases.has('A-x1')).toBe(false);
+  });
+
+  it('deux appels : mêmes alias', () => {
+    const first = build();
+    const second = build();
+    expect([...second.slotAliases]).toEqual([...first.slotAliases]);
+    expect(second.json).toBe(first.json);
+  });
+
+  it("resolveSlotAlias : l'identifiant réel d'un alias, toute autre référence telle quelle", () => {
+    const { slotAliases } = build();
+    expect(resolveSlotAlias('A-x1', slotAliases)).toBe(ADDED_SLOT_ID);
+    expect(resolveSlotAlias('A1', slotAliases)).toBe('A1');
+    expect(resolveSlotAlias('A-x9', slotAliases)).toBe('A-x9');
+  });
+
+  it('sans programme : aucun alias', () => {
+    expect(build((i) => (i.program = null)).slotAliases.size).toBe(0);
   });
 });
 
@@ -151,7 +255,10 @@ describe('programme', () => {
       block_week: null,
       next_workout_id: replay.state.nextWorkoutId,
       days_per_week: 3,
-      pending_proposals: [{ author: 'engine', operations: [{ op: 'start_deload' }], days_left: 5 }],
+      pending_proposals: [
+        { author: 'engine', operations: [{ op: 'start_deload' }], days_left: 5 },
+        { author: 'coach', operations: [{ op: 'set_rest', slot: 'A-x1', seconds: 45 }], days_left: 6 },
+      ],
       templates: [
         {
           id: 'gym-beginner-full-body-ab',
@@ -165,7 +272,7 @@ describe('programme', () => {
       ],
     });
     expect(brief.program?.workouts.map((w) => [w.id, w.name, w.slots.length])).toEqual([
-      ['A', 'Séance A', 5],
+      ['A', 'Séance A', 6],
       ['B', 'Séance B', 4],
     ]);
   });
@@ -353,6 +460,7 @@ describe('records et mineurs', () => {
       'back-squat',
       'bench-press',
       'front-plank',
+      'calf-raise',
       'overhead-press',
       'lat-pulldown',
       'push-up',

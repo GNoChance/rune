@@ -52,9 +52,10 @@ import { COACH_CONFIG } from './config';
 /*
  * Dossier envoyé au coach (`coach-brief/1`, spec brique 4 §9 et §15) : ce que le coach sait de la personne. Fonction
  * pure ; le serveur rassemble l'entrée (tâche 15). Vie privée : aucun nom de lieu (lieux renommés `lieu_n`), aucun
- * identifiant de base (instance, lieu, séance, exercice réalisé, série), aucune date de naissance (l'entrée n'a que
- * `audience` et `ageBand`, calculés dans `age.ts`, R-AGE-3), aucune donnée de santé sans l'accord santé ET l'accord
- * coach (C2). Seule `today` est une date absolue. Sortie validée par `CoachBriefSchema`, clés triées, sans espace.
+ * identifiant de base (instance, lieu, séance, exercice réalisé, série ; changement, porté par l'identifiant d'un slot
+ * ajouté, d'où ses alias `A-x1`…), aucune date de naissance (l'entrée n'a que `audience` et `ageBand`, calculés dans
+ * `age.ts`, R-AGE-3), aucune donnée de santé sans l'accord santé ET l'accord coach (C2). Seule `today` est une date
+ * absolue. Sortie validée par `CoachBriefSchema`, clés triées, sans espace.
  */
 
 /** Fiche lue par le dossier : celle de la préparation des séances, plus son nom (une `ServedSheet` les a). */
@@ -341,11 +342,63 @@ function lastDecision(
   };
 }
 
+/** Suffixe d'un slot créé par `add_slot` (`addedSlotId`) : l'identifiant du changement, un UUID. */
+const CHANGE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CHANGE_ID_LENGTH = 36;
+
+/** Séance d'un slot créé par `add_slot` (`${workoutId}-${changeId}`) ; null pour un slot du modèle. */
+function addedSlotWorkout(slotId: string): string | null {
+  const dash = slotId.length - CHANGE_ID_LENGTH - 1;
+  if (dash < 1 || slotId[dash] !== '-' || !CHANGE_ID.test(slotId.slice(dash + 1))) return null;
+  return slotId.slice(0, dash);
+}
+
+/**
+ * Alias des slots créés par `add_slot` (identifiant réel → alias) : leur identifiant porte celui d'un changement, un
+ * UUIDv7 avec son instant, qui ne part jamais au modèle. `${workoutId}-x1`, `-x2`… par séance, dans l'ordre du
+ * programme effectif, puis des références des propositions en attente à un slot qui n'y est plus ; jamais
+ * l'identifiant d'un slot du modèle. Les slots du modèle gardent le leur.
+ */
+function slotAliasesOf(program: BriefProgramInput): Map<string, string> {
+  const workouts = program.program.template.workouts;
+  const taken = new Set(workouts.flatMap((w) => w.slots.map((s) => s.id)));
+  const counts = new Map<string, number>();
+  const aliases = new Map<string, string>();
+  const give = (slotId: string): void => {
+    const workout = addedSlotWorkout(slotId);
+    if (workout === null || aliases.has(slotId)) return;
+    let n = counts.get(workout) ?? 0;
+    let alias: string;
+    do {
+      n += 1;
+      alias = `${workout}-x${n}`;
+    } while (taken.has(alias));
+    counts.set(workout, n);
+    taken.add(alias);
+    aliases.set(slotId, alias);
+  };
+  for (const w of workouts) for (const s of w.slots) give(s.id);
+  for (const c of program.pending) for (const op of c.operations) if ('slot' in op) give(op.slot);
+  return aliases;
+}
+
+/**
+ * Identifiant réel d'une référence de slot venue du modèle : `aliases` est le `slotAliases` de `buildCoachBrief`
+ * (alias → identifiant réel) ; une référence qui n'est pas un alias est rendue telle quelle.
+ */
+export function resolveSlotAlias(ref: string, aliases: ReadonlyMap<string, string>): string {
+  return aliases.get(ref) ?? ref;
+}
+
 /** Cibles du modèle (groupe de travail du slot) et état du moteur, sans `planWorkout` (choix C23). */
-function briefSlot({ slot, sheet, state }: ResolvedSlot, last: BriefSlot['last_decision']): BriefSlot {
+function briefSlot(
+  { slot, sheet, state }: ResolvedSlot,
+  id: string,
+  last: BriefSlot['last_decision'],
+): BriefSlot {
   const spec = workSpec(slot);
   return {
-    id: slot.id,
+    id,
     role: slot.role,
     movement_pattern: slot.movementPattern,
     exercise: sheet === null ? null : { id: sheet.id, name: sheet.name },
@@ -372,7 +425,8 @@ function briefSlot({ slot, sheet, state }: ResolvedSlot, last: BriefSlot['last_d
 
 /**
  * Programme en cours (forme du dossier, aussi rendue par `read_training`) : modèle, révision, semaine, séance
- * suivante, slots, propositions en attente (jours restants), modèles disponibles ; null sans programme.
+ * suivante, slots, propositions en attente (jours restants), modèles disponibles ; null sans programme. Un slot créé
+ * par `add_slot` y porte son alias, dans les slots comme dans les opérations en attente.
  */
 export function briefProgram(input: CoachBriefInput): CoachBrief['program'] {
   const program = input.program;
@@ -381,6 +435,8 @@ export function briefProgram(input: CoachBriefInput): CoachBrief['program'] {
   const { state, decisions } = program.replay;
   // Les décisions sont dans l'ordre du rejeu : la dernière d'un slot remplace les précédentes.
   const latest = new Map(decisions.map((d) => [d.slotId, d]));
+  const aliases = slotAliasesOf(program);
+  const sent = (slotId: string): string => aliases.get(slotId) ?? slotId;
   return {
     template: { id: template.id, name: template.name, version: program.templateVersion },
     revision: program.revision,
@@ -391,11 +447,13 @@ export function briefProgram(input: CoachBriefInput): CoachBrief['program'] {
     workouts: resolvedWorkouts(input, program).map(({ workout, slots }) => ({
       id: workout.id,
       name: workout.name,
-      slots: slots.map((r) => briefSlot(r, lastDecision(latest.get(r.slot.id), input, program))),
+      slots: slots.map((r) =>
+        briefSlot(r, sent(r.slot.id), lastDecision(latest.get(r.slot.id), input, program)),
+      ),
     })),
     pending_proposals: program.pending.map((c) => ({
       author: c.author,
-      operations: c.operations,
+      operations: c.operations.map((op) => ('slot' in op ? { ...op, slot: sent(op.slot) } : op)),
       days_left: Math.max(0, -parisDaysUntil(c.expiresAt, input.today)),
     })),
     templates: program.templates
@@ -580,12 +638,15 @@ function fit(brief: CoachBrief, max: number): CoachBrief {
 
 /**
  * Dossier `coach-brief/1` du fil (§9) : le dossier validé par `CoachBriefSchema`, son JSON à clés triées sans espace
- * (celui que reçoit le modèle et que stocke le fil) et ses jetons estimés.
+ * (celui que reçoit le modèle et que stocke le fil), ses jetons estimés, et `slotAliases` (alias d'un slot créé par
+ * `add_slot` → son identifiant réel), pour retraduire les références de slot des opérations proposées
+ * (`resolveSlotAlias`).
  */
 export function buildCoachBrief(input: CoachBriefInput): {
   brief: CoachBrief;
   json: string;
   estimatedTokens: number;
+  slotAliases: ReadonlyMap<string, string>;
 } {
   const health = healthAllowed(input);
   const days = COACH_CONFIG.limits.readTrainingMaxDays;
@@ -615,5 +676,7 @@ export function buildCoachBrief(input: CoachBriefInput): {
   };
   const brief = CoachBriefSchema.parse(fit(draft, COACH_CONFIG.limits.briefMaxTokens));
   const json = sortedJson(brief);
-  return { brief, json, estimatedTokens: estimateTokens(json) };
+  const aliases = input.program === null ? [] : [...slotAliasesOf(input.program)];
+  const slotAliases = new Map(aliases.map(([slotId, alias]) => [alias, slotId]));
+  return { brief, json, estimatedTokens: estimateTokens(json), slotAliases };
 }

@@ -9,16 +9,20 @@ import {
 } from '@rune/contracts';
 import { expandEquipment } from '../../src/catalog/equipment';
 import type { BriefSession, BriefSheet, CoachBriefInput } from '../../src/coach/brief';
-import { effectiveProgram } from '../../src/program/effective';
+import { addedSlotId, effectiveProgram } from '../../src/program/effective';
 import { replayInstance } from '../../src/program/replay';
-import type { PlaceContext, SessionRecord, SetRecord } from '../../src/program/types';
+import type { AcceptedChange, PlaceContext, SessionRecord, SetRecord } from '../../src/program/types';
 import { GYM_AB, PROGRAM_CATALOG } from './program';
 
 /*
  * Entrée complète du dossier du coach (spec brique 4 §9), semée de canaris : chaque nom de lieu et chaque identifiant
  * de base (instance, lieux, séances, exercices réalisés, séries) contient « canari ». Le rejeu est le vrai : ses
- * états, décisions et événements portent ces identifiants, comme ceux que le serveur passera (tâche 15).
+ * états, décisions et événements portent ces identifiants, comme ceux que le serveur passera (tâche 15). Un slot
+ * ajouté par un changement accepté porte l'UUIDv7 de ce changement (`addedSlotId`), autre identifiant de base.
  */
+
+/** Toute forme d'UUID, n'importe où dans une chaîne. */
+export const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 export const TODAY = '2026-11-03';
 const HOUR = 3_600_000;
@@ -38,6 +42,20 @@ export const PRIMARY_ID = 'place-canari-1';
 export const HOME_ID = 'place-canari-2';
 /** Lieu supprimé : connu du rejeu (réglages de charge), absent des lieux vivants du dossier. */
 export const DELETED_ID = 'place-canari-supprime';
+/** Changement accepté qui ajoute un slot de mollets à la séance A, et ce slot (`A-<uuidv7>`). */
+export const ADDED_CHANGE_ID = '019a4b2c-3d4e-7f60-8a1b-2c3d4e5f6a7b';
+export const ADDED_SLOT_ID = addedSlotId('A', ADDED_CHANGE_ID);
+
+/** `add_slot` accepté avant la première séance, pour la séance `workout` (mollets). */
+export function addSlotChange(id: string, decidedAt: number, workout = 'A'): AcceptedChange {
+  return {
+    id,
+    author: 'user',
+    reasonCode: 'USER_CHANGE',
+    decidedAt,
+    operations: [{ op: 'add_slot', workout, movementPattern: 'calf_raise', exercises: ['calf-raise'] }],
+  };
+}
 
 const NAMES: Readonly<Record<string, string>> = {
   'back-squat': 'Squat barre',
@@ -51,6 +69,7 @@ const NAMES: Readonly<Record<string, string>> = {
   'overhead-press': 'Développé militaire',
   'lat-pulldown': 'Tirage vertical',
   'split-squat': 'Fente statique',
+  'calf-raise': 'Mollets debout',
 };
 
 /** Catalogue de test des programmes, avec un nom et une mesure par fiche (comme une `ServedSheet`). */
@@ -141,6 +160,7 @@ const PLAN: readonly SessionSpec[] = [
         values: [30, 30, 25],
         duration: true,
       },
+      { slotId: ADDED_SLOT_ID, exerciseId: 'calf-raise', loadMode: 'bodyweight', values: [15, 15] },
     ],
   },
   {
@@ -222,8 +242,9 @@ const placeContext = (id: string, kind: 'gym' | 'home'): PlaceContext => ({
 
 /**
  * Entrée complète, toujours neuve : adulte de 30 à 39 ans, les deux accords, une salle principale « Salle Canari »,
- * une maison, l'instance `GYM_AB` rejouée sur 4 séances (dont une dans un lieu supprimé), une séance libre sans lieu,
- * une proposition du moteur en attente, deux modèles (un seul disponible), une limitation. `edit` modifie la copie.
+ * une maison, l'instance `GYM_AB` plus un slot ajouté (`ADDED_SLOT_ID`), rejouée sur 4 séances (dont une dans un lieu
+ * supprimé), une séance libre sans lieu, deux propositions en attente (du moteur, et du coach sur le slot ajouté),
+ * deux modèles (un seul disponible), une limitation. `edit` modifie la copie.
  */
 export function briefInput(edit: (input: CoachBriefInput) => void = () => {}): CoachBriefInput {
   const records: SessionRecord[] = PLAN.map((s) => ({
@@ -249,10 +270,11 @@ export function briefInput(edit: (input: CoachBriefInput) => void = () => {}): C
       sets: doneSets(e, `${s.id}-${i + 1}`),
     })),
   }));
+  const changes = [addSlotChange(ADDED_CHANGE_ID, daysBefore(15))];
   const replay = replayInstance({
     instance: { id: INSTANCE_ID, snapshot: GYM_AB, daysPerWeek: 3, startedAt: daysBefore(20) },
     sessions: records,
-    changes: [],
+    changes,
     catalog: BRIEF_CATALOG,
     places: new Map([
       [PRIMARY_ID, placeContext(PRIMARY_ID, 'gym')],
@@ -297,12 +319,19 @@ export function briefInput(edit: (input: CoachBriefInput) => void = () => {}): C
     program: {
       templateVersion: 1,
       revision: 4,
-      program: effectiveProgram(GYM_AB, 3, []),
+      program: effectiveProgram(GYM_AB, 3, changes),
       replay,
       decisionEndedAt: new Map(
         records.flatMap((s) => s.exercises.map((e) => [e.id, s.endedAt ?? s.startedAt])),
       ),
-      pending: [{ author: 'engine', operations: [{ op: 'start_deload' }], expiresAt: daysBefore(-5, 10) }],
+      pending: [
+        { author: 'engine', operations: [{ op: 'start_deload' }], expiresAt: daysBefore(-5, 10) },
+        {
+          author: 'coach',
+          operations: [{ op: 'set_rest', slot: ADDED_SLOT_ID, seconds: 45 }],
+          expiresAt: daysBefore(-6, 10),
+        },
+      ],
       templates: [
         { template: structuredClone(GYM_AB), available: true },
         {
@@ -338,9 +367,21 @@ export function briefInput(edit: (input: CoachBriefInput) => void = () => {}): C
   return input;
 }
 
-/** Identifiants de base de l'entrée : lieux, instance, séances, exercices réalisés, séries, états et événements. */
+/**
+ * Identifiants de base de l'entrée : lieux, instance, séances, exercices réalisés, séries, états et événements, et les
+ * UUID des changements que portent les slots ajoutés (programme, états, décisions, propositions en attente).
+ */
 export function inputIds(input: CoachBriefInput): string[] {
   const ids = new Set<string>(input.places.map((p) => p.id));
+  const uuidIn = (s: string) => {
+    const found = UUID_ANYWHERE.exec(s)?.[0];
+    if (found !== undefined) ids.add(s).add(found);
+  };
+  for (const w of input.program?.program.template.workouts ?? []) for (const s of w.slots) uuidIn(s.id);
+  for (const c of input.program?.pending ?? [])
+    for (const op of c.operations) if ('slot' in op) uuidIn(op.slot);
+  for (const st of input.program?.replay.slotStates ?? []) uuidIn(st.slotId);
+  for (const d of input.program?.replay.decisions ?? []) uuidIn(d.slotId);
   for (const s of input.sessions) {
     if (s.placeId !== null) ids.add(s.placeId);
     for (const e of s.exercises) for (const set of e.sets) ids.add(set.id);
