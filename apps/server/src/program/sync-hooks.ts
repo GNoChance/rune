@@ -203,6 +203,29 @@ const performedExercise: Omit<EntitySyncHooks, 'afterBatch'> = {
     const imposed = typeof pain === 'string' ? PAIN_ADJUSTMENT[pain as PainLevel] : undefined;
     if (adjustment == null && imposed !== undefined) fields.next_adjustment = imposed;
   },
+
+  /**
+   * Exercice qui porte une série faite vivante d'une séance vivante (même garde que `performedSet.keepOnDelete`,
+   * échauffement compris comme `sets_done` sur le téléphone) : un `delete` du client est ignoré, la ligne prend un rev
+   * neuf et revient au pull. Seul « Changer de lieu » sur un miroir en retard en envoie un (après un « Continuer ici »
+   * pas encore tiré, il ne voit pas les séries faites sur l'autre appareil) : sans cette garde, ces séries, gardées par
+   * celle de `performedSet`, resteraient sous un exercice supprimé, invisibles des lectures, du rejeu et de D4.
+   * « Supprimer la séance » reste couvert par la cascade de la séance (`afterApply`), qui suit dans l'outbox.
+   */
+  async keepOnDelete({ trx, userId, op }: HookCtx) {
+    const done = await trx
+      .selectFrom('performedExercise as e')
+      .innerJoin('performedSet as t', 't.performedExerciseId', 'e.id')
+      .innerJoin('workoutSession as s', 's.id', 'e.sessionId')
+      .select('e.id')
+      .where('e.id', '=', op.id)
+      .where('e.ownerId', '=', userId)
+      .where('t.deletedAt', 'is', null)
+      .where('t.loggedAt', 'is not', null)
+      .where('s.deletedAt', 'is', null)
+      .executeTakeFirst();
+    return done !== undefined;
+  },
 };
 
 const SET_BOUNDS = Object.entries({
@@ -236,6 +259,7 @@ const performedSet: Omit<EntitySyncHooks, 'afterBatch'> = {
    * d'un appareil qui croit encore tenir la séance, changement d'exercice ou de lieu sur une série faite ailleurs) :
    * le téléphone ne supprime une série qu'il voit faite qu'avec sa séance (« Supprimer la séance »), et la
    * suppression de la séance, qui suit dans l'outbox, emporte alors toutes ses séries (`afterApply` de la séance).
+   * Son exercice est gardé de même (`performedExercise.keepOnDelete`).
    */
   async keepOnDelete({ trx, userId, op }: HookCtx) {
     const done = await trx

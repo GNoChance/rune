@@ -21,7 +21,7 @@ import { createSyncEngine, type SyncEngine } from '../../src/sync/engine';
 import type { SyncTransport } from '../../src/sync/transport';
 import { createFakeSyncEngine } from '../support/fake-api';
 import { inProcessTransport } from '../support/in-process-transport';
-import { PLAN } from '../support/workout';
+import { LUNGE, PLAN } from '../support/workout';
 
 const IP = '100.64.0.2';
 const HOUR = 3_600_000;
@@ -405,6 +405,72 @@ describe('clôture depuis un miroir en retard sur l’autre appareil (rulings R4
     for (const d of [a, b]) {
       expect(await d.repos.workouts.session(id)).toBeNull();
       expect(await d.repos.workouts.history()).toEqual([]);
+      expect(await d.db.outbox.count()).toBe(0);
+    }
+  });
+});
+
+describe('« Changer de lieu » depuis un miroir en retard sur l’autre appareil', () => {
+  it('« Continuer ici » et deux séries sur B, puis A, qui croit tenir la séance sans série faite, change de lieu : l’exercice des séries de B reste, visible sur les deux appareils et rejoué', async () => {
+    const c = await server();
+    const user = await createUserAndLogin(c);
+    const instanceId = await enrolled(c, user.id);
+    const a = await device(c, user.id, user.cookie, { deviceId: 'dev-A' });
+    const b = await device(c, user.id, await login(c, user.username, user.password, IP), {
+      deviceId: 'dev-B',
+    });
+
+    const id = await a.repos.workouts.start({ ...START, instanceId });
+    await a.engine.syncNow('manual');
+    await b.engine.syncNow('manual');
+
+    await b.repos.workouts.continueHere(id);
+    const onB = await b.repos.workouts.session(id);
+    const squat = onB?.exercises[0]?.id ?? '';
+    const [first, second] = squatWorkSets(onB);
+    c.clock.advance(10 * 60_000);
+    await b.repos.workouts.logSet(first.id, { loadG: 62_500, reps: 6 });
+    c.clock.advance(2 * 60_000);
+    await b.repos.workouts.logSet(second.id, { loadG: 62_500, reps: 5 });
+    await b.engine.syncNow('manual');
+
+    // A n'a rien tiré depuis « Continuer ici » : il tient la séance et n'y voit aucune série faite. Le lieu importe
+    // peu ici (aucun lieu enregistré) : c'est le plan refait qui supprime les exercices.
+    expect(await a.repos.workouts.session(id)).toMatchObject({ deviceId: 'dev-A', heldHere: true });
+    c.clock.advance(60_000);
+    await a.repos.workouts.changePlace(id, { ...PLAN, exercises: [LUNGE] }, null);
+    await a.engine.syncNow('manual');
+    await b.engine.syncNow('manual');
+
+    // Serveur : les séries de B restent sous un exercice vivant ; ses séries jamais faites sont parties.
+    expect(loggedSets(c)).toEqual([
+      [first.id, 62_500, 6],
+      [second.id, 62_500, 5],
+    ]);
+    expect(
+      c.deps.sqlite.prepare('SELECT deleted_at FROM performed_exercise WHERE id = ?').get(squat),
+    ).toEqual({ deleted_at: null });
+    const onA = await a.repos.workouts.session(id);
+    const onB2 = await b.repos.workouts.session(id);
+    if (!onA || !onB2) throw new Error('séance absente');
+    expect(shared(onA)).toEqual(shared(onB2));
+    expect(onA.heldHere).toBe(false);
+    expect(onB2.exercises.find((e) => e.id === squat)?.sets.map((s) => [s.id, s.loggedAt !== null])).toEqual([
+      [first.id, true],
+      [second.id, true],
+    ]);
+    expect(onB2.exercises.some((e) => e.id !== squat && e.exerciseId === 'dumbbell-lunge')).toBe(true);
+
+    // B termine : la séance compte, l'exercice des séries faites est rejoué et apparaît dans l'historique.
+    expect(await b.repos.workouts.finish(id)).toBe('completed');
+    await b.engine.syncNow('manual');
+    await a.engine.syncNow('manual');
+    expect(sessionRow(c, id)).toMatchObject({ status: 'completed' });
+    expect(decidedExercises(c, id)).toContain(squat);
+    for (const d of [a, b]) {
+      expect((await d.repos.workouts.history()).map((s) => [s.id, s.status])).toEqual([[id, 'completed']]);
+      const kept = (await d.repos.workouts.session(id))?.exercises.find((e) => e.id === squat);
+      expect(kept?.sets.map((s) => s.id)).toEqual([first.id, second.id]);
       expect(await d.db.outbox.count()).toBe(0);
     }
   });

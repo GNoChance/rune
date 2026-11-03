@@ -471,6 +471,52 @@ describe('série faite jamais supprimée par un appareil en retard (ruling R49)'
     expect(rowsOf('sync_rejection')).toEqual([]);
   });
 
+  it('delete d’un exercice qui porte une série faite vivante d’une séance vivante (« Changer de lieu » en retard) : ignoré, rev neuf ; exercice sans série faite supprimé', async () => {
+    const a = await setup();
+    const running = sessionOps(a.id, {
+      status: 'in_progress',
+      endedAt: null,
+      exercises: [
+        { sets: [{}, { logged: false }] },
+        { sets: [{ logged: false }] },
+        // Échauffement fait : compte comme une série faite (même règle que `sets_done` sur le téléphone).
+        { sets: [{ kind: 'warmup' }, { logged: false }] },
+      ],
+    });
+    const closed = sessionOps(a.id, { exercises: [{ sets: [{}] }] });
+    await syncPush(ctx, a.cookie, [...running.ops, ...closed.ops]);
+    const [done, open, warmup] = running.exerciseIds;
+    const [closedDone] = closed.exerciseIds;
+    if (!done || !open || !warmup || !closedDone) throw new Error('exercices absents');
+    const before = Math.max(...rowsOf('performed_exercise').map((r) => r.rev as number));
+
+    const res = await syncPush(ctx, a.cookie, [
+      ...running.setIds.flat().map((id) => del(a, 'performed_set', id)),
+      ...[done, open, warmup, closedDone].map((id) => del(a, 'performed_exercise', id)),
+    ]);
+    expect(res.body.results.every((r: Row) => r.status === 'applied')).toBe(true);
+    const results = res.body.results.slice(running.setIds.flat().length);
+    for (const [i, id] of [done, open, warmup, closedDone].entries()) {
+      const row = rowOf('performed_exercise', id);
+      expect(results[i].rev, id).toBe(row?.rev);
+      if (id === open) {
+        expect(row?.deleted_at).not.toBeNull();
+        continue;
+      }
+      expect(row).toMatchObject({ deleted_at: null, exercise_id: 'goblet-squat' });
+      expect(row?.rev as number).toBeGreaterThan(before);
+    }
+    // Les séries faites restent sous leur exercice ; les séries jamais faites partent.
+    const live = (exerciseId: string) =>
+      rowsOf('performed_set')
+        .filter((r) => r.performed_exercise_id === exerciseId && r.deleted_at === null)
+        .map((r) => r.id);
+    expect(live(done)).toEqual([running.setIds[0]?.[0]]);
+    expect(live(warmup)).toEqual([running.setIds[2]?.[0]]);
+    expect(live(open)).toEqual([]);
+    expect(rowsOf('sync_rejection')).toEqual([]);
+  });
+
   it('« Supprimer la séance » : ses séries faites partent avec elle, même quand leurs delete arrivent avant celui de la séance', async () => {
     const a = await setup();
     const s = sessionOps(a.id, { exercises: [{}, { sets: [{}, { logged: false }] }] });
