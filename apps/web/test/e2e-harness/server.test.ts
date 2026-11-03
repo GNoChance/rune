@@ -156,6 +156,12 @@ async function allGone(pids: number[], timeoutMs: number): Promise<number[]> {
   return pids.filter(alive);
 }
 
+/**
+ * Délai laissé au serveur pour sortir après son worker : il regarde son parent toutes les 500 ms, mais sa boucle peut
+ * être occupée par tsx au démarrage ; 5 s ne suffisaient pas quand toute la suite tournait en parallèle.
+ */
+const GONE_WITHIN_MS = 20_000;
+
 describe('serveur E2E : filet contre les orphelins', () => {
   it('un worker qui sort sans close() emporte son serveur', { timeout: 60_000 }, async () => {
     const { worker, pids } = await startWorker();
@@ -164,7 +170,7 @@ describe('serveur E2E : filet contre les orphelins', () => {
 
     worker.stdin?.write('exit\n');
 
-    expect(await allGone(pids, 5000)).toEqual([]);
+    expect(await allGone(pids, GONE_WITHIN_MS)).toEqual([]);
   });
 
   it('le module de surveillance fait sortir un processus dont le parent a disparu', async () => {
@@ -196,6 +202,6 @@ describe('serveur E2E : filet contre les orphelins', () => {
 
     worker.kill('SIGKILL');
 
-    expect(await allGone(pids, 5000)).toEqual([]);
+    expect(await allGone(pids, GONE_WITHIN_MS)).toEqual([]);
   });
 });

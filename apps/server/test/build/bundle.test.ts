@@ -30,6 +30,12 @@ const INDEX_HTML = '<!doctype html><title>Rune</title>';
 const SYNC_LIMITS = { timeout: 30_000, killSignal: 'SIGKILL' } as const;
 
 /**
+ * Délai de Vitest d'un test du bundle : plusieurs appels bornés par `SYNC_LIMITS`. Avec le délai par défaut (5 s), la
+ * construction seule dépassait quand toute la suite tournait en parallèle.
+ */
+const BUNDLE_TEST = { timeout: 120_000 } as const;
+
+/**
  * Seules variables du système transmises aux processus du bundle. Rien d'autre ne passe : ni la clé
  * Anthropic (aucun réseau externe en test), ni NODE_PATH, que le lanceur pnpm de vitest pointe vers
  * node_modules/.pnpm/node_modules (le `require` du bandeau y trouverait hono ou zod hors du dépôt), ni
@@ -97,7 +103,7 @@ function requiredModules(src: string): string[] {
   return [...src.matchAll(/\b(?:__)?require\s*\(\s*['"]([^'"]+)['"]/g)].map((match) => match[1] ?? '');
 }
 
-it('node build.mjs produit un seul server.mjs ESM, sans import hors node:*', async () => {
+it('node build.mjs produit un seul server.mjs ESM, sans import hors node:*', BUNDLE_TEST, async () => {
   expectSuccess(build);
   expect(readdirSync(DIST_DIR)).toEqual(['server.mjs']);
   const src = await withoutComments(readFileSync(join(DIST_DIR, 'server.mjs'), 'utf8'));
@@ -206,70 +212,75 @@ async function startHealthy(
   }
 }
 
-it('server.mjs seul, hors du dépôt et sans node_modules : init, db:check puis /api/health', async () => {
-  expectSuccess(build);
-  const dir = mkdtempSync(join(tmpdir(), 'rune-bundle-'));
-  const launched: Running[] = [];
-  try {
-    expect(ancestors(dir).filter((d) => existsSync(join(d, 'node_modules')))).toEqual([]);
-    const serverPath = join(dir, 'server.mjs');
-    cpSync(join(DIST_DIR, 'server.mjs'), serverPath);
-    mkdirSync(join(dir, 'data'));
-    writeFileSync(join(dir, 'data', '.rune-volume'), '');
-    mkdirSync(join(dir, 'public'));
-    writeFileSync(join(dir, 'public', 'index.html'), INDEX_HTML);
-    cpSync(REPO_DATA_DIR, join(dir, 'content'), { recursive: true });
-    const own = {
-      NODE_ENV: 'production',
-      APP_VERSION: VERSION,
-      HOST: '127.0.0.1',
-      RUNE_DATA_DIR: join(dir, 'data'),
-      RUNE_PUBLIC_DIR: join(dir, 'public'),
-      RUNE_CONTENT_DIR: join(dir, 'content'),
-    };
-    // Les commandes n'écoutent pas : leur origine n'a pas besoin du port du serveur.
-    const cliEnv = childEnv({ ...own, APP_ORIGIN: 'http://127.0.0.1' });
-    const serverEnv = (port: number) =>
-      childEnv({ ...own, APP_ORIGIN: `http://127.0.0.1:${port}`, PORT: String(port) });
-    const ownKeys = new Set([...Object.keys(own), 'APP_ORIGIN', 'PORT']);
-    for (const env of [cliEnv, serverEnv(3000)]) {
-      const inherited = Object.keys(env).filter(
-        (key) => !SYSTEM_ENV.has(key.toUpperCase()) && !ownKeys.has(key),
-      );
-      expect(inherited).toEqual([]);
-      for (const key of LEAKS) expect(env).not.toHaveProperty(key);
-    }
-    const cli = (command: string) =>
-      spawnSync(process.execPath, [serverPath, command], {
-        cwd: dir,
-        env: cliEnv,
-        encoding: 'utf8',
-        ...SYNC_LIMITS,
-      });
-
-    expectSuccess(cli('init'));
-    expect(existsSync(join(dir, 'data', 'rune.db'))).toBe(true);
-    expectSuccess(cli('db:check'));
-
-    const { running, health } = await startHealthy(serverPath, dir, serverEnv, launched);
-    expect(health.status, running.logs()).toBe(200);
-    expect(await health.json()).toMatchObject({
-      status: 'ok',
-      version: VERSION,
-      db: 'ok',
-      protocol: 1,
-      minProtocol: 1,
-      swKill: false,
-    });
-    const home = await fetch(`http://127.0.0.1:${running.port}/`);
-    expect(await home.text()).toBe(INDEX_HTML);
-  } finally {
-    for (const { child } of launched) await stop(child);
+it(
+  'server.mjs seul, hors du dépôt et sans node_modules : init, db:check puis /api/health',
+  BUNDLE_TEST,
+  async () => {
+    expectSuccess(build);
+    const dir = mkdtempSync(join(tmpdir(), 'rune-bundle-'));
+    const launched: Running[] = [];
     try {
-      rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
-    } catch (error) {
-      // Un dossier temporaire resté verrouillé ne doit pas masquer l'échec réel du test.
-      console.warn(`dossier temporaire non supprimé : ${dir} (${String(error)})`);
+      expect(ancestors(dir).filter((d) => existsSync(join(d, 'node_modules')))).toEqual([]);
+      const serverPath = join(dir, 'server.mjs');
+      cpSync(join(DIST_DIR, 'server.mjs'), serverPath);
+      mkdirSync(join(dir, 'data'));
+      writeFileSync(join(dir, 'data', '.rune-volume'), '');
+      mkdirSync(join(dir, 'public'));
+      writeFileSync(join(dir, 'public', 'index.html'), INDEX_HTML);
+      cpSync(REPO_DATA_DIR, join(dir, 'content'), { recursive: true });
+      const own = {
+        NODE_ENV: 'production',
+        APP_VERSION: VERSION,
+        HOST: '127.0.0.1',
+        RUNE_DATA_DIR: join(dir, 'data'),
+        RUNE_PUBLIC_DIR: join(dir, 'public'),
+        RUNE_CONTENT_DIR: join(dir, 'content'),
+      };
+      // Les commandes n'écoutent pas : leur origine n'a pas besoin du port du serveur.
+      const cliEnv = childEnv({ ...own, APP_ORIGIN: 'http://127.0.0.1' });
+      const serverEnv = (port: number) =>
+        childEnv({ ...own, APP_ORIGIN: `http://127.0.0.1:${port}`, PORT: String(port) });
+      const ownKeys = new Set([...Object.keys(own), 'APP_ORIGIN', 'PORT']);
+      for (const env of [cliEnv, serverEnv(3000)]) {
+        const inherited = Object.keys(env).filter(
+          (key) => !SYSTEM_ENV.has(key.toUpperCase()) && !ownKeys.has(key),
+        );
+        expect(inherited).toEqual([]);
+        for (const key of LEAKS) expect(env).not.toHaveProperty(key);
+      }
+      const cli = (command: string) =>
+        spawnSync(process.execPath, [serverPath, command], {
+          cwd: dir,
+          env: cliEnv,
+          encoding: 'utf8',
+          ...SYNC_LIMITS,
+        });
+
+      expectSuccess(cli('init'));
+      expect(existsSync(join(dir, 'data', 'rune.db'))).toBe(true);
+      expectSuccess(cli('db:check'));
+
+      const { running, health } = await startHealthy(serverPath, dir, serverEnv, launched);
+      expect(health.status, running.logs()).toBe(200);
+      expect(await health.json()).toMatchObject({
+        status: 'ok',
+        version: VERSION,
+        db: 'ok',
+        protocol: 1,
+        minProtocol: 1,
+        swKill: false,
+      });
+      const home = await fetch(`http://127.0.0.1:${running.port}/`);
+      expect(await home.text()).toBe(INDEX_HTML);
+    } finally {
+      for (const { child } of launched) await stop(child);
+      try {
+        rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
+      } catch (error) {
+        // Un dossier temporaire resté verrouillé ne doit pas masquer l'échec réel du test.
+        console.warn(`dossier temporaire non supprimé : ${dir} (${String(error)})`);
+      }
     }
-  }
-}, 60_000);
+  },
+  60_000,
+);

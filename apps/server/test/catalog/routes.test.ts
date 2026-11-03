@@ -37,7 +37,9 @@ const EDITORIAL = [
   'batch',
 ];
 
-describe('GET /api/catalog', () => {
+// Chaque test amorce le catalogue (tout `data/` du dépôt pour certains) : le délai par défaut (5 s) dépassait quand toute
+// la suite tournait en parallèle.
+describe('GET /api/catalog', { timeout: 30_000 }, () => {
   it('sans session : 401', async () => {
     ctx = await createTestContext({ config: { contentDir: REPO_DATA } });
     expect((await ctx.request('/api/catalog')).status).toBe(401);
