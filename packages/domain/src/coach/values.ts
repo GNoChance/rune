@@ -33,8 +33,9 @@ const UNIT_FAMILIES: Readonly<Record<string, UnitFamily>> = {
 };
 
 const NUMBER = `\\d+(?:${SP}\\d{3})*(?:[.,]\\d+)?`;
-// « 8 à 10 », « 10-15 », « 10–15 », « entre 8 et 10 » : les deux nombres sont contrôlés.
-const RANGE_SEPARATOR = `${SP}*(?:-|\\u2013|\\u2014|à|et)${SP}*`;
+// « 8 à 10 », « 10-15 », « 10–15 », « 10−15 », « entre 8 et 10 », « 60 ou 62,5 », « 60/62,5 » : les deux nombres
+// sont contrôlés. Tirets : trait d'union-moins, U+2010 à U+2015, signe moins U+2212.
+const RANGE_SEPARATOR = `${SP}*(?:[-/\\u2010-\\u2015\\u2212]|à|et|ou)${SP}*`;
 // Nombre (ou fourchette) puis unité en fin de mot. Le nombre n'est précédé ni d'un chiffre,
 // ni d'un chiffre suivi d'un séparateur décimal.
 const QUANTITY = new RegExp(

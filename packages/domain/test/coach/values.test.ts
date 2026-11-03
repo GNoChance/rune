@@ -163,6 +163,16 @@ describe('findQuantities, fourchettes et variantes', () => {
     expect(pairs(text)).toEqual(expected);
   });
 
+  it.each(['Mets 60 ou 62,5 kg', '60/62,5 kg', '60 / 62,5 kg', '60−62,5 kg'])(
+    'rend les deux nombres de « %s » (ou, barre oblique, signe moins)',
+    (text) => {
+      expect(pairs(text)).toEqual([
+        ['60', 'mass'],
+        ['62.5', 'mass'],
+      ]);
+    },
+  );
+
   it("donne l'index de chaque nombre de la fourchette", () => {
     const found = findQuantities('de 8 à 10 kg');
     expect(found.map((q) => q.index)).toEqual([3, 7]);

@@ -6,6 +6,7 @@ import {
   normalizeForTerms,
   outputFilter,
   outputFilterText,
+  trailingWords,
 } from '../../src/coach/filter';
 import { SentenceBuffer } from '../../src/coach/sentences';
 import type { AllowedValues, UnitFamily } from '../../src/coach/values';
@@ -26,6 +27,10 @@ const ctx = (audience: AgeBand, over: Partial<FilterContext> = {}): FilterContex
 const blocked = (rule: FilterRule, detail: string) => ({ ok: false, rule, detail });
 
 const AUDIENCES: AgeBand[] = ['adult', 'minor'];
+
+// Écrits par code : Biome remplacerait un échappement par le caractère invisible lui-même.
+const CGJ = String.fromCharCode(0x034f); // graphème combinant invisible (Mn)
+const keycaps = (digits: string) => [...digits].map((d) => d + String.fromCharCode(0xfe0f, 0x20e3)).join('');
 
 describe('normalizeForTerms', () => {
   it('met en minuscules et retire les accents', () => {
@@ -60,6 +65,7 @@ describe.each(AUDIENCES)('règle 1, téléphone (%s)', (audience) => {
     'Appelle le 15 / 112.',
     'Compose le 3 114.',
     'Fais 118 pas.',
+    "Ce n'est pas 12 reps.",
   ])('laisse passer « %s »', (sentence) => {
     expect(outputFilter(sentence, ctx(audience))).toEqual({ ok: true });
   });
@@ -75,8 +81,29 @@ describe.each(AUDIENCES)('règle 1, téléphone (%s)', (audience) => {
     ['Ton numéro : 3237.', '3237'],
     ['Si tu appelles le 119, dis-le.', '119'],
     ['Tu peux téléphoner au 17.', '17'],
-    // Un nombre n'est pas un mot : « 18 » suit « appelle le ou ».
+    // Un numéro lu compte pour le mot « numero » : « 18 » suit « le 15 ou ».
     ['Appelle le 15 ou 18.', '18'],
+    ['Appelle le 15. Ou le 3237.', '3237'],
+    // « C'est » compte pour un mot.
+    ["Le bon numéro ? C'est le 3237.", '3237'],
+    ['+33 6 12 34 56 78', '33612345678'],
+    ['⁰⁶ ¹² ³⁴ ⁵⁶ ⁷⁸', '0612345678'],
+    ['06·12·34·56·78', '0612345678'],
+    ['06•12•34•56•78', '0612345678'],
+    [keycaps('0612345678'), '0612345678'],
+    [`Appelle le ${keycaps('3237')}`, '3237'],
+    [`06${CGJ}12${CGJ}34${CGJ}56${CGJ}78`, '0612345678'],
+    ['Mon n° : 3237.', '3237'],
+    ['N° 3237.', '3237'],
+    ['Nº 3237.', '3237'],
+    ['№ 3237.', '3237'],
+    ['No. 3237.', '3237'],
+    ['Mon num. 3237.', '3237'],
+    ['Rappelle le 3237.', '3237'],
+    ['Un appel au 119 suffit.', '119'],
+    ['Envoie un SMS au 114.', '114'],
+    ['Contacte le 119.', '119'],
+    ['Tu peux joindre le 3237.', '3237'],
   ])('bloque « %s »', (sentence, digits) => {
     expect(outputFilter(sentence, ctx(audience))).toEqual(blocked('phone', digits));
   });
@@ -97,8 +124,20 @@ describe.each(AUDIENCES)('règle 2, unités (%s)', (audience) => {
     ['15 pour cent', '15 pour cent'],
     ['5 kilos', '5 kilos'],
     ['Passe de 62,5 kg à 65 kg puis 70 kg.', '65 kg'],
+    ['65kg', '65 kg'],
+    ['65 Kg', '65 Kg'],
+    ['⁶⁵ kg', '65 kg'],
+    // Deux nombres devant une unité : chacun est contrôlé.
+    ['Mets 60 ou 62,5 kg.', '60 kg'],
+    ['60/62,5 kg', '60 kg'],
+    ['60−62,5 kg', '60 kg'],
   ])('bloque « %s » (première valeur non autorisée)', (sentence, detail) => {
     expect(outputFilter(sentence, withValues)).toEqual(blocked('unit', detail));
+  });
+
+  it('lit le nombre entier quand une marque combinante le coupe (masse {5} autorisée)', () => {
+    const fiveAllowed = ctx(audience, { allowed: values({ mass: ['5'] }) });
+    expect(outputFilter(`Mets 6${CGJ}5 kg.`, fiveAllowed)).toEqual(blocked('unit', '65 kg'));
   });
 });
 
@@ -141,6 +180,8 @@ describe('règle 3, termes interdits', () => {
       ['Ne brûle-les-graisses pas.', 'brûler les graisses'],
       ['Ça se mérite.', 'se mériter'],
       ['Ce raté n’est pas un échec.', 'raté'],
+      ['SECHE', 'sèche'],
+      ["Ce n'est pas qu'échec.", 'échec'],
     ])('bloque « %s »', (sentence, term) => {
       expect(outputFilter(sentence, ctx(audience))).toEqual(blocked('forbidden_term', term));
     });
@@ -177,6 +218,27 @@ describe('règle 3, termes interdits', () => {
       blocked('forbidden_term', 'créatine'),
     );
     expect(outputFilter('prends de la créatine', ctx('adult'))).toEqual({ ok: true });
+  });
+
+  it("applique la liste des mineurs à tout public qui n'est pas « adult » (côté fermé)", () => {
+    const unknown = ctx('teen' as AgeBand);
+    expect(outputFilter('prends de la créatine', unknown)).toEqual(blocked('forbidden_term', 'créatine'));
+  });
+
+  it.each(['Tu es jeune.', 'Les jeunes sportifs.'])(
+    'laisse passer « %s » pour un mineur (jeûne cherché avec ses accents)',
+    (sentence) => {
+      expect(outputFilter(sentence, ctx('minor'))).toEqual({ ok: true });
+    },
+  );
+
+  it.each([
+    ['Fais un jeûne.', 'jeûne'],
+    ['Si tu jeûnes, arrête.', 'jeûne'],
+    ['Tu as jeûné ?', 'jeûner'],
+    ['JEÛNE', 'jeûne'],
+  ])('bloque « %s » pour un mineur', (sentence, term) => {
+    expect(outputFilter(sentence, ctx('minor'))).toEqual(blocked('forbidden_term', term));
   });
 
   it.each(['Appelle Écoute Dopage.', 'Refuse les produits dopants.', 'Le dopage est dangereux.'])(
@@ -216,13 +278,54 @@ describe('ordre des règles', () => {
   });
 });
 
+describe('trailingWords', () => {
+  it('rend les 3 derniers mots en lettres, normalisés, abréviations réécrites', () => {
+    expect(trailingWords('Si besoin, appelle :\n')).toEqual(['si', 'besoin', 'appelle']);
+    expect(trailingWords('Mon N° ')).toEqual(['mon', 'numero']);
+    expect(trailingWords('Tél.\n')).toEqual(['tel']);
+    expect(trailingWords('Le bon numéro ? ')).toEqual(['le', 'bon', 'numero']);
+  });
+
+  it("compte « c'est » pour un mot", () => {
+    expect(trailingWords("Oui, c'est le bon.")).toEqual(['est', 'le', 'bon']);
+  });
+
+  it('complète une phrase courte avec les mots qui la précèdent, un numéro lu comptant pour « numero »', () => {
+    expect(trailingWords('- le 15\n', ['si', 'besoin', 'appelle'])).toEqual(['appelle', 'le', 'numero']);
+    expect(trailingWords('- le 15\n')).toEqual(['le']);
+  });
+});
+
+describe('outputFilter, mots de la phrase précédente', () => {
+  it('lit precedingWords avant les mots de la phrase', () => {
+    expect(outputFilter('- le 3237', ctx('adult', { precedingWords: ['appelle'] }))).toEqual(
+      blocked('phone', '3237'),
+    );
+    expect(outputFilter('- le 3237', ctx('adult'))).toEqual({ ok: true });
+  });
+});
+
 describe('outputFilterText, texte de plusieurs phrases', () => {
-  it.each(AUDIENCES)(
-    'filtre chaque phrase à part : « Appelle le 15. Fais 12 reps. » passe (%s)',
-    (audience) => {
-      expect(outputFilterText('Appelle le 15. Fais 12 reps.', ctx(audience))).toEqual({ ok: true });
-    },
-  );
+  // Faux positif accepté : le mot d'appel de la phrase d'avant compte, « 12 » suit « appelle le 15 fais ».
+  it.each(AUDIENCES)('bloque « 12 » dans « Appelle le 15. Fais 12 reps. » (%s)', (audience) => {
+    expect(outputFilterText('Appelle le 15. Fais 12 reps.', ctx(audience))).toEqual(blocked('phone', '12'));
+  });
+
+  it.each([
+    ['Si besoin, appelle :\n- le 3237\n- le 3114', '3237'],
+    ['Appelle :\n- le 15\n- le 112\n- le 3237', '3237'],
+    ['Numéro utile :\n3237', '3237'],
+    ['Tél.\n3237', '3237'],
+    ["Le bon numéro ? C'est le 3237.", '3237'],
+    ['Appelle le 15. Ou le 3237.', '3237'],
+    ['Mon num. 3237. Fin.', '3237'],
+  ])('transmet les mots d’une phrase à la suivante : « %s »', (text, digits) => {
+    expect(outputFilterText(text, ctx('minor'))).toEqual(blocked('phone', digits));
+  });
+
+  it('laisse passer un numéro admis annoncé dans la phrase d’avant', () => {
+    expect(outputFilterText('Si besoin, appelle :\n- le 15\n- le 3114', ctx('minor'))).toEqual({ ok: true });
+  });
 
   it('rend la première violation, même dans une phrase suivante', () => {
     expect(outputFilterText('Fais 12 reps. Appelle le 0123456789.', ctx('adult'))).toEqual(
