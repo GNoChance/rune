@@ -11,6 +11,7 @@ export {
 } from './evaluate';
 export * from './loads';
 export * from './plan';
+export * from './preview';
 export { type SlotShape, slotShape } from './primitives';
 export {
   initialProgramState,

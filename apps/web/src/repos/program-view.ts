@@ -16,6 +16,7 @@ import {
   type EffectiveProgram,
   expandEquipment,
   findSlot,
+  lastLoadsOf,
   type PlaceContext,
   type PlannedWorkout,
   parisDate,
@@ -38,7 +39,7 @@ import { getMeta } from '../local-db/meta';
 import { catalogRepoFor } from './catalog-repo';
 import { createPlacesRepo, type PlaceView, placeView } from './places-repo';
 import { currentUserId, isLive, oneOf, ownedRows, parseJsonColumn, text } from './rows';
-import { composeSessions, type WorkoutSessionView } from './session-records';
+import { composeSessions } from './session-records';
 
 /*
  * Programme vu du téléphone (spec brique 3 §4.4.8, §7.2, §7.7) : l'instance active et son rejeu local sur le miroir
@@ -250,23 +251,6 @@ function withoutC2(entity: string, fields: Record<string, unknown>): Record<stri
   return Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, isC2Value(rule, k, v) ? null : v]));
 }
 
-/** Dernière charge de travail faite sur chaque exercice, toutes séances comprises (calibration, spec §4.3.5). */
-function lastLoads(sessions: readonly WorkoutSessionView[]): Map<string, number> {
-  const latest = new Map<string, { at: number; loadG: number }>();
-  for (const s of sessions) {
-    for (const e of s.exercises) {
-      for (const set of e.sets) {
-        if (set.kind !== 'work' || set.loggedAt === null || set.loadG === null) continue;
-        const known = latest.get(e.exerciseId);
-        if (known === undefined || set.loggedAt >= known.at) {
-          latest.set(e.exerciseId, { at: set.loggedAt, loadG: set.loadG });
-        }
-      }
-    }
-  }
-  return new Map([...latest].map(([id, v]) => [id, v.loadG]));
-}
-
 /**
  * Rejeu sans les règles inconnues (§4.4.8) : chaque version inconnue est lue avec les règles courantes, seulement pour
  * recompter l'état du programme ; états des slots ceux du serveur, ni décision ni événement.
@@ -423,7 +407,7 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
         ageBand: me?.ageBand ?? 'minor',
         context: program.program.template.context,
         today: parisDate(new Date(s.now())),
-        lastLoadByExercise: lastLoads(history),
+        lastLoadByExercise: lastLoadsOf(history),
         maxLevel: member.maxLevel,
       });
       return {
