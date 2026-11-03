@@ -20,7 +20,6 @@ import {
   maxExerciseLevel,
   PAIN_CODE_REWRITES,
   type PainLevel,
-  REASON_TEXTS,
   type ReasonCode,
   SESSION_MINUTES,
   type ServedProgramTemplate,
@@ -142,6 +141,9 @@ type BriefRecord = CoachBrief['records'][number];
 const FREE_TEXT_MAX = 200;
 /** Records gardés quand les séances retirées ne suffisent pas (§9). */
 const TRUNCATED_RECORDS = 15;
+/** Séances gardées avant de toucher aux records et aux notes, puis en dernier recours. */
+const KEPT_SESSIONS = 3;
+const LAST_SESSIONS = 1;
 const FREE_SESSION_NAME = 'Séance libre';
 
 /** Sans lieu principal, tout est faisable (spec brique 2 §4.1) : le slot montre l'exercice prévu. */
@@ -221,8 +223,11 @@ function sheetNames(input: CoachBriefInput): (id: string) => string {
   return (id) => names.get(id) ?? id;
 }
 
-/** Lieux vivants sous leur nom neutre : le principal `lieu_1`, puis les autres `lieu_2`… dans l'ordre reçu. */
-function namedPlaces(input: CoachBriefInput): { place: BriefPlaceInput; name: string }[] {
+/**
+ * Lieux vivants sous leur nom neutre : le principal `lieu_1`, puis les autres `lieu_2`… dans l'ordre reçu ; les mêmes
+ * noms dans le dossier et dans les outils (`feasible_at` de `search_exercises`).
+ */
+export function namedPlaces(input: CoachBriefInput): { place: BriefPlaceInput; name: string }[] {
   const primary = primaryOf(input);
   const ordered =
     primary === undefined ? input.places : [primary, ...input.places.filter((p) => p !== primary)];
@@ -334,12 +339,7 @@ function lastDecision(
   const code = healthAllowed(input)
     ? decision.reasonCode
     : (PAIN_REASONS[decision.reasonCode] ?? decision.reasonCode);
-  return {
-    days_ago: daysAgo(at, input.today),
-    result: decision.result,
-    reason_code: code,
-    reason_text: REASON_TEXTS[code],
-  };
+  return { days_ago: daysAgo(at, input.today), result: decision.result, reason_code: code };
 }
 
 /** Suffixe d'un slot créé par `add_slot` (`addedSlotId`) : l'identifiant du changement, un UUID. */
@@ -506,8 +506,8 @@ function userNotes(
 /**
  * Séances terminées des `days` derniers jours, la plus récente d'abord : jours écoulés, nom (« Séance libre » hors
  * programme), lieu (`lieu_n`, null s'il n'est plus vivant ou absent), exercices et séries de travail faites, notes.
- * `pain` : douleur par exercice, à ne demander qu'avec l'accord santé et l'accord coach (C2). `exerciseId` : seules
- * les séances de cet exercice, réduites à lui.
+ * `pain` : douleur par exercice, rendue seulement si l'entrée a aussi l'accord santé et l'accord coach (C2).
+ * `exerciseId` : seules les séances de cet exercice, réduites à lui.
  */
 export function briefHistory(
   input: CoachBriefInput,
@@ -515,6 +515,7 @@ export function briefHistory(
 ): HistorySession[] {
   const places = new Map(namedPlaces(input).map(({ place, name }) => [place.id, name]));
   const nameOf = sheetNames(input);
+  const pain = opts.pain && healthAllowed(input);
   return sessionsWithin(input, opts.days).flatMap((s) => {
     const exercises =
       opts.exerciseId === undefined
@@ -531,7 +532,7 @@ export function briefHistory(
           id: e.exerciseId,
           name: nameOf(e.exerciseId),
           sets: workTuples(e.sets),
-          ...(opts.pain && e.painLevel !== null ? { pain: e.painLevel } : {}),
+          ...(pain && e.painLevel !== null ? { pain: e.painLevel } : {}),
         })),
         ...(notes === null ? {} : { user_notes: notes }),
       },
@@ -602,6 +603,10 @@ export function briefRecords(input: CoachBriefInput, sessions: readonly BriefSes
 // Dossier
 // ---------------------------------------------------------------------------------------------------------------
 
+const hasNotes = (brief: CoachBrief): boolean =>
+  brief.history.sessions.some((s) => s.user_notes !== undefined) ||
+  (brief.health?.limitations.some((l) => l.note !== null) ?? false);
+
 function withoutNotes(brief: CoachBrief): CoachBrief {
   return {
     ...brief,
@@ -613,41 +618,47 @@ function withoutNotes(brief: CoachBrief): CoachBrief {
 }
 
 /**
- * Plafond (§9, choix C43) : au-delà de `max` jetons estimés, retrait des séances les plus anciennes une à une, puis
- * des records au-delà de 15, puis des notes, chaque étape seulement si la précédente ne suffit pas ;
- * `history.truncated` le dit.
+ * Plafond (choix C43, cascade du contrôleur, écart au §9) : au-delà de `max` jetons estimés, dans l'ordre, (a) les
+ * séances les plus anciennes jusqu'à en garder 3, (b) les records au-delà de 15, (c) les notes (séances gardées et
+ * limitations), (d) les séances jusqu'à en garder 1. Chaque étape s'arrête dès que le dossier tient ;
+ * `history.truncated` n'est vrai que si une étape a retiré quelque chose. Le programme n'est jamais coupé : un dossier
+ * encore trop gros est rendu tel quel (`oversize` de `buildCoachBrief`).
  */
 function fit(brief: CoachBrief, max: number): CoachBrief {
   const fits = (b: CoachBrief) => estimateTokens(sortedJson(b)) <= max;
-  if (fits(brief)) return brief;
-  const { sessions } = brief.history;
-  const keep = (n: number): CoachBrief => ({
-    ...brief,
-    history: { sessions: sessions.slice(0, n), truncated: true },
-  });
-  let n = sessions.length;
-  let out = keep(n);
-  while (n > 0 && !fits(out)) {
-    n -= 1;
-    out = keep(n);
+  const cut = (b: CoachBrief): CoachBrief => ({ ...b, history: { ...b.history, truncated: true } });
+  let out = brief;
+  const keepSessions = (floor: number): void => {
+    while (out.history.sessions.length > floor && !fits(out)) {
+      out = cut({ ...out, history: { ...out.history, sessions: out.history.sessions.slice(0, -1) } });
+    }
+  };
+  keepSessions(KEPT_SESSIONS);
+  if (!fits(out) && out.records.length > TRUNCATED_RECORDS) {
+    out = cut({ ...out, records: out.records.slice(0, TRUNCATED_RECORDS) });
   }
-  if (!fits(out)) out = { ...out, records: out.records.slice(0, TRUNCATED_RECORDS) };
-  if (!fits(out)) out = withoutNotes(out);
+  if (!fits(out) && hasNotes(out)) out = cut(withoutNotes(out));
+  keepSessions(LAST_SESSIONS);
   return out;
 }
 
 /**
  * Dossier `coach-brief/1` du fil (§9) : le dossier validé par `CoachBriefSchema`, son JSON à clés triées sans espace
- * (celui que reçoit le modèle et que stocke le fil), ses jetons estimés, et `slotAliases` (alias d'un slot créé par
+ * (celui que reçoit le modèle et que stocke le fil), ses jetons estimés, `oversize` (encore au-dessus du plafond après
+ * la cascade de `fit`, hors du JSON, à journaliser sans contenu) et `slotAliases` (alias d'un slot créé par
  * `add_slot` → son identifiant réel), pour retraduire les références de slot des opérations proposées
- * (`resolveSlotAlias`).
+ * (`resolveSlotAlias`). `RangeError` si `audience` et `ageBand` se contredisent (`minor` ⇔ `16-17`).
  */
 export function buildCoachBrief(input: CoachBriefInput): {
   brief: CoachBrief;
   json: string;
   estimatedTokens: number;
+  oversize: boolean;
   slotAliases: ReadonlyMap<string, string>;
 } {
+  if ((input.audience === 'minor') !== (input.ageBand === '16-17')) {
+    throw new RangeError(`audience ${input.audience} et tranche ${input.ageBand} incompatibles`);
+  }
   const health = healthAllowed(input);
   const days = COACH_CONFIG.limits.readTrainingMaxDays;
   const draft: CoachBrief = {
@@ -674,9 +685,11 @@ export function buildCoachBrief(input: CoachBriefInput): {
       : {}),
     nutrition: null,
   };
-  const brief = CoachBriefSchema.parse(fit(draft, COACH_CONFIG.limits.briefMaxTokens));
+  const max = COACH_CONFIG.limits.briefMaxTokens;
+  const brief = CoachBriefSchema.parse(fit(draft, max));
   const json = sortedJson(brief);
+  const estimatedTokens = estimateTokens(json);
   const aliases = input.program === null ? [] : [...slotAliasesOf(input.program)];
   const slotAliases = new Map(aliases.map(([slotId, alias]) => [alias, slotId]));
-  return { brief, json, estimatedTokens: estimateTokens(json), slotAliases };
+  return { brief, json, estimatedTokens, oversize: estimatedTokens > max, slotAliases };
 }

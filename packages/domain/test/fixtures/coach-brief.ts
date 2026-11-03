@@ -1,16 +1,22 @@
+import { readdirSync, readFileSync } from 'node:fs';
 import {
   defaultLoadSettings,
   type Effort,
+  type ExerciseSheet,
   type LoadMode,
   type NextAdjustment,
   type PainLevel,
+  type ProgramTemplate,
+  ProgramTemplateSchema,
   REFERENCE_PROFILES,
   type SetKind,
 } from '@rune/contracts';
 import { expandEquipment } from '../../src/catalog/equipment';
 import type { BriefSession, BriefSheet, CoachBriefInput } from '../../src/coach/brief';
-import { addedSlotId, effectiveProgram } from '../../src/program/effective';
+import { addedSlotId, effectiveProgram, workSetCount } from '../../src/program/effective';
+import { workSpec } from '../../src/program/primitives';
 import { replayInstance } from '../../src/program/replay';
+import { resolveSlot } from '../../src/program/resolve';
 import type { AcceptedChange, PlaceContext, SessionRecord, SetRecord } from '../../src/program/types';
 import { GYM_AB, PROGRAM_CATALOG } from './program';
 
@@ -404,4 +410,150 @@ export function inputIds(input: CoachBriefInput): string[] {
     }
   }
   return [...ids];
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Taille réelle : contenu de `data/`
+// ---------------------------------------------------------------------------------------------------------------
+
+const DATA = new URL('../../../../data/', import.meta.url);
+
+/** Fiches réelles (`data/exercises`), toutes publiées, comme au terme de la publication du catalogue. */
+export function realCatalog(): BriefSheet[] {
+  const dir = new URL('exercises/', DATA);
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.json'))
+    .sort()
+    .map((f) => ({
+      ...(JSON.parse(readFileSync(new URL(f, dir), 'utf8')) as ExerciseSheet),
+      status: 'published' as const,
+    }));
+}
+
+/** Modèles réels (`data/programs`), validés par `ProgramTemplateSchema`. */
+export function realTemplates(): ProgramTemplate[] {
+  const dir = new URL('programs/', DATA);
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.json'))
+    .sort()
+    .map((f) => ProgramTemplateSchema.parse(JSON.parse(readFileSync(new URL(f, dir), 'utf8'))));
+}
+
+const LOADS_G: Partial<Record<LoadMode, number>> = { barbell: 60_000, dumbbell: 20_000, machine: 45_000 };
+
+/**
+ * Entrée à la taille réelle : `gym-intermediate-upper-lower` arrivé à maturité, rejoué sur `sessions` séances
+ * terminées en 28 jours, chaque séance faisant tous ses slots (chaque slot a donc un état et une dernière décision),
+ * au catalogue réel, dans une salle principale ; les 6 modèles réels servis. `slotsPerWorkout` allonge chaque séance
+ * par des copies de ses propres slots ; `limitations` limitations, notes de 200 caractères.
+ */
+export function realSizeInput(
+  o: { sessions?: number; slotsPerWorkout?: number; limitations?: number } = {},
+): CoachBriefInput {
+  const templates = realTemplates();
+  const base = templates.find((t) => t.id === 'gym-intermediate-upper-lower');
+  if (base === undefined) throw new Error('gym-intermediate-upper-lower absent de data/programs');
+  const template = structuredClone(base);
+  for (const w of template.workouts) {
+    const own = [...w.slots];
+    for (let k = own.length; k < (o.slotsPerWorkout ?? 0); k += 1) {
+      const copy = structuredClone(own[k % own.length] as (typeof own)[number]);
+      w.slots.push({ ...copy, id: `${w.id}-${k + 1}` });
+    }
+  }
+  const catalog = realCatalog();
+  const gym = placeContext(PRIMARY_ID, 'gym');
+  const count = o.sessions ?? 16;
+  const records: SessionRecord[] = Array.from({ length: count }, (_, k) => {
+    const workout = template.workouts[k % template.workouts.length] as (typeof template.workouts)[number];
+    const id = `session-canari-real-${k + 1}`;
+    const at = daysBefore(27 - Math.floor((k * 28) / count));
+    return {
+      id,
+      instanceId: INSTANCE_ID,
+      workoutId: workout.id,
+      placeId: PRIMARY_ID,
+      startedAt: at - HOUR,
+      endedAt: at,
+      status: 'completed',
+      weekType: 'normal',
+      profile: 'adult',
+      rulesVersion: '1',
+      exercises: workout.slots.flatMap((slot, i) => {
+        const r = resolveSlot(slot, {
+          catalog,
+          place: gym,
+          cautious: false,
+          maxLevel: 2,
+          state: null,
+          suspended: false,
+        });
+        if (r.exercise === null) return [];
+        const spec = workSpec(slot);
+        const duration = spec?.durationS !== undefined;
+        const value = duration ? (spec?.durationS?.min ?? 30) : (spec?.reps?.max ?? 10);
+        const done: DoneSpec = {
+          exerciseId: r.exercise.id,
+          values: Array.from({ length: workSetCount(slot) }, () => value),
+          loadG: LOADS_G[r.exercise.load_mode] ?? null,
+          loadMode: r.exercise.load_mode,
+          duration,
+        };
+        return [
+          {
+            id: `perf-canari-${id}-${i + 1}`,
+            slotId: slot.id,
+            plannedExerciseId: r.exercise.id,
+            exerciseId: r.exercise.id,
+            position: i + 1,
+            swapReason: null,
+            painLevel: null,
+            nextAdjustment: null,
+            sets: doneSets(done, `${id}-${i + 1}`),
+          },
+        ];
+      }),
+    };
+  });
+  const replay = replayInstance({
+    instance: { id: INSTANCE_ID, snapshot: template, daysPerWeek: 4, startedAt: daysBefore(28) },
+    sessions: records,
+    changes: [],
+    catalog,
+    places: new Map([[PRIMARY_ID, gym]]),
+    overrides: new Map(),
+  });
+  return briefInput((i) => {
+    i.profile = { ...i.profile, goal: 'strength', daysPerWeek: 4 };
+    i.catalog = catalog;
+    i.program = {
+      templateVersion: template.version,
+      revision: 12,
+      program: effectiveProgram(template, 4, []),
+      replay,
+      decisionEndedAt: new Map(
+        records.flatMap((s) => s.exercises.map((e) => [e.id, s.endedAt ?? s.startedAt])),
+      ),
+      pending: [],
+      templates: templates.map((t) => ({ template: t, available: true })),
+    };
+    i.sessions = records.map((s) => ({
+      endedAt: s.endedAt ?? s.startedAt,
+      workoutName: template.workouts.find((w) => w.id === s.workoutId)?.name ?? null,
+      placeId: s.placeId,
+      note: null,
+      exercises: s.exercises.map((e) => ({
+        exerciseId: e.exerciseId,
+        painLevel: null,
+        note: null,
+        sets: e.sets,
+      })),
+    }));
+    i.limitations = Array.from({ length: o.limitations ?? 0 }, () => ({
+      area: 'knee' as const,
+      side: 'left' as const,
+      severity: 'mild' as const,
+      note: 'n'.repeat(200),
+    }));
+  });
 }

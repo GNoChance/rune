@@ -81,12 +81,12 @@ const BriefSlot = z.strictObject({
       suspended: z.boolean(),
     })
     .nullable(),
+  /** Le code seul : le prompt donne une fois la table `REASON_TEXTS`, mise en cache (écart au §9, taille du dossier). */
   last_decision: z
     .strictObject({
       days_ago: Count,
       result: z.enum(DECISION_RESULTS),
       reason_code: z.enum(REASON_CODES),
-      reason_text: z.string(),
     })
     .nullable(),
 });

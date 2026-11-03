@@ -33,7 +33,7 @@ import {
 } from '../src/coach';
 import { CoachBriefResponse, CoachBriefSchema } from '../src/coach-brief';
 import { entityRules } from '../src/entity-rules';
-import { InstanceChangeOperationSchema } from '../src/program';
+import { InstanceChangeOperationSchema, REASON_TEXTS } from '../src/program';
 
 describe('coach (spec refonte §8)', () => {
   it('trois coachs, dans cet ordre', () => {
@@ -458,8 +458,6 @@ const BRIEF = {
               days_ago: 2,
               result: 'PROGRESS',
               reason_code: 'REPS_UP',
-              reason_text:
-                'Tu as fait plus de répétitions que jamais à ce niveau : on en vise une de plus par série.',
             },
           },
           {
@@ -558,6 +556,15 @@ describe('CoachBriefSchema (coach-brief/1, §9)', () => {
     expect(parse({ ...BRIEF, profile: { ...BRIEF.profile, birth_date: '2001-07-13' } })).toBe(false);
     expect(parse({ ...BRIEF, schema: 'coach-brief/2' })).toBe(false);
     expect(parse({ ...BRIEF, nutrition: {} })).toBe(false);
+  });
+
+  it('dernière décision : le code seul, sans sa phrase (la table REASON_TEXTS est dans le prompt)', () => {
+    type Slots = { last_decision: Record<string, unknown> | null }[];
+    const brief = structuredClone(BRIEF) as unknown as { program: { workouts: { slots: Slots }[] } };
+    const decision = brief.program.workouts[0]?.slots.find((s) => s.last_decision !== null)?.last_decision;
+    if (!decision) throw new Error('décision absente');
+    decision.reason_text = REASON_TEXTS.REPS_UP;
+    expect(CoachBriefSchema.safeParse(brief).success).toBe(false);
   });
 
   it('CoachBriefResponse : le dossier analysé, ou null après le retrait santé', () => {

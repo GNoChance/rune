@@ -6,10 +6,12 @@ import { CoachBriefSchema, REASON_TEXTS } from '@rune/contracts';
 import { describe, expect, it } from 'vitest';
 import {
   type BriefSession,
+  briefHistory,
   buildCoachBrief,
   type CoachBriefInput,
   cleanFreeText,
   estimateTokens,
+  namedPlaces,
   resolveSlotAlias,
   sortedJson,
 } from '../../src/coach/brief';
@@ -27,6 +29,7 @@ import {
   HOME_ID,
   inputIds,
   PRIMARY_ID,
+  realSizeInput,
   TODAY,
   UUID_ANYWHERE,
 } from '../fixtures/coach-brief';
@@ -171,6 +174,22 @@ describe("alias des slots ajoutés (identifiant d'un changement)", () => {
 });
 
 describe('lieux', () => {
+  it("namedPlaces : le principal lieu_1, les autres ensuite dans l'ordre reçu", () => {
+    const input = briefInput((i) => {
+      i.places.reverse();
+      i.places.push({
+        ...(i.places[0] as CoachBriefInput['places'][number]),
+        id: 'place-canari-3',
+        primary: false,
+      });
+    });
+    expect(namedPlaces(input).map(({ place, name }) => [place.id, name])).toEqual([
+      [PRIMARY_ID, 'lieu_1'],
+      [HOME_ID, 'lieu_2'],
+      ['place-canari-3', 'lieu_3'],
+    ]);
+  });
+
   it('lieu_1 au principal même reçu en second, réglages de charge en kg pour lui seul, matériel trié', () => {
     const { brief } = build((i) => i.places.reverse());
     expect(brief.places.map((p) => [p.name, p.kind, p.primary])).toEqual([
@@ -301,15 +320,14 @@ describe('programme', () => {
         calibration_left: state.calibrationLeft,
         suspended: false,
       },
-      last_decision: {
-        days_ago: 7,
-        result: expect.any(String),
-        reason_code: expect.any(String),
-        reason_text: expect.any(String),
-      },
+      last_decision: { days_ago: 7, result: 'PROGRESS', reason_code: 'LOAD_UP' },
     });
-    const decision = slotOf(brief, 'A1').last_decision ?? fail('décision');
-    expect(decision.reason_text).toBe(REASON_TEXTS[decision.reason_code]);
+  });
+
+  it('dernière décision : le code seul, sans sa phrase (la table est dans le prompt)', () => {
+    const { json } = build();
+    expect(json).not.toContain('reason_text');
+    expect(json).not.toContain(REASON_TEXTS.LOAD_UP);
   });
 
   it('slot en durée : fourchette de durée, pas de répétitions', () => {
@@ -396,6 +414,7 @@ describe('dates relatives', () => {
     const { json } = build();
     expect(json.match(/\d{4}-\d{2}-\d{2}/g)).toEqual([TODAY]);
     expect(json).not.toMatch(/T\d{2}:\d{2}/);
+    expect(json).not.toMatch(/\d{10,}/);
   });
 });
 
@@ -426,10 +445,36 @@ describe('accords C2 (santé et coach)', () => {
     expect(bench).toMatchObject({ id: 'bench-press', pain: 'discomfort' });
     const squat = brief.history.sessions.find((s) => s.days_ago === 7)?.exercises[0];
     expect(squat).not.toHaveProperty('pain');
-    expect(slotOf(brief, 'A2').last_decision).toMatchObject({
-      reason_code: 'PAIN_HOLD',
-      reason_text: REASON_TEXTS.PAIN_HOLD,
+    expect(slotOf(brief, 'A2').last_decision).toMatchObject({ reason_code: 'PAIN_HOLD' });
+  });
+
+  it.each([
+    [false, true],
+    [true, false],
+  ])("briefHistory avec pain demandé, santé %s, coach %s : la douleur n'est pas rendue", (health, coach) => {
+    const input = briefInput((i) => {
+      i.consents = { health, coach };
     });
+    const sessions = briefHistory(input, { days: 28, pain: true });
+    expect(sessions.flatMap((s) => s.exercises).some((e) => 'pain' in e)).toBe(false);
+    expect(briefHistory(briefInput(), { days: 28, pain: true }).flatMap((s) => s.exercises)).toContainEqual(
+      expect.objectContaining({ pain: 'discomfort' }),
+    );
+  });
+});
+
+describe('public et tranche', () => {
+  it.each([
+    ['adult', '16-17'],
+    ['minor', '18-29'],
+    ['minor', '60+'],
+  ] as const)('audience %s et tranche %s : RangeError', (audience, ageBand) => {
+    expect(() =>
+      build((i) => {
+        i.audience = audience;
+        i.ageBand = ageBand;
+      }),
+    ).toThrow(RangeError);
   });
 });
 
@@ -583,19 +628,29 @@ describe('taille', () => {
     return briefSession({ endedAt: daysBefore(Math.floor((n * 28) / 40), 8 + (n % 2) * 10), exercises });
   };
 
-  it('petite entrée : truncated faux', () => {
-    const { brief, estimatedTokens } = build();
+  const limitations = (n: number, note: string | null) =>
+    Array.from({ length: n }, () => ({
+      area: 'knee' as const,
+      side: 'left' as const,
+      severity: 'mild' as const,
+      note,
+    }));
+
+  it('petite entrée : truncated faux, oversize faux', () => {
+    const { brief, estimatedTokens, oversize } = build();
     expect(brief.history.truncated).toBe(false);
+    expect(oversize).toBe(false);
     expect(estimatedTokens).toBeLessThanOrEqual(3000);
   });
 
-  it('40 séances : 4 500 jetons au plus, les plus récentes gardées, truncated vrai', () => {
+  it('(a) 40 séances : 4 500 jetons au plus, les plus récentes gardées, truncated vrai', () => {
     const sessions = Array.from({ length: 40 }, (_, n) => heavy(n));
     const full = sessions.map((s) => parisDaysUntil(s.endedAt, TODAY)).sort((a, b) => a - b);
-    const { brief, estimatedTokens } = build((i) => {
+    const { brief, estimatedTokens, oversize } = build((i) => {
       i.sessions = sessions;
     });
     expect(estimatedTokens).toBeLessThanOrEqual(4500);
+    expect(oversize).toBe(false);
     expect(brief.history.truncated).toBe(true);
     const kept = brief.history.sessions.map((s) => s.days_ago);
     expect(kept.length).toBeGreaterThan(5);
@@ -604,16 +659,15 @@ describe('taille', () => {
     expect(brief.records.length).toBe(5);
   });
 
-  it('encore trop gros sans séance : records coupés à 15, puis notes retirées', () => {
+  it('(a) puis (b) puis (c) : 3 séances gardées, records coupés à 15, notes retirées', () => {
     const many = BRIEF_CATALOG.filter(
       (s) => s.status === 'published' && s.movement_pattern !== 'core_anti_extension',
     );
     expect(many.length).toBeGreaterThan(15);
-    const { brief, estimatedTokens } = build((i) => {
+    const { brief, estimatedTokens, oversize } = build((i) => {
       i.sessions = [
         briefSession({
-          daysAgo: 2,
-          note: 'n'.repeat(200),
+          daysAgo: 20,
           exercises: many.map((s) => ({
             exerciseId: s.id,
             values: [10],
@@ -621,18 +675,57 @@ describe('taille', () => {
             loadMode: 'barbell',
           })),
         }),
+        ...[3, 2, 1].map((daysAgo) => briefSession({ daysAgo, note: 'n'.repeat(200) })),
       ];
-      i.limitations = Array.from({ length: 60 }, () => ({
-        area: 'knee' as const,
-        side: 'left' as const,
-        severity: 'mild' as const,
-        note: 'l'.repeat(200),
-      }));
+      i.limitations = limitations(60, 'l'.repeat(200));
     });
     expect(estimatedTokens).toBeLessThanOrEqual(4500);
-    expect(brief.history).toEqual({ sessions: [], truncated: true });
+    expect(oversize).toBe(false);
+    expect(brief.history.truncated).toBe(true);
+    expect(brief.history.sessions.map((s) => s.days_ago)).toEqual([1, 2, 3]);
+    expect(brief.history.sessions.some((s) => 'user_notes' in s)).toBe(false);
     expect(brief.records).toHaveLength(15);
     expect(brief.health?.limitations.every((l) => l.note === null)).toBe(true);
+  });
+
+  it('(d) trois séances trop lourdes, ni records en trop ni notes : la plus récente seule', () => {
+    const exercises: DoneSpec[] = Array.from({ length: 40 }, (_, k) => ({
+      exerciseId: ['back-squat', 'bench-press', 'barbell-row', 'overhead-press'][k % 4] ?? 'back-squat',
+      loadG: 40_000,
+      values: [10, 10, 10, 10, 10],
+      loadMode: 'barbell',
+    }));
+    const { brief, estimatedTokens, oversize } = build((i) => {
+      i.sessions = [5, 4, 3].map((daysAgo) => briefSession({ daysAgo, exercises }));
+      i.limitations = [];
+    });
+    expect(estimatedTokens).toBeLessThanOrEqual(4500);
+    expect(oversize).toBe(false);
+    expect(brief.history.truncated).toBe(true);
+    expect(brief.history.sessions.map((s) => s.days_ago)).toEqual([3]);
+  });
+
+  it('rien à retirer : truncated faux, dossier rendu tel quel, oversize vrai', () => {
+    const { brief, estimatedTokens, oversize } = build((i) => {
+      i.sessions = [];
+      i.limitations = limitations(300, null);
+    });
+    expect(estimatedTokens).toBeGreaterThan(4500);
+    expect(oversize).toBe(true);
+    expect(brief.history.truncated).toBe(false);
+    expect(brief.health?.limitations).toHaveLength(300);
+  });
+
+  it('taille réelle, 8 slots par séance et 10 limitations : oversize vrai, une séance au moins, truncated vrai', () => {
+    const input = realSizeInput({ slotsPerWorkout: 8, limitations: 10 });
+    const slots = input.program?.program.template.workouts.map((w) => w.slots.length);
+    expect(slots).toEqual([8, 8, 8, 8]);
+    expect(input.program?.replay.decisions.length).toBeGreaterThan(0);
+    const { brief, oversize } = buildCoachBrief(input);
+    expect(oversize).toBe(true);
+    expect(brief.history.truncated).toBe(true);
+    expect(brief.history.sessions.length).toBeGreaterThanOrEqual(1);
+    expect(brief.program?.workouts.flatMap((w) => w.slots)).toHaveLength(32);
   });
 });
 
