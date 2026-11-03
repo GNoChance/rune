@@ -144,6 +144,44 @@ describe('workout_session au push', () => {
     expect(rowsOf('sync_rejection').map((r) => r.code)).toEqual(Array(2).fill('invalid_transition'));
   });
 
+  it('completed → abandoned avec une autre fin : statut et ended_at ignorés, la fin reste celle de la clôture qui l’a terminée ; note appliquée', async () => {
+    const a = await setup();
+    // Terminée par l'appareil qui la tenait (fin une heure après le début) ; promue par R51 (fin à la dernière série).
+    const done = sessionOps(a.id, { status: 'completed' });
+    const promoted = sessionOps(a.id, { status: 'abandoned', exercises: [{ sets: [{ logged: false }] }] });
+    await syncPush(ctx, a.cookie, [...done.ops, ...promoted.ops]);
+    await syncPush(ctx, a.cookie, [
+      patch(a, 'performed_set', promoted.setIds[0]?.[0] ?? '', { loggedAt: dayAt(0, 1.5) }),
+    ]);
+    expect(rowOf('workout_session', done.sessionId)).toMatchObject({
+      status: 'completed',
+      ended_at: dayAt(0, 1),
+    });
+    expect(rowOf('workout_session', promoted.sessionId)).toMatchObject({
+      status: 'completed',
+      ended_at: dayAt(0, 1.5),
+    });
+
+    // Clôture `abandoned` d'un appareil en retard, à son heure à lui.
+    const late = { status: 'abandoned', endedAt: dayAt(0, 3), note: 'fermée en retard' };
+    const res = await syncPush(ctx, a.cookie, [
+      patch(a, 'workout_session', done.sessionId, late),
+      patch(a, 'workout_session', promoted.sessionId, late),
+    ]);
+    expect(codes(res.body)).toEqual(['applied', 'applied']);
+    expect(rowOf('workout_session', done.sessionId)).toMatchObject({
+      status: 'completed',
+      ended_at: dayAt(0, 1),
+      note: 'fermée en retard',
+    });
+    expect(rowOf('workout_session', promoted.sessionId)).toMatchObject({
+      status: 'completed',
+      ended_at: dayAt(0, 1.5),
+      note: 'fermée en retard',
+    });
+    expect(rowsOf('sync_rejection')).toEqual([]);
+  });
+
   it('week_type et rules_version figés hors de in_progress (M3) : ignorés du patch, le reste appliqué ; modifiables pendant la séance', async () => {
     const a = await setup();
     const running = sessionOps(a.id, { status: 'in_progress', endedAt: null });

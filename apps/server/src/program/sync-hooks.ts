@@ -94,8 +94,13 @@ const workoutSession: Omit<EntitySyncHooks, 'afterBatch'> = {
         throw new OpRejection('invalid_transition', 'status');
       }
       // Une séance terminée n'est jamais abandonnée après coup (R33) : un appareil en retard qui la clôt `abandoned`
-      // (après la bascule de R51, par exemple) voit son statut ignoré, le reste du patch s'applique (spec brique 4 §18).
-      if (fields.status === 'abandoned' && existing.status === 'completed') delete fields.status;
+      // (après la bascule de R51, par exemple) voit son statut ignoré, et sa fin aussi : elle appartient à la clôture qui
+      // a terminé la séance (l'appareil qui l'a finie, ou R51), pas à l'heure de cet appareil. Le reste du patch
+      // s'applique (spec brique 4 §18).
+      if (fields.status === 'abandoned' && existing.status === 'completed') {
+        delete fields.status;
+        delete fields.ended_at;
+      }
       // Entrées du rejeu figées dès que la séance est close (M3, spec brique 4 §18) : « Changer de lieu » sur un miroir
       // en retard ne les réécrit plus ; le reste du patch s'applique.
       if (existing.status !== 'in_progress') {
