@@ -85,6 +85,18 @@ Sources : documentation officielle d'Anthropic, consultée le 2026-10-30.
 - Contexte de 1M au prix standard ; API Batch à −50 % (non utilisée, 04 §9) ; `inference_geo: "us"` × 1,1 (non utilisé) ; mode rapide 8 $ / 40 $ (non utilisé).
 - Ces prix sont dans `MODEL_PRICES` (`apps/server/src/ai/client.ts`) ; un modèle absent de la table est refusé.
 
+### Prix des modèles de repli du coach (relevés le 2026-11-03)
+
+Source : https://platform.claude.com/docs/en/about-claude/pricing, tableau « Model pricing », consulté le 2026-11-03 (brique 4, tâche 12). Le même jour, les prix d'Opus 5.5, Sonnet 5.5 et Fable 5.1 du tableau précédent n'avaient pas changé.
+
+| Modèle | Entrée | Écriture cache 5 min | Écriture cache 1 h | Lecture cache | Sortie |
+|---|---|---|---|---|---|
+| Claude Opus 5 (`claude-opus-5`) | 5 | 6,25 | 10 | 0,50 | 25 |
+| Claude Opus 4.8 (`claude-opus-4-8`) | 5 | 6,25 | 10 | 0,50 | 25 |
+
+- Ce sont les replis possibles du coach pour un fil adulte (`fallbacks: "default"`, spec de la brique 4 §5.3 et §8.6). Lecture en cache à 0,1 × l'entrée ; contexte de 1M au prix standard (page Pricing, « Long context pricing »).
+- Ils sont dans `MODEL_PRICES`. `chat()` ne refuse pas un modèle sans prix, puisque l'API peut répondre avec un autre modèle que celui demandé : `chatCost` le compte au prix le plus élevé de la table (`HIGHEST_PRICES`, aujourd'hui Claude Fable 5.1, sortie à 50 $) et rend `priceUnknown` (choix C18). `complete()` refuse toujours un modèle absent de la table.
+
 ## Écarts avec 04 §9 et choix
 
 - **Aucun écart sur le modèle** (`claude-opus-5-5`) ni sur l'effort (`high`).

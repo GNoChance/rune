@@ -1,9 +1,20 @@
 /**
- * Faux client IA, déterministe, pour les tests : aucun appel réseau. Il applique les mêmes contrôles et la même
- * lecture de `stop_reason` que le vrai client (`checkRequest`, `readOutput`).
+ * Faux client IA, déterministe, pour les tests : aucun appel réseau. `complete()` applique les mêmes contrôles et
+ * la même lecture de `stop_reason` que le vrai client (`checkRequest`, `readOutput`). `chat()` rejoue des tours
+ * scriptés, garde chaque requête et sa forme sérialisée (`buildChatParams`, celle du vrai client), et complète le
+ * message final comme le vrai client (`chatCost`, `usedFallback`).
  */
 import {
+  type AiChatEvent,
+  type AiChatFinal,
+  type AiChatRequest,
+  buildChatParams,
+  chatCost,
+  usedFallback,
+} from './chat';
+import {
   type AiClient,
+  AiError,
   type AiRequest,
   type AiResult,
   checkRequest,
@@ -25,20 +36,95 @@ export type FakeAiResponses =
   | readonly FakeAiResponse[]
   | ((req: AiRequest, call: number) => FakeAiResponse | Promise<FakeAiResponse>);
 
+/**
+ * Tour scripté de `chat()` : des événements puis le message final, complété par défaut (modèle de la requête,
+ * usage nul, coût par `chatCost`, repli par `usedFallback`) ; `gate` retient le dernier événement et le final.
+ * Ou une erreur, levée après `afterEvents`.
+ */
+export type FakeChatTurn =
+  | {
+      events?: AiChatEvent[];
+      final: Partial<AiChatFinal> & Pick<AiChatFinal, 'blocks' | 'stopReason'>;
+      gate?: Promise<void>;
+    }
+  | { error: AiError; afterEvents?: AiChatEvent[] };
+
+type ScriptedFinal = Extract<FakeChatTurn, { final: unknown }>['final'];
+
 export type FakeAiClient = AiClient & {
-  /** Requêtes reçues, dans l'ordre des appels. */
+  /** Requêtes de `complete()` reçues, dans l'ordre des appels. */
   readonly calls: readonly AiRequest[];
+  /** Requêtes de `chat()` reçues, dans l'ordre des appels. */
+  readonly chatCalls: readonly AiChatRequest[];
+  /** Forme sérialisée de chaque requête de `chat()`, telle que le vrai client l'enverrait. */
+  readonly chatParams: readonly ReturnType<typeof buildChatParams>[];
 };
+
+const aborted = () => new AiError('aborted', 'Appel interrompu.');
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw aborted();
+}
+
+/** Rend les événements un par un ; `signal` aborté (avant, entre deux, ou par l'un d'eux) arrête l'appel. */
+function replay(
+  events: readonly AiChatEvent[],
+  signal: AbortSignal,
+  onEvent: (e: AiChatEvent) => void,
+): void {
+  for (const event of events) {
+    throwIfAborted(signal);
+    onEvent(event);
+  }
+  throwIfAborted(signal);
+}
+
+/** Attend `gate`, sauf si `signal` interrompt l'appel avant. */
+function waitFor(gate: Promise<void>, signal: AbortSignal): Promise<void> {
+  throwIfAborted(signal);
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(aborted());
+    signal.addEventListener('abort', onAbort, { once: true });
+    gate.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+  });
+}
+
+function completeFinal(final: ScriptedFinal, req: AiChatRequest): AiChatFinal {
+  const model = final.model ?? req.model;
+  const usage = final.usage ?? { input_tokens: 0, output_tokens: 0 };
+  const iterations = final.iterations ?? null;
+  const priced = chatCost(model, usage, iterations);
+  return {
+    blocks: final.blocks,
+    stopReason: final.stopReason,
+    stopDetails: final.stopDetails ?? null,
+    model,
+    usage,
+    iterations,
+    thinkingDropped: final.thinkingDropped ?? 0,
+    fallbackUsed: final.fallbackUsed ?? usedFallback(final.blocks, iterations),
+    costUsd: final.costUsd ?? priced.costUsd,
+    priceUnknown: final.priceUnknown ?? priced.priceUnknown,
+  };
+}
 
 export function createFakeAiClient(
   responses: FakeAiResponses,
-  options: { model?: string } = {},
+  options: {
+    model?: string;
+    /** Tours de `chat()` dans l'ordre des appels, ou calculés depuis la requête et le rang de l'appel. */
+    chat?: readonly FakeChatTurn[] | ((req: AiChatRequest, call: number) => FakeChatTurn);
+  } = {},
 ): FakeAiClient {
   const calls: AiRequest[] = [];
+  const chatCalls: AiChatRequest[] = [];
+  const chatParams: ReturnType<typeof buildChatParams>[] = [];
   const defaultModel = options.model ?? 'fake-model';
   return {
     model: defaultModel,
     calls,
+    chatCalls,
+    chatParams,
     async complete<T>(req: AiRequest): Promise<AiResult<T>> {
       checkRequest(req);
       const call = calls.length;
@@ -55,6 +141,108 @@ export function createFakeAiClient(
         model: response.model ?? req.model ?? defaultModel,
         maxTokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
       });
+    },
+    /** Rejoue le tour : ses événements sauf le dernier, `gate`, le dernier, puis le final ; `req.signal` l'arrête. */
+    async chat(req: AiChatRequest, onEvent: (e: AiChatEvent) => void): Promise<AiChatFinal> {
+      const params = buildChatParams(req);
+      const call = chatCalls.length;
+      chatCalls.push(req);
+      chatParams.push(params);
+      const turn = typeof options.chat === 'function' ? options.chat(req, call) : options.chat?.[call];
+      if (turn === undefined) {
+        throw new Error(`Faux client IA : aucun tour prévu pour l'appel ${call + 1} de chat().`);
+      }
+      if ('error' in turn) {
+        replay(turn.afterEvents ?? [], req.signal, onEvent);
+        throw turn.error;
+      }
+      const events = turn.events ?? [];
+      replay(events.slice(0, -1), req.signal, onEvent);
+      if (turn.gate !== undefined) await waitFor(turn.gate, req.signal);
+      replay(events.slice(-1), req.signal, onEvent);
+      return completeFinal(turn.final, req);
+    },
+  };
+}
+
+/** Options des aides : champs du final à fixer, et `gate` du tour. */
+type FakeTurnOptions = Partial<AiChatFinal> & { gate?: Promise<void> };
+
+/** Taille des deltas de texte du faux, en caractères. */
+const DELTA_CHARS = 7;
+
+function textEvents(index: number, text: string): AiChatEvent[] {
+  const chars = Array.from(text);
+  const deltas: AiChatEvent[] = [];
+  for (let at = 0; at < chars.length; at += DELTA_CHARS) {
+    deltas.push({ type: 'text_delta', text: chars.slice(at, at + DELTA_CHARS).join('') });
+  }
+  return [{ type: 'block_start', index, block: 'text' }, ...deltas, { type: 'block_stop', index }];
+}
+
+function scripted(events: AiChatEvent[], final: ScriptedFinal, opts: FakeTurnOptions): FakeChatTurn {
+  const { gate, ...fields } = opts;
+  return { events, final: { ...final, ...fields }, ...(gate === undefined ? {} : { gate }) };
+}
+
+/** Réponse texte (`end_turn`), en deltas de 7 caractères. */
+export function fakeText(text: string, opts: FakeTurnOptions = {}): FakeChatTurn {
+  return scripted(textEvents(0, text), { blocks: [{ type: 'text', text }], stopReason: 'end_turn' }, opts);
+}
+
+/** Appel d'un outil (`tool_use`). */
+export function fakeToolUse(
+  id: string,
+  name: string,
+  input: unknown,
+  opts: FakeTurnOptions = {},
+): FakeChatTurn {
+  return scripted(
+    [
+      { type: 'block_start', index: 0, block: 'tool_use' },
+      { type: 'block_stop', index: 0 },
+    ],
+    { blocks: [{ type: 'tool_use', id, name, input }], stopReason: 'tool_use' },
+    opts,
+  );
+}
+
+/** Refus avant toute sortie (`refusal`), avec sa catégorie. */
+export function fakeRefusal(category: string | null): FakeChatTurn {
+  return {
+    final: {
+      blocks: [],
+      stopReason: 'refusal',
+      stopDetails: { category, explanation: null, recommendedModel: null },
+    },
+  };
+}
+
+/** Repli côté serveur : `fromModel` refuse, `toModel` répond le texte (bloc `fallback`, itérations des deux). */
+export function fakeFallbackText(text: string, fromModel: string, toModel: string): FakeChatTurn {
+  const none = { input_tokens: 0, output_tokens: 0 };
+  return {
+    events: [
+      { type: 'block_start', index: 0, block: 'fallback' },
+      { type: 'block_stop', index: 0 },
+      ...textEvents(1, text),
+    ],
+    final: {
+      blocks: [
+        {
+          type: 'fallback',
+          from: { model: fromModel },
+          to: { model: toModel },
+          trigger: { type: 'refusal', category: null },
+        },
+        { type: 'text', text },
+      ],
+      stopReason: 'end_turn',
+      model: toModel,
+      iterations: [
+        { type: 'message', model: fromModel, usage: none },
+        { type: 'fallback_message', model: toModel, usage: none },
+      ],
     },
   };
 }

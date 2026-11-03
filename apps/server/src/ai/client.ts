@@ -1,13 +1,16 @@
 /**
  * Client IA (04 §9) : un seul point d'appel à l'API Claude, posé en brique 2 pour la rédaction des fiches
- * (`pnpm exercises:draft`, poste de dev seulement) et repris par le coach en brique 4. Il fixe le modèle et
- * l'effort, demande une sortie structurée par JSON Schema, met en cache la partie fixe du message système, lit
- * `stop_reason` et calcule le coût depuis `usage`. Un faux déterministe le remplace dans les tests (`fake.ts`).
+ * (`pnpm exercises:draft`, poste de dev seulement) et repris par le coach en brique 4. `complete()` fixe le modèle
+ * et l'effort, demande une sortie structurée par JSON Schema, met en cache la partie fixe du message système, lit
+ * `stop_reason` et calcule le coût depuis `usage`. `chat()`, la conversation en flux du coach, vit dans `chat.ts`.
+ * Un faux déterministe le remplace dans les tests (`fake.ts`).
  *
  * Valeurs de l'API (modèle, effort, sortie structurée, cache, prix) vérifiées dans la documentation d'Anthropic :
  * voir `scripts/exercises/NOTES.md`. Aucune donnée personnelle ne passe par ce client.
  */
 import Anthropic from '@anthropic-ai/sdk';
+// Cycle voulu avec `chat.ts`, sans danger : aucun des deux modules ne lit l'autre à son chargement.
+import { type AiChatEvent, type AiChatFinal, type AiChatRequest, streamChat } from './chat';
 
 /** Niveaux d'effort exposés (`output_config.effort`) ; l'API accepte aussi `xhigh` et `max`. */
 export type AiEffort = 'low' | 'medium' | 'high';
@@ -38,6 +41,11 @@ export interface AiClient {
   /** Modèle par défaut des requêtes. */
   readonly model: string;
   complete<T>(req: AiRequest): Promise<AiResult<T>>;
+  /**
+   * Conversation en flux du coach (spec brique 4, §5.3) : `onEvent` reçoit les deltas de texte et les bornes des
+   * blocs, la promesse rend le message final. Lève une `AiError` du code classé par `classifyAiError`.
+   */
+  chat(req: AiChatRequest, onEvent: (e: AiChatEvent) => void): Promise<AiChatFinal>;
 }
 
 /**
@@ -60,13 +68,25 @@ export type ModelPrices = {
 
 /**
  * Prix de l'API Claude (premier parti, routage global), relevés le 2026-10-30 sur la page Pricing d'Anthropic
- * (`scripts/exercises/NOTES.md`). Un modèle absent d'ici est refusé : un coût faux serait pire qu'une erreur.
+ * (`scripts/exercises/NOTES.md`) ; replis du coach (`claude-opus-5`, `claude-opus-4-8`) relevés le 2026-11-03.
+ * `complete()` refuse un modèle absent d'ici : un coût faux serait pire qu'une erreur. `chat()` ne choisit pas le
+ * modèle qui répond après un repli : il compte un modèle sans prix à `HIGHEST_PRICES` (`chatCost`).
  */
 export const MODEL_PRICES: Readonly<Record<string, ModelPrices>> = {
   'claude-opus-5-5': { input: 4, output: 20, cacheWrite5m: 5, cacheWrite1h: 8, cacheRead: 0.2 },
   'claude-sonnet-5-5': { input: 2, output: 10, cacheWrite5m: 2.5, cacheWrite1h: 4, cacheRead: 0.1 },
   'claude-fable-5-1': { input: 10, output: 50, cacheWrite5m: 12.5, cacheWrite1h: 20, cacheRead: 0.25 },
+  'claude-opus-5': { input: 5, output: 25, cacheWrite5m: 6.25, cacheWrite1h: 10, cacheRead: 0.5 },
+  'claude-opus-4-8': { input: 5, output: 25, cacheWrite5m: 6.25, cacheWrite1h: 10, cacheRead: 0.5 },
 };
+
+/**
+ * Entrée de `MODEL_PRICES` au plus haut prix de sortie : le prix d'un modèle servi sans prix connu (spec brique 4,
+ * choix C18). Ici plutôt que dans `chat.ts`, qui la lit, car elle est calculée au chargement depuis la table.
+ */
+export const HIGHEST_PRICES: ModelPrices = Object.values(MODEL_PRICES).reduce((top, prices) =>
+  prices.output > top.output ? prices : top,
+);
 
 /** Champs de `usage` utiles au coût (forme de l'API Messages). */
 export type TokenUsage = {
@@ -90,7 +110,11 @@ export function pricesOf(model: string): ModelPrices {
 
 /** Coût d'un appel en dollars. `input_tokens` ne compte que les jetons ni lus ni écrits en cache. */
 export function costUsd(model: string, usage: TokenUsage): number {
-  const p = pricesOf(model);
+  return costAtPrices(pricesOf(model), usage);
+}
+
+/** Coût en dollars de `usage` aux prix donnés ; `costUsd` pour un modèle de la table. */
+export function costAtPrices(p: ModelPrices, usage: TokenUsage): number {
   const written = usage.cache_creation_input_tokens ?? 0;
   const by1h = usage.cache_creation?.ephemeral_1h_input_tokens ?? 0;
   const by5m = usage.cache_creation?.ephemeral_5m_input_tokens ?? written - by1h;
@@ -103,7 +127,25 @@ export function costUsd(model: string, usage: TokenUsage): number {
   return dollars / 1_000_000;
 }
 
-export type AiErrorCode = 'max_tokens' | 'refusal' | 'stop_reason' | 'invalid_json' | 'api';
+/**
+ * `max_tokens`, `refusal`, `stop_reason`, `invalid_json` et `api` : `complete()`. Les autres codes viennent de
+ * `classifyAiError` (`chat()`, spec brique 4 §5.3), où `api` reste le code d'une erreur non reconnue.
+ */
+export type AiErrorCode =
+  | 'max_tokens'
+  | 'refusal'
+  | 'stop_reason'
+  | 'invalid_json'
+  | 'api'
+  | 'rate_limited'
+  | 'overloaded'
+  | 'server'
+  | 'network'
+  | 'spend_limit'
+  | 'bad_request'
+  | 'auth'
+  | 'aborted'
+  | 'timeout';
 
 /**
  * Échec d'un appel. `fatal` : la même requête échouera pour tout le lot (clé refusée, requête invalide), inutile
@@ -301,10 +343,11 @@ function apiError(error: unknown): AiError {
 }
 
 /**
- * Client réel (SDK officiel `@anthropic-ai/sdk`). Requête : `system` en blocs texte avec `cache_control` sur les
- * blocs marqués, un message `user`, `output_config` avec l'effort et la sortie structurée. Pas de paramètre
- * `thinking` : la réflexion adaptative est toujours active sur Claude Opus 5.5 (`disabled` y est refusé), l'effort
- * la règle. Pas d'API Batch, pas de modèle de repli (04 §9 : le modèle est noté dans la fiche).
+ * Client réel (SDK officiel `@anthropic-ai/sdk`). Requête de `complete()` : `system` en blocs texte avec
+ * `cache_control` sur les blocs marqués, un message `user`, `output_config` avec l'effort et la sortie structurée.
+ * Pas de paramètre `thinking` : la réflexion adaptative est toujours active sur Claude Opus 5.5 (`disabled` y est
+ * refusé), l'effort la règle. Pas d'API Batch, pas de modèle de repli (04 §9 : le modèle est noté dans la fiche).
+ * `chat()` passe par `streamChat` (`chat.ts`) : flux, et replis côté serveur pour un fil adulte.
  */
 export function createAnthropicClient(options: AnthropicClientOptions): AiClient {
   pricesOf(options.model);
@@ -350,6 +393,9 @@ export function createAnthropicClient(options: AnthropicClientOptions): AiClient
         maxTokens,
         refusalCategory: message.stop_details?.category ?? null,
       });
+    },
+    chat(req: AiChatRequest, onEvent: (e: AiChatEvent) => void): Promise<AiChatFinal> {
+      return streamChat(sdk, req, onEvent);
     },
   };
 }

@@ -1,4 +1,15 @@
 export {
+  type AiChatEvent,
+  type AiChatFinal,
+  type AiChatRequest,
+  type AiIteration,
+  type AiTool,
+  buildChatParams,
+  chatCost,
+  classifyAiError,
+  usedFallback,
+} from './chat';
+export {
   type AiClient,
   type AiEffort,
   AiError,
@@ -11,6 +22,7 @@ export {
   costUsd,
   createAnthropicClient,
   DEFAULT_MAX_TOKENS,
+  HIGHEST_PRICES,
   MAX_CACHE_BREAKPOINTS,
   MODEL_PRICES,
   type ModelPrices,
@@ -20,4 +32,14 @@ export {
   type TokenUsage,
   toStructuredSchema,
 } from './client';
-export { createFakeAiClient, type FakeAiClient, type FakeAiResponse, type FakeAiResponses } from './fake';
+export {
+  createFakeAiClient,
+  type FakeAiClient,
+  type FakeAiResponse,
+  type FakeAiResponses,
+  type FakeChatTurn,
+  fakeFallbackText,
+  fakeRefusal,
+  fakeText,
+  fakeToolUse,
+} from './fake';
