@@ -278,7 +278,7 @@ async function applyOp(b: Batch, raw: Raw): Promise<Applied> {
   const outcome =
     op.kind === 'restore_upsert'
       ? restoreOutcome(await applyRestoreUpsert(hookCtx, rule, fields, existing))
-      : await writeRow(b, op, existing, fields, kept);
+      : await writeRow(b, hookCtx, hooks, existing, fields, kept);
   // 11.
   if (outcome.wrote && !kept) await hooks?.afterApply?.(hookCtx);
   // 12.
@@ -403,16 +403,17 @@ function keepFields(
 
 async function writeRow(
   b: Batch,
-  op: SyncOp,
+  ctx: HookCtx,
+  hooks: EntitySyncHooks | undefined,
   existing: ExistingRow | undefined,
   fields: Record<string, unknown>,
   /** `delete` refusé par `keepOnDelete` : la ligne ne prend qu'un rev neuf. */
   kept = false,
 ): Promise<{ rev: number | null; wrote: boolean }> {
   const { trx, deps, user } = b;
+  const { op } = ctx;
   const table = sql.table(op.entity);
-  if (op.kind === 'create') {
-    if (existing) return { rev: existing.rev, wrote: false };
+  if (op.kind === 'create' && !existing) {
     const stamp = await writeStamp(trx, deps, user.id);
     const row: Record<string, unknown> = {
       id: op.id,
@@ -432,9 +433,23 @@ async function writeRow(
     if (op.kind === 'patch') throw new OpRejection('validation', 'row_missing');
     return { rev: null, wrote: false };
   }
-  if (existing.deletedAt !== null) return { rev: existing.rev, wrote: false };
+  // Écriture sur une tombe, ou création d'une ligne connue : sans effet, sauf une tombe que la table fait revivre.
+  const revived =
+    existing.deletedAt !== null &&
+    op.kind !== 'delete' &&
+    (await hooks?.reviveOnWrite?.(ctx, fields)) === true;
+  if (!revived && (op.kind === 'create' || existing.deletedAt !== null)) {
+    return { rev: existing.rev, wrote: false };
+  }
   const stamp = await writeStamp(trx, deps, user.id);
-  const written = op.kind !== 'delete' ? fields : kept ? {} : { deleted_at: stamp.updatedAt };
+  let written: Record<string, unknown>;
+  if (revived) {
+    // Écrite comme par un patch : les colonnes immuables d'un `create` sont retirées (celles d'un patch le sont déjà).
+    const immutable = hooks?.immutableColumns ?? [];
+    const writable = Object.entries(fields).filter(([column]) => !immutable.includes(column));
+    written = { ...Object.fromEntries(writable), deleted_at: null };
+  } else if (op.kind !== 'delete') written = fields;
+  else written = kept ? {} : { deleted_at: stamp.updatedAt };
   const set: Record<string, unknown> = {
     ...written,
     rev: stamp.rev,

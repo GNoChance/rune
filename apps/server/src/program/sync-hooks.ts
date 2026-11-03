@@ -88,11 +88,20 @@ const workoutSession: Omit<EntitySyncHooks, 'afterBatch'> = {
         .executeTakeFirst();
       // Ligne absente ou supprimée : la synchro générique rejette ou applique sans effet.
       if (!existing || existing.deletedAt !== null) return;
-      // Jamais de retour à `in_progress` ; une séance terminée n'est jamais abandonnée après coup (ruling R33). Une
-      // séance abandonnée peut encore être terminée : l'appareil qui la tenait la finit après sa clôture (D12).
-      const back = fields.status === 'in_progress' && existing.status !== 'in_progress';
-      const dropped = fields.status === 'abandoned' && existing.status === 'completed';
-      if (back || dropped) throw new OpRejection('invalid_transition', 'status');
+      // Jamais de retour à `in_progress` (ruling R33). Une séance abandonnée peut encore être terminée : l'appareil qui
+      // la tenait la finit après sa clôture (D12).
+      if (fields.status === 'in_progress' && existing.status !== 'in_progress') {
+        throw new OpRejection('invalid_transition', 'status');
+      }
+      // Une séance terminée n'est jamais abandonnée après coup (R33) : un appareil en retard qui la clôt `abandoned`
+      // (après la bascule de R51, par exemple) voit son statut ignoré, le reste du patch s'applique (spec brique 4 §18).
+      if (fields.status === 'abandoned' && existing.status === 'completed') delete fields.status;
+      // Entrées du rejeu figées dès que la séance est close (M3, spec brique 4 §18) : « Changer de lieu » sur un miroir
+      // en retard ne les réécrit plus ; le reste du patch s'applique.
+      if (existing.status !== 'in_progress') {
+        delete fields.week_type;
+        delete fields.rules_version;
+      }
       storedStart = Date.parse(existing.startedAt);
     }
     await assertOwnReference(trx, 'programInstance', fields.instance_id, userId);
@@ -273,6 +282,37 @@ const performedSet: Omit<EntitySyncHooks, 'afterBatch'> = {
       .where('s.deletedAt', 'is', null)
       .executeTakeFirst();
     return done !== undefined;
+  },
+
+  /**
+   * Série faite poussée après sa suppression (dette I2, spec brique 4 §18, choix C41) : un `patch` ou un `create` qui
+   * porte un `logged_at` non nul fait revivre la série si sa séance est vivante, et son exercice supprimé avec elle
+   * (rev neuf). C'est la série validée hors ligne sur un appareil pendant que l'autre, qui ne la voyait pas faite, la
+   * retirait ou refaisait le plan : sa suppression, arrivée avant elle, la perdait. Séance supprimée (« Supprimer la
+   * séance ») : la suppression l'emporte. Écart assumé à R-SYN-6 et à « la suppression l'emporte sur tout patch
+   * ultérieur ». Le rejeu et D4 suivent dans `afterBatch`.
+   */
+  async reviveOnWrite({ trx, deps, userId, op }: HookCtx, fields: Fields) {
+    if (fields.logged_at == null) return false;
+    const exercise = await trx
+      .selectFrom('performedSet as t')
+      .innerJoin('performedExercise as e', 'e.id', 't.performedExerciseId')
+      .innerJoin('workoutSession as s', 's.id', 'e.sessionId')
+      .select(['e.id', 'e.deletedAt'])
+      .where('t.id', '=', op.id)
+      .where('t.ownerId', '=', userId)
+      .where('s.deletedAt', 'is', null)
+      .executeTakeFirst();
+    if (!exercise) return false;
+    if (exercise.deletedAt !== null) {
+      const stamp = await writeStamp(trx, deps, userId);
+      await trx
+        .updateTable('performedExercise')
+        .set({ deletedAt: null, ...stamp })
+        .where('id', '=', exercise.id)
+        .execute();
+    }
+    return true;
   },
 };
 

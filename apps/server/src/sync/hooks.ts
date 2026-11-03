@@ -34,6 +34,13 @@ export interface EntitySyncHooks {
    * reçoit la ligne comme écrite.
    */
   keepOnDelete?(ctx: HookCtx): Promise<boolean>;
+  /**
+   * `patch` ou `create` d'une ligne supprimée logiquement, après `beforeApply` et avec les mêmes `fields` (sans ce
+   * hook, ou s'il rend faux, l'op est acquittée sans effet) : vrai, la ligne revit, écrite comme par un patch
+   * (`deleted_at` à NULL, champs écrits sans les colonnes immuables, rev neuf) ; `afterApply` et `afterBatch` la
+   * reçoivent comme écrite.
+   */
+  reviveOnWrite?(ctx: HookCtx, fields: Record<string, unknown>): Promise<boolean>;
   /** Après une écriture effective de l'op. */
   afterApply?(ctx: HookCtx): Promise<void>;
   /**

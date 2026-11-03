@@ -114,27 +114,63 @@ describe('workout_session au push', () => {
     expect(rowOf('workout_session', x.sessionId)?.profile).toBe('adult');
   });
 
-  it('completed ou abandoned → in_progress, completed → abandoned : invalid_transition (R33)', async () => {
+  it('completed ou abandoned → in_progress : invalid_transition (R33) ; completed → abandoned : statut ignoré, reste du patch appliqué (spec brique 4 §18)', async () => {
     const a = await setup();
     const running = sessionOps(a.id, { status: 'in_progress', endedAt: null });
     const done = sessionOps(a.id, { status: 'completed' });
     const dropped = sessionOps(a.id, { status: 'abandoned' });
     await syncPush(ctx, a.cookie, [...running.ops, ...done.ops, ...dropped.ops]);
     const res = await syncPush(ctx, a.cookie, [
-      patch(a, 'workout_session', done.sessionId, { status: 'in_progress' }),
+      patch(a, 'workout_session', done.sessionId, { status: 'in_progress', note: 'reprise' }),
       patch(a, 'workout_session', dropped.sessionId, { status: 'in_progress', note: 'retour' }),
       patch(a, 'workout_session', running.sessionId, { status: 'completed', endedAt: dayAt(0, 1) }),
+      // Appareil en retard qui clôt `abandoned` une séance que le serveur tient terminée (R51 l'a promue, par exemple).
       patch(a, 'workout_session', done.sessionId, { status: 'abandoned', note: 'fermée' }),
+      patch(a, 'workout_session', running.sessionId, { status: 'abandoned', note: 'après coup' }),
     ]);
     expect(codes(res.body)).toEqual([
       'invalid_transition',
       'invalid_transition',
       'applied',
-      'invalid_transition',
+      'applied',
+      'applied',
     ]);
     expect(rowOf('workout_session', dropped.sessionId)).toMatchObject({ status: 'abandoned', note: null });
-    expect(rowOf('workout_session', running.sessionId)?.status).toBe('completed');
-    expect(rowOf('workout_session', done.sessionId)).toMatchObject({ status: 'completed', note: null });
+    expect(rowOf('workout_session', running.sessionId)).toMatchObject({
+      status: 'completed',
+      note: 'après coup',
+    });
+    expect(rowOf('workout_session', done.sessionId)).toMatchObject({ status: 'completed', note: 'fermée' });
+    expect(rowsOf('sync_rejection').map((r) => r.code)).toEqual(Array(2).fill('invalid_transition'));
+  });
+
+  it('week_type et rules_version figés hors de in_progress (M3) : ignorés du patch, le reste appliqué ; modifiables pendant la séance', async () => {
+    const a = await setup();
+    const running = sessionOps(a.id, { status: 'in_progress', endedAt: null });
+    const done = sessionOps(a.id, { status: 'completed' });
+    const dropped = sessionOps(a.id, { status: 'abandoned' });
+    await syncPush(ctx, a.cookie, [...running.ops, ...done.ops, ...dropped.ops]);
+    // « Changer de lieu » sur un miroir en retard : le plan refait réécrirait des entrées du rejeu.
+    const replanned = { weekType: 'deload', rulesVersion: '2', note: 'autre lieu' };
+    const res = await syncPush(ctx, a.cookie, [
+      patch(a, 'workout_session', done.sessionId, replanned),
+      patch(a, 'workout_session', dropped.sessionId, replanned),
+      patch(a, 'workout_session', running.sessionId, replanned),
+    ]);
+    expect(codes(res.body)).toEqual(['applied', 'applied', 'applied']);
+    for (const id of [done.sessionId, dropped.sessionId]) {
+      expect(rowOf('workout_session', id)).toMatchObject({
+        week_type: 'normal',
+        rules_version: '1',
+        note: 'autre lieu',
+      });
+    }
+    expect(rowOf('workout_session', running.sessionId)).toMatchObject({
+      week_type: 'deload',
+      rules_version: '2',
+      note: 'autre lieu',
+    });
+    expect(rowsOf('sync_rejection')).toEqual([]);
   });
 
   it('abandoned → completed admis : un appareil termine une séance qu’un autre a close comme oubliée (R33)', async () => {
@@ -567,6 +603,132 @@ describe('série faite jamais supprimée par un appareil en retard (ruling R49)'
     const rows = [...rowsOf('workout_session'), ...rowsOf('performed_exercise'), ...rowsOf('performed_set')];
     expect(rows).toHaveLength(8);
     expect(rows.every((r) => r.deleted_at !== null)).toBe(true);
+  });
+});
+
+describe('série faite poussée après sa suppression (I2, spec brique 4 §18, choix C41)', () => {
+  /**
+   * Séance en cours poussée, `exercises` exercices (un par défaut) de deux séries jamais faites ; `instanceId` pour le
+   * rejeu. Rend aussi le premier exercice et ses deux séries.
+   */
+  async function running(a: Member, o: { instanceId?: string; exercises?: number } = {}) {
+    const s = sessionOps(a.id, {
+      ...(o.instanceId ? { instanceId: o.instanceId } : {}),
+      status: 'in_progress',
+      endedAt: null,
+      exercises: Array.from({ length: o.exercises ?? 1 }, () => ({
+        sets: [{ logged: false }, { logged: false }],
+      })),
+    });
+    await syncPush(ctx, a.cookie, s.ops);
+    const [set, other] = s.setIds[0] ?? [];
+    const exercise = s.exerciseIds[0];
+    if (!set || !other || !exercise) throw new Error('séance incomplète');
+    return { ...s, exercise, set, other };
+  }
+
+  it('série faite poussée après sa suppression : vivante avec ses valeurs, rev neuf, exercice parent ressuscité, décision rejouée', async () => {
+    const a = await setup();
+    const instanceId = await enroll(ctx, a.id, templateFixture('t'));
+    const s = await running(a, { instanceId });
+    // L'autre appareil, qui ne voit aucune série faite, supprime l'exercice et ses séries (plan refait), puis clôt la
+    // séance : abandonnée, faute de série faite (D4).
+    await syncPush(ctx, a.cookie, [
+      del(a, 'performed_set', s.set),
+      del(a, 'performed_set', s.other),
+      del(a, 'performed_exercise', s.exercise),
+      patch(a, 'workout_session', s.sessionId, { status: 'abandoned', endedAt: dayAt(0, 1) }),
+    ]);
+    expect(rowOf('performed_set', s.set)?.deleted_at).not.toBeNull();
+    expect(rowOf('performed_exercise', s.exercise)?.deleted_at).not.toBeNull();
+    expect(rowOf('workout_session', s.sessionId)?.status).toBe('abandoned');
+    expect(rowOf('engine_decision', s.exercise)).toBeUndefined();
+    const before = rowOf('workout_session', s.sessionId)?.rev as number;
+
+    // L'appareil qui tenait la séance revient avec la série faite hors ligne, seule dans son lot.
+    const res = await syncPush(ctx, a.cookie, [
+      patch(a, 'performed_set', s.set, { loadG: 22_500, reps: 10, loggedAt: dayAt(0, 0.5) }),
+    ]);
+    expect(codes(res.body)).toEqual(['applied']);
+    const set = rowOf('performed_set', s.set);
+    expect(set).toMatchObject({ deleted_at: null, load_g: 22_500, reps: 10, logged_at: dayAt(0, 0.5) });
+    expect(set?.rev as number).toBeGreaterThan(before);
+    expect(res.body.results[0].rev).toBe(set?.rev);
+    const exercise = rowOf('performed_exercise', s.exercise);
+    expect(exercise?.deleted_at).toBeNull();
+    expect(exercise?.rev as number).toBeGreaterThan(before);
+    // La série jamais faite reste supprimée.
+    expect(rowOf('performed_set', s.other)?.deleted_at).not.toBeNull();
+    // `afterBatch` reçoit la série : D4 termine la séance (R51), le rejeu compte la série ressuscitée.
+    expect(rowOf('workout_session', s.sessionId)?.status).toBe('completed');
+    expect(rowOf('engine_decision', s.exercise)).toMatchObject({ deleted_at: null, result: 'CALIBRATION' });
+    expect(rowsOf('sync_rejection')).toEqual([]);
+  });
+
+  it('séance supprimée : la série reste supprimée, op applied sans effet (la suppression l’emporte)', async () => {
+    const a = await setup();
+    const s = await running(a);
+    await syncPush(ctx, a.cookie, [del(a, 'workout_session', s.sessionId)]);
+    const tomb = rowOf('performed_set', s.set);
+    expect(tomb?.deleted_at).not.toBeNull();
+
+    const res = await syncPush(ctx, a.cookie, [
+      patch(a, 'performed_set', s.set, { loadG: 22_500, reps: 10, loggedAt: dayAt(0, 0.5) }),
+    ]);
+    expect(res.body.results).toEqual([{ opId: expect.any(String), status: 'applied', rev: tomb?.rev }]);
+    expect(rowOf('performed_set', s.set)).toEqual(tomb);
+    expect(rowOf('performed_exercise', s.exercise)?.deleted_at).not.toBeNull();
+  });
+
+  it('patch sans logged_at, ou à null, sur la tombe d’une série : sans effet', async () => {
+    const a = await setup();
+    const s = await running(a);
+    await syncPush(ctx, a.cookie, [del(a, 'performed_set', s.set)]);
+    const tomb = rowOf('performed_set', s.set);
+
+    const res = await syncPush(ctx, a.cookie, [
+      patch(a, 'performed_set', s.set, { reps: 9 }),
+      patch(a, 'performed_set', s.set, { reps: 8, loggedAt: null }),
+    ]);
+    expect(res.body.results.map((r: Row) => [r.status, r.rev])).toEqual([
+      ['applied', tomb?.rev],
+      ['applied', tomb?.rev],
+    ]);
+    expect(rowOf('performed_set', s.set)).toEqual(tomb);
+  });
+
+  it('création qui porte un logged_at sur la tombe d’une série : même résurrection, exercice d’origine gardé (R30)', async () => {
+    const a = await setup();
+    const s = await running(a, { exercises: 2 });
+    await syncPush(ctx, a.cookie, [del(a, 'performed_set', s.set), del(a, 'performed_set', s.other)]);
+    const tomb = rowOf('performed_set', s.other);
+    const create = (id: string, loggedAt: string | null) =>
+      makeOp({
+        userId: a.id,
+        entity: 'performed_set',
+        id,
+        kind: 'create',
+        fields: {
+          performedExerciseId: s.exerciseIds[1],
+          position: 1,
+          kind: 'work',
+          loadMode: 'dumbbell',
+          loadG: 25_000,
+          reps: 8,
+          loggedAt,
+        },
+      });
+
+    const res = await syncPush(ctx, a.cookie, [create(s.set, dayAt(0, 0.5)), create(s.other, null)]);
+    expect(codes(res.body)).toEqual(['applied', 'applied']);
+    expect(rowOf('performed_set', s.set)).toMatchObject({
+      deleted_at: null,
+      performed_exercise_id: s.exercise,
+      load_g: 25_000,
+      reps: 8,
+      logged_at: dayAt(0, 0.5),
+    });
+    expect(rowOf('performed_set', s.other)).toEqual(tomb);
   });
 });
 
