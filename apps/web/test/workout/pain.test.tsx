@@ -17,7 +17,7 @@ const ADVICE =
 const PARENT = 'Parles-en à un parent.';
 const ADULT_NEARBY = 'Entraîne-toi avec un adulte expérimenté.';
 
-const HEALTH = { active: true, textVersion: 'v1', at: '2026-10-01T10:00:00.000Z' };
+const HEALTH = { active: true, textVersion: '1.0', at: '2026-10-01T10:00:00.000Z' };
 const NO_AI = { active: false, textVersion: null, at: null };
 const consenting = () => makeMe({ consents: { health: HEALTH, aiCoach: NO_AI } });
 

@@ -87,8 +87,8 @@ describe('ordre des cartes (spec §7.9)', () => {
     await openHome(db);
     const resume = await screen.findByRole('link', { name: 'Reprendre' });
     expect(resume.getAttribute('href')).toBe('/workout/s-live');
-    const today = screen.getByRole('region', { name: 'Séance A' });
-    const proposal = screen.getByRole('link', { name: 'Voir la proposition' });
+    const today = await screen.findByRole('region', { name: 'Séance A' });
+    const proposal = await screen.findByRole('link', { name: 'Voir la proposition' });
     expect(proposal.getAttribute('href')).toBe('/program');
     const quests = screen.getByRole('group', { name: 'Éveil en cours.' });
     const coach = screen.getByText("Aujourd'hui");

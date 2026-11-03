@@ -4,6 +4,7 @@ import { useMe } from '../app-services';
 import { UpdateBanner } from '../sw/UpdateBanner';
 import { ConnectionPill } from './ConnectionPill';
 import { RuneMark, RuneWordmark } from './Logo';
+import { ReadErrorBoundary } from './ReadErrorBoundary';
 import { SideNav } from './SideNav';
 import { useScreenEntrance, useScreenTransition } from './screen-transition';
 import shell from './shell.module.css';
@@ -35,7 +36,7 @@ export function AppShell(p: { children: ReactNode }) {
           <UpdateBanner />
         </div>
         <main ref={screen} className={shell.main} data-screen-transition={transition}>
-          {p.children}
+          <ReadErrorBoundary resetKey={path}>{p.children}</ReadErrorBoundary>
         </main>
         <PublicLinks />
       </div>

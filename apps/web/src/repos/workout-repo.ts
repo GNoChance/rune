@@ -531,11 +531,12 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
 
   /** Après une séance terminée d'un programme : décisions et cibles suivantes en copies provisoires (§4.4.8). */
   async function afterCompleted(
-    closed: readonly { status: string; instanceId: string | null }[],
+    closed: readonly { id: string; status: string; instanceId: string | null }[],
   ): Promise<void> {
-    if (!closed.some((c) => c.status === 'completed' && c.instanceId !== null)) return;
+    const completed = closed.filter((c) => c.status === 'completed' && c.instanceId !== null);
+    if (completed.length === 0) return;
     try {
-      await programViewFor(s).refreshProvisional();
+      await programViewFor(s).refreshProvisional(completed.map((c) => c.id));
     } catch {
       // Copies provisoires seulement : le pull apportera celles du serveur.
     }
@@ -799,7 +800,7 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
       // séance tenue par un autre appareil (R49, vu par `close`).
       const prune = s.sync.getState().pulledThisRun;
       const closed = await tx(() => close(w, sessionId, nowIso(), prune));
-      await afterCompleted([closed]);
+      await afterCompleted([{ ...closed, id: sessionId }]);
       void s.sync.syncNow('mutation');
       return closed.status;
     },

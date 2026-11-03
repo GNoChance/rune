@@ -410,7 +410,7 @@ describe('copies provisoires (classe D, §4.4.8)', () => {
     await seedCompletedSession(db, '1');
     const view = await repos.programView.view();
     if (!view) throw new Error('vue absente');
-    await repos.programView.storeProvisional(view.replay);
+    await repos.programView.storeProvisional(view.replay, ['s-old']);
     const copy = await db.mirror('slot_state').get(SLOT_STATE_ID);
     expect(copy).toMatchObject({ provisional: 1, serverRevSeen: null, deletedAt: null });
     expect(await db.mirror('engine_decision').get('pe-old')).toMatchObject({ provisional: 1 });
@@ -424,7 +424,7 @@ describe('copies provisoires (classe D, §4.4.8)', () => {
     expect(pulled?.serverRevSeen).toBe(40);
 
     // Même contenu : rien n'est réécrit.
-    await repos.programView.storeProvisional(view.replay);
+    await repos.programView.storeProvisional(view.replay, ['s-old']);
     expect(await db.mirror('slot_state').get(SLOT_STATE_ID)).toEqual(pulled);
   });
 
@@ -533,7 +533,7 @@ describe('copies provisoires (classe D, §4.4.8)', () => {
       .put({ ...SERVER_STATE, id: 'i-1:B1:old', provisional: 1, serverRevSeen: null, deletedAt: null });
     const view = await repos.programView.view();
     if (!view) throw new Error('vue absente');
-    await repos.programView.storeProvisional(view.replay);
+    await repos.programView.storeProvisional(view.replay, ['s-old']);
     expect(await db.mirror('slot_state').get('i-1:B1:old')).toBeUndefined();
     expect((await db.mirror('slot_state').get(SLOT_STATE_ID))?.painStreak).toBe(0);
   });

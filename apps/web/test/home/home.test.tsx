@@ -396,6 +396,8 @@ describe('entrée des cartes en cascade, une fois les lectures locales faites', 
 
       release();
       await until(() => cardStack() !== null);
+      // La carte du programme a sa propre frontière d'erreur (M5) : elle lit pour son compte et entre dès sa lecture.
+      await until(() => cardStack()?.children.length === 5);
       // Même rendu : « Choisis ton programme » (aucun programme dans cette base), la bulle, les tuiles, la ligne,
       // et le voyant en dernier, tous enfants de la cascade (chacun son retard, 60 ms après le précédent) ; les
       // quêtes, toutes faites, n'ont plus de fenêtre.
@@ -485,5 +487,22 @@ describe('feuille de l’accueil (home.module.css)', () => {
       expect(reduced, `${selector} réduit`).toMatch(/\bbackground-color\b/);
       expect(rule(`${selector}:active`, REDUCE, 'transform'), `${selector}:active réduit`).toBe('none');
     }
+  });
+});
+
+describe('lecture du programme qui échoue (M5)', () => {
+  it('le rejeu qui lève garde la bulle du coach et les tuiles', async () => {
+    const db = createTestLocalDb();
+    await seedHome(db, {}, DEFAULT_NOW);
+    const { services } = await renderApp({ db, me: makeMe() });
+    // L'accueil n'est pas encore monté (la garde attend sa lecture de `meta.me`) : la lecture qui lève est la sienne.
+    vi.spyOn(reposFor(services).programView, 'view').mockRejectedValue(new Error('rejeu impossible'));
+    await screen.findByRole('heading', { level: 1 });
+
+    expect(await screen.findByText("Impossible d'afficher cette page.")).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Réessayer' })).toBeTruthy();
+    expect(screen.getByText("Aujourd'hui")).toBeTruthy();
+    expect(screen.getByRole('link', { name: /^Lieu principal/ })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /^Rythme/ })).toBeTruthy();
   });
 });

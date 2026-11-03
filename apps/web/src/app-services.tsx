@@ -38,14 +38,22 @@ export function useSyncState(): SyncState {
   return useSyncExternalStore(sync.subscribe, sync.getState);
 }
 
-/** Requête Dexie observée : `undefined` tant que le premier résultat n'est pas arrivé. */
+/**
+ * Requête Dexie observée : `undefined` tant que le premier résultat n'est pas arrivé. Une requête qui lève est
+ * relancée au rendu suivant, pour la frontière d'erreur la plus proche (`ReadErrorBoundary`) : jamais un écran vide.
+ */
 export function useLive<T>(query: () => Promise<T>, deps: readonly unknown[]): T | undefined {
   const [value, setValue] = useState<T | undefined>(undefined);
+  const [failure, setFailure] = useState<{ error: unknown } | null>(null);
+  if (failure) throw failure.error;
   useEffect(
     () => {
       // Requête enveloppée dans une fonction async : Dexie ne suit les lectures faites après un
       // `await` natif que si la fonction passée à liveQuery est elle-même async.
-      const subscription = liveQuery(async () => query()).subscribe({ next: setValue, error: () => {} });
+      const subscription = liveQuery(async () => query()).subscribe({
+        next: setValue,
+        error: (error) => setFailure({ error }),
+      });
       return () => subscription.unsubscribe();
     },
     // biome-ignore lint/correctness/useExhaustiveDependencies: dépendances de la requête fournies par l'appelant

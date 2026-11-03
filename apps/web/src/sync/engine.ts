@@ -160,6 +160,8 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
   let debounceWaiters: (() => void)[] = [];
   let running = false;
   let next: Queued | null = null;
+  /** Copies provisoires pour lesquelles un pull complet a déjà été relancé : il ne l'est jamais deux fois de suite. */
+  let reconciled = new Set<string>();
 
   const sessionLost = () => SESSION_LOST.includes(state.connection);
 
@@ -334,6 +336,29 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     setState({ pulledThisRun: true });
   }
 
+  /**
+   * Copies provisoires (`provisional: 1`) qu'un pull réussi n'a pas remplacées. Le serveur réécrit les siennes ; une
+   * copie qu'il ne réécrit jamais (séance d'un autre appareil, rejeu qui en diffère) resterait pour toujours. Outbox
+   * vide (rien ne la justifie plus) : un seul pull complet, filigrane effacé, qui retire ce qu'il ne renvoie pas
+   * (`dropUnreceived`). Pas deux fois de suite pour les mêmes copies : le serveur ne les réécrit pas, on n'insiste pas.
+   */
+  async function reconcileProvisional(cycle: Cycle): Promise<void> {
+    if ((await pendingCount(db, cycle.userId)) > 0) return;
+    const left = [
+      ...(await db.mirror('slot_state').where('provisional').equals(1).primaryKeys()),
+      ...(await db.mirror('engine_decision').where('provisional').equals(1).primaryKeys()),
+    ].map(String);
+    if (left.length === 0) {
+      reconciled = new Set();
+      return;
+    }
+    if (left.every((id) => reconciled.has(id))) return;
+    reconciled = new Set(left);
+    await assertCurrent(cycle);
+    await deleteMeta(db, 'watermark');
+    await pull(cycle);
+  }
+
   // ---- 5. Catalogue ----
 
   async function syncCatalog(): Promise<void> {
@@ -407,6 +432,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       await handleEpoch(epochIo(cycle), cycle.epoch);
       if (kind === 'full') await push(cycle);
       await pull(cycle);
+      await reconcileProvisional(cycle);
       await syncCatalog();
       // Seul un cycle réussi de bout en bout remet les reprises à zéro.
       failures = 0;

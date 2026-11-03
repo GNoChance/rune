@@ -92,12 +92,14 @@ export interface ProgramViewRepo {
   plannedWorkout(placeId: string | null, workoutId: string | null): Promise<PlannedSession | null>;
   /**
    * Copies provisoires (`provisional: 1`) des états et décisions du rejeu, que le pull remplace : une ligne de même
-   * contenu reste telle quelle, une copie que le rejeu ne produit plus est retirée. Sans accord santé, `painStreak`
-   * (C2) reste vide.
+   * contenu reste telle quelle, une copie que le rejeu ne produit plus est retirée. Seules celles des séances
+   * `sessionIds` (qui viennent de finir) sont écrites : les décisions de leurs exercices réalisés et les états dont
+   * `lastSessionId` en est une ; le serveur réécrit les autres, et une copie qu'il ne réécrirait jamais resterait.
+   * Sans accord santé, `painStreak` (C2) reste vide.
    */
-  storeProvisional(replay: ReplayResult): Promise<void>;
-  /** Rejeu local de l'instance active, gardé en copies provisoires ; rien quand les cibles viennent du serveur. */
-  refreshProvisional(): Promise<void>;
+  storeProvisional(replay: ReplayResult, sessionIds: readonly string[]): Promise<void>;
+  /** Rejeu local de l'instance active, gardé en copies provisoires pour `sessionIds` ; rien si les cibles viennent du serveur. */
+  refreshProvisional(sessionIds: readonly string[]): Promise<void>;
   /**
    * « Changer d'exercice » en séance (05 §11.4, spec §7.3) : candidats du slot de l'exercice réalisé, tels que
    * `resolveSlot` les rend pour le programme effectif, au lieu et avec le profil de la séance (exercices utilisables
@@ -436,9 +438,13 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
     }
   }
 
-  async function storeProvisional(replay: ReplayResult): Promise<void> {
+  async function storeProvisional(replay: ReplayResult, sessionIds: readonly string[]): Promise<void> {
     const ownerId = await currentUserId(db);
     if (ownerId === null) return;
+    const finished = new Set(sessionIds);
+    const finishedExercises = new Set(
+      (await db.mirror('performed_exercise').where('sessionId').anyOf(sessionIds).primaryKeys()).map(String),
+    );
     const consent = await healthConsentCached(db);
     const instanceIds = new Set([
       ...replay.slotStates.map((st) => st.instanceId),
@@ -454,8 +460,9 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
      * machine (`machine_step_g_override`) n'est écrit que par l'API en ligne : une copie garde celui de la ligne
      * qu'elle remplace.
      */
-    async function store(table: typeof states, rows: Copy[]): Promise<void> {
+    async function store(table: typeof states, rows: Copy[], written: ReadonlySet<string>): Promise<void> {
       for (const copy of rows) {
+        if (!written.has(copy.id)) continue;
         const { id } = copy;
         const existing = await table.get(id);
         const live = existing !== undefined && isLive(existing);
@@ -483,8 +490,20 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
     }
 
     await db.transaction('rw', [states, decisions], async () => {
-      await store(states, copies('slot_state', replay.slotStates));
-      await store(decisions, copies('engine_decision', replay.decisions));
+      await store(
+        states,
+        copies('slot_state', replay.slotStates),
+        new Set(
+          replay.slotStates
+            .filter((st) => st.lastSessionId !== null && finished.has(st.lastSessionId))
+            .map((st) => st.id),
+        ),
+      );
+      await store(
+        decisions,
+        copies('engine_decision', replay.decisions),
+        new Set(replay.decisions.filter((d) => finishedExercises.has(d.id)).map((d) => d.id)),
+      );
     });
   }
 
@@ -527,9 +546,9 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
     view,
     plannedWorkout,
     storeProvisional,
-    async refreshProvisional() {
+    async refreshProvisional(sessionIds) {
       const current = await view();
-      if (current?.source === 'local') await storeProvisional(current.replay);
+      if (current?.source === 'local') await storeProvisional(current.replay, sessionIds);
     },
     swapCandidates,
   };

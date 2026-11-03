@@ -11,7 +11,7 @@ import {
   useProgramView,
   useRepos,
 } from '../../repos';
-import { Banner, Button, CoachBubble, CountUp, Page, plural, SystemPanel } from '../../ui';
+import { Banner, Button, CoachBubble, CountUp, Page, plural, ReadErrorBoundary, SystemPanel } from '../../ui';
 import { coachLine } from '../coach/coach-lines';
 import { AwakeningQuests, awakeningQuests } from '../onboarding/AwakeningQuests';
 import { ReviewHomeCard } from '../review/ReviewHomeCard';
@@ -120,6 +120,44 @@ function TodayCard(p: { view: ProgramView; planned: PlannedSession; placeName: s
 }
 
 /**
+ * Cartes du programme : séance du jour (ou « Choisis ton programme »), proposition en attente. Leurs lectures sont
+ * les seules de l'accueil à rejouer le moteur : elles vivent ici, derrière leur propre frontière d'erreur, pour
+ * qu'un rejeu qui lève ne prenne pas la bulle du coach et les tuiles avec lui (M5).
+ */
+function ProgramCards(p: { places: readonly { id: string; name: string }[] | undefined }) {
+  const view = useProgramView();
+  const planned = usePlannedWorkout(null, null);
+  if (view === undefined || planned === undefined) return null;
+  return (
+    <>
+      {view === null ? (
+        <Link href="/program/choose" className={styles.row}>
+          <span className={styles.rowText}>
+            <span className={styles.tileKey}>Programme</span>{' '}
+            <span className={styles.rowValue}>Choisis ton programme</span>
+          </span>
+          <Chevron />
+        </Link>
+      ) : planned ? (
+        <TodayCard
+          view={view}
+          planned={planned}
+          placeName={p.places?.find((place) => place.id === planned.placeId)?.name ?? null}
+        />
+      ) : null}
+      {view && view.proposals.length > 0 ? (
+        <div className={styles.card}>
+          <p className={styles.cardMeta}>Une proposition t'attend.</p>
+          <Link href="/program" className={styles.action}>
+            Voir la proposition
+          </Link>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/**
  * Accueil (spec refonte §10.2, maquettes MixSombre / MixClair, prototype « Accueil ») : salutation selon l'heure
  * de Paris, bandeaux du compte, carte « Relecture : N fiches t'attendent » pour un relecteur (en ligne seulement,
  * spec brique 2 §4.4), puis, dans l'ordre de la spec brique 3 §7.9 : séance en cours (« Reprendre »), séance du jour
@@ -145,8 +183,6 @@ export function HomePage() {
   const profile = useLive(() => repos.profile.get(), [repos]);
   const places = useLive(() => repos.places.list(), [repos]);
   const active = useActiveSession();
-  const view = useProgramView();
-  const planned = usePlannedWorkout(null, null);
   const { readiness, loaded, retry } = useReadiness();
   const [retrying, setRetrying] = useState(false);
   const resumeTitle = useId();
@@ -167,13 +203,7 @@ export function HomePage() {
   const goal = profile?.goal ?? null;
   const experience = profile?.experience ?? null;
   // Lectures locales faites (profil, même absent, lieux, voyant) : la pile entre alors d'un bloc, en cascade.
-  const readsDone =
-    profile !== undefined &&
-    places !== undefined &&
-    active !== undefined &&
-    view !== undefined &&
-    planned !== undefined &&
-    loaded;
+  const readsDone = profile !== undefined && places !== undefined && active !== undefined && loaded;
 
   return (
     <Page title={greeting(now, me.username)}>
@@ -201,29 +231,9 @@ export function HomePage() {
               </Link>
             </section>
           ) : null}
-          {view === null ? (
-            <Link href="/program/choose" className={styles.row}>
-              <span className={styles.rowText}>
-                <span className={styles.tileKey}>Programme</span>{' '}
-                <span className={styles.rowValue}>Choisis ton programme</span>
-              </span>
-              <Chevron />
-            </Link>
-          ) : planned ? (
-            <TodayCard
-              view={view}
-              planned={planned}
-              placeName={places?.find((place) => place.id === planned.placeId)?.name ?? null}
-            />
-          ) : null}
-          {view && view.proposals.length > 0 ? (
-            <div className={styles.card}>
-              <p className={styles.cardMeta}>Une proposition t'attend.</p>
-              <Link href="/program" className={styles.action}>
-                Voir la proposition
-              </Link>
-            </div>
-          ) : null}
+          <ReadErrorBoundary compact>
+            <ProgramCards places={places} />
+          </ReadErrorBoundary>
           {quests.every((q) => q.done) ? null : (
             <SystemPanel title="Éveil en cours.">
               <AwakeningQuests quests={quests} />
