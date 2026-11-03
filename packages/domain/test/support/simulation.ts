@@ -289,6 +289,7 @@ function targetText(ex: PlannedExercise): string {
   const load = first.targetLoadG === null ? '' : ` @ ${kg(first.targetLoadG)}`;
   const warm = ex.sets.filter((s) => s.kind === 'warmup').length / lines;
   const tags = [
+    first.targetReps === null ? '' : `visée ${first.targetReps}`,
     warm > 0 ? `échauffement ${warm}` : '',
     first.targetRir === null ? '' : `RIR ${first.targetRir}`,
     ex.calibration ? 'calibration' : '',

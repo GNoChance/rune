@@ -4,6 +4,7 @@ import { coach } from './0002_coach';
 import { catalog } from './0003_catalog';
 import { program } from './0004_program';
 import { syncRejectionCodes } from './0005_sync_rejection_codes';
+import { performedSetTargetReps } from './0006_performed_set_target_reps';
 
 export interface Migration {
   id: string;
@@ -13,4 +14,11 @@ export interface Migration {
 }
 
 /** Migrations, dans l'ordre (appliquées ensemble dans une seule transaction, voir migrate). */
-export const MIGRATIONS: readonly Migration[] = [socle, coach, catalog, program, syncRejectionCodes];
+export const MIGRATIONS: readonly Migration[] = [
+  socle,
+  coach,
+  catalog,
+  program,
+  syncRejectionCodes,
+  performedSetTargetReps,
+];

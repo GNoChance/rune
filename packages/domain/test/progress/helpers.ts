@@ -15,6 +15,7 @@ export const wset = (over: Partial<SetRecord> = {}): SetRecord => ({
   effort: null,
   targetRepsMin: null,
   targetRepsMax: null,
+  targetReps: null,
   targetDurationS: null,
   targetLoadG: null,
   targetRir: null,

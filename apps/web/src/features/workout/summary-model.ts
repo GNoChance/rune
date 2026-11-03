@@ -131,6 +131,7 @@ function nextTargetText(target: NextTarget, loadMode: LoadMode | null): string {
       position: i + 1,
       targetRepsMin: target.repsMin,
       targetRepsMax: target.repsMax,
+      targetReps: target.targetReps,
       targetDurationS: target.durationS,
       targetLoadG: target.loadG,
     })),

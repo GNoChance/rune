@@ -31,6 +31,8 @@ export interface SetRecord {
   effort: Effort | null;
   targetRepsMin: number | null;
   targetRepsMax: number | null;
+  /** Répétitions visées par série, copiées du plan au démarrage (ruling R57) ; null sans visée. */
+  targetReps: number | null;
   targetDurationS: number | null;
   targetLoadG: number | null;
   targetRir: number | null;

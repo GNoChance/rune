@@ -132,6 +132,7 @@ const workLine = (position: number, over: Partial<PlannedSet> = {}): PlannedSet 
   side: null,
   targetRepsMin: null,
   targetRepsMax: null,
+  targetReps: null,
   targetDurationS: null,
   targetLoadG: null,
   targetRir: null,
@@ -171,14 +172,12 @@ describe('planWorkout : séance et cibles de travail', () => {
     );
   });
 
-  it('slot double : la fourchette du modèle, pas la visée par série', () => {
+  it("slot double : la fourchette du modèle, et la visée par série de l'état (ruling R57)", () => {
     const row = slotState('A3', 'barbell-row', { mode: 'double', loadG: 50_000, targetReps: 10 });
     const e = exerciseOf(plan({ replay: replayOf(GYM_AB, { states: [row] }) }), 'A3');
-    expect(workSets(e).map((s) => [s.targetRepsMin, s.targetRepsMax, s.targetLoadG])).toEqual([
-      [8, 12, 50_000],
-      [8, 12, 50_000],
-      [8, 12, 50_000],
-    ]);
+    expect(workSets(e).map((s) => [s.targetRepsMin, s.targetRepsMax, s.targetReps, s.targetLoadG])).toEqual(
+      Array(3).fill([8, 12, 10, 50_000]),
+    );
   });
 
   it('cible faite ailleurs : ramenée par roundDown à la grille du lieu du jour (§4.3.10)', () => {
@@ -244,6 +243,7 @@ describe('planWorkout : échauffement', () => {
         side: null,
         targetRepsMin: 5,
         targetRepsMax: 5,
+        targetReps: null,
         targetDurationS: null,
         targetLoadG: 30_000,
         targetRir: null,
@@ -392,6 +392,129 @@ describe('planWorkout : reprise après absence (05 §10.4, spec §4.3.9)', () =>
   });
 });
 
+describe('planWorkout : répétitions visées par série (ruling R57)', () => {
+  const ROW = slotState('A3', 'barbell-row', { mode: 'double', loadG: 50_000, targetReps: 10 });
+
+  it("la visée sur chaque série de travail, aucune sur l'échauffement", () => {
+    // Squat passé en double : fourchette [6, 10], visée 7, échauffement à 50 % de 60 kg.
+    const squat = { ...SQUAT_60, mode: 'double' as const, targetReps: 7 };
+    const e = exerciseOf(plan({ replay: replayOf(GYM_AB, { states: [squat] }) }), 'A1');
+    expect(warmups(e).map((s) => [s.targetRepsMin, s.targetReps])).toEqual([
+      [5, null],
+      [5, null],
+    ]);
+    expect(workSets(e).map((s) => [s.targetRepsMin, s.targetRepsMax, s.targetReps])).toEqual(
+      Array(3).fill([6, 10, 7]),
+    );
+  });
+
+  it('ramenée dans la fourchette du jour : 15 → 12, 6 → 8', () => {
+    for (const [targetReps, aim] of [
+      [15, 12],
+      [6, 8],
+    ]) {
+      const row = { ...ROW, targetReps };
+      const e = exerciseOf(plan({ replay: replayOf(GYM_AB, { states: [row] }) }), 'A3');
+      expect(workSets(e).map((s) => s.targetReps)).toEqual([aim, aim, aim]);
+    }
+  });
+
+  it("aucune visée sans état, sans visée dans l'état, ni pour un nombre fixe (3 × 6)", () => {
+    expect(workSets(exerciseOf(plan(), 'A3')).map((s) => s.targetReps)).toEqual([null, null, null]);
+    const empty = { ...ROW, targetReps: null };
+    const e = exerciseOf(plan({ replay: replayOf(GYM_AB, { states: [empty] }) }), 'A3');
+    expect(workSets(e).map((s) => s.targetReps)).toEqual([null, null, null]);
+    const squat = exerciseOf(plan({ replay: replayOf(GYM_AB, { states: [SQUAT_60] }) }), 'A1');
+    expect(workSets(squat).map((s) => [s.targetRepsMin, s.targetRepsMax, s.targetReps])).toEqual(
+      Array(3).fill([6, 6, null]),
+    );
+  });
+
+  it('aucune visée en semaine allégée ni à la reprise : la fourchette suffit', () => {
+    const deload = plan({ replay: replayOf(GYM_AB, { states: [ROW], state: { deloadSessionsLeft: 1 } }) });
+    expect(deload.weekType).toBe('deload');
+    expect(workSets(exerciseOf(deload, 'A3')).map((s) => s.targetReps)).toEqual([null, null]);
+    const resume = plan({
+      replay: replayOf(GYM_AB, {
+        states: [ROW],
+        state: { lastCompletedStartedAt: '2026-10-18T17:00:00.000Z' },
+      }),
+    });
+    expect(resume.notices).toContainEqual({ code: 'resume', days: 14, pct: 10 });
+    expect(workSets(exerciseOf(resume, 'A3')).map((s) => s.targetReps)).toEqual([null, null, null]);
+  });
+
+  it('en durée : aucune visée de répétitions', () => {
+    const plank = slotState('A5', 'front-plank', { mode: 'duration', durationS: 40, variantRank: 2 });
+    const e = exerciseOf(plan({ replay: replayOf(GYM_AB, { states: [plank] }) }), 'A5');
+    expect(workSets(e).map((s) => s.targetReps)).toEqual([null, null, null]);
+  });
+
+  describe('chaîne en répétitions', () => {
+    // Pompes de test : à genoux (rang 1), sur un banc (rang 2, banc requis), archer (rang 3, la dernière).
+    const step = (id: string, extra: Partial<PlanSheet>): PlanSheet => ({
+      ...programSheet(id, 'horizontal_push', { primary: ['chest', 'triceps'] }, [[]], {
+        chain_id: 'push-chain',
+        ...extra,
+      }),
+      measure: 'reps',
+    });
+    const catalog = [
+      ...CATALOG,
+      step('knee-push-up', { harder_id: 'bench-push-up' }),
+      step('bench-push-up', {
+        easier_id: 'knee-push-up',
+        harder_id: 'archer-push-up',
+        equipment_options: [['flat_bench']],
+      }),
+      step('archer-push-up', { easier_id: 'bench-push-up', not_for_minors: true }),
+    ];
+    const template = gymAb((t) => {
+      const [a] = t.workouts;
+      if (a === undefined) return;
+      a.slots = [
+        {
+          id: 'P1',
+          movementPattern: 'horizontal_push',
+          role: 'main',
+          chain: 'push-chain',
+          sets: [{ kind: 'work', count: 3, reps: { min: 8, max: 12 }, targetRir: 2, restS: 90 }],
+          progression: { type: 'chain' },
+        },
+      ];
+    });
+    const onChain = (variantRank: number, targetReps: number, over: Partial<PlanInput> = {}) => {
+      const state = slotState('P1', 'push-chain', { mode: 'chain', variantRank, targetReps });
+      return exerciseOf(plan({ replay: replayOf(template, { states: [state] }), catalog, ...over }), 'P1');
+    };
+    const targets = (e: PlannedExercise) =>
+      workSets(e).map((s) => [s.targetRepsMin, s.targetRepsMax, s.targetReps, s.targetVariant]);
+
+    it("variante de l'état faisable : la visée de l'état", () => {
+      const e = onChain(2, 10);
+      expect(e.exerciseId).toBe('bench-push-up');
+      expect(targets(e)).toEqual(Array(3).fill([8, 12, 10, 'bench-push-up']));
+    });
+
+    it("variante de l'état pas faisable ici, variante plus facile prise : la fourchette seule", () => {
+      const e = onChain(2, 10, { place: HOME });
+      expect(e.exerciseId).toBe('knee-push-up');
+      expect(targets(e)).toEqual(Array(3).fill([8, 12, null, 'knee-push-up']));
+    });
+
+    it('dernière variante : fourchette prolongée à 25 pour un adulte, visée ramenée dedans', () => {
+      expect(targets(onChain(3, 18))).toEqual(Array(3).fill([8, 25, 18, 'archer-push-up']));
+      expect(targets(onChain(3, 30))).toEqual(Array(3).fill([8, 25, 25, 'archer-push-up']));
+    });
+
+    it("profil prudent, chaîne coupée avant l'archer : rang de l'état ramené dans la chaîne, visée gardée", () => {
+      const e = onChain(3, 10, { profile: 'cautious' });
+      expect(e.exerciseId).toBe('bench-push-up');
+      expect(workSets(e).map((s) => s.targetReps)).toEqual([10, 10, 10]);
+    });
+  });
+});
+
 describe('planWorkout : unilatéral', () => {
   it('exercice unilatéral 3 séries → 6 lignes, gauche puis droite à chaque position', () => {
     const t = gymAb((x) => {
@@ -536,6 +659,7 @@ describe('planWorkout : après un rejeu', () => {
       effort: position === 3 ? 'ok' : null,
       targetRepsMin: 6,
       targetRepsMax: 6,
+      targetReps: null,
       targetDurationS: null,
       targetLoadG: null,
       targetRir: 2,

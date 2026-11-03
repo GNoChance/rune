@@ -31,6 +31,7 @@ const line = (o: Partial<WorkoutSetView> = {}): WorkoutSetView => ({
   effort: null,
   targetRepsMin: 6,
   targetRepsMax: 6,
+  targetReps: null,
   targetDurationS: null,
   targetLoadG: 60_000,
   targetRir: 2,
@@ -90,6 +91,13 @@ describe('ligne de série : valeurs de départ', () => {
     await renderRow({ line: line({ targetRepsMin: 8, targetRepsMax: 12, targetLoadG: 62_500 }) });
     expect(input('Charge en kg, série 1').value).toBe('62,5');
     expect(input('Répétitions, série 1').value).toBe('8');
+  });
+
+  it('répétitions visées par le moteur : la visée plutôt que le bas de la fourchette (ruling R57)', async () => {
+    await renderRow({
+      line: line({ targetRepsMin: 8, targetRepsMax: 12, targetReps: 10, loadMode: 'bodyweight' }),
+    });
+    expect(input('Répétitions, série 1').value).toBe('10');
   });
 
   it('sans charge visée (calibration) : champ de charge vide', async () => {

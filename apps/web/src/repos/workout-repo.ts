@@ -261,9 +261,10 @@ function checkSetInput(values: SetInput): void {
 const loaded = (sheet: ServedSheet) => loadGrid(sheet.load_mode, defaultLoadSettings('gym')).kind !== 'none';
 
 /**
- * Séries non faites réécrites pour `sheet` : une ligne par (type, position), ou deux en unilatéral ; répétitions,
- * durée et effort visés gardés ; ni charge visée ni variante (sauf une variante de la même chaîne) ; pas
- * d'échauffement pour une fiche sans charge. `renumber` repart de 1 par type (nouvel exercice).
+ * Séries non faites réécrites pour `sheet` : une ligne par (type, position), ou deux en unilatéral ; fourchette de
+ * répétitions, durée et effort visés gardés ; ni charge visée, ni répétitions visées (celles de l'exercice d'avant,
+ * ruling R57), ni variante (sauf une variante de la même chaîne) ; pas d'échauffement pour une fiche sans charge.
+ * `renumber` repart de 1 par type (nouvel exercice).
  */
 function rewrite(
   open: readonly MirrorRow[],
@@ -292,6 +293,7 @@ function rewrite(
         side,
         targetRepsMin: num(row.targetRepsMin),
         targetRepsMax: num(row.targetRepsMax),
+        targetReps: null,
         targetDurationS: num(row.targetDurationS),
         targetLoadG: null,
         targetRir: num(row.targetRir),
@@ -308,6 +310,7 @@ const emptySet = (position: number, side: 'left' | 'right' | null): PlannedSet =
   side,
   targetRepsMin: null,
   targetRepsMax: null,
+  targetReps: null,
   targetDurationS: null,
   targetLoadG: null,
   targetRir: null,
@@ -427,6 +430,7 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
         effort: null,
         targetRepsMin: set.targetRepsMin,
         targetRepsMax: set.targetRepsMax,
+        targetReps: set.targetReps,
         targetDurationS: set.targetDurationS,
         targetLoadG: set.targetLoadG,
         targetRir: set.targetRir,
@@ -641,6 +645,7 @@ export function createWorkoutRepo(s: AppServices): WorkoutsRepo {
               ...emptySet(position, side),
               targetRepsMin: num(last?.targetRepsMin),
               targetRepsMax: num(last?.targetRepsMax),
+              targetReps: num(last?.targetReps),
               targetDurationS: num(last?.targetDurationS),
               targetLoadG: num(last?.targetLoadG),
               targetRir: num(last?.targetRir),

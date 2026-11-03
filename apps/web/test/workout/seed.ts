@@ -194,6 +194,7 @@ const work = (position: number, targetLoadG: number): PlannedSet => ({
   side: null,
   targetRepsMin: 8,
   targetRepsMax: 12,
+  targetReps: null,
   targetDurationS: null,
   targetLoadG,
   targetRir: 2,

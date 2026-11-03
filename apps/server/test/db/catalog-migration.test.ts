@@ -70,7 +70,12 @@ describe('migration 0003_catalog', () => {
       expect(before.user?.length).toBeGreaterThan(2);
 
       expect(await migrate(h.db, MIGRATIONS, clock)).toEqual({
-        applied: ['0003_catalog', '0004_program', '0005_sync_rejection_codes'],
+        applied: [
+          '0003_catalog',
+          '0004_program',
+          '0005_sync_rejection_codes',
+          '0006_performed_set_target_reps',
+        ],
         unknownNonBreaking: [],
       });
       for (const table of socle) {

@@ -48,6 +48,12 @@ export interface PlannedSet {
   /** Fourchette de répétitions (« 3 × 6 » : 6 et 6) ; null pour une série en durée. */
   targetRepsMin: number | null;
   targetRepsMax: number | null;
+  /**
+   * Répétitions visées par série, dans la fourchette : la visée du moteur (`slot_state.target_reps`, ruling R57) ;
+   * null sans visée (échauffement, durée, nombre fixe, premier passage, autre variante de chaîne que celle de l'état,
+   * semaine allégée, reprise).
+   */
+  targetReps: number | null;
   targetDurationS: number | null;
   /** Charge visée en grammes, réalisable au lieu du jour ; null sans charge ou quand l'utilisateur la choisit. */
   targetLoadG: number | null;
@@ -221,6 +227,23 @@ function planSlot(slot: SlotSpec, env: Env): PlannedExercise {
 
   const deload = env.weekType === 'deload';
   const work = deload ? Math.ceil(shape.planned / 2) : shape.planned;
+  // Visée par série (ruling R57) : celle de l'état, ramenée dans la fourchette du jour, quand l'état vise ce niveau-ci
+  // (même variante de chaîne, le rang de l'état ramené dans la chaîne du profil comme `resolveSlot` et le moteur).
+  // Aucune en semaine allégée ni à la reprise : la fourchette suffit.
+  const stateRank =
+    state === null || state.variantRank === null || steps === null
+      ? (state?.variantRank ?? null)
+      : Math.min(state.variantRank, steps.length);
+  const aim =
+    reps === null ||
+    reps.min === reps.max ||
+    state === null ||
+    state.targetReps === null ||
+    stateRank !== rank ||
+    deload ||
+    resume !== null
+      ? null
+      : clamp(state.targetReps, reps.min, reps.max);
   const rir = deload ? Math.min(shape.targetRir + rules.deloadRirPlus, rules.deloadRirMax) : shape.targetRir;
   const variant = rank === null ? null : ex.id;
 
@@ -244,6 +267,7 @@ function planSlot(slot: SlotSpec, env: Env): PlannedExercise {
         position,
         targetRepsMin: reps?.min ?? null,
         targetRepsMax: reps?.max ?? null,
+        targetReps: aim,
         targetDurationS: duration,
         targetLoadG: workLoad,
         targetRir: rir,
@@ -291,6 +315,7 @@ function warmupSet(
     position,
     targetRepsMin: spec.reps?.min ?? null,
     targetRepsMax: spec.reps?.max ?? null,
+    targetReps: null,
     targetDurationS: spec.durationS?.min ?? null,
     targetLoadG: load,
     targetRir: spec.targetRir ?? null,

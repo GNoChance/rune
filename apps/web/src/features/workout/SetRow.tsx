@@ -66,12 +66,12 @@ interface Draft {
 
 const show = (n: number | null): string => (n === null ? '' : String(n));
 
-/** Valeurs saisies, sinon la cible (le bas de la fourchette de répétitions). */
+/** Valeurs saisies, sinon la cible (les répétitions visées, à défaut le bas de la fourchette ; ruling R57). */
 const initialDraft = (line: WorkoutSetView): Draft => {
   const load = line.loadG ?? line.targetLoadG;
   return {
     kg: load === null ? '' : formatKgValue(load),
-    reps: show(line.reps ?? line.targetRepsMin ?? line.targetRepsMax),
+    reps: show(line.reps ?? line.targetReps ?? line.targetRepsMin ?? line.targetRepsMax),
     secs: show(line.durationS ?? line.targetDurationS),
   };
 };

@@ -91,6 +91,7 @@ function record(planned: PlannedSet, ctx: SetContext, shape: Shape, effort: Effo
     effort: planned.kind === 'work' && ctx.lastWork ? effort : null,
     targetRepsMin: planned.targetRepsMin,
     targetRepsMax: planned.targetRepsMax,
+    targetReps: planned.targetReps,
     targetDurationS: planned.targetDurationS,
     targetLoadG: planned.targetLoadG,
     targetRir: planned.targetRir,

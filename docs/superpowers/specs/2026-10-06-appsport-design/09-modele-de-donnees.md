@@ -359,7 +359,7 @@ Les modèles de programme ne sont **pas une table** : ce sont des fichiers `data
 - `load_g`, `reps`, `duration_s` : `INTEGER NULL`, avec `CHECK (reps IS NULL OR duration_s IS NULL)`
 - `side TEXT NULL CHECK (left|right)`
 - `effort TEXT NULL CHECK (easy|ok|hard|failed)`
-- Cibles copiées au démarrage de la séance : `target_reps_min`, `target_reps_max`, `target_duration_s`, `target_load_g`, `target_rir` (`INTEGER NULL`), `target_variant TEXT NULL`
+- Cibles copiées au démarrage de la séance : `target_reps_min`, `target_reps_max`, `target_reps` (répétitions visées par série, migration 0006, ruling R57 de la brique 3), `target_duration_s`, `target_load_g`, `target_rir` (`INTEGER NULL`), `target_variant TEXT NULL`
 - `logged_at TEXT` : heure du client
 - Index : `(performed_exercise_id)`
 

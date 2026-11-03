@@ -8,6 +8,7 @@ const planned = (o: Pick<PlannedSet, 'kind' | 'position'> & Partial<PlannedSet>)
   side: null,
   targetRepsMin: null,
   targetRepsMax: null,
+  targetReps: null,
   targetDurationS: null,
   targetLoadG: null,
   targetRir: null,

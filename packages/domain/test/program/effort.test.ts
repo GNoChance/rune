@@ -24,6 +24,7 @@ const set = (effort: Effort | null, over: Partial<SetRecord> = {}): SetRecord =>
   effort,
   targetRepsMin: null,
   targetRepsMax: null,
+  targetReps: null,
   targetDurationS: null,
   targetLoadG: null,
   targetRir: null,

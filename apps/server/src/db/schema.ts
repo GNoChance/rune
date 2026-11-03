@@ -456,6 +456,7 @@ export interface PerformedSetTable extends SyncColumns, SoftDelete {
   effort: Effort | null;
   targetRepsMin: number | null;
   targetRepsMax: number | null;
+  targetReps: number | null;
   targetDurationS: number | null;
   targetLoadG: number | null;
   targetRir: number | null;

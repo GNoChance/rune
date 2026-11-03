@@ -400,6 +400,33 @@ describe('performed_set au push', () => {
     ]);
     expect(rowOf('performed_set', ok.id)?.reps).toBe(200);
   });
+
+  it('répétitions visées copiées au démarrage (ruling R57) : écrites avec la fourchette', async () => {
+    const a = await setup();
+    const s = sessionOps(a.id, { exercises: [{ sets: [] }] });
+    await syncPush(ctx, a.cookie, s.ops);
+    const op = makeOp({
+      userId: a.id,
+      entity: 'performed_set',
+      id: newId(),
+      kind: 'create',
+      fields: {
+        performedExerciseId: s.exerciseIds[0],
+        position: 1,
+        kind: 'work',
+        loadMode: 'bodyweight',
+        targetRepsMin: 8,
+        targetRepsMax: 12,
+        targetReps: 10,
+      },
+    });
+    expect(codes((await syncPush(ctx, a.cookie, [op])).body)).toEqual(['applied']);
+    expect(rowOf('performed_set', op.id)).toMatchObject({
+      target_reps_min: 8,
+      target_reps_max: 12,
+      target_reps: 10,
+    });
+  });
 });
 
 const del = (u: { id: string }, entity: string, id: string) =>

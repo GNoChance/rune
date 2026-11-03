@@ -20,6 +20,7 @@ export const SETS_CSV_HEADER = [
   'effort',
   'cible_reps_min',
   'cible_reps_max',
+  'cible_reps',
   'cible_duree_s',
   'cible_charge_kg',
   'cible_rir',
@@ -72,6 +73,7 @@ interface SetRow {
   effort: string | null;
   targetRepsMin: number | null;
   targetRepsMax: number | null;
+  targetReps: number | null;
   targetDurationS: number | null;
   targetLoadG: number | null;
   targetRir: number | null;
@@ -113,7 +115,7 @@ export async function buildSetsCsv(db: DbExecutor, userId: string): Promise<stri
   const withPain = await isHealthConsentActive(db, userId);
   const result = await sql<SetRow>`
     select s.logged_at, s.position, s.kind, s.side, s.load_g, s.reps, s.duration_s, s.effort,
-      s.target_reps_min, s.target_reps_max, s.target_duration_s, s.target_load_g, s.target_rir,
+      s.target_reps_min, s.target_reps_max, s.target_reps, s.target_duration_s, s.target_load_g, s.target_rir,
       pe.exercise_id, e.name as exercise_name, pe.pain_level,
       ws.workout_id, pi.snapshot, coalesce(p.name, g.name) as place_name
     from performed_set s
@@ -148,6 +150,7 @@ export async function buildSetsCsv(db: DbExecutor, userId: string): Promise<stri
       r.effort === null ? '' : (EFFORTS[r.effort] ?? ''),
       num(r.targetRepsMin),
       num(r.targetRepsMax),
+      num(r.targetReps),
       num(r.targetDurationS),
       kilos(r.targetLoadG),
       num(r.targetRir),

@@ -19,7 +19,7 @@ export interface TargetSource {
   loadMode: PlannedExercise['loadMode'];
   sets: readonly Pick<
     PlannedSet,
-    'kind' | 'position' | 'targetRepsMin' | 'targetRepsMax' | 'targetDurationS' | 'targetLoadG'
+    'kind' | 'position' | 'targetRepsMin' | 'targetRepsMax' | 'targetReps' | 'targetDurationS' | 'targetLoadG'
   >[];
 }
 
@@ -27,11 +27,22 @@ export interface TargetSource {
 const carriesLoad = (loadMode: TargetSource['loadMode']): boolean =>
   loadMode !== null && loadMode !== 'bodyweight' && loadMode !== 'band';
 
+/** Répétitions d'une cible : « 6 », « 8–12 », ou la visée devant la fourchette, « 10 (8–12) ». */
+function repsText(set: TargetSource['sets'][number]): string {
+  const min = set.targetRepsMin ?? 0;
+  const max = set.targetRepsMax;
+  if (max === null || min === max) return `${min}`;
+  const range = `${min}–${max}`;
+  const aim = set.targetReps;
+  return aim !== null && aim > min ? `${aim} (${range})` : range;
+}
+
 /**
- * Cible résumée : « 3 × 6 · 60 kg », « 3 × 8–12 · 14 kg par main » (haltères), « 3 × 30 s » ; en calibration sans
- * charge visée d'un exercice qui porte une charge, « Calibration : tu choisis ta charge » (au poids du corps ou à
- * l'élastique, la cible normale). Un slot sans série (sauté, suspendu) ou des séries sans cible (séance libre) n'ont
- * pas de cible (« »). Une série unilatérale compte pour une (gauche et droite).
+ * Cible résumée : « 3 × 6 · 60 kg », « 3 × 8–12 · 14 kg par main » (haltères), « 3 × 30 s », « 3 × 10 (8–12) » quand
+ * le moteur vise plus que le bas de la fourchette (ruling R57) ; en calibration sans charge visée d'un exercice qui
+ * porte une charge, « Calibration : tu choisis ta charge » (au poids du corps ou à l'élastique, la cible normale).
+ * Un slot sans série (sauté, suspendu) ou des séries sans cible (séance libre) n'ont pas de cible (« »). Une série
+ * unilatérale compte pour une (gauche et droite).
  */
 export function targetSummary(exercise: TargetSource): string {
   const work = exercise.sets.filter((s) => s.kind === 'work');
@@ -46,12 +57,7 @@ export function targetSummary(exercise: TargetSource): string {
     return CALIBRATION_TEXT;
   }
   const count = new Set(work.map((s) => s.position)).size;
-  const amount =
-    first.targetDurationS !== null
-      ? formatSeconds(first.targetDurationS)
-      : first.targetRepsMin === first.targetRepsMax || first.targetRepsMax === null
-        ? `${first.targetRepsMin ?? 0}`
-        : `${first.targetRepsMin ?? 0}–${first.targetRepsMax}`;
+  const amount = first.targetDurationS !== null ? formatSeconds(first.targetDurationS) : repsText(first);
   const load =
     first.targetLoadG !== null && first.targetLoadG > 0
       ? ` · ${formatKg(first.targetLoadG)}${exercise.loadMode === 'dumbbell' ? ' par main' : ''}`

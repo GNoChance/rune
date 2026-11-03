@@ -16,17 +16,23 @@ const PREVIOUS = [
   {
     fixture: 'schema-v1.sql',
     done: ['0001_socle'],
-    applied: ['0002_coach', '0003_catalog', '0004_program', '0005_sync_rejection_codes'],
+    applied: [
+      '0002_coach',
+      '0003_catalog',
+      '0004_program',
+      '0005_sync_rejection_codes',
+      '0006_performed_set_target_reps',
+    ],
   },
   {
     fixture: 'schema-v2.sql',
     done: ['0001_socle', '0002_coach'],
-    applied: ['0003_catalog', '0004_program', '0005_sync_rejection_codes'],
+    applied: ['0003_catalog', '0004_program', '0005_sync_rejection_codes', '0006_performed_set_target_reps'],
   },
   {
     fixture: 'schema-v3.sql',
     done: ['0001_socle', '0002_coach', '0003_catalog'],
-    applied: ['0004_program', '0005_sync_rejection_codes'],
+    applied: ['0004_program', '0005_sync_rejection_codes', '0006_performed_set_target_reps'],
   },
 ];
 

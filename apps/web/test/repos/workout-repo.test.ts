@@ -325,6 +325,27 @@ describe('saisie des séries', () => {
     await expect(repos.workouts.removeSet(first.id)).rejects.toMatchObject({ code: 'set_done' });
   });
 
+  it('répétitions visées (ruling R57) : copiées au démarrage et poussées, reprises par addSet, oubliées par swapExercise', async () => {
+    const { db, repos } = await setup();
+    const aimed = { ...LUNGE, sets: LUNGE.sets.map((s) => ({ ...s, targetReps: 10 })) };
+    const id = await repos.workouts.start({ ...START, plan: { ...PLAN, exercises: [aimed] } });
+    const lunge = exerciseAt(await view(repos, id), 0);
+    expect(lunge.sets.map((s) => [s.targetRepsMin, s.targetRepsMax, s.targetReps])).toEqual(
+      Array(4).fill([8, 12, 10]),
+    );
+    const pushed = (await ops(db)).filter((o) => o.entity === 'performed_set');
+    expect(pushed.map((o) => o.fields?.targetReps)).toEqual([10, 10, 10, 10]);
+
+    await repos.workouts.addSet(lunge.id);
+    expect(workSets(await view(repos, id), 0).map((s) => s.targetReps)).toEqual(Array(6).fill(10));
+
+    // Autre fiche : la fourchette du slot reste, la visée (celle de la fente) ne vaut plus.
+    await repos.workouts.swapExercise(lunge.id, 'goblet-squat', 'preference');
+    expect(
+      workSets(await view(repos, id), 0).map((s) => [s.targetRepsMin, s.targetRepsMax, s.targetReps]),
+    ).toEqual(Array(3).fill([8, 12, null]));
+  });
+
   it('swapExercise sans série faite : même exercice réalisé, séries non faites réécrites pour la nouvelle fiche', async () => {
     const { repos } = await setup();
     const id = await repos.workouts.start(START);

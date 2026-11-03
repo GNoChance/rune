@@ -3,6 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { type AppServices, ServicesProvider } from '../../src/app-services';
+import { targetSummary } from '../../src/features/workout/workout-labels';
 import type { AppDb } from '../../src/local-db/db';
 import { setMeta } from '../../src/local-db/meta';
 import { type Repos, reposFor } from '../../src/repos';
@@ -290,6 +291,20 @@ describe('vue du programme', () => {
     const planned = await repos.programView.plannedWorkout('p-1', 'A');
     const work = planned?.plan.exercises[0]?.sets.find((s) => s.kind === 'work');
     expect(work?.targetLoadG).toBe(14_000);
+  });
+
+  it('visée par série du slot_state (ruling R57) : sur les séries du plan du jour et dans sa cible résumée', async () => {
+    const { repos, db } = await setup();
+    await seedCompletedSession(db, '99');
+    await seedMirror(db, 'slot_state', [{ ...SERVER_STATE, targetReps: 10 }]);
+    const exercise = (await repos.programView.plannedWorkout('p-1', 'A'))?.plan.exercises[0];
+    if (exercise === undefined) throw new Error('exercice A1 absent');
+    expect(
+      exercise.sets
+        .filter((s) => s.kind === 'work')
+        .map((s) => [s.targetRepsMin, s.targetRepsMax, s.targetReps]),
+    ).toEqual(Array(3).fill([8, 12, 10]));
+    expect(targetSummary(exercise)).toBe('3 × 10 (8–12) · 14 kg par main');
   });
 
   it('propositions en attente (non expirées) et journal des changements, le plus récent en tête ; les acceptés font le programme', async () => {

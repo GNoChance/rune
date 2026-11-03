@@ -13,7 +13,7 @@ let ctx: TestContext;
 afterEach(() => ctx?.close());
 
 const HEADER =
-  'date;heure;seance;lieu;exercice;exercice_id;position;cote;type;charge_kg;repetitions;duree_s;effort;cible_reps_min;cible_reps_max;cible_duree_s;cible_charge_kg;cible_rir';
+  'date;heure;seance;lieu;exercice;exercice_id;position;cote;type;charge_kg;repetitions;duree_s;effort;cible_reps_min;cible_reps_max;cible_reps;cible_duree_s;cible_charge_kg;cible_rir';
 
 type Member = Awaited<ReturnType<typeof createUserAndLogin>>;
 const get = (u: Member, headers: Record<string, string> = {}) =>
@@ -82,6 +82,7 @@ describe('GET /api/me/export/sets.csv (spec brique 3 §5.6)', () => {
       effort: 'ok',
       targetRepsMin: 8,
       targetRepsMax: 12,
+      targetReps: 10,
       targetLoadG: 60_000,
       targetRir: 2,
       loggedAt: '2026-10-05T22:30:00.000Z',
@@ -98,10 +99,10 @@ describe('GET /api/me/export/sets.csv (spec brique 3 §5.6)', () => {
     const lines = new TextDecoder().decode(bytes.slice(3)).split('\r\n');
     expect(lines[0]).toBe(HEADER);
     expect(lines[1]).toBe(
-      '2026-10-06;00:30;Séance A;"Salle ""Nord""";Squat gobelet;goblet-squat;1;;travail;62,5;8;;correct;8;12;;60;2',
+      '2026-10-06;00:30;Séance A;"Salle ""Nord""";Squat gobelet;goblet-squat;1;;travail;62,5;8;;correct;8;12;10;;60;2',
     );
     expect(lines[2]).toBe(
-      '2026-10-06;00:40;Séance A;"Salle ""Nord""";Squat gobelet;goblet-squat;2;;travail;60;7;;;;;;;',
+      '2026-10-06;00:40;Séance A;"Salle ""Nord""";Squat gobelet;goblet-squat;2;;travail;60;7;;;;;;;;',
     );
     expect(lines).toHaveLength(4);
     expect(lines[3]).toBe('');

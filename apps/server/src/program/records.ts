@@ -60,6 +60,7 @@ const toSet = (r: Selectable<PerformedSetTable>): SetRecord => ({
   effort: r.effort,
   targetRepsMin: r.targetRepsMin,
   targetRepsMax: r.targetRepsMax,
+  targetReps: r.targetReps,
   targetDurationS: r.targetDurationS,
   targetLoadG: r.targetLoadG,
   targetRir: r.targetRir,

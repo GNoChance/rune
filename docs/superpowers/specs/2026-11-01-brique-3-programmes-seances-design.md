@@ -124,6 +124,8 @@ Migration `0004_program` (non cassante) : les 7 tables de 09 §3, STRICT, avec `
 - `slot_state.exercise_id` peut porter un `chain_id` (§4.3.6), donc sans clé étrangère vers `exercise`.
 - **Pas de clé étrangère** de `workout_session.instance_id` vers `program_instance`, ni de `workout_session.place_id` vers `place` (écart à 09 §3). Après une restauration, les lignes de classe E écrites depuis la sauvegarde sont perdues (R-SYN-28), mais les séances de moins de 60 jours reviennent (R-SYN-26) : elles ne doivent pas être rejetées, puis entraîner le rejet de leurs exercices et séries (`parent_rejected`). Une séance dont l'instance n'existe plus est gardée hors programme : elle apparaît dans l'historique et compte pour l'XP et les records, mais n'est pas rejouée. Une séance dont le lieu n'existe plus affiche « Lieu inconnu ».
 
+Migrations suivantes, non cassantes : `0005_sync_rejection_codes` (codes de rejet des séances, §5.3) et `0006_performed_set_target_reps` (`performed_set.target_reps`, répétitions visées par série, ruling R57).
+
 La table `workout_session` reprend les colonnes que lit déjà `listActiveWorkoutSessions` (garde de mise à jour R-DEP-3) ; son test passe sur la vraie migration.
 
 ### 5.2 Registre (`entityRules`)
@@ -170,7 +172,7 @@ La table `workout_session` reprend les colonnes que lit déjà `listActiveWorkou
 ### 5.6 Export et suppression
 
 - Export JSON : les 7 tables y entrent par le registre.
-- **CSV des séries** : `GET /api/me/export/sets.csv`, réseau nécessaire, même garde `Sec-Fetch-Site` que l'export du catalogue, journalisé sans contenu. Une ligne par série faite : date et heure (Paris), séance (nom ou « Séance libre »), lieu, exercice (nom et id), position, côté, type, charge en kg (virgule décimale), répétitions, durée, effort, cibles ; la colonne douleur seulement si le consentement santé est actif. Séparateur `;`, UTF-8 avec BOM (ouverture directe dans un tableur français).
+- **CSV des séries** : `GET /api/me/export/sets.csv`, réseau nécessaire, même garde `Sec-Fetch-Site` que l'export du catalogue, journalisé sans contenu. Une ligne par série faite : date et heure (Paris), séance (nom ou « Séance libre »), lieu, exercice (nom et id), position, côté, type, charge en kg (virgule décimale), répétitions, durée, effort, cibles (fourchette, répétitions visées `cible_reps`, durée, charge, RIR) ; la colonne douleur seulement si le consentement santé est actif. Séparateur `;`, UTF-8 avec BOM (ouverture directe dans un tableur français).
 - Suppression du compte : cascade ; `delete.test` et `pull-leak.test` couvrent les 7 tables.
 - Une session admin reçoit 404 sur les instances, changements et séances des autres (05 §17.8).
 
@@ -207,7 +209,7 @@ Routes nouvelles : `/workout`, `/workout/:id`, `/workout/:id/summary`, `/history
 - **En-tête** : nom du programme, « Semaine n · Séance B », pastille « Semaine allégée » s'il y a lieu.
 - **Lieu du jour** : pastilles des lieux actifs, le principal présélectionné (R-LIEU-4).
 - **Séance** : celle de la rotation, avec « Changer » (feuille listant les séances du modèle ; le choix est enregistré dans la séance).
-- **Liste des exercices** (`planWorkout`), un par slot : nom, cible résumée (« 3 × 6 · 60 kg », « 3 × 8–12 · 14 kg par main », « 3 × 30 s », « Calibration : tu choisis ta charge ») et, s'il y a lieu, « Remplace <exercice> (pas faisable ici) », « Pas faisable ici : sauté », « Suspendu ». Toucher un exercice ouvre sa fiche en feuille du bas, hors ligne.
+- **Liste des exercices** (`planWorkout`), un par slot : nom, cible résumée (« 3 × 6 · 60 kg », « 3 × 8–12 · 14 kg par main », « 3 × 30 s », « Calibration : tu choisis ta charge » ; « 3 × 10 (8–12) » quand le moteur vise plus que le bas de la fourchette, ruling R57 : la visée de `slot_state.target_reps`, copiée dans `performed_set.target_reps` au démarrage, préremplit aussi la saisie ; aucune pour un nombre fixe, pour une autre variante de chaîne que celle de l'état, en semaine allégée ni à la reprise ; un changement d'exercice l'oublie, même vers la variante visée) et, s'il y a lieu, « Remplace <exercice> (pas faisable ici) », « Pas faisable ici : sauté », « Suspendu ». Toucher un exercice ouvre sa fiche en feuille du bas, hors ligne.
 - **Avis** au-dessus de la liste : reprise (« 16 jours depuis ta dernière séance : charges −10 % »), messages aux mineurs pour la barre (05 §14), écart de 3 h avec le sport (modèles `sport`), proposition en attente (lien vers Mon programme).
 - **Actions** : « Commencer » (principal, hors ligne compris), « Séance libre », lien « Mon programme ». Durée estimée.
 - **Sans programme** : carte « Choisis ton programme » vers `/program/choose`, et « Séance libre ». Catalogue absent : `CatalogMissing`.
@@ -234,7 +236,7 @@ Routes nouvelles : `/workout`, `/workout/:id`, `/workout/:id/summary`, `/history
 - Fenêtre du Système : « Séance gravée. », durée, séries de travail, kg soulevés ; une séance sans charge (poids du corps, élastique) montre à la place ses répétitions de travail faites (« Répétitions »), ou sans répétition son temps d'effort (« Temps d'effort ») (ruling R56).
 - XP gagnée et barre du rang qui se remplit ; passage de rang (global ou d'un groupe) : la pierre se grave, comme « Éveil terminé » (refonte §7), en fondu sous mouvement réduit.
 - Records battus (« Nouveau record : 62,5 kg × 6 ») ; un premier passage sur un exercice n'est pas un record.
-- « La prochaine fois » : une ligne par exercice, cible et phrase du code raison, marquée « provisoire » tant que le serveur n'a pas répondu.
+- « La prochaine fois » : une ligne par exercice, cible et phrase du code raison, marquée « provisoire » tant que le serveur n'a pas répondu. La cible est celle d'une séance normale : une semaine allégée ou une reprise après absence la réduit encore à la séance suivante (séries, charge, répétitions visées).
 - Bulle du coach : nouveau moment `session_end` dans `coach-lines.ts`, textes écrits à l'avance par coach (refonte §8), relus par le propriétaire.
 - « Terminé » ramène à l'accueil.
 

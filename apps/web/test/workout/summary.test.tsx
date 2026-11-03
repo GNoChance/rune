@@ -389,6 +389,28 @@ describe('« La prochaine fois » (spec §7.4, ruling R34)', () => {
     expect(flat(section('La prochaine fois'))).toContain(REASON_TEXTS.LOAD_UP);
   });
 
+  it('« une de plus par série » (REPS_UP) : la visée devant la fourchette, « 3 × 7 (6–10) » (ruling R57)', async () => {
+    const repsUp = {
+      ...decision({ provisional: false }),
+      reasonCode: 'REPS_UP',
+      nextTarget: {
+        mode: 'double',
+        loadG: 60_000,
+        repsMin: 6,
+        repsMax: 10,
+        targetReps: 7,
+        durationS: null,
+        variantId: null,
+        workSets: 3,
+      },
+    };
+    const db = await seedAll([TWO], (d) => seedMirror(d, 'engine_decision', [repsUp]));
+    await openSummary('s-now', db);
+    const line = within(section('La prochaine fois')).getAllByRole('listitem')[0] as HTMLElement;
+    expect(within(line).getByText('3 × 7 (6–10) · 60 kg')).toBeTruthy();
+    expect(flat(line)).toContain(REASON_TEXTS.REPS_UP);
+  });
+
   it('exercice sauté (aucune série de travail faite, NO_DATA) : pas de ligne', async () => {
     const skipped: SessionSpec = {
       ...TODAY,
@@ -500,6 +522,7 @@ describe('depuis l’écran de séance', () => {
       side: null,
       targetRepsMin: 8,
       targetRepsMax: 12,
+      targetReps: null,
       targetDurationS: null,
       targetLoadG: 14_000,
       targetRir: 2,

@@ -43,10 +43,10 @@ A1 back-squat : 3×6 rép. @ 25 kg (échauffement 2, RIR 2, calibration)
 A2 bench-press : 3×6 rép. @ 25 kg (échauffement 2, RIR 2, calibration)
     fait 4/4/4 @ 25 kg (failed)
     -> CALIBRATION CALIBRATION_DOWN ; prochain : 22,5 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 25 kg (RIR 2, calibration)
+A3 seated-cable-row : 3×8-12 rép. @ 25 kg (visée 8, RIR 2, calibration)
     fait 6/6/6 @ 25 kg (failed)
     -> CALIBRATION CALIBRATION_DOWN ; prochain : 20 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 25 kg (RIR 2, calibration)
+A4 leg-curl : 2×8-12 rép. @ 25 kg (visée 8, RIR 2, calibration)
     fait 6/6 @ 25 kg (failed)
     -> CALIBRATION CALIBRATION_DOWN ; prochain : 20 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -62,13 +62,13 @@ B1 romanian-deadlift : 3×6 rép. @ 25 kg (échauffement 2, RIR 2, calibration)
 B2 overhead-press : 3×6 rép. @ 25 kg (échauffement 2, RIR 2, calibration)
     fait 4/4/4 @ 25 kg (failed)
     -> CALIBRATION CALIBRATION_DOWN ; prochain : 22,5 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 25 kg (RIR 2, calibration)
+B3 lat-pulldown : 3×8-12 rép. @ 25 kg (visée 8, RIR 2, calibration)
     fait 6/6/6 @ 25 kg (failed)
     -> CALIBRATION CALIBRATION_DOWN ; prochain : 20 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 8 kg par côté (RIR 2, calibration)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 8 kg par côté (visée 8, RIR 2, calibration)
     fait 6/6/6/6 @ 8 kg (failed)
     -> CALIBRATION CALIBRATION_DOWN ; prochain : 6 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (RIR 2, calibration)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 8 kg (visée 8, RIR 2, calibration)
     fait 6/6 @ 8 kg (failed)
     -> CALIBRATION CALIBRATION_DOWN ; prochain : 6 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -79,10 +79,10 @@ A1 back-squat : 3×6 rép. @ 22,5 kg (échauffement 2, RIR 2, calibration)
 A2 bench-press : 3×6 rép. @ 22,5 kg (échauffement 2, RIR 2, calibration)
     fait 4/4/4 @ 22,5 kg (failed)
     -> CALIBRATION CALIBRATION_DOWN ; prochain : 20 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 20 kg (RIR 2, calibration)
+A3 seated-cable-row : 3×8-12 rép. @ 20 kg (visée 8, RIR 2, calibration)
     fait 6/6/6 @ 20 kg (failed)
     -> CALIBRATION CALIBRATION_DOWN ; prochain : 15 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 20 kg (RIR 2, calibration)
+A4 leg-curl : 2×8-12 rép. @ 20 kg (visée 8, RIR 2, calibration)
     fait 6/6 @ 20 kg (failed)
     -> CALIBRATION CALIBRATION_DOWN ; prochain : 15 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -96,13 +96,13 @@ B1 romanian-deadlift : 3×6 rép. @ 22,5 kg (échauffement 2, RIR 2, calibration
 B2 overhead-press : 3×6 rép. @ 22,5 kg (échauffement 2, RIR 2, calibration)
     fait 4/4/4 @ 22,5 kg (failed)
     -> CALIBRATION CALIBRATION_DOWN ; prochain : 20 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 20 kg (RIR 2, calibration)
+B3 lat-pulldown : 3×8-12 rép. @ 20 kg (visée 8, RIR 2, calibration)
     fait 6/6/6 @ 20 kg (failed)
     -> CALIBRATION CALIBRATION_DOWN ; prochain : 15 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 6 kg par côté (RIR 2, calibration)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 6 kg par côté (visée 8, RIR 2, calibration)
     fait 6/6/6/6 @ 6 kg (failed)
     -> CALIBRATION CALIBRATION_DOWN ; prochain : 4 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 6 kg (RIR 2, calibration)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 6 kg (visée 8, RIR 2, calibration)
     fait 6/6 @ 6 kg (failed)
     -> CALIBRATION CALIBRATION_DOWN ; prochain : 4 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -115,10 +115,10 @@ A1 back-squat : 3×6 rép. @ 20 kg (échauffement 2, RIR 2)
 A2 bench-press : 3×6 rép. @ 20 kg (échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 15 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 15 kg (visée 8, RIR 2)
     fait 6/6/6 @ 15 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 15 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 15 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 15 kg (visée 8, RIR 2)
     fait 6/6 @ 15 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 15 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -132,13 +132,13 @@ B1 romanian-deadlift : 3×6 rép. @ 20 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 20 kg (échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 15 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 15 kg (visée 8, RIR 2)
     fait 6/6/6 @ 15 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 15 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 4 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 4 kg par côté (visée 8, RIR 2)
     fait 6/6/6/6 @ 4 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 4 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 4 kg (visée 8, RIR 2)
     fait 6/6 @ 4 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -149,10 +149,10 @@ A1 back-squat : 3×6 rép. @ 20 kg (échauffement 2, RIR 2)
 A2 bench-press : 3×6 rép. @ 20 kg (échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 15 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 15 kg (visée 8, RIR 2)
     fait 6/6/6 @ 15 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 15 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 15 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 15 kg (visée 8, RIR 2)
     fait 6/6 @ 15 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 15 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -168,13 +168,13 @@ B1 romanian-deadlift : 3×6 rép. @ 20 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 20 kg (échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 15 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 15 kg (visée 8, RIR 2)
     fait 6/6/6 @ 15 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 15 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 4 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 4 kg par côté (visée 8, RIR 2)
     fait 6/6/6/6 @ 4 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 4 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 4 kg (visée 8, RIR 2)
     fait 6/6 @ 4 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -185,10 +185,10 @@ A1 back-squat : 3×6 rép. @ 20 kg (échauffement 2, RIR 2)
 A2 bench-press : 3×6 rép. @ 20 kg (échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_1_LIGHTEN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 15 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 15 kg (visée 8, RIR 2)
     fait 6/6/6 @ 15 kg (failed)
     -> STALL STALL_1_LIGHTEN ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 15 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 15 kg (visée 8, RIR 2)
     fait 6/6 @ 15 kg (failed)
     -> STALL STALL_1_LIGHTEN ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -203,13 +203,13 @@ B1 romanian-deadlift : 3×6 rép. @ 20 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 20 kg (échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_1_LIGHTEN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 15 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 15 kg (visée 8, RIR 2)
     fait 6/6/6 @ 15 kg (failed)
     -> STALL STALL_1_LIGHTEN ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 4 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 4 kg par côté (visée 8, RIR 2)
     fait 6/6/6/6 @ 4 kg (failed)
     -> STALL STALL_1_LIGHTEN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 4 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 4 kg (visée 8, RIR 2)
     fait 6/6 @ 4 kg (failed)
     -> STALL STALL_1_LIGHTEN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
@@ -217,16 +217,16 @@ B5 dumbbell-bench-press : 2×8-12 rép. @ 4 kg (RIR 2)
 == Semaine 5 (bloc réactif) ==
 
 -- Séance 13 · A · 2026-01-29 · normale
-A1 back-squat : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A2 bench-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 10 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6/6 @ 10 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 10 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6 @ 10 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -234,33 +234,33 @@ A5 knee-plank : 3×20 s (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 20 s, 3 séries, knee-plank
 
 -- Séance 14 · B · 2026-01-31 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B2 overhead-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 10 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6/6 @ 10 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (visée 8, RIR 2)
     fait 6/6/6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (visée 8, RIR 2)
     fait 6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
 
 -- Séance 15 · A · 2026-02-02 · normale
-A1 back-squat : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A2 bench-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 10 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6/6 @ 10 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 10 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6 @ 10 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -270,33 +270,33 @@ A5 knee-plank : 3×20 s (RIR 2)
 == Semaine 6 (bloc réactif) ==
 
 -- Séance 16 · B · 2026-02-04 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B2 overhead-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 10 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6/6 @ 10 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (visée 8, RIR 2)
     fait 6/6/6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (visée 8, RIR 2)
     fait 6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
 
 -- Séance 17 · A · 2026-02-06 · normale
-A1 back-squat : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_2_DOUBLE ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A2 bench-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_2_DOUBLE ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 10 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6/6 @ 10 kg (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 10 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6 @ 10 kg (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -307,19 +307,19 @@ A5 knee-plank : 3×20 s (RIR 2)
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 18 · B · 2026-02-08 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_2_DOUBLE ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B2 overhead-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_2_DOUBLE ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 10 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6/6 @ 10 kg (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (visée 8, RIR 2)
     fait 6/6/6/6 @ 2 kg (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (visée 8, RIR 2)
     fait 6/6 @ 2 kg (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
    ! propose_replace ENGINE_STALL_REPLACE slot B3 lat-pulldown [{"op":"replace_exercise","slot":"B3","exercise":"negative-pull-up"}]
@@ -330,16 +330,16 @@ B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (RIR 2)
 == Semaine 7 (bloc réactif) ==
 
 -- Séance 19 · A · 2026-02-10 · normale
-A1 back-squat : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A2 bench-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 10 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6/6 @ 10 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 10 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6 @ 10 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -347,33 +347,33 @@ A5 knee-plank : 3×20 s (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 20 s, 3 séries, knee-plank
 
 -- Séance 20 · B · 2026-02-12 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B2 overhead-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 10 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6/6 @ 10 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (visée 8, RIR 2)
     fait 6/6/6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (visée 8, RIR 2)
     fait 6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
 
 -- Séance 21 · A · 2026-02-14 · normale
-A1 back-squat : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A2 bench-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 10 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6/6 @ 10 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 10 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6 @ 10 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 10 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -383,33 +383,33 @@ A5 knee-plank : 3×20 s (RIR 2)
 == Semaine 8 (bloc réactif) ==
 
 -- Séance 22 · B · 2026-02-16 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B2 overhead-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 10 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6/6 @ 10 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 10 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (visée 8, RIR 2)
     fait 6/6/6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (visée 8, RIR 2)
     fait 6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
 
 -- Séance 23 · A · 2026-02-18 · normale
-A1 back-squat : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A2 bench-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 10 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6/6 @ 10 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 5 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 10 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6 @ 10 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 5 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -420,19 +420,19 @@ A5 knee-plank : 3×20 s (RIR 2)
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 24 · B · 2026-02-20 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B2 overhead-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 10 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 6/6/6 @ 10 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 5 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (visée 8, RIR 2)
     fait 6/6/6/6 @ 2 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (visée 8, RIR 2)
     fait 6/6 @ 2 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
    ! propose_replace ENGINE_STALL_REPLACE slot B1 romanian-deadlift [{"op":"replace_exercise","slot":"B1","exercise":"dumbbell-romanian-deadlift"}]
@@ -442,16 +442,16 @@ B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (RIR 2)
 == Semaine 9 (bloc réactif) ==
 
 -- Séance 25 · A · 2026-02-22 · normale
-A1 back-squat : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A2 bench-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 5 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6/6 @ 5 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 5 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6 @ 5 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -459,33 +459,33 @@ A5 knee-plank : 3×20 s (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 20 s, 3 séries, knee-plank
 
 -- Séance 26 · B · 2026-02-24 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B2 overhead-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 5 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6/6 @ 5 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (visée 8, RIR 2)
     fait 6/6/6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (visée 8, RIR 2)
     fait 6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
 
 -- Séance 27 · A · 2026-02-26 · normale
-A1 back-squat : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A2 bench-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 5 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6/6 @ 5 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 5 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6 @ 5 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -495,33 +495,33 @@ A5 knee-plank : 3×20 s (RIR 2)
 == Semaine 10 (bloc réactif) ==
 
 -- Séance 28 · B · 2026-02-28 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B2 overhead-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 5 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6/6 @ 5 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (visée 8, RIR 2)
     fait 6/6/6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (visée 8, RIR 2)
     fait 6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
 
 -- Séance 29 · A · 2026-03-02 · normale
-A1 back-squat : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A2 bench-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 5 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6/6 @ 5 kg (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 5 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 5 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6 @ 5 kg (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 5 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -532,19 +532,19 @@ A5 knee-plank : 3×20 s (RIR 2)
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 30 · B · 2026-03-04 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B2 overhead-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 5 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6/6 @ 5 kg (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 5 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (visée 8, RIR 2)
     fait 6/6/6/6 @ 2 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (visée 8, RIR 2)
     fait 6/6 @ 2 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
    ! propose_replace ENGINE_STALL_REPLACE slot B3 lat-pulldown [{"op":"replace_exercise","slot":"B3","exercise":"negative-pull-up"}]
@@ -553,16 +553,16 @@ B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (RIR 2)
 == Semaine 11 (bloc réactif) ==
 
 -- Séance 31 · A · 2026-03-06 · normale
-A1 back-squat : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A2 bench-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 5 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6/6 @ 5 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 5 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6 @ 5 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -570,33 +570,33 @@ A5 knee-plank : 3×20 s (RIR 2)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 20 s, 3 séries, knee-plank
 
 -- Séance 32 · B · 2026-03-08 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B2 overhead-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 5 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6/6 @ 5 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (visée 8, RIR 2)
     fait 6/6/6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (visée 8, RIR 2)
     fait 6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
 
 -- Séance 33 · A · 2026-03-10 · normale
-A1 back-squat : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A2 bench-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 5 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6/6 @ 5 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 5 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6 @ 5 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -606,33 +606,33 @@ A5 knee-plank : 3×20 s (RIR 2)
 == Semaine 12 (bloc réactif) ==
 
 -- Séance 34 · B · 2026-03-12 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B2 overhead-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 5 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6/6 @ 5 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (visée 8, RIR 2)
     fait 6/6/6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (visée 8, RIR 2)
     fait 6/6 @ 2 kg (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
 
 -- Séance 35 · A · 2026-03-14 · normale
-A1 back-squat : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A1 back-squat : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A2 bench-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+A2 bench-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 5 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6/6 @ 5 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 5 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 5 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6 @ 5 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 5 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -641,19 +641,19 @@ A5 knee-plank : 3×20 s (RIR 2)
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 36 · B · 2026-03-16 · normale
-B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B1 romanian-deadlift : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B2 overhead-press : 3×6-10 rép. @ 20 kg (échauffement 2, RIR 2)
+B2 overhead-press : 3×6-10 rép. @ 20 kg (visée 6, échauffement 2, RIR 2)
     fait 4/4/4 @ 20 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 kg, 6-10 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 5 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 5 kg (visée 8, RIR 2)
     fait 6/6/6 @ 5 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 5 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 2 kg par côté (visée 8, RIR 2)
     fait 6/6/6/6 @ 2 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 2 kg (visée 8, RIR 2)
     fait 6/6 @ 2 kg (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 2 kg, 8-12 rép. (cible 8), 2 séries
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]

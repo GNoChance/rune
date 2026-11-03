@@ -168,6 +168,7 @@ function buildSets(slot: SlotSpec, sheet: CatalogSheet, seed: ExerciseSeed, key:
       effort: last ? seed.effort : null,
       targetRepsMin: null,
       targetRepsMax: null,
+      targetReps: null,
       targetDurationS: null,
       targetLoadG: loadG,
       targetRir: null,

@@ -84,6 +84,7 @@ function setView(r: MirrorRow): WorkoutSetView | null {
     effort: oneOf(EFFORTS, r.effort),
     targetRepsMin: int(r.targetRepsMin),
     targetRepsMax: int(r.targetRepsMax),
+    targetReps: int(r.targetReps),
     targetDurationS: int(r.targetDurationS),
     targetLoadG: int(r.targetLoadG),
     targetRir: int(r.targetRir),

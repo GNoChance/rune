@@ -260,6 +260,7 @@ function lines(c: Case, d: SessionDraw, state: EngineState | null): SetRecord[] 
       effort: last ? d.effort : null,
       targetRepsMin: null,
       targetRepsMax: null,
+      targetReps: null,
       targetDurationS: null,
       targetLoadG: null,
       targetRir: null,

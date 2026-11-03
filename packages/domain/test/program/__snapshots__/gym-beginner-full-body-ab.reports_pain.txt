@@ -43,10 +43,10 @@ A1 back-squat : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
 A2 bench-press : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 30 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 30 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 30 kg (visée 8, RIR 2)
     fait 13/13/13 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 30 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 30 kg (visée 8, RIR 2)
     fait 13/13 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×20 s (RIR 2)
@@ -62,13 +62,13 @@ B1 romanian-deadlift : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 30 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 32,5 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 30 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 30 kg (visée 8, RIR 2)
     fait 13/13/13 @ 30 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 35 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 10 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 10 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 10 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 12 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 10 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 10 kg (visée 8, RIR 2)
     fait 13/13 @ 10 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 12 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -79,10 +79,10 @@ A1 back-squat : 3×6 rép. @ 35 kg (échauffement 2, RIR 2)
 A2 bench-press : 3×6 rép. @ 32,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 32,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 35 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 35 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 35 kg (visée 8, RIR 2)
     fait 13/13/13 @ 35 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 40 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 35 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 35 kg (visée 8, RIR 2)
     fait 13/13 @ 35 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 40 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×25 s (RIR 2)
@@ -96,13 +96,13 @@ B1 romanian-deadlift : 3×6 rép. @ 35 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 32,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 32,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 35 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 35 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 35 kg (visée 8, RIR 2)
     fait 13/13/13 @ 35 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 40 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 12 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 12 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 12 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 14 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 12 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 12 kg (visée 8, RIR 2)
     fait 13/13 @ 12 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 14 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -115,10 +115,10 @@ A1 back-squat : 3×6 rép. @ 30 kg (échauffement 2, RIR 2)
 A2 bench-press : 3×6 rép. @ 35 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 35 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 37,5 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 40 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 40 kg (visée 8, RIR 2)
     fait 13/13/13 @ 40 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 45 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 40 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 40 kg (visée 8, RIR 2)
     fait 13/13 @ 40 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 45 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×30 s (RIR 2)
@@ -133,13 +133,13 @@ B1 romanian-deadlift : 3×6 rép. @ 40 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 35 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 35 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 37,5 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 40 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 40 kg (visée 8, RIR 2)
     fait 13/13/13 @ 40 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 45 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 14 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 14 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 14 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 16 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 14 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 14 kg (visée 8, RIR 2)
     fait 13/13 @ 14 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 16 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -148,10 +148,10 @@ A1 back-squat : suspended
 A2 bench-press : 3×6 rép. @ 37,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 37,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 40 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 45 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 45 kg (visée 8, RIR 2)
     fait 13/13/13 @ 45 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 50 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 45 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 45 kg (visée 8, RIR 2)
     fait 13/13 @ 45 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 50 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×35 s (RIR 2)
@@ -167,13 +167,13 @@ B1 romanian-deadlift : 3×6 rép. @ 45 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 37,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 37,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 40 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 45 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 45 kg (visée 8, RIR 2)
     fait 13/13/13 @ 45 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 50 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 16 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 16 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 16 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 18 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 16 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 16 kg (visée 8, RIR 2)
     fait 13/13 @ 16 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 18 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -182,10 +182,10 @@ A1 back-squat : suspended
 A2 bench-press : 3×6 rép. @ 40 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 40 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 42,5 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 50 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 50 kg (visée 8, RIR 2)
     fait 13/13/13 @ 50 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 55 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 50 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 50 kg (visée 8, RIR 2)
     fait 13/13 @ 50 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 55 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×40 s (RIR 2)
@@ -199,13 +199,13 @@ B1 romanian-deadlift : 3×6 rép. @ 50 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 40 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 40 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 42,5 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 50 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 50 kg (visée 8, RIR 2)
     fait 13/13/13 @ 50 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 55 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 18 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 18 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 18 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 20 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 18 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 18 kg (visée 8, RIR 2)
     fait 13/13 @ 18 kg (ok)
     -> PROGRESS SUM_LOAD_UP ; prochain : 20 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -216,10 +216,10 @@ A1 back-squat : suspended
 A2 bench-press : 3×6 rép. @ 42,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 42,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 45 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 55 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 55 kg (visée 8, RIR 2)
     fait 13/13/13 @ 55 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 60 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 55 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 55 kg (visée 8, RIR 2)
     fait 13/13 @ 55 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 60 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×45 s (RIR 2)
@@ -233,13 +233,13 @@ B1 romanian-deadlift : 3×6 rép. @ 55 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 42,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 42,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 45 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 55 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 55 kg (visée 8, RIR 2)
     fait 13/13/13 @ 55 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 60 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 20 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 20 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 20 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 22 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 20 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 20 kg (visée 8, RIR 2)
     fait 13/13 @ 20 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 22 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -248,10 +248,10 @@ A1 back-squat : suspended
 A2 bench-press : 3×6 rép. @ 45 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 45 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 47,5 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 60 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 60 kg (visée 8, RIR 2)
     fait 13/13/13 @ 60 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 65 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 60 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 60 kg (visée 8, RIR 2)
     fait 13/13 @ 60 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 65 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×50 s (RIR 2)
@@ -267,13 +267,13 @@ B1 romanian-deadlift : 3×6 rép. @ 60 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 45 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 45 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 47,5 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 60 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 60 kg (visée 8, RIR 2)
     fait 13/13/13 @ 60 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 65 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 22 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 22 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 22 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 24 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 22 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 22 kg (visée 8, RIR 2)
     fait 13/13 @ 22 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 24 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -282,10 +282,10 @@ A1 back-squat : suspended
 A2 bench-press : 3×6 rép. @ 47,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 47,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 50 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 65 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 65 kg (visée 8, RIR 2)
     fait 13/13/13 @ 65 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 70 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 65 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 65 kg (visée 8, RIR 2)
     fait 13/13 @ 65 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 70 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×55 s (RIR 2)
@@ -299,13 +299,13 @@ B1 romanian-deadlift : 3×6 rép. @ 65 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 47,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 47,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 50 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 65 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 65 kg (visée 8, RIR 2)
     fait 13/13/13 @ 65 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 70 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 24 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 24 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 24 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 26 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 24 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 24 kg (visée 8, RIR 2)
     fait 13/13 @ 24 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 26 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -316,10 +316,10 @@ A1 back-squat : suspended
 A2 bench-press : 3×6 rép. @ 50 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 50 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 52,5 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 70 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 70 kg (visée 8, RIR 2)
     fait 13/13/13 @ 70 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 75 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 70 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 70 kg (visée 8, RIR 2)
     fait 13/13 @ 70 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 75 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×60 s (RIR 2)
@@ -333,13 +333,13 @@ B1 romanian-deadlift : 3×6 rép. @ 70 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 50 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 50 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 52,5 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 70 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 70 kg (visée 8, RIR 2)
     fait 13/13/13 @ 70 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 75 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 26 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 26 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 26 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 28 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 26 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 26 kg (visée 8, RIR 2)
     fait 13/13 @ 26 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 28 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -348,10 +348,10 @@ A1 back-squat : suspended
 A2 bench-press : 3×6 rép. @ 52,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 52,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 55 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 75 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 75 kg (visée 8, RIR 2)
     fait 13/13/13 @ 75 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 80 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 75 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 75 kg (visée 8, RIR 2)
     fait 13/13 @ 75 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 80 kg, 8-12 rép. (cible 8), 2 séries
 A5 knee-plank : 3×60 s (RIR 2)
@@ -367,13 +367,13 @@ B1 romanian-deadlift : 3×6 rép. @ 75 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 52,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 52,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 55 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 75 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 75 kg (visée 8, RIR 2)
     fait 13/13/13 @ 75 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 80 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 28 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 28 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 28 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 30 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 28 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 28 kg (visée 8, RIR 2)
     fait 13/13 @ 28 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 30 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -382,10 +382,10 @@ A1 back-squat : suspended
 A2 bench-press : 3×6 rép. @ 55 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 55 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 57,5 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 80 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 80 kg (visée 8, RIR 2)
     fait 13/13/13 @ 80 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 85 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 80 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 80 kg (visée 8, RIR 2)
     fait 13/13 @ 80 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 85 kg, 8-12 rép. (cible 8), 2 séries
 A5 front-plank : 3×20 s (RIR 2)
@@ -399,13 +399,13 @@ B1 romanian-deadlift : 3×6 rép. @ 80 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 55 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 55 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 57,5 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 80 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 80 kg (visée 8, RIR 2)
     fait 13/13/13 @ 80 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 85 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 30 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 30 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 30 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 32 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 30 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 30 kg (visée 8, RIR 2)
     fait 13/13 @ 30 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 32 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -416,10 +416,10 @@ A1 back-squat : suspended
 A2 bench-press : 3×6 rép. @ 57,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 57,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 60 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 85 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 85 kg (visée 8, RIR 2)
     fait 13/13/13 @ 85 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 90 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 85 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 85 kg (visée 8, RIR 2)
     fait 13/13 @ 85 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 90 kg, 8-12 rép. (cible 8), 2 séries
 A5 front-plank : 3×25 s (RIR 2)
@@ -433,13 +433,13 @@ B1 romanian-deadlift : 3×6 rép. @ 85 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 57,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 57,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 60 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 85 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 85 kg (visée 8, RIR 2)
     fait 13/13/13 @ 85 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 90 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 32 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 32 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 32 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 34 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 32 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 32 kg (visée 8, RIR 2)
     fait 13/13 @ 32 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 34 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -448,10 +448,10 @@ A1 back-squat : suspended
 A2 bench-press : 3×6 rép. @ 60 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 60 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 62,5 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 90 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 90 kg (visée 8, RIR 2)
     fait 13/13/13 @ 90 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 95 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 90 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 90 kg (visée 8, RIR 2)
     fait 13/13 @ 90 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 95 kg, 8-12 rép. (cible 8), 2 séries
 A5 front-plank : 3×30 s (RIR 2)
@@ -467,13 +467,13 @@ B1 romanian-deadlift : 3×6 rép. @ 90 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 60 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 60 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 62,5 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 90 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 90 kg (visée 8, RIR 2)
     fait 13/13/13 @ 90 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 95 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 34 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 34 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 34 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 36 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 34 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 34 kg (visée 8, RIR 2)
     fait 13/13 @ 34 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 36 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -482,10 +482,10 @@ A1 back-squat : suspended
 A2 bench-press : 3×6 rép. @ 62,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 62,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 65 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 95 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 95 kg (visée 8, RIR 2)
     fait 13/13/13 @ 95 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 100 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 95 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 95 kg (visée 8, RIR 2)
     fait 13/13 @ 95 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 100 kg, 8-12 rép. (cible 8), 2 séries
 A5 front-plank : 3×35 s (RIR 2)
@@ -499,13 +499,13 @@ B1 romanian-deadlift : 3×6 rép. @ 95 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 62,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 62,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 65 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 95 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 95 kg (visée 8, RIR 2)
     fait 13/13/13 @ 95 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 100 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 36 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 36 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 36 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 38 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 36 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 36 kg (visée 8, RIR 2)
     fait 13/13 @ 36 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 38 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -516,10 +516,10 @@ A1 back-squat : suspended
 A2 bench-press : 3×6 rép. @ 65 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 65 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 67,5 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 100 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 100 kg (visée 8, RIR 2)
     fait 13/13/13 @ 100 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 105 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 100 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 100 kg (visée 8, RIR 2)
     fait 13/13 @ 100 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 105 kg, 8-12 rép. (cible 8), 2 séries
 A5 front-plank : 3×40 s (RIR 2)
@@ -533,13 +533,13 @@ B1 romanian-deadlift : 3×6 rép. @ 100 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 65 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 65 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 67,5 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 100 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 100 kg (visée 8, RIR 2)
     fait 13/13/13 @ 100 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 105 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 38 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 38 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 38 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 40 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 38 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 38 kg (visée 8, RIR 2)
     fait 13/13 @ 38 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 40 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -548,10 +548,10 @@ A1 back-squat : suspended
 A2 bench-press : 3×6 rép. @ 67,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 67,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 70 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 105 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 105 kg (visée 8, RIR 2)
     fait 13/13/13 @ 105 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 110 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 105 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 105 kg (visée 8, RIR 2)
     fait 13/13 @ 105 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 110 kg, 8-12 rép. (cible 8), 2 séries
 A5 front-plank : 3×45 s (RIR 2)
@@ -567,13 +567,13 @@ B1 romanian-deadlift : 3×6 rép. @ 105 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 67,5 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 67,5 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 70 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 105 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 105 kg (visée 8, RIR 2)
     fait 13/13/13 @ 105 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 110 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 40 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 40 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 40 kg (ok)
     -> HOLD REPS_MAX_REACHED ; prochain : 40 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 40 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 40 kg (visée 8, RIR 2)
     fait 13/13 @ 40 kg (ok)
     -> HOLD REPS_MAX_REACHED ; prochain : 40 kg, 8-12 rép. (cible 8), 2 séries
 
@@ -582,10 +582,10 @@ A1 back-squat : suspended
 A2 bench-press : 3×6 rép. @ 70 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 70 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 72,5 kg, 6 rép. (cible 6), 3 séries
-A3 seated-cable-row : 3×8-12 rép. @ 110 kg (RIR 2)
+A3 seated-cable-row : 3×8-12 rép. @ 110 kg (visée 8, RIR 2)
     fait 13/13/13 @ 110 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 115 kg, 8-12 rép. (cible 8), 3 séries
-A4 leg-curl : 2×8-12 rép. @ 110 kg (RIR 2)
+A4 leg-curl : 2×8-12 rép. @ 110 kg (visée 8, RIR 2)
     fait 13/13 @ 110 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 115 kg, 8-12 rép. (cible 8), 2 séries
 A5 front-plank : 3×50 s (RIR 2)
@@ -599,13 +599,13 @@ B1 romanian-deadlift : 3×6 rép. @ 110 kg (échauffement 2, RIR 2)
 B2 overhead-press : 3×6 rép. @ 70 kg (échauffement 2, RIR 2)
     fait 6/6/6 @ 70 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 72,5 kg, 6 rép. (cible 6), 3 séries
-B3 lat-pulldown : 3×8-12 rép. @ 110 kg (RIR 2)
+B3 lat-pulldown : 3×8-12 rép. @ 110 kg (visée 8, RIR 2)
     fait 13/13/13 @ 110 kg (ok)
     -> PROGRESS LOAD_UP ; prochain : 115 kg, 8-12 rép. (cible 8), 3 séries
-B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 40 kg par côté (RIR 2)
+B4 dumbbell-reverse-lunge : 2×8-12 rép. @ 40 kg par côté (visée 8, RIR 2)
     fait 13/13/13/13 @ 40 kg (ok)
     -> HOLD REPS_MAX_REACHED ; prochain : 40 kg, 8-12 rép. (cible 8), 2 séries
-B5 dumbbell-bench-press : 2×8-12 rép. @ 40 kg (RIR 2)
+B5 dumbbell-bench-press : 2×8-12 rép. @ 40 kg (visée 8, RIR 2)
     fait 13/13 @ 40 kg (ok)
     -> HOLD REPS_MAX_REACHED ; prochain : 40 kg, 8-12 rép. (cible 8), 2 séries
 

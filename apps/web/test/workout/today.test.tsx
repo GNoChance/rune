@@ -49,6 +49,20 @@ describe('targetSummary', () => {
     expect(targetSummary(LUNGE)).toBe('2 × 8–12 · 14 kg par main');
   });
 
+  it('répétitions visées au-dessus du bas de la fourchette : devant elle (ruling R57)', () => {
+    const aimed = (targetReps: number | null) =>
+      work({ ...LUNGE, sets: LUNGE.sets.map((s) => ({ ...s, targetReps })) });
+    expect(targetSummary(aimed(10))).toBe('2 × 10 (8–12) · 14 kg par main');
+    expect(targetSummary(aimed(12))).toBe('2 × 12 (8–12) · 14 kg par main');
+    // Au bas de la fourchette ou sans visée : la fourchette seule.
+    expect(targetSummary(aimed(8))).toBe('2 × 8–12 · 14 kg par main');
+    expect(targetSummary(aimed(null))).toBe('2 × 8–12 · 14 kg par main');
+    // Nombre fixe : la visée ne s'ajoute pas.
+    expect(targetSummary(work({ sets: SQUAT.sets.map((s) => ({ ...s, targetReps: 6 })) }))).toBe(
+      '3 × 6 · 60 kg',
+    );
+  });
+
   it('durée', () => {
     const plank = work({
       measure: 'duration',

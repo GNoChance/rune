@@ -74,6 +74,7 @@ function work(
     effort: i === values.length - 1 ? effort : null,
     targetRepsMin: null,
     targetRepsMax: null,
+    targetReps: null,
     targetDurationS: null,
     targetLoadG: null,
     targetRir: null,

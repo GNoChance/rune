@@ -46,22 +46,22 @@ B6 band-external-rotation : not_feasible_here
 == Semaine 2 (bloc réactif) ==
 
 -- Séance 3 · A · 2026-01-09 · normale · avis sport_gap
-A1 jump-landing : 3×5-8 rép. (RIR 3)
+A1 jump-landing : 3×5-8 rép. (visée 5, RIR 3)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, jump-landing
-A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (RIR 2)
+A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (visée 4, RIR 2)
     fait 2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-A3 assisted-nordic-curl : 3×5-8 rép. (RIR 2)
+A3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
 A4 copenhagen-plank-short-lever : 2×20 s par côté (RIR 2)
     fait 12 s/12 s/12 s/12 s (failed)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries, copenhagen-plank-short-lever
-A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (RIR 2)
+A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (visée 6, RIR 2)
     fait 4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 2 séries
-A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (RIR 2)
+A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (visée 6, RIR 2)
     fait 4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
 A7 side-plank : 2×20 s par côté (RIR 2)
@@ -69,19 +69,19 @@ A7 side-plank : 2×20 s par côté (RIR 2)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries
 
 -- Séance 4 · B · 2026-01-11 · normale · avis sport_gap
-B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (RIR 2)
+B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (visée 4, RIR 2)
     fait 2/2/2/2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (RIR 2)
+B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
     fait 4/4/4/4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
-B3 standing-calf-raise : 3×8-15 rép. (RIR 2)
+B3 standing-calf-raise : 3×8-15 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-15 rép. (cible 8), 3 séries, standing-calf-raise
-B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 3 séries
-B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (RIR 2)
+B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (visée 8, RIR 2)
     fait 6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 2 séries
 B6 band-external-rotation : not_feasible_here
@@ -89,22 +89,22 @@ B6 band-external-rotation : not_feasible_here
 == Semaine 3 (bloc réactif) ==
 
 -- Séance 5 · A · 2026-01-13 · normale · avis sport_gap
-A1 jump-landing : 3×5-8 rép. (RIR 3)
+A1 jump-landing : 3×5-8 rép. (visée 5, RIR 3)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, jump-landing
-A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (RIR 2)
+A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (visée 4, RIR 2)
     fait 2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-A3 assisted-nordic-curl : 3×5-8 rép. (RIR 2)
+A3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
 A4 copenhagen-plank-short-lever : 2×20 s par côté (RIR 2)
     fait 12 s/12 s/12 s/12 s (failed)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries, copenhagen-plank-short-lever
-A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (RIR 2)
+A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (visée 6, RIR 2)
     fait 4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 2 séries
-A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (RIR 2)
+A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (visée 6, RIR 2)
     fait 4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
 A7 side-plank : 2×20 s par côté (RIR 2)
@@ -112,19 +112,19 @@ A7 side-plank : 2×20 s par côté (RIR 2)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries
 
 -- Séance 6 · B · 2026-01-15 · normale · avis sport_gap
-B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (RIR 2)
+B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (visée 4, RIR 2)
     fait 2/2/2/2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (RIR 2)
+B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
     fait 4/4/4/4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
-B3 standing-calf-raise : 3×8-15 rép. (RIR 2)
+B3 standing-calf-raise : 3×8-15 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-15 rép. (cible 8), 3 séries, standing-calf-raise
-B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 3 séries
-B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (RIR 2)
+B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (visée 8, RIR 2)
     fait 6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 2 séries
 B6 band-external-rotation : not_feasible_here
@@ -132,22 +132,22 @@ B6 band-external-rotation : not_feasible_here
 == Semaine 4 (bloc réactif) ==
 
 -- Séance 7 · A · 2026-01-17 · normale · avis sport_gap
-A1 jump-landing : 3×5-8 rép. (RIR 3)
+A1 jump-landing : 3×5-8 rép. (visée 5, RIR 3)
     fait 3/3/3 (failed)
     -> STALL STALL_RESET_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, jump-landing
-A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (RIR 2)
+A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (visée 4, RIR 2)
     fait 2/2/2 (failed)
     -> STALL STALL_1_LIGHTEN ; prochain : 4-6 rép. (cible 4), 3 séries
-A3 assisted-nordic-curl : 3×5-8 rép. (RIR 2)
+A3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
     fait 3/3/3 (failed)
     -> STALL STALL_RESET_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
 A4 copenhagen-plank-short-lever : 2×20 s par côté (RIR 2)
     fait 12 s/12 s/12 s/12 s (failed)
     -> STALL STALL_RESET_MIN ; prochain : 20 s, 2 séries, copenhagen-plank-short-lever
-A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (RIR 2)
+A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (visée 6, RIR 2)
     fait 4/4 (failed)
     -> STALL STALL_1_LIGHTEN ; prochain : 6-10 rép. (cible 6), 2 séries
-A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (RIR 2)
+A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (visée 6, RIR 2)
     fait 4/4/4 (failed)
     -> STALL STALL_1_LIGHTEN ; prochain : 6-10 rép. (cible 6), 3 séries
 A7 side-plank : 2×20 s par côté (RIR 2)
@@ -156,19 +156,19 @@ A7 side-plank : 2×20 s par côté (RIR 2)
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 8 · B · 2026-01-19 · normale · avis sport_gap
-B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (RIR 2)
+B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (visée 4, RIR 2)
     fait 2/2/2/2/2/2 (failed)
     -> STALL STALL_1_LIGHTEN ; prochain : 4-6 rép. (cible 4), 3 séries
-B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (RIR 2)
+B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
     fait 4/4/4/4/4/4 (failed)
     -> STALL STALL_1_LIGHTEN ; prochain : 6-10 rép. (cible 6), 3 séries
-B3 standing-calf-raise : 3×8-15 rép. (RIR 2)
+B3 standing-calf-raise : 3×8-15 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> STALL STALL_RESET_MIN ; prochain : 8-15 rép. (cible 8), 3 séries, standing-calf-raise
-B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> STALL STALL_1_LIGHTEN ; prochain : 8-12 rép. (cible 8), 3 séries
-B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (RIR 2)
+B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (visée 8, RIR 2)
     fait 6/6 (failed)
     -> STALL STALL_1_LIGHTEN ; prochain : 8-12 rép. (cible 8), 2 séries
 B6 band-external-rotation : not_feasible_here
@@ -177,22 +177,22 @@ B6 band-external-rotation : not_feasible_here
 == Semaine 5 (bloc réactif) ==
 
 -- Séance 9 · A · 2026-01-21 · normale · avis sport_gap
-A1 jump-landing : 3×5-8 rép. (RIR 3)
+A1 jump-landing : 3×5-8 rép. (visée 5, RIR 3)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, jump-landing
-A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (RIR 2)
+A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (visée 4, RIR 2)
     fait 2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-A3 assisted-nordic-curl : 3×5-8 rép. (RIR 2)
+A3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
 A4 copenhagen-plank-short-lever : 2×20 s par côté (RIR 2)
     fait 12 s/12 s/12 s/12 s (failed)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries, copenhagen-plank-short-lever
-A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (RIR 2)
+A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (visée 6, RIR 2)
     fait 4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 2 séries
-A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (RIR 2)
+A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (visée 6, RIR 2)
     fait 4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
 A7 side-plank : 2×20 s par côté (RIR 2)
@@ -200,19 +200,19 @@ A7 side-plank : 2×20 s par côté (RIR 2)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries
 
 -- Séance 10 · B · 2026-01-23 · normale · avis sport_gap
-B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (RIR 2)
+B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (visée 4, RIR 2)
     fait 2/2/2/2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (RIR 2)
+B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
     fait 4/4/4/4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
-B3 standing-calf-raise : 3×8-15 rép. (RIR 2)
+B3 standing-calf-raise : 3×8-15 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-15 rép. (cible 8), 3 séries, standing-calf-raise
-B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 3 séries
-B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (RIR 2)
+B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (visée 8, RIR 2)
     fait 6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 2 séries
 B6 band-external-rotation : not_feasible_here
@@ -220,22 +220,22 @@ B6 band-external-rotation : not_feasible_here
 == Semaine 6 (bloc réactif) ==
 
 -- Séance 11 · A · 2026-01-25 · normale · avis sport_gap
-A1 jump-landing : 3×5-8 rép. (RIR 3)
+A1 jump-landing : 3×5-8 rép. (visée 5, RIR 3)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, jump-landing
-A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (RIR 2)
+A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (visée 4, RIR 2)
     fait 2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-A3 assisted-nordic-curl : 3×5-8 rép. (RIR 2)
+A3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
 A4 copenhagen-plank-short-lever : 2×20 s par côté (RIR 2)
     fait 12 s/12 s/12 s/12 s (failed)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries, copenhagen-plank-short-lever
-A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (RIR 2)
+A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (visée 6, RIR 2)
     fait 4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 2 séries
-A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (RIR 2)
+A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (visée 6, RIR 2)
     fait 4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
 A7 side-plank : 2×20 s par côté (RIR 2)
@@ -243,19 +243,19 @@ A7 side-plank : 2×20 s par côté (RIR 2)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries
 
 -- Séance 12 · B · 2026-01-27 · normale · avis sport_gap
-B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (RIR 2)
+B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (visée 4, RIR 2)
     fait 2/2/2/2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (RIR 2)
+B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
     fait 4/4/4/4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
-B3 standing-calf-raise : 3×8-15 rép. (RIR 2)
+B3 standing-calf-raise : 3×8-15 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-15 rép. (cible 8), 3 séries, standing-calf-raise
-B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 3 séries
-B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (RIR 2)
+B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (visée 8, RIR 2)
     fait 6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 2 séries
 B6 band-external-rotation : not_feasible_here
@@ -263,22 +263,22 @@ B6 band-external-rotation : not_feasible_here
 == Semaine 7 (bloc réactif) ==
 
 -- Séance 13 · A · 2026-01-29 · normale · avis sport_gap
-A1 jump-landing : 3×5-8 rép. (RIR 3)
+A1 jump-landing : 3×5-8 rép. (visée 5, RIR 3)
     fait 3/3/3 (failed)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 5-8 rép. (cible 5), 3 séries, jump-landing
-A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (RIR 2)
+A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (visée 4, RIR 2)
     fait 2/2/2 (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 4-6 rép. (cible 4), 3 séries
-A3 assisted-nordic-curl : 3×5-8 rép. (RIR 2)
+A3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
     fait 3/3/3 (failed)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
 A4 copenhagen-plank-short-lever : 2×20 s par côté (RIR 2)
     fait 12 s/12 s/12 s/12 s (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 20 s, 2 séries, copenhagen-plank-short-lever
-A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (RIR 2)
+A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (visée 6, RIR 2)
     fait 4/4 (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-10 rép. (cible 6), 2 séries
-A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (RIR 2)
+A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (visée 6, RIR 2)
     fait 4/4/4 (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries
 A7 side-plank : 2×20 s par côté (RIR 2)
@@ -292,19 +292,19 @@ A7 side-plank : 2×20 s par côté (RIR 2)
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 14 · B · 2026-01-31 · normale · avis sport_gap
-B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (RIR 2)
+B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (visée 4, RIR 2)
     fait 2/2/2/2/2/2 (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 4-6 rép. (cible 4), 3 séries
-B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (RIR 2)
+B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
     fait 4/4/4/4/4/4 (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries
-B3 standing-calf-raise : 3×8-15 rép. (RIR 2)
+B3 standing-calf-raise : 3×8-15 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 8-15 rép. (cible 8), 3 séries, standing-calf-raise
-B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
-B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (RIR 2)
+B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (visée 8, RIR 2)
     fait 6/6 (failed)
     -> STALL STALL_REPLACE_PROPOSED ; prochain : 8-12 rép. (cible 8), 2 séries
 B6 band-external-rotation : not_feasible_here
@@ -317,22 +317,22 @@ B6 band-external-rotation : not_feasible_here
 == Semaine 8 (bloc réactif) ==
 
 -- Séance 15 · A · 2026-02-02 · normale · avis sport_gap
-A1 jump-landing : 3×5-8 rép. (RIR 3)
+A1 jump-landing : 3×5-8 rép. (visée 5, RIR 3)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, jump-landing
-A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (RIR 2)
+A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (visée 4, RIR 2)
     fait 2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-A3 assisted-nordic-curl : 3×5-8 rép. (RIR 2)
+A3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
 A4 copenhagen-plank-short-lever : 2×20 s par côté (RIR 2)
     fait 12 s/12 s/12 s/12 s (failed)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries, copenhagen-plank-short-lever
-A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (RIR 2)
+A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (visée 6, RIR 2)
     fait 4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 2 séries
-A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (RIR 2)
+A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (visée 6, RIR 2)
     fait 4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
 A7 side-plank : 2×20 s par côté (RIR 2)
@@ -340,19 +340,19 @@ A7 side-plank : 2×20 s par côté (RIR 2)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries
 
 -- Séance 16 · B · 2026-02-04 · normale · avis sport_gap
-B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (RIR 2)
+B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (visée 4, RIR 2)
     fait 2/2/2/2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (RIR 2)
+B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
     fait 4/4/4/4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
-B3 standing-calf-raise : 3×8-15 rép. (RIR 2)
+B3 standing-calf-raise : 3×8-15 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-15 rép. (cible 8), 3 séries, standing-calf-raise
-B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 3 séries
-B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (RIR 2)
+B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (visée 8, RIR 2)
     fait 6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 2 séries
 B6 band-external-rotation : not_feasible_here
@@ -360,22 +360,22 @@ B6 band-external-rotation : not_feasible_here
 == Semaine 9 (bloc réactif) ==
 
 -- Séance 17 · A · 2026-02-06 · normale · avis sport_gap
-A1 jump-landing : 3×5-8 rép. (RIR 3)
+A1 jump-landing : 3×5-8 rép. (visée 5, RIR 3)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, jump-landing
-A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (RIR 2)
+A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (visée 4, RIR 2)
     fait 2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-A3 assisted-nordic-curl : 3×5-8 rép. (RIR 2)
+A3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
 A4 copenhagen-plank-short-lever : 2×20 s par côté (RIR 2)
     fait 12 s/12 s/12 s/12 s (failed)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries, copenhagen-plank-short-lever
-A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (RIR 2)
+A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (visée 6, RIR 2)
     fait 4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 2 séries
-A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (RIR 2)
+A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (visée 6, RIR 2)
     fait 4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
 A7 side-plank : 2×20 s par côté (RIR 2)
@@ -383,19 +383,19 @@ A7 side-plank : 2×20 s par côté (RIR 2)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries
 
 -- Séance 18 · B · 2026-02-08 · normale · avis sport_gap
-B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (RIR 2)
+B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (visée 4, RIR 2)
     fait 2/2/2/2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (RIR 2)
+B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
     fait 4/4/4/4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
-B3 standing-calf-raise : 3×8-15 rép. (RIR 2)
+B3 standing-calf-raise : 3×8-15 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-15 rép. (cible 8), 3 séries, standing-calf-raise
-B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 3 séries
-B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (RIR 2)
+B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (visée 8, RIR 2)
     fait 6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 2 séries
 B6 band-external-rotation : not_feasible_here
@@ -403,22 +403,22 @@ B6 band-external-rotation : not_feasible_here
 == Semaine 10 (bloc réactif) ==
 
 -- Séance 19 · A · 2026-02-10 · normale · avis sport_gap
-A1 jump-landing : 3×5-8 rép. (RIR 3)
+A1 jump-landing : 3×5-8 rép. (visée 5, RIR 3)
     fait 3/3/3 (failed)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 5-8 rép. (cible 5), 3 séries, jump-landing
-A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (RIR 2)
+A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (visée 4, RIR 2)
     fait 2/2/2 (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 4-6 rép. (cible 4), 3 séries
-A3 assisted-nordic-curl : 3×5-8 rép. (RIR 2)
+A3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
     fait 3/3/3 (failed)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
 A4 copenhagen-plank-short-lever : 2×20 s par côté (RIR 2)
     fait 12 s/12 s/12 s/12 s (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 20 s, 2 séries, copenhagen-plank-short-lever
-A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (RIR 2)
+A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (visée 6, RIR 2)
     fait 4/4 (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-10 rép. (cible 6), 2 séries
-A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (RIR 2)
+A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (visée 6, RIR 2)
     fait 4/4/4 (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries
 A7 side-plank : 2×20 s par côté (RIR 2)
@@ -427,19 +427,19 @@ A7 side-plank : 2×20 s par côté (RIR 2)
    ! propose_deload ENGINE_REACTIVE_DELOAD slot - [{"op":"start_deload"}]
 
 -- Séance 20 · B · 2026-02-12 · normale · avis sport_gap
-B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (RIR 2)
+B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (visée 4, RIR 2)
     fait 2/2/2/2/2/2 (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 4-6 rép. (cible 4), 3 séries
-B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (RIR 2)
+B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
     fait 4/4/4/4/4/4 (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 6-10 rép. (cible 6), 3 séries
-B3 standing-calf-raise : 3×8-15 rép. (RIR 2)
+B3 standing-calf-raise : 3×8-15 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> STALL STALL_NO_REPLACEMENT ; prochain : 8-15 rép. (cible 8), 3 séries, standing-calf-raise
-B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 8), 3 séries
-B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (RIR 2)
+B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (visée 8, RIR 2)
     fait 6/6 (failed)
     -> STALL STALL_ALREADY_PROPOSED ; prochain : 8-12 rép. (cible 8), 2 séries
 B6 band-external-rotation : not_feasible_here
@@ -448,22 +448,22 @@ B6 band-external-rotation : not_feasible_here
 == Semaine 11 (bloc réactif) ==
 
 -- Séance 21 · A · 2026-02-14 · normale · avis sport_gap
-A1 jump-landing : 3×5-8 rép. (RIR 3)
+A1 jump-landing : 3×5-8 rép. (visée 5, RIR 3)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, jump-landing
-A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (RIR 2)
+A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (visée 4, RIR 2)
     fait 2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-A3 assisted-nordic-curl : 3×5-8 rép. (RIR 2)
+A3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
 A4 copenhagen-plank-short-lever : 2×20 s par côté (RIR 2)
     fait 12 s/12 s/12 s/12 s (failed)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries, copenhagen-plank-short-lever
-A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (RIR 2)
+A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (visée 6, RIR 2)
     fait 4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 2 séries
-A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (RIR 2)
+A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (visée 6, RIR 2)
     fait 4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
 A7 side-plank : 2×20 s par côté (RIR 2)
@@ -471,19 +471,19 @@ A7 side-plank : 2×20 s par côté (RIR 2)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries
 
 -- Séance 22 · B · 2026-02-16 · normale · avis sport_gap
-B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (RIR 2)
+B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (visée 4, RIR 2)
     fait 2/2/2/2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (RIR 2)
+B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
     fait 4/4/4/4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
-B3 standing-calf-raise : 3×8-15 rép. (RIR 2)
+B3 standing-calf-raise : 3×8-15 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-15 rép. (cible 8), 3 séries, standing-calf-raise
-B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 3 séries
-B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (RIR 2)
+B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (visée 8, RIR 2)
     fait 6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 2 séries
 B6 band-external-rotation : not_feasible_here
@@ -491,22 +491,22 @@ B6 band-external-rotation : not_feasible_here
 == Semaine 12 (bloc réactif) ==
 
 -- Séance 23 · A · 2026-02-18 · normale · avis sport_gap
-A1 jump-landing : 3×5-8 rép. (RIR 3)
+A1 jump-landing : 3×5-8 rép. (visée 5, RIR 3)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, jump-landing
-A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (RIR 2)
+A2 bodyweight-squat [prévu back-squat] {replaced_not_feasible} : 3×4-6 rép. (visée 4, RIR 2)
     fait 2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-A3 assisted-nordic-curl : 3×5-8 rép. (RIR 2)
+A3 assisted-nordic-curl : 3×5-8 rép. (visée 5, RIR 2)
     fait 3/3/3 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 5-8 rép. (cible 5), 3 séries, assisted-nordic-curl
 A4 copenhagen-plank-short-lever : 2×20 s par côté (RIR 2)
     fait 12 s/12 s/12 s/12 s (failed)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries, copenhagen-plank-short-lever
-A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (RIR 2)
+A5 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 2×6-10 rép. (visée 6, RIR 2)
     fait 4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 2 séries
-A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (RIR 2)
+A6 table-row [prévu seated-cable-row] {replaced_not_feasible} : 3×6-10 rép. (visée 6, RIR 2)
     fait 4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
 A7 side-plank : 2×20 s par côté (RIR 2)
@@ -514,19 +514,19 @@ A7 side-plank : 2×20 s par côté (RIR 2)
     -> FAIL DURATION_UNDER ; prochain : 20 s, 2 séries
 
 -- Séance 24 · B · 2026-02-20 · normale · avis sport_gap
-B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (RIR 2)
+B1 single-leg-romanian-deadlift [prévu deadlift] {replaced_not_feasible} : 3×4-6 rép. par côté (visée 4, RIR 2)
     fait 2/2/2/2/2/2 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 4-6 rép. (cible 4), 3 séries
-B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (RIR 2)
+B2 step-up [prévu dumbbell-step-up] {replaced_not_feasible} : 3×6-10 rép. par côté (visée 6, RIR 2)
     fait 4/4/4/4/4/4 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 6-10 rép. (cible 6), 3 séries
-B3 standing-calf-raise : 3×8-15 rép. (RIR 2)
+B3 standing-calf-raise : 3×8-15 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-15 rép. (cible 8), 3 séries, standing-calf-raise
-B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (RIR 2)
+B4 push-up [prévu dumbbell-bench-press] {replaced_not_feasible} : 3×8-12 rép. (visée 8, RIR 2)
     fait 6/6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 3 séries
-B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (RIR 2)
+B5 table-row [prévu one-arm-dumbbell-row] {replaced_not_feasible} : 2×8-12 rép. (visée 8, RIR 2)
     fait 6/6 (failed)
     -> FAIL REPS_UNDER_MIN ; prochain : 8-12 rép. (cible 8), 2 séries
 B6 band-external-rotation : not_feasible_here
