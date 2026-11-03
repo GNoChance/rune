@@ -442,18 +442,9 @@ const BRIEF = {
             exercise: { id: 'goblet-squat', name: 'Squat gobelet' },
             sets: 3,
             reps: { min: 8, max: 12 },
-            duration_s: null,
             target_rir: 2,
             rest_s: 150,
-            engine: {
-              mode: 'double',
-              load_kg: 14,
-              target_reps: 10,
-              variant_rank: null,
-              duration_s: null,
-              calibration_left: 0,
-              suspended: false,
-            },
+            engine: { mode: 'double', load_kg: 14, target_reps: 10 },
             last_decision: {
               days_ago: 2,
               result: 'PROGRESS',
@@ -464,14 +455,20 @@ const BRIEF = {
             id: 'A5',
             role: 'accessory',
             movement_pattern: 'core_anti_extension',
-            exercise: null,
             sets: 3,
-            reps: null,
             duration_s: { min: 20, max: 60 },
             target_rir: 2,
-            rest_s: null,
-            engine: null,
-            last_decision: null,
+          },
+          {
+            id: 'A6',
+            role: 'accessory',
+            movement_pattern: 'calf_raise',
+            exercise: { id: 'calf-raise', name: 'Mollets debout' },
+            sets: 2,
+            reps: { min: 10, max: 15 },
+            target_rir: 2,
+            rest_s: 60,
+            engine: { mode: 'double', target_reps: 12, calibration_left: 1, suspended: true },
           },
         ],
       },
@@ -559,12 +556,35 @@ describe('CoachBriefSchema (coach-brief/1, §9)', () => {
   });
 
   it('dernière décision : le code seul, sans sa phrase (la table REASON_TEXTS est dans le prompt)', () => {
-    type Slots = { last_decision: Record<string, unknown> | null }[];
+    type Slots = { last_decision?: Record<string, unknown> }[];
     const brief = structuredClone(BRIEF) as unknown as { program: { workouts: { slots: Slots }[] } };
-    const decision = brief.program.workouts[0]?.slots.find((s) => s.last_decision !== null)?.last_decision;
+    const decision = brief.program.workouts[0]?.slots.find(
+      (s) => s.last_decision !== undefined,
+    )?.last_decision;
     if (!decision) throw new Error('décision absente');
     decision.reason_text = REASON_TEXTS.REPS_UP;
     expect(CoachBriefSchema.safeParse(brief).success).toBe(false);
+  });
+
+  it('slots compacts : ni champ nul, ni valeur par défaut écrite', () => {
+    type Slot = Record<string, unknown> & { engine: Record<string, unknown> };
+    const withSlot = (patch: Record<string, unknown>, engine: Record<string, unknown> = {}) => {
+      const brief = structuredClone(BRIEF) as unknown as { program: { workouts: { slots: Slot[] }[] } };
+      const slots = brief.program.workouts[0]?.slots ?? [];
+      const [first] = slots;
+      if (first === undefined) throw new Error('slot absent');
+      slots[0] = { ...first, engine: { ...first.engine, ...engine }, ...patch };
+      return CoachBriefSchema.safeParse(brief).success;
+    };
+    expect(withSlot({})).toBe(true);
+    for (const key of ['exercise', 'reps', 'duration_s', 'rest_s', 'engine', 'last_decision']) {
+      expect(withSlot({ [key]: null }), key).toBe(false);
+    }
+    for (const key of ['load_kg', 'target_reps', 'variant_rank', 'duration_s']) {
+      expect(withSlot({}, { [key]: null }), key).toBe(false);
+    }
+    expect(withSlot({}, { suspended: false })).toBe(false);
+    expect(withSlot({}, { calibration_left: 0 })).toBe(false);
   });
 
   it('CoachBriefResponse : le dossier analysé, ou null après le retrait santé', () => {

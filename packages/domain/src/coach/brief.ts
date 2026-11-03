@@ -45,7 +45,7 @@ import {
   type SlotState,
 } from '../program/types';
 import { exerciseRecords } from '../progress/records';
-import { levelFromExperience, templateContext } from '../recommend-template';
+import { levelFromExperience, type TemplateContext, templateContext } from '../recommend-template';
 import { COACH_CONFIG } from './config';
 
 /*
@@ -139,8 +139,8 @@ type BriefRecord = CoachBrief['records'][number];
 
 /** Textes libres : 200 caractères au plus (choix C24), la borne de `CoachBriefSchema`. */
 const FREE_TEXT_MAX = 200;
-/** Records gardés quand les séances retirées ne suffisent pas (§9). */
-const TRUNCATED_RECORDS = 15;
+/** Records gardés quand les séances retirées ne suffisent pas (15 au §9 ; 10, décision du contrôleur). */
+const TRUNCATED_RECORDS = 10;
 /** Séances gardées avant de toucher aux records et aux notes, puis en dernier recours. */
 const KEPT_SESSIONS = 3;
 const LAST_SESSIONS = 1;
@@ -246,9 +246,12 @@ function sessionsWithin(input: CoachBriefInput, days: number): BriefSession[] {
 // ---------------------------------------------------------------------------------------------------------------
 
 /** `context.kind` : règle de `recommendTemplate` ; `sport_code` seulement en contexte `sport`. */
+const contextKind = (input: CoachBriefInput): TemplateContext =>
+  templateContext(input.profile.goal, input.profile.sportCode, primaryOf(input)?.kind ?? 'gym');
+
 function briefProfile(input: CoachBriefInput): CoachBrief['profile'] {
   const p = input.profile;
-  const kind = templateContext(p.goal, p.sportCode, primaryOf(input)?.kind ?? 'gym');
+  const kind = contextKind(input);
   const sport = SportCodeSchema.safeParse(p.sportCode?.trim());
   return {
     level: p.experience === null ? null : levelFromExperience(p.experience),
@@ -328,14 +331,14 @@ function resolvedWorkouts(
   }));
 }
 
-/** Dernière décision d'un slot ; null sans décision, ou si sa séance n'est pas connue. */
+/** Dernière décision d'un slot ; aucune sans décision, ou si sa séance n'est pas connue. */
 function lastDecision(
   decision: EngineDecision | undefined,
   input: CoachBriefInput,
   program: BriefProgramInput,
 ): BriefSlot['last_decision'] {
   const at = decision === undefined ? undefined : program.decisionEndedAt.get(decision.id);
-  if (decision === undefined || at === undefined) return null;
+  if (decision === undefined || at === undefined) return undefined;
   const code = healthAllowed(input)
     ? decision.reasonCode
     : (PAIN_REASONS[decision.reasonCode] ?? decision.reasonCode);
@@ -390,7 +393,29 @@ export function resolveSlotAlias(ref: string, aliases: ReadonlyMap<string, strin
   return aliases.get(ref) ?? ref;
 }
 
-/** Cibles du modèle (groupe de travail du slot) et état du moteur, sans `planWorkout` (choix C23). */
+/** `{ [key]: value }`, ou rien si `value` est nul : dans un slot, un champ nul ne s'écrit pas. */
+function present<K extends string, V>(key: K, value: V | null | undefined): { [P in K]?: V } {
+  return (value === null || value === undefined ? {} : { [key]: value }) as { [P in K]?: V };
+}
+
+/** État du moteur compact : sans ses valeurs nulles, ni `calibration_left` 0, ni `suspended` faux. */
+function briefEngine(state: SlotState): NonNullable<BriefSlot['engine']> {
+  return {
+    mode: state.mode,
+    ...present('load_kg', state.loadG === null ? null : kg(state.loadG)),
+    ...present('target_reps', state.targetReps),
+    ...present('variant_rank', state.variantRank),
+    ...present('duration_s', state.durationS),
+    ...(state.calibrationLeft > 0 ? { calibration_left: state.calibrationLeft } : {}),
+    ...(state.suspended ? { suspended: true as const } : {}),
+  };
+}
+
+/**
+ * Cibles du modèle (groupe de travail du slot) et état du moteur, sans `planWorkout` (choix C23). Slot compact : ni
+ * champ nul (exercice introuvable, mesure qui ne s'applique pas, repos absent, slot sans état ni décision), ni valeur
+ * par défaut de l'état.
+ */
 function briefSlot(
   { slot, sheet, state }: ResolvedSlot,
   id: string,
@@ -401,31 +426,24 @@ function briefSlot(
     id,
     role: slot.role,
     movement_pattern: slot.movementPattern,
-    exercise: sheet === null ? null : { id: sheet.id, name: sheet.name },
+    ...present('exercise', sheet === null ? null : { id: sheet.id, name: sheet.name }),
     sets: workSetCount(slot),
-    reps: spec?.reps === undefined ? null : { min: spec.reps.min, max: spec.reps.max },
-    duration_s: spec?.durationS === undefined ? null : { min: spec.durationS.min, max: spec.durationS.max },
+    ...present('reps', spec?.reps === undefined ? null : { min: spec.reps.min, max: spec.reps.max }),
+    ...present(
+      'duration_s',
+      spec?.durationS === undefined ? null : { min: spec.durationS.min, max: spec.durationS.max },
+    ),
     target_rir: spec?.targetRir ?? currentRules().defaultTargetRir,
-    rest_s: spec?.restS ?? null,
-    engine:
-      state === null
-        ? null
-        : {
-            mode: state.mode,
-            load_kg: state.loadG === null ? null : kg(state.loadG),
-            target_reps: state.targetReps,
-            variant_rank: state.variantRank,
-            duration_s: state.durationS,
-            calibration_left: state.calibrationLeft,
-            suspended: state.suspended,
-          },
-    last_decision: last,
+    ...present('rest_s', spec?.restS),
+    ...present('engine', state === null ? null : briefEngine(state)),
+    ...present('last_decision', last),
   };
 }
 
 /**
  * Programme en cours (forme du dossier, aussi rendue par `read_training`) : modèle, révision, semaine, séance
- * suivante, slots, propositions en attente (jours restants), modèles disponibles ; null sans programme. Un slot créé
+ * suivante, slots, propositions en attente (jours restants), modèles disponibles et compatibles (06 §5 : ceux du
+ * contexte du profil, `context.kind` ; un modèle ne porte pas de code de sport) ; null sans programme. Un slot créé
  * par `add_slot` y porte son alias, dans les slots comme dans les opérations en attente.
  */
 export function briefProgram(input: CoachBriefInput): CoachBrief['program'] {
@@ -437,6 +455,7 @@ export function briefProgram(input: CoachBriefInput): CoachBrief['program'] {
   const latest = new Map(decisions.map((d) => [d.slotId, d]));
   const aliases = slotAliasesOf(program);
   const sent = (slotId: string): string => aliases.get(slotId) ?? slotId;
+  const context = contextKind(input);
   return {
     template: { id: template.id, name: template.name, version: program.templateVersion },
     revision: program.revision,
@@ -457,7 +476,7 @@ export function briefProgram(input: CoachBriefInput): CoachBrief['program'] {
       days_left: Math.max(0, -parisDaysUntil(c.expiresAt, input.today)),
     })),
     templates: program.templates
-      .filter((t) => t.available)
+      .filter((t) => t.available && t.template.context === context)
       .map(({ template: t }) => ({
         id: t.id,
         name: t.name,

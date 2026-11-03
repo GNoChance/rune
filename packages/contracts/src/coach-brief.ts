@@ -59,28 +59,33 @@ const BriefPlace = z.strictObject({
   load_settings: z.strictObject({ bar_kg: Kg, smallest_plate_kg: Kg, machine_step_kg: Kg }).optional(),
 });
 
-/** Cibles de l'état du slot, sans `planWorkout` (choix C23) ; `rest_s` nul quand le modèle n'en donne pas. */
+/**
+ * Cibles de l'état du slot, sans `planWorkout` (choix C23). Slot compact (écart au §9, taille du dossier) : un champ
+ * nul n'est pas écrit (exercice introuvable, `reps` d'un slot en durée, `duration_s` d'un slot en répétitions,
+ * `rest_s` absent du modèle, slot sans état ni décision, valeurs nulles de l'état), ni une valeur par défaut de l'état
+ * (`calibration_left` 0, `suspended` faux) : le schéma refuse ces formes, la sortie n'en a qu'une.
+ */
 const BriefSlot = z.strictObject({
   id: LocalId,
   role: SlotSpecSchema.shape.role,
   movement_pattern: MovementPatternSchema,
-  exercise: z.strictObject({ id: Slug, name: z.string() }).nullable(),
+  exercise: z.strictObject({ id: Slug, name: z.string() }).optional(),
   sets: Count,
-  reps: Range.nullable(),
-  duration_s: Range.nullable(),
+  reps: Range.optional(),
+  duration_s: Range.optional(),
   target_rir: z.number().int().min(0).max(10),
-  rest_s: Count.nullable(),
+  rest_s: Count.optional(),
   engine: z
     .strictObject({
       mode: z.enum(SLOT_MODES),
-      load_kg: Kg.nullable(),
-      target_reps: Count.nullable(),
-      variant_rank: Count.nullable(),
-      duration_s: Count.nullable(),
-      calibration_left: Count,
-      suspended: z.boolean(),
+      load_kg: Kg.optional(),
+      target_reps: Count.optional(),
+      variant_rank: Count.optional(),
+      duration_s: Count.optional(),
+      calibration_left: z.number().int().min(1).optional(),
+      suspended: z.literal(true).optional(),
     })
-    .nullable(),
+    .optional(),
   /** Le code seul : le prompt donne une fois la table `REASON_TEXTS`, mise en cache (écart au §9, taille du dossier). */
   last_decision: z
     .strictObject({
@@ -88,7 +93,7 @@ const BriefSlot = z.strictObject({
       result: z.enum(DECISION_RESULTS),
       reason_code: z.enum(REASON_CODES),
     })
-    .nullable(),
+    .optional(),
 });
 
 const BriefProgram = z.strictObject({

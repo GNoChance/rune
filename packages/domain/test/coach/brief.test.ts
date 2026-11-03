@@ -300,6 +300,7 @@ describe('programme', () => {
     const input = briefInput();
     const { brief } = buildCoachBrief(input);
     const state = stateOf(input, 'A1', 'back-squat');
+    expect(state).toMatchObject({ variantRank: null, durationS: null, calibrationLeft: 0, suspended: false });
     expect(state.loadG).not.toBeNull();
     expect(slotOf(brief, 'A1')).toEqual({
       id: 'A1',
@@ -308,20 +309,26 @@ describe('programme', () => {
       exercise: { id: 'back-squat', name: 'Squat barre' },
       sets: 3,
       reps: { min: 6, max: 6 },
-      duration_s: null,
       target_rir: 2,
       rest_s: 150,
-      engine: {
-        mode: state.mode,
-        load_kg: (state.loadG ?? 0) / 1000,
-        target_reps: state.targetReps,
-        variant_rank: state.variantRank,
-        duration_s: state.durationS,
-        calibration_left: state.calibrationLeft,
-        suspended: false,
-      },
+      engine: { mode: state.mode, load_kg: (state.loadG ?? 0) / 1000, target_reps: state.targetReps },
       last_decision: { days_ago: 7, result: 'PROGRESS', reason_code: 'LOAD_UP' },
     });
+  });
+
+  it("slots compacts : ni null ni valeur par défaut ; un état suspendu ou en calibration l'écrit", () => {
+    const { brief } = build();
+    const workouts = sortedJson(brief.program?.workouts);
+    expect(workouts).not.toContain('null');
+    expect(workouts).not.toContain('"suspended":false');
+    expect(workouts).not.toContain('"calibration_left":0');
+    const edited = build((i) => {
+      if (i.program === null) return;
+      i.program.replay.slotStates = i.program.replay.slotStates.map((st) =>
+        st.slotId === 'A1' ? { ...st, suspended: true, calibrationLeft: 2 } : st,
+      );
+    });
+    expect(slotOf(edited.brief, 'A1').engine).toMatchObject({ suspended: true, calibration_left: 2 });
   });
 
   it('dernière décision : le code seul, sans sa phrase (la table est dans le prompt)', () => {
@@ -331,20 +338,47 @@ describe('programme', () => {
   });
 
   it('slot en durée : fourchette de durée, pas de répétitions', () => {
-    expect(slotOf(build().brief, 'A5')).toMatchObject({
+    const a5 = slotOf(build().brief, 'A5');
+    expect(a5).toMatchObject({
       exercise: { id: 'front-plank', name: 'Gainage' },
-      reps: null,
       duration_s: { min: 20, max: 60 },
       rest_s: 60,
     });
+    expect(a5).not.toHaveProperty('reps');
+    expect(a5.engine).not.toHaveProperty('target_reps');
+    expect(a5.engine).not.toHaveProperty('load_kg');
   });
 
   it("slot jamais fait : ni état ni décision ; à la maison, l'exercice faisable là", () => {
     const { brief } = build((i) => {
       for (const p of i.places) p.primary = p.kind === 'home';
     });
-    expect(slotOf(brief, 'A3')).toMatchObject({ engine: null, last_decision: null });
+    expect(slotOf(brief, 'A3')).not.toHaveProperty('engine');
+    expect(slotOf(brief, 'A3')).not.toHaveProperty('last_decision');
     expect(slotOf(brief, 'A1').exercise).toEqual({ id: 'bodyweight-squat', name: 'Squat au poids du corps' });
+  });
+
+  it.each([
+    ['home', 'muscle', ['home-beginner-full-body']],
+    ['gym', 'muscle', ['gym-beginner-full-body-ab']],
+    ['gym', 'sport_support', ['sport-beginner-complement']],
+  ] as const)('modèles compatibles : lieu principal %s, objectif %s → %o', (kind, goal, ids) => {
+    const { brief } = build((i) => {
+      for (const p of i.places) p.primary = p.kind === kind;
+      i.profile.goal = goal;
+      i.profile.sportCode = 'football';
+      i.program?.templates.push(
+        {
+          template: { ...structuredClone(GYM_AB), id: 'home-beginner-full-body', context: 'home' },
+          available: true,
+        },
+        {
+          template: { ...structuredClone(GYM_AB), id: 'sport-beginner-complement', context: 'sport' },
+          available: true,
+        },
+      );
+    });
+    expect(brief.program?.templates.map((t) => t.id)).toEqual(ids);
   });
 
   it("sans lieu principal : l'exercice prévu par le programme", () => {
@@ -354,11 +388,11 @@ describe('programme', () => {
     expect(slotOf(brief, 'A1').exercise).toEqual({ id: 'back-squat', name: 'Squat barre' });
   });
 
-  it("décision dont la séance n'est pas connue : last_decision null", () => {
+  it("décision dont la séance n'est pas connue : pas de last_decision", () => {
     const { brief } = build((i) => {
       if (i.program) i.program.decisionEndedAt = new Map();
     });
-    expect(slotOf(brief, 'A1').last_decision).toBeNull();
+    expect(slotOf(brief, 'A1')).not.toHaveProperty('last_decision');
   });
 });
 
@@ -659,11 +693,11 @@ describe('taille', () => {
     expect(brief.records.length).toBe(5);
   });
 
-  it('(a) puis (b) puis (c) : 3 séances gardées, records coupés à 15, notes retirées', () => {
+  it('(a) puis (b) puis (c) : 3 séances gardées, records coupés à 10, notes retirées', () => {
     const many = BRIEF_CATALOG.filter(
       (s) => s.status === 'published' && s.movement_pattern !== 'core_anti_extension',
     );
-    expect(many.length).toBeGreaterThan(15);
+    expect(many.length).toBeGreaterThan(10);
     const { brief, estimatedTokens, oversize } = build((i) => {
       i.sessions = [
         briefSession({
@@ -684,7 +718,7 @@ describe('taille', () => {
     expect(brief.history.truncated).toBe(true);
     expect(brief.history.sessions.map((s) => s.days_ago)).toEqual([1, 2, 3]);
     expect(brief.history.sessions.some((s) => 'user_notes' in s)).toBe(false);
-    expect(brief.records).toHaveLength(15);
+    expect(brief.records).toHaveLength(10);
     expect(brief.health?.limitations.every((l) => l.note === null)).toBe(true);
   });
 
@@ -714,6 +748,26 @@ describe('taille', () => {
     expect(oversize).toBe(true);
     expect(brief.history.truncated).toBe(false);
     expect(brief.health?.limitations).toHaveLength(300);
+  });
+
+  it('taille réelle, gym-intermediate-upper-lower et 16 séances : 4 500 jetons au plus, 3 séances au moins', () => {
+    const input = realSizeInput();
+    const slots = input.program?.program.template.workouts.flatMap((w) => w.slots) ?? [];
+    expect(slots).toHaveLength(23);
+    const states = new Set(input.program?.replay.slotStates.map((st) => st.slotId));
+    const decided = new Set(input.program?.replay.decisions.map((d) => d.slotId));
+    expect(slots.every((s) => states.has(s.id) && decided.has(s.id))).toBe(true);
+    expect(input.sessions).toHaveLength(16);
+    expect(input.program?.templates).toHaveLength(6);
+
+    const { brief, estimatedTokens, oversize } = buildCoachBrief(input);
+    expect(estimatedTokens).toBeLessThanOrEqual(4500);
+    expect(oversize).toBe(false);
+    expect(brief.history.sessions.length).toBeGreaterThanOrEqual(3);
+    expect(brief.program?.workouts.flatMap((w) => w.slots).every((s) => s.engine && s.last_decision)).toBe(
+      true,
+    );
+    expect(brief.program?.templates.map((t) => t.context)).toEqual(['gym', 'gym']);
   });
 
   it('taille réelle, 8 slots par séance et 10 limitations : oversize vrai, une séance au moins, truncated vrai', () => {
