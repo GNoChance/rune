@@ -464,6 +464,104 @@ export interface PerformedSetTable extends SyncColumns, SoftDelete {
   loggedAt: string | null;
 }
 
+/** Coach (migration 0007_coach, spec brique 4 §6.1) : classe H, jamais synchronisée. JSON en texte, booléens 0/1. */
+export interface CoachThreadTable {
+  id: string;
+  userId: string;
+  day: string;
+  audience: 'adult' | 'minor';
+  persona: 'ombre' | 'skald' | 'scribe';
+  model: string;
+  effort: 'low' | 'medium' | 'high';
+  promptVersion: string;
+  toolsVersion: string;
+  briefSchema: string;
+  brief: string | null;
+  /** Alias → identifiant réel des slots ajoutés par la personne ; jamais exporté ni envoyé au modèle. */
+  slotAliases: Generated<string>;
+  isOpen: Generated<number>;
+  closedReason: 'version_change' | 'health_withdrawn' | 'day_over' | null;
+  userMessageCount: Generated<number>;
+  createdAt: string;
+  lastMessageAt: string | null;
+}
+
+export interface CoachMessageTable {
+  id: string;
+  threadId: string;
+  userId: string;
+  seq: number;
+  role: 'user' | 'assistant' | 'system';
+  blocks: string | null;
+  displayText: string | null;
+  displayExtras: string | null;
+  clientMessageId: string | null;
+  aiGenerated: Generated<number>;
+  effectiveModel: string | null;
+  stopReason: string | null;
+  truncated: Generated<number>;
+  createdAt: string;
+}
+
+export interface CoachCallTable {
+  id: string;
+  userId: string;
+  threadId: string | null;
+  day: string;
+  createdAt: string;
+  requestedModel: string;
+  effectiveModel: string | null;
+  fallbackUsed: Generated<number>;
+  apiCalls: Generated<number>;
+  inputTokens: Generated<number>;
+  cacheWriteTokens: Generated<number>;
+  cacheReadTokens: Generated<number>;
+  outputTokens: Generated<number>;
+  costUsdMicros: Generated<number>;
+  firstTextLatencyMs: number | null;
+  durationMs: Generated<number>;
+  stopReason: string | null;
+  refusalCategory: string | null;
+  toolRounds: Generated<number>;
+  filterBlocks: Generated<number>;
+  thinkingDropped: Generated<number>;
+  errorCode: string | null;
+  counted: Generated<number>;
+}
+
+export interface CoachReportTable {
+  id: string;
+  userId: string;
+  threadId: string | null;
+  messageSeq: number;
+  category: 'inaccurate' | 'unsafe' | 'inappropriate' | 'other';
+  comment: string | null;
+  exchangeText: string;
+  createdAt: string;
+}
+
+export interface CoachSafetyCounterTable {
+  month: string;
+  kind:
+    | 'help_emergency'
+    | 'help_pain'
+    | 'help_eating_disorder'
+    | 'help_doping'
+    | 'help_pregnancy'
+    | 'help_distress'
+    | 'filter_block'
+    | 'refusal';
+  count: Generated<number>;
+}
+
+/** Une seule ligne, `id` = 1, insérée par la migration. */
+export interface CoachStateTable {
+  id: 1;
+  enabled: Generated<number>;
+  suspendedUntil: string | null;
+  updatedAt: string;
+}
+
 export interface Database {
   serverMeta: ServerMetaTable;
   schemaMigrations: SchemaMigrationsTable;
@@ -495,6 +593,12 @@ export interface Database {
   performedExercise: PerformedExerciseTable;
   engineDecision: EngineDecisionTable;
   performedSet: PerformedSetTable;
+  coachThread: CoachThreadTable;
+  coachMessage: CoachMessageTable;
+  coachCall: CoachCallTable;
+  coachReport: CoachReportTable;
+  coachSafetyCounter: CoachSafetyCounterTable;
+  coachState: CoachStateTable;
 }
 
 export type DbExecutor = Kysely<Database> | Transaction<Database>;

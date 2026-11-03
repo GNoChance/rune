@@ -91,13 +91,13 @@ describe('schéma du socle et du catalogue', () => {
     await expect(dumpSchema(h.sqlite)).toMatchFileSnapshot('../__snapshots__/schema.sql');
   });
 
-  it('30 tables (18 du socle, 5 du catalogue, 7 des programmes), toutes STRICT', () => {
+  it('36 tables (18 du socle, 5 du catalogue, 7 des programmes, 6 du coach), toutes STRICT', () => {
     const rows = h.sqlite
       .prepare(
         "SELECT name, strict FROM pragma_table_list WHERE schema = 'main' AND name NOT LIKE 'sqlite_%'",
       )
       .all() as { name: string; strict: number }[];
-    expect(rows).toHaveLength(30);
+    expect(rows).toHaveLength(36);
     expect(rows.every((r) => r.strict === 1)).toBe(true);
   });
 

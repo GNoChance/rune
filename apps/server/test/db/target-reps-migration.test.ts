@@ -27,7 +27,7 @@ describe('migration 0006_performed_set_target_reps', () => {
     expect(before).toHaveLength(1);
 
     expect(await migrate(h.db, MIGRATIONS, clock)).toEqual({
-      applied: ['0006_performed_set_target_reps'],
+      applied: ['0006_performed_set_target_reps', '0007_coach'],
       unknownNonBreaking: [],
     });
     expect(rows()).toEqual(before.map((r) => ({ ...r, target_reps: null })));

@@ -300,7 +300,7 @@ Les modèles de programme ne sont **pas une table** : ce sont des fichiers `data
 - `expires_at TEXT NULL` : création + 7 j si `proposed`
 - `decided_at TEXT NULL`
 - `ai_generated INTEGER 0/1`, `ai_model TEXT NULL`, `prompt_version TEXT NULL`
-- `coach_thread_id TEXT NULL REFERENCES coach_thread ON DELETE SET NULL`
+- `coach_thread_id TEXT NULL` : sans clé étrangère (le fil est purgé plus tôt, et `coach_thread` n'existe pas avant la brique 4) ; le code le met à NULL à la purge du fil et au retrait du consentement coach
 - Index : `(instance_id, created_at)`, `(owner_id, status)`
 - Règle : l'acceptation exige `base_revision = program_instance.revision` ; elle passe alors `revision` à +1. Sinon, le statut devient `expired` (code `stale_revision`). Après création, seuls `status` et `decided_at` peuvent changer, sauf au retrait du consentement santé : `reason` passe alors à NULL et un `reason_code` `PAIN_*` est réécrit en `USER_*` (Programmes §13.9).
 
@@ -371,40 +371,46 @@ Les modèles de programme ne sont **pas une table** : ce sont des fichiers `data
 - `id`
 - `user_id TEXT REFERENCES user ON DELETE CASCADE`
 - `day TEXT` : date à Paris
-- `audience TEXT CHECK (adult|minor)`
-- `model`, `effort`, `prompt_version`, `tools_version`
+- `audience TEXT CHECK (adult|minor)`, `persona TEXT CHECK (ombre|skald|scribe)` : voix du coach, figée à l'ouverture (brique 4 §6.1)
+- `model`, `effort TEXT CHECK (low|medium|high)`, `prompt_version`, `tools_version`
 - `brief TEXT JSON NULL` : ne contient du C2 que si les consentements santé et coach sont tous deux actifs. Au retrait du consentement santé, les fils ouverts sont fermés et `brief` est mis à NULL sur tous les fils (Coach §5) ; au retrait du consentement coach, les fils sont supprimés (Coach §15)
+- `slot_aliases TEXT JSON NOT NULL DEFAULT '{}'` : pour le fil du jour, table alias → identifiant réel des slots ajoutés par la personne, figée avec le dossier. Elle ne peut pas aller dans `brief`, envoyé tel quel au modèle ; elle n'est pas exportée (identifiants internes)
 - `brief_schema TEXT` : `coach-brief/1`
-- `is_open INTEGER 0/1`, `user_message_count INTEGER`
+- `is_open INTEGER 0/1`, `closed_reason TEXT NULL CHECK (version_change|health_withdrawn|day_over)`, `user_message_count INTEGER`
 - `created_at`, `last_message_at`
 - Contrainte : `UNIQUE (user_id, day)`
 
 **coach_message** — C3, H. En ajout seulement.
 - `id`
 - `thread_id TEXT REFERENCES coach_thread ON DELETE CASCADE`
+- `user_id TEXT REFERENCES user ON DELETE CASCADE` : colonne propriétaire, pour le registre, l'export et la suppression génériques
 - `seq INTEGER`
 - `role TEXT CHECK (user|assistant|system)`
-- `blocks TEXT JSON` : blocs de l'API, sans modification
+- `blocks TEXT JSON NULL` : blocs de l'API, sans modification ; NULL après le retrait du consentement santé
 - `display_text NULL`
+- `display_extras TEXT JSON NULL` : `{helpCards, proposalIds, links, replaced}`
+- `client_message_id TEXT NULL` : identifiant UUIDv7 du client, pour rejouer sans doublon
 - `ai_generated INTEGER 0/1`
 - `effective_model NULL`, `stop_reason NULL`
 - `truncated INTEGER 0/1`
 - `created_at`
-- Contrainte : `UNIQUE (thread_id, seq)`
+- Contraintes : `UNIQUE (thread_id, seq)`, `UNIQUE (thread_id, client_message_id)`
 
 **coach_call** — C1, H. Journal d'usage sans contenu, gardé 12 mois.
 - `id`
 - `user_id TEXT REFERENCES user ON DELETE CASCADE`
 - `thread_id TEXT NULL` : sans clé étrangère, car le fil est purgé plus tôt
+- `day TEXT` : date à Paris
 - `created_at`
-- `requested_model`, `effective_model`, `fallback_used INTEGER 0/1`
+- `requested_model`, `effective_model`, `fallback_used INTEGER 0/1`, `api_calls INTEGER`
 - `input_tokens`, `cache_write_tokens`, `cache_read_tokens`, `output_tokens` : `INTEGER`
 - `cost_usd_micros INTEGER`
 - `first_text_latency_ms`, `duration_ms`
 - `stop_reason`, `refusal_category NULL`
-- `tool_rounds`, `filter_blocks`
+- `tool_rounds`, `filter_blocks`, `thinking_dropped INTEGER`
 - `error_code NULL`
-- Index : `(user_id, created_at)`
+- `counted INTEGER 0/1` : 1 dès qu'un appel de l'échange a reçu une réponse, 0 sinon
+- Index : `(user_id, day)`, `(created_at)`
 
 **coach_report** — C3, H. Seule donnée C3 lisible par l'admin.
 - `id`
@@ -424,7 +430,7 @@ Les modèles de programme ne sont **pas une table** : ce sont des fichiers `data
 
 **coach_state** — C0, H. Une seule ligne.
 - `id INTEGER PK CHECK (id = 1)`
-- `enabled INTEGER 0/1`, `suspended_until TEXT NULL`
+- `enabled INTEGER 0/1` (défaut 0), `suspended_until TEXT NULL`, `updated_at TEXT`
 
 ---
 

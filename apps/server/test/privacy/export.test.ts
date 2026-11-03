@@ -1,4 +1,4 @@
-import { type EntityRulesMap, entityRules } from '@rune/contracts';
+import { type EntityRulesMap, entityRules, snakeToCamel } from '@rune/contracts';
 import { sql } from 'kysely';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Migration } from '../../src/db/migrations/index';
@@ -89,6 +89,62 @@ describe('GET /api/me/export (R-EXP-1, R-EXP-2, P-DRT-1)', () => {
       [mine.id, frequented.id, historyOnly.id].sort(),
     );
     expect(exp.gymHistory.map((h: { id: string }) => h.id)).toEqual([written.id]);
+  });
+
+  it('exporte le coach de la personne (fil, messages, journal, signalement), pas celui des autres ni le compteur et le réglage', async () => {
+    ctx = await createTestContext();
+    const u = await createUser(ctx, { username: 'lea' });
+    const other = await createUser(ctx, { username: 'tom' });
+    const cookie = await login(ctx, 'lea', u.password);
+    const { db } = ctx.deps;
+    const thread = await insertFixtureRow(db, 'coach_thread', {
+      userId: u.id,
+      brief: '{"repere":"BRIEF_LEA"}',
+      slotAliases: '{"slot-a":"REPERE_ALIAS"}',
+    });
+    const m1 = await insertFixtureRow(db, 'coach_message', {
+      threadId: thread.id,
+      userId: u.id,
+      seq: 1,
+      blocks: '[{"type":"text","text":"BLOCS_LEA"}]',
+    });
+    const m2 = await insertFixtureRow(db, 'coach_message', {
+      threadId: thread.id,
+      userId: u.id,
+      seq: 2,
+      role: 'assistant',
+    });
+    const call = await insertFixtureRow(db, 'coach_call', { userId: u.id, threadId: thread.id });
+    const report = await insertFixtureRow(db, 'coach_report', { userId: u.id, threadId: thread.id });
+    const foreignThread = await insertFixtureRow(db, 'coach_thread', { userId: other.id });
+    await insertFixtureRow(db, 'coach_message', {
+      threadId: foreignThread.id,
+      userId: other.id,
+      displayText: 'REPERE_TOM',
+    });
+    await insertFixtureRow(db, 'coach_call', { userId: other.id });
+    await insertFixtureRow(db, 'coach_report', { userId: other.id });
+    await insertFixtureRow(db, 'coach_safety_counter');
+
+    const text = await (await ctx.request('/api/me/export', { cookie })).text();
+    const exp = JSON.parse(text) as { tables: Record<string, Record<string, unknown>[]> };
+    expect(exp.tables.coach_thread?.map((r) => r.id)).toEqual([thread.id]);
+    expect(exp.tables.coach_message?.map((r) => r.id)).toEqual([m1.id, m2.id]);
+    expect(exp.tables.coach_message?.[0]?.blocks).toBe('[{"type":"text","text":"BLOCS_LEA"}]');
+    expect(exp.tables.coach_call?.map((r) => r.id)).toEqual([call.id]);
+    expect(exp.tables.coach_report?.map((r) => r.id)).toEqual([report.id]);
+    // Toutes les colonnes du registre, sauf la table des alias (identifiants internes).
+    for (const t of ['coach_thread', 'coach_message', 'coach_call', 'coach_report']) {
+      const rule = entityRules[t];
+      const expected = (rule?.columns ?? [])
+        .filter((c) => !rule?.secretColumns.includes(c))
+        .map(snakeToCamel);
+      expect(Object.keys(exp.tables[t]?.[0] ?? {}).sort(), t).toEqual(expected.sort());
+    }
+    expect(exp.tables.coach_thread?.[0]?.brief).toBe('{"repere":"BRIEF_LEA"}');
+    expect(exp.tables).not.toHaveProperty('coach_safety_counter');
+    expect(exp.tables).not.toHaveProperty('coach_state');
+    for (const leak of ['REPERE_TOM', 'REPERE_ALIAS', other.id]) expect(text).not.toContain(leak);
   });
 
   it('inclut les lieux supprimés et leurs salles, valeurs telles que stockées', async () => {

@@ -34,6 +34,13 @@ const EXPECTED: Record<string, string> = {
   program_instance: 'C1/E/owner_id/true/cascade',
   slot_state: 'C1/D/owner_id/true/cascade',
   workout_session: 'C1/J/owner_id/true/cascade',
+  // Coach (brique 4) : classe H, jamais synchronisé
+  coach_call: 'C1/H/user_id/true/cascade',
+  coach_message: 'C3/H/user_id/true/cascade',
+  coach_report: 'C3/H/user_id/true/cascade',
+  coach_safety_counter: 'C0/H//false/not_linked',
+  coach_state: 'C0/H//false/not_linked',
+  coach_thread: 'C3/H/user_id/true/cascade',
 };
 
 /** Tables de la brique 3 : programmes (E, D) et séances (J). */
@@ -45,6 +52,16 @@ const PROGRAM_TABLES = [
   'workout_session',
   'performed_exercise',
   'performed_set',
+] as const;
+
+/** Tables de la brique 4 : coach (classe H). */
+const COACH_TABLES = [
+  'coach_thread',
+  'coach_message',
+  'coach_call',
+  'coach_report',
+  'coach_safety_counter',
+  'coach_state',
 ] as const;
 
 /** Tables de la brique 2 : catalogue (classe C) et relecture (classe H). */
@@ -68,7 +85,7 @@ const pick = (t: string) => {
 };
 
 describe('entityRules', () => {
-  it('déclare les 18 tables du socle, les 5 du catalogue et les 7 des programmes avec leurs valeurs', () => {
+  it('déclare les 18 tables du socle, les 5 du catalogue, les 7 des programmes et les 6 du coach avec leurs valeurs', () => {
     expect(Object.keys(entityRules).sort()).toEqual(Object.keys(EXPECTED).sort());
     for (const t of Object.keys(EXPECTED)) expect(pick(t)).toBe(EXPECTED[t]);
   });
@@ -115,6 +132,25 @@ describe('entityRules', () => {
     for (const c of ['id', ...SYNC_COLUMNS]) expect(ruleOf('performed_set').clientWritable).not.toContain(c);
     expect(ruleOf('performed_set').clientWritable).toEqual(
       expect.arrayContaining(['performed_exercise_id', 'logged_at', 'target_variant', 'effort']),
+    );
+  });
+
+  it('déclare les 6 tables du coach en classe H, sans écriture client, avec leurs colonnes C2', () => {
+    for (const t of COACH_TABLES) {
+      expect(ruleOf(t).syncClass, t).toBe('H');
+      expect(ruleOf(t).clientWritable, t).toEqual([]);
+    }
+    expect(ruleOf('coach_thread').c2Columns).toEqual(['brief']);
+    for (const t of COACH_TABLES.filter((x) => x !== 'coach_thread'))
+      expect(ruleOf(t).c2Columns, t).toEqual([]);
+    // Table alias → identifiant réel des slots ajoutés : identifiants internes, absente de l'export.
+    expect(ruleOf('coach_thread').columns).toContain('slot_aliases');
+    expect(ruleOf('coach_thread').secretColumns).toEqual(['slot_aliases']);
+    expect(ruleOf('coach_message').columns).toEqual(
+      expect.arrayContaining(['blocks', 'display_text', 'display_extras', 'client_message_id']),
+    );
+    expect(ruleOf('coach_call').columns).toEqual(
+      expect.arrayContaining(['day', 'api_calls', 'thinking_dropped', 'counted']),
     );
   });
 
@@ -205,6 +241,13 @@ describe('entityRules', () => {
         .map(([t]) => t);
       expect(withExtension.sort()).toEqual(['performed_exercise', 'performed_set']);
       for (const t of withExtension) expect(PROGRAM_TABLES).toContain(t);
+    });
+
+    it('les tables du coach ne sont pas miroir et ne portent ni owner_id, ni rev, ni deleted_at', () => {
+      for (const t of COACH_TABLES) {
+        expect(mirroredTables(), t).not.toContain(t);
+        for (const c of ['owner_id', 'rev', 'deleted_at']) expect(ruleOf(t).columns, t).not.toContain(c);
+      }
     });
 
     it('les tables de la brique 3 portent les colonnes de synchro, deleted_at compris', () => {

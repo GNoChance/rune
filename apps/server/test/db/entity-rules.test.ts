@@ -49,11 +49,12 @@ describe('entityRules contre la base migrée', () => {
     }
   });
 
-  it('secretColumns = toutes les colonnes *_hash', () => {
+  it('secretColumns = toutes les colonnes *_hash, plus la table des alias de slots du coach', () => {
     const declared = Object.entries(entityRules)
       .flatMap(([t, r]) => r.secretColumns.map((c) => `${t}.${c}`))
       .sort();
     expect(declared).toEqual([
+      'coach_thread.slot_aliases',
       'invitation.code_hash',
       'password_reset.code_hash',
       'session.token_hash',
@@ -62,7 +63,7 @@ describe('entityRules contre la base migrée', () => {
     const hashes = Object.entries(entityRules)
       .flatMap(([t, r]) => r.columns.filter((c) => c.endsWith('_hash')).map((c) => `${t}.${c}`))
       .sort();
-    expect(declared).toEqual(hashes);
+    expect(declared.filter((c) => c !== 'coach_thread.slot_aliases')).toEqual(hashes);
   });
 
   it.each(Object.keys(entityRules))('insertFixtureRow(%s) insère une ligne valide', async (table) => {

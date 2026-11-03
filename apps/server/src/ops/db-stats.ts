@@ -18,12 +18,15 @@ function integrityOf(sqlite: DatabaseSync): string {
   }
 }
 
-/** Plus récent `updated_at` de toutes les tables qui l'ont, et `security_event.at` ; null si rien n'est écrit. */
+/**
+ * Plus récent `updated_at` de toutes les tables qui l'ont, et `security_event.at` ; null si rien n'est écrit.
+ * `coach_state` en est exclue : sa ligne unique naît avec la migration (horloge réelle), pas d'une écriture.
+ */
 function lastWriteAt(sqlite: DatabaseSync): string | null {
   const tables = sqlite
     .prepare(
       `SELECT m.name AS name FROM sqlite_schema m JOIN pragma_table_info(m.name) p
-       WHERE m.type = 'table' AND p.name = 'updated_at' ORDER BY m.name`,
+       WHERE m.type = 'table' AND p.name = 'updated_at' AND m.name <> 'coach_state' ORDER BY m.name`,
     )
     .all()
     .map((row) => `SELECT max(updated_at) AS v FROM ${quoteIdent(String(row.name))}`);

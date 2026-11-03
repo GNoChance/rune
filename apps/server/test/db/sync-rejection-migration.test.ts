@@ -41,7 +41,7 @@ describe('migration 0005_sync_rejection_codes', () => {
     const snapshot = rows();
 
     expect(await migrate(h.db, MIGRATIONS, clock)).toEqual({
-      applied: ['0005_sync_rejection_codes', '0006_performed_set_target_reps'],
+      applied: ['0005_sync_rejection_codes', '0006_performed_set_target_reps', '0007_coach'],
       unknownNonBreaking: [],
     });
     expect(rows()).toEqual(snapshot);

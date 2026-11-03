@@ -2,7 +2,12 @@ import {
   BODY_AREAS,
   CHANGE_AUTHORS,
   CHANGE_STATUSES,
+  COACH_CLOSED_REASONS,
+  COACH_COUNTER_KINDS,
+  COACH_EFFORTS,
   COACH_IDS,
+  COACH_MESSAGE_ROLES,
+  COACH_REPORT_CATEGORIES,
   COMMENT_BODY_MAX,
   COMMENT_BODY_MIN,
   COMMENT_PARTS,
@@ -62,6 +67,13 @@ const { setBounds, noteMaxLength } = currentRules();
 
 const ENUMS: Record<string, readonly (string | number)[]> = {
   'applied_op.status': PushResult.shape.status.options,
+  'coach_message.role': COACH_MESSAGE_ROLES,
+  'coach_report.category': COACH_REPORT_CATEGORIES,
+  'coach_safety_counter.kind': COACH_COUNTER_KINDS,
+  'coach_thread.audience': ['adult', 'minor'],
+  'coach_thread.closed_reason': COACH_CLOSED_REASONS,
+  'coach_thread.effort': COACH_EFFORTS,
+  'coach_thread.persona': COACH_IDS,
   'consent_event.type': CONSENT_TYPES,
   'consent_event.action': CONSENT_ACTIONS,
   'exercise.status': EXERCISE_STATUSES,
@@ -109,6 +121,7 @@ const ENUMS: Record<string, readonly (string | number)[]> = {
 
 // `exercise.batch` (motif, pas une liste) est vérifié contre BatchSchema dans schema.test.
 const BOUNDS: Record<string, { min: number | null; max: number }> = {
+  'coach_report.comment': { min: null, max: 500 },
   'exercise.name': { min: null, max: EXERCISE_NAME_MAX },
   'exercise_comment.body': { min: COMMENT_BODY_MIN, max: COMMENT_BODY_MAX },
   'gym.name': { min: GYM_NAME_MIN, max: GYM_NAME_MAX },

@@ -391,6 +391,75 @@ const FACTORIES: Record<string, Factory> = {
       },
       ['exercise_id', 'revision'],
     ),
+  // Coach (brique 4, classe H) : fil du jour, `day` distinct par fil pour respecter UNIQUE (user_id, day).
+  coach_thread: async (db, v) =>
+    insert(db, 'coach_thread', {
+      id: ids(db).uuidv7(),
+      userId: await parentId(db, v, 'userId', 'user'),
+      day: `2026-11-${String((next(db) % 28) + 1).padStart(2, '0')}`,
+      audience: 'adult',
+      persona: 'ombre',
+      model: 'claude-test',
+      effort: 'medium',
+      promptVersion: '1',
+      toolsVersion: '1',
+      briefSchema: 'coach-brief/1',
+      brief: '{}',
+      isOpen: 1,
+      createdAt: NOW,
+      ...v,
+    }),
+  coach_message: async (db, v) => {
+    const userId = await parentId(db, v, 'userId', 'user');
+    const threadId = await parentId(db, v, 'threadId', 'coach_thread', { userId });
+    return insert(db, 'coach_message', {
+      id: ids(db).uuidv7(),
+      threadId,
+      userId,
+      seq: next(db),
+      role: 'user',
+      blocks: '[]',
+      displayText: 'Bonjour',
+      createdAt: NOW,
+      ...v,
+    });
+  },
+  coach_call: async (db, v) =>
+    insert(db, 'coach_call', {
+      id: ids(db).uuidv7(),
+      userId: await parentId(db, v, 'userId', 'user'),
+      day: '2026-11-03',
+      createdAt: NOW,
+      requestedModel: 'claude-test',
+      ...v,
+    }),
+  coach_report: async (db, v) =>
+    insert(db, 'coach_report', {
+      id: ids(db).uuidv7(),
+      userId: await parentId(db, v, 'userId', 'user'),
+      messageSeq: 1,
+      category: 'inaccurate',
+      exchangeText: 'Échange signalé',
+      createdAt: NOW,
+      ...v,
+    }),
+  // Clé composée ; `month` varie pour que deux appels successifs ne se heurtent pas.
+  coach_safety_counter: async (db, v) =>
+    insert(
+      db,
+      'coach_safety_counter',
+      { month: `2026-${String((next(db) % 12) + 1).padStart(2, '0')}`, kind: 'refusal', count: 1, ...v },
+      ['month', 'kind'],
+    ),
+  // Ligne unique insérée par la migration : relue, ou remplacée si des valeurs sont fournies.
+  coach_state: async (db, v) => {
+    if (Object.keys(v).length > 0) await sql`delete from coach_state`.execute(db);
+    else {
+      const existing = await sql<Values>`select * from coach_state where id = 1`.execute(db);
+      if (existing.rows[0]) return rowToCamel(existing.rows[0]);
+    }
+    return insert(db, 'coach_state', { id: 1, enabled: 0, updatedAt: NOW, ...v });
+  },
 };
 
 const ownerOf = (v: Values): Values => (v.ownerId ? { ownerId: v.ownerId } : {});

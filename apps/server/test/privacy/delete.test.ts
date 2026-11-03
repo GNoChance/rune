@@ -32,7 +32,11 @@ async function plant(userId: string): Promise<void> {
   await insertFixtureRow(db, 'gym_equipment', { gymId: gym.id, addedBy: userId });
   await insertFixtureRow(db, 'gym_history', { gymId: gym.id, authorId: userId });
   await insertFixtureRow(db, 'invitation', { usedBy: userId, createdBy: userId });
+  await insertFixtureRow(db, 'coach_safety_counter');
 }
+
+const coachRows = (table: string) =>
+  (ctx.deps.sqlite.prepare(`select count(*) as n from ${table}`).get() as { n: number }).n;
 
 /** Nombre de cellules (hors security_event) qui contiennent l'identifiant. */
 async function occurrences(id: string): Promise<string[]> {
@@ -105,6 +109,11 @@ describe('POST /api/me/delete (R-SUP-1 à R-SUP-6, P-DRT-3)', () => {
 
     expect(await userExists(lea.id)).toBe(false);
     expect(await occurrences(lea.id)).toEqual([]);
+    // Coach : les 4 tables personnelles sont vidées ; compteur anonyme et réglage global restent.
+    for (const t of ['coach_thread', 'coach_message', 'coach_call', 'coach_report'])
+      expect(coachRows(t), t).toBe(0);
+    expect(coachRows('coach_safety_counter')).toBe(1);
+    expect(coachRows('coach_state')).toBe(1);
     const fks = ctx.deps.sqlite
       .prepare(
         `select m.name as tbl, f."on_delete" as onDelete from sqlite_schema m, pragma_foreign_key_list(m.name) f

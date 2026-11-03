@@ -44,6 +44,8 @@ async function seedUser(userId: string, tag: string): Promise<string[]> {
     const extra = (witnesses as Record<string, Record<string, unknown>>)[table] ?? {};
     await insertFixtureRow(ctx.deps.db, table, { ownerId: userId, ...extra });
   }
+  // Coach (classe H) : la ligne existe mais ne sort jamais d'un pull, pour son propriétaire non plus.
+  await insertFixtureRow(ctx.deps.db, 'coach_message', { userId, displayText: `TEMOIN-${tag}-coach` });
   return Object.values(witnesses).flatMap((w) =>
     Object.values(w).filter((v) => String(v).startsWith('TEMOIN')),
   );
@@ -93,6 +95,8 @@ describe.each(['member', 'admin'] as const)('pull : test de fuite (session %s)',
     for (const w of own) expect(dump).toContain(w);
     expect(dump).not.toContain(b.id);
     for (const w of others) expect(dump).not.toContain(w);
+    for (const w of ['TEMOIN-A-coach', 'TEMOIN-B-coach']) expect(dump).not.toContain(w);
+    expect(rows.filter((r) => r.entity.startsWith('coach_'))).toEqual([]);
     // Coach : valeur d'énumération, témoin par valeur distincte (A « ombre », B « scribe »).
     expect(dump).toContain('"coach":"ombre"');
     expect(dump).not.toContain('"coach":"scribe"');
