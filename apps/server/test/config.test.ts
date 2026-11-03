@@ -74,3 +74,17 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ APP_ORIGIN: 'https://a.ts.net', PORT: '70000' })).toThrow(ConfigError);
   });
 });
+
+describe('COACH_DEV_ALLOW_UNEVALUATED', () => {
+  it('vrai en http://localhost, faux si absente', () => {
+    const on = loadConfig({ APP_ORIGIN: 'http://localhost:3000', COACH_DEV_ALLOW_UNEVALUATED: '1' });
+    expect(on.coachDevAllowUnevaluated).toBe(true);
+    expect(loadConfig({ APP_ORIGIN: 'http://localhost:3000' }).coachDevAllowUnevaluated).toBe(false);
+  });
+
+  it('refusée avec une APP_ORIGIN en https', () => {
+    expect(() =>
+      loadConfig({ APP_ORIGIN: 'https://rune.test.ts.net', COACH_DEV_ALLOW_UNEVALUATED: '1' }),
+    ).toThrow(/réservé au développement/);
+  });
+});

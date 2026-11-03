@@ -23,7 +23,12 @@ export type SecurityEventType =
   | 'data_exported'
   | 'account_deleted'
   | 'gym_deleted'
-  | 'reviewer_flags_changed';
+  | 'reviewer_flags_changed'
+  | 'coach_state_changed'
+  | 'coach_suspended'
+  | 'coach_report_created'
+  | 'coach_report_classified'
+  | 'coach_api_auth_failed';
 
 export type SecurityDetails = { [key: string]: string | number | boolean };
 

@@ -14,6 +14,8 @@ export interface AppConfig {
   swKillSwitch: boolean;
   coachModel: string;
   anthropicApiKey: string | null;
+  /** Mode dev du coach (spec §5.2, C46) : accepte une combinaison non évaluée. Jamais en https. */
+  coachDevAllowUnevaluated: boolean;
   argon2: Argon2Params;
   sessionCookieName: '__Host-session' | 'dev-session';
   secureCookie: boolean;
@@ -70,6 +72,12 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   const origin = parseOrigin(env.APP_ORIGIN);
   const secure = origin.protocol === 'https:';
   const dataDir = dataDirFrom(env);
+  const coachDevAllowUnevaluated = env.COACH_DEV_ALLOW_UNEVALUATED === '1';
+  if (coachDevAllowUnevaluated && secure) {
+    throw new ConfigError(
+      'COACH_DEV_ALLOW_UNEVALUATED est réservé au développement (APP_ORIGIN en http://localhost ou http://127.0.0.1).',
+    );
+  }
   return {
     appOrigin: origin.origin,
     version: orDefault(env.APP_VERSION, 'dev'),
@@ -83,6 +91,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     swKillSwitch: env.SW_KILL_SWITCH === '1',
     coachModel: orDefault(env.COACH_MODEL, 'claude-opus-5-5'),
     anthropicApiKey: env.ANTHROPIC_API_KEY ? env.ANTHROPIC_API_KEY : null,
+    coachDevAllowUnevaluated,
     argon2: { ...ARGON2_PARAMS },
     sessionCookieName: secure ? '__Host-session' : 'dev-session',
     secureCookie: secure,

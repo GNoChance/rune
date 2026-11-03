@@ -108,6 +108,8 @@ it('node build.mjs produit un seul server.mjs ESM, sans import hors node:*', BUN
   expect(readdirSync(DIST_DIR)).toEqual(['server.mjs']);
   const src = await withoutComments(readFileSync(join(DIST_DIR, 'server.mjs'), 'utf8'));
   expect(src).toMatch(/^export \{/m);
+  // Le faux client IA n'entre jamais dans le serveur de production : seul un point d'entrée de test l'injecte.
+  expect(src).not.toContain('createFakeAiClient');
   expect(src).not.toMatch(/(?:from|import\()\s*['"](?!node:)[a-z@][^'"]*['"]/);
   expect(requiredModules(src).filter((specifier) => !isBuiltin(specifier))).toEqual([]);
   const { inputs, imports } = await bundleImports(join(DIST_DIR, 'server.mjs'));
