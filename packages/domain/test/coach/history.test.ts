@@ -44,4 +44,46 @@ describe('historyForApi', () => {
     expect(input).toEqual(snapshot);
     expect(out[0]?.content).not.toBe(input[0]?.blocks);
   });
+
+  describe('appariement des tool_result', () => {
+    const use = (id: string) => b('tool_use', { id });
+    const result = (id: string) => b('tool_result', { tool_use_id: id });
+
+    it('écarte le message user dont tous les résultats sont orphelins', () => {
+      const out = historyForApi([
+        { role: 'assistant', blocks: [b('thinking'), use('A'), b('fallback'), b('text')] },
+        { role: 'user', blocks: [result('A')] },
+      ]);
+      expect(out).toEqual([{ role: 'assistant', content: [b('fallback'), b('text')] }]);
+    });
+
+    it('ne garde que le résultat du tool_use conservé', () => {
+      const out = historyForApi([
+        { role: 'assistant', blocks: [use('A'), b('fallback'), use('B')] },
+        { role: 'user', blocks: [result('A'), result('B')] },
+      ]);
+      expect(out[1]).toEqual({ role: 'user', content: [result('B')] });
+    });
+
+    it("ne touche jamais le résultat d'un tool_use gardé", () => {
+      const input: StoredApiMessage[] = [
+        { role: 'assistant', blocks: [use('A'), b('text')] },
+        { role: 'user', blocks: [result('A')] },
+      ];
+      expect(historyForApi(input)).toEqual([
+        { role: 'assistant', content: input[0]?.blocks },
+        { role: 'user', content: input[1]?.blocks },
+      ]);
+    });
+
+    it("ne modifie pas l'entrée", () => {
+      const input: StoredApiMessage[] = [
+        { role: 'assistant', blocks: [use('A'), b('fallback'), use('B')] },
+        { role: 'user', blocks: [result('A'), result('B')] },
+      ];
+      const snapshot = structuredClone(input);
+      historyForApi(input);
+      expect(input).toEqual(snapshot);
+    });
+  });
 });
