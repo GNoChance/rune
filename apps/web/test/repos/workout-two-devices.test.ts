@@ -13,6 +13,7 @@ import {
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApiClient } from '../../src/api/client';
 import type { AppServices } from '../../src/app-services';
+import { nextLines } from '../../src/features/workout/summary-model';
 import { type AppDb, createAppDb } from '../../src/local-db/db';
 import { setMeta } from '../../src/local-db/meta';
 import { createRepos, type Repos } from '../../src/repos';
@@ -21,7 +22,7 @@ import { createSyncEngine, type SyncEngine } from '../../src/sync/engine';
 import type { SyncTransport } from '../../src/sync/transport';
 import { createFakeSyncEngine } from '../support/fake-api';
 import { inProcessTransport } from '../support/in-process-transport';
-import { LUNGE, PLAN } from '../support/workout';
+import { PLAN } from '../support/workout';
 
 const IP = '100.64.0.2';
 const HOUR = 3_600_000;
@@ -435,10 +436,11 @@ describe('« Changer de lieu » depuis un miroir en retard sur l’autre apparei
     await b.engine.syncNow('manual');
 
     // A n'a rien tiré depuis « Continuer ici » : il tient la séance et n'y voit aucune série faite. Le lieu importe
-    // peu ici (aucun lieu enregistré) : c'est le plan refait qui supprime les exercices.
+    // peu ici (aucun lieu enregistré) : c'est le plan refait qui supprime les exercices. Comme l'écran
+    // (`SessionMenu`), A refait le plan entier : le squat revient au même slot, à la même position.
     expect(await a.repos.workouts.session(id)).toMatchObject({ deviceId: 'dev-A', heldHere: true });
     c.clock.advance(60_000);
-    await a.repos.workouts.changePlace(id, { ...PLAN, exercises: [LUNGE] }, null);
+    await a.repos.workouts.changePlace(id, PLAN, null);
     await a.engine.syncNow('manual');
     await b.engine.syncNow('manual');
 
@@ -459,18 +461,27 @@ describe('« Changer de lieu » depuis un miroir en retard sur l’autre apparei
       [first.id, true],
       [second.id, true],
     ]);
-    expect(onB2.exercises.some((e) => e.id !== squat && e.exerciseId === 'dumbbell-lunge')).toBe(true);
+    const replanned = onB2.exercises.find((e) => e.id !== squat && e.exerciseId === 'back-squat');
+    if (!replanned) throw new Error('squat du plan refait absent');
+    expect(replanned).toMatchObject({ slotId: 'A1', position: 1 });
+    expect(replanned.sets.every((s) => s.loggedAt === null)).toBe(true);
+    expect(onB2.exercises.some((e) => e.exerciseId === 'dumbbell-lunge')).toBe(true);
 
-    // B termine : la séance compte, l'exercice des séries faites est rejoué et apparaît dans l'historique.
+    // B termine : la séance compte ; l'exercice des séries faites porte la décision du moteur (ruling R55), pas le
+    // squat vide du plan refait, et « La prochaine fois » en parle sur les deux appareils.
     expect(await b.repos.workouts.finish(id)).toBe('completed');
     await b.engine.syncNow('manual');
     await a.engine.syncNow('manual');
     expect(sessionRow(c, id)).toMatchObject({ status: 'completed' });
     expect(decidedExercises(c, id)).toContain(squat);
+    expect(decidedExercises(c, id)).not.toContain(replanned.id);
     for (const d of [a, b]) {
       expect((await d.repos.workouts.history()).map((s) => [s.id, s.status])).toEqual([[id, 'completed']]);
-      const kept = (await d.repos.workouts.session(id))?.exercises.find((e) => e.id === squat);
+      const view = await d.repos.workouts.session(id);
+      const kept = view?.exercises.find((e) => e.id === squat);
       expect(kept?.sets.map((s) => s.id)).toEqual([first.id, second.id]);
+      const next = nextLines(view?.exercises ?? [], await d.repos.workouts.decisions(id));
+      expect(next.map((l) => l.performedExerciseId)).toContain(squat);
       expect(await d.db.outbox.count()).toBe(0);
     }
   });

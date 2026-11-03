@@ -327,17 +327,33 @@ const lineOrder = (a: SetRecord, b: SetRecord) =>
 
 type Entries = [ExerciseRecord, ...ExerciseRecord[]];
 
-const lastEntry = (entries: Entries): ExerciseRecord => entries[entries.length - 1] ?? entries[0];
+const hasDoneWork = (e: ExerciseRecord): boolean => e.sets.some((s) => s.kind === 'work' && isDone(s));
+
+/**
+ * Rang de l'entrée qui porte la décision d'un état (ruling R55, amende R34) : la dernière qui a une série de travail
+ * faite, à défaut la dernière. Une entrée plus récente sans série de travail faite (plan refait par « Changer de lieu »
+ * sur un appareil en retard, retour à une fiche sans série faite ensuite) ne prend pas la décision : les écrans ne
+ * montrent une décision que sur une entrée qui a une série de travail faite (`showsDecision`).
+ */
+function identityIndex(entries: Entries): number {
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    const entry = entries[i];
+    if (entry !== undefined && hasDoneWork(entry)) return i;
+  }
+  return entries.length - 1;
+}
+
+const identityEntry = (entries: Entries): ExerciseRecord => entries[identityIndex(entries)] ?? entries[0];
 
 /**
  * Entrées d'une séance qui tiennent le même état (ruling R34 : « Changer d'exercice » après des séries faites, retour
- * à une fiche déjà faite, autre variante de la chaîne), fondues en une seule évaluation : leurs séries faites dans
- * l'ordre de la séance, renumérotées par type (les deux côtés d'une série gardent la même position), l'ajustement et la
- * douleur les plus forts, et l'identité de la dernière entrée, qui reçoit la décision. Une entrée seule est rendue
- * telle quelle.
+ * à une fiche déjà faite, autre variante de la chaîne, plan refait au même slot), fondues en une seule évaluation :
+ * leurs séries faites dans l'ordre de la séance, renumérotées par type (les deux côtés d'une série gardent la même
+ * position), l'ajustement et la douleur les plus forts, et l'identité de l'entrée qui reçoit la décision
+ * (`identityEntry`, ruling R55). Une entrée seule est rendue telle quelle.
  */
 function mergeEntries(entries: Entries): ExerciseRecord {
-  const last = lastEntry(entries);
+  const last = identityEntry(entries);
   if (entries.length === 1) return last;
   const counters = { warmup: 0, work: 0 };
   const sets: SetRecord[] = [];
@@ -369,24 +385,29 @@ function mergeEntries(entries: Entries): ExerciseRecord {
 }
 
 /**
- * Entrées de la séance regroupées par état (ruling R34), dans l'ordre de la séance de leur dernière entrée, celle qui
- * porte la décision ; la fiche d'un groupe est celle de sa dernière entrée. Seule la dernière entrée d'un état a une
- * décision (`engine_decision` 0-1 par exercice réalisé, D7).
+ * Entrées de la séance regroupées par état (ruling R34), dans l'ordre de la séance de l'entrée qui porte la décision
+ * (`identityEntry`, ruling R55) ; la fiche d'un groupe est celle de cette entrée. Seule cette entrée a une décision
+ * (`engine_decision` 0-1 par exercice réalisé, D7).
  */
 function entriesByState(ctx: Context, run: Run, s: SessionRecord): { target: Target; entries: Entries }[] {
-  const groups = new Map<string, { target: Target; entries: Entries }>();
+  const groups = new Map<string, { targets: [Target, ...Target[]]; entries: Entries }>();
   for (const ex of [...s.exercises].sort(exerciseOrder)) {
     const target = targetOf(ctx, run, s, ex);
     if (target === null) continue;
     const group = groups.get(target.id);
     if (group === undefined) {
-      groups.set(target.id, { target, entries: [ex] });
+      groups.set(target.id, { targets: [target], entries: [ex] });
     } else {
-      group.target = target;
+      group.targets.push(target);
       group.entries.push(ex);
     }
   }
-  return [...groups.values()].sort((a, b) => exerciseOrder(lastEntry(a.entries), lastEntry(b.entries)));
+  return [...groups.values()]
+    .map(({ targets, entries }) => ({
+      target: targets[identityIndex(entries)] ?? targets[0],
+      entries,
+    }))
+    .sort((a, b) => exerciseOrder(identityEntry(a.entries), identityEntry(b.entries)));
 }
 
 /**

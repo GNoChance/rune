@@ -172,8 +172,8 @@ export interface WorkoutsRepo {
   otherDeviceSession(): Promise<WorkoutSessionView | null>;
   /**
    * Décisions du moteur lues dans le miroir pour les exercices de la séance (l'`id` d'une décision est celui de
-   * l'exercice qui la porte). Ruling R34 : seule la dernière entrée d'un état en porte une. Aucune pour une
-   * séance libre (D7).
+   * l'exercice qui la porte). Rulings R34, R55 : une seule entrée par état en porte une, la dernière qui a une série
+   * de travail faite (à défaut la dernière). Aucune pour une séance libre (D7).
    */
   decisions(sessionId: string): Promise<SessionDecision[]>;
   /**

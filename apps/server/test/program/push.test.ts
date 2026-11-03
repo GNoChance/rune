@@ -471,7 +471,7 @@ describe('série faite jamais supprimée par un appareil en retard (ruling R49)'
     expect(rowsOf('sync_rejection')).toEqual([]);
   });
 
-  it('delete d’un exercice qui porte une série faite vivante d’une séance vivante (« Changer de lieu » en retard) : ignoré, rev neuf ; exercice sans série faite supprimé', async () => {
+  it('delete d’un exercice qui porte une série faite vivante d’une séance vivante (« Changer de lieu » en retard) : ignoré, rev neuf, quel que soit l’ordre du lot ; exercice sans série faite vivante supprimé', async () => {
     const a = await setup();
     const running = sessionOps(a.id, {
       status: 'in_progress',
@@ -481,26 +481,36 @@ describe('série faite jamais supprimée par un appareil en retard (ruling R49)'
         { sets: [{ logged: false }] },
         // Échauffement fait : compte comme une série faite (même règle que `sets_done` sur le téléphone).
         { sets: [{ kind: 'warmup' }, { logged: false }] },
+        // Seule série faite déjà supprimée (cascade d'une restauration, par exemple) : ne garde rien.
+        { sets: [{}] },
       ],
     });
     const closed = sessionOps(a.id, { exercises: [{ sets: [{}] }] });
     await syncPush(ctx, a.cookie, [...running.ops, ...closed.ops]);
-    const [done, open, warmup] = running.exerciseIds;
+    const [done, open, warmup, gone] = running.exerciseIds;
     const [closedDone] = closed.exerciseIds;
-    if (!done || !open || !warmup || !closedDone) throw new Error('exercices absents');
+    if (!done || !open || !warmup || !gone || !closedDone) throw new Error('exercices absents');
+    ctx.deps.sqlite
+      .prepare('UPDATE performed_set SET deleted_at = ? WHERE id = ?')
+      .run(dayAt(0), running.setIds[3]?.[0] ?? '');
     const before = Math.max(...rowsOf('performed_exercise').map((r) => r.rev as number));
 
+    // Exercices d'abord, séries ensuite : la garde lit l'état des séries, l'ordre du lot ne change rien (`changePlace`
+    // envoie l'ordre inverse, couvert par workout-two-devices.test.ts).
+    const exercises = [done, open, warmup, gone, closedDone];
     const res = await syncPush(ctx, a.cookie, [
-      ...running.setIds.flat().map((id) => del(a, 'performed_set', id)),
-      ...[done, open, warmup, closedDone].map((id) => del(a, 'performed_exercise', id)),
+      ...exercises.map((id) => del(a, 'performed_exercise', id)),
+      ...running.setIds
+        .slice(0, 3)
+        .flat()
+        .map((id) => del(a, 'performed_set', id)),
     ]);
     expect(res.body.results.every((r: Row) => r.status === 'applied')).toBe(true);
-    const results = res.body.results.slice(running.setIds.flat().length);
-    for (const [i, id] of [done, open, warmup, closedDone].entries()) {
+    for (const [i, id] of exercises.entries()) {
       const row = rowOf('performed_exercise', id);
-      expect(results[i].rev, id).toBe(row?.rev);
-      if (id === open) {
-        expect(row?.deleted_at).not.toBeNull();
+      expect(res.body.results[i].rev, id).toBe(row?.rev);
+      if (id === open || id === gone) {
+        expect(row?.deleted_at, id).not.toBeNull();
         continue;
       }
       expect(row).toMatchObject({ deleted_at: null, exercise_id: 'goblet-squat' });

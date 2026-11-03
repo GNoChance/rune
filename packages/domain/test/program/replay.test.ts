@@ -1016,6 +1016,56 @@ describe('une seule évaluation par état et par séance (R34)', () => {
     expect(stateOf(split, 'B4', 'dumbbell-lunge')).toEqual(stateOf(single, 'B4', 'dumbbell-lunge'));
   });
 
+  it('plan refait au même slot (« Changer de lieu » sur un appareil en retard) : la décision va à la dernière entrée qui a une série de travail faite (R55)', () => {
+    const kept = squat(60000, { reps: [6, 6] });
+    const warmup: SetRecord = { ...firstOf(work([8], 30000, { effort: null })), kind: 'warmup' };
+    // Même fiche, même position, plus récente : échauffement fait seulement, puis une entrée sans aucune série.
+    const replanned = done('A1', 'back-squat', [warmup]);
+    const empty = done('A1', 'back-squat', [], { position: 2 });
+    const split = replay([session('s1', at(0), 'A', [kept, replanned, empty])]);
+    const whole = squat(60000, { reps: [6, 6] });
+    const single = replay([session('s1', at(0), 'A', [whole])]);
+
+    expect(split.decisions.filter((d) => d.slotId === 'A1').map((d) => d.id)).toEqual([kept.id]);
+    expect(withoutId(decisionOf(split, kept))).toEqual(withoutId(decisionOf(single, whole)));
+    expect(stateOf(split, 'A1', 'back-squat')).toEqual(stateOf(single, 'A1', 'back-squat'));
+  });
+
+  it('variante de la chaîne sans série faite après une variante faite : décision et fiche évaluée de l’entrée faite (R55)', () => {
+    const easier = plank('kneeling-plank', [40, 40], { effort: 'ok', position: 5 });
+    const harder = done('A5', 'front-plank', [], { position: 6 });
+    const split = replay([session('s1', at(0), 'A', [easier, harder])]);
+    const whole = plank('kneeling-plank', [40, 40], { effort: 'ok', position: 5 });
+    const single = replay([session('s1', at(0), 'A', [whole])]);
+
+    expect(split.decisions.filter((d) => d.slotId === 'A5').map((d) => d.id)).toEqual([easier.id]);
+    expect(withoutId(decisionOf(split, easier))).toEqual(withoutId(decisionOf(single, whole)));
+    expect(stateOf(split, 'A5', 'front-plank')).toEqual(stateOf(single, 'A5', 'front-plank'));
+  });
+
+  it('état établi à la variante plus dure, plus facile faite puis plus dure vide : même évaluation que la plus facile seule (R55)', () => {
+    const s0 = session('s0', at(0), 'A', [plank('front-plank', [30, 30, 30], { effort: 'ok', position: 5 })]);
+    const easier = plank('kneeling-plank', [45, 45, 45], { effort: 'ok', position: 5 });
+    const harder = done('A5', 'front-plank', [], { position: 6 });
+    const split = replay([s0, session('s1', at(2), 'A', [easier, harder])]);
+    const alone = plank('kneeling-plank', [45, 45, 45], { effort: 'ok', position: 5 });
+    const single = replay([s0, session('s1', at(2), 'A', [alone])]);
+
+    expect(split.decisions.filter((d) => d.slotId === 'A5').map((d) => d.id)).toEqual([
+      decisionOf(split, s0.exercises[0] ?? fail('exercice')).id,
+      easier.id,
+    ]);
+    expect(withoutId(decisionOf(split, easier))).toEqual(withoutId(decisionOf(single, alone)));
+    expect(stateOf(split, 'A5', 'front-plank')).toEqual(stateOf(single, 'A5', 'front-plank'));
+  });
+
+  it('aucune entrée avec une série de travail faite : la décision reste sur la dernière entrée', () => {
+    const first = done('A1', 'back-squat', [], { position: 1 });
+    const last = done('A1', 'back-squat', [], { position: 2 });
+    const r = replay([session('s1', at(0), 'A', [first, last])]);
+    expect(r.decisions.filter((d) => d.slotId === 'A1').map((d) => d.id)).toEqual([last.id]);
+  });
+
   it('deux fiches différentes d’une liste : deux états, deux décisions, comme avant', () => {
     const barbell = squat(60000, { reps: [6], effort: null });
     const goblet = done('A1', 'goblet-squat', work([10, 10], 20000), { position: 2 });

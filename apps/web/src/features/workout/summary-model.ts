@@ -137,9 +137,9 @@ function nextTargetText(target: NextTarget, loadMode: LoadMode | null): string {
 }
 
 /**
- * « La prochaine fois » : une ligne par exercice de la séance qui porte une décision du moteur (ruling R34 : la
- * dernière entrée d'un état), dans l'ordre de la séance, sauf un exercice sans série de travail faite et une décision
- * `NO_DATA` (`showsDecision`). Une séance libre n'en a aucune (D7).
+ * « La prochaine fois » : une ligne par exercice de la séance qui porte une décision du moteur (rulings R34, R55 : la
+ * dernière entrée d'un état qui a une série de travail faite), dans l'ordre de la séance, sauf un exercice sans série
+ * de travail faite et une décision `NO_DATA` (`showsDecision`). Une séance libre n'en a aucune (D7).
  */
 export function nextLines(
   exercises: readonly SessionRecord['exercises'][number][],
