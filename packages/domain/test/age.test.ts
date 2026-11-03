@@ -35,3 +35,14 @@ describe('ageBandOn', () => {
     expect(ageBandOn('2010-10-06', '2026-10-06')).toBe('minor');
   });
 });
+
+describe('public du coach', () => {
+  it('né le 2008-11-04 : majeur le jour des 18 ans', () => {
+    expect(ageBandOn('2008-11-04', '2026-11-03')).toBe('minor');
+    expect(ageBandOn('2008-11-04', '2026-11-04')).toBe('adult');
+  });
+  it('né le 2008-02-29 : majeur le 01/03 en année non bissextile', () => {
+    expect(ageBandOn('2008-02-29', '2026-02-28')).toBe('minor');
+    expect(ageBandOn('2008-02-29', '2026-03-01')).toBe('adult');
+  });
+});
