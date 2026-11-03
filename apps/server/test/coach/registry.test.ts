@@ -151,4 +151,69 @@ describe('registre des échanges', () => {
     expect(settled).toBe(true);
     await second;
   });
+
+  it('abortFor puis abortAll attend le done différé de 500 ms', async () => {
+    vi.useFakeTimers();
+    const registry = make();
+    const lease = registry.begin('a');
+    registry.abortFor('a', 'consent_withdrawn');
+    let settled = false;
+    const all = registry.abortAll('shutdown').then(() => {
+      settled = true;
+    });
+    setTimeout(() => lease?.done(), 500);
+    await vi.advanceTimersByTimeAsync(499);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await all;
+    expect(settled).toBe(true);
+    expect(lease?.signal.reason).toBe('consent_withdrawn');
+  });
+
+  it('délai dépassé puis abortAll attend le done différé', async () => {
+    vi.useFakeTimers();
+    const registry = make(1000);
+    const lease = registry.begin('a');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(lease?.signal.reason).toBe('timeout');
+    let settled = false;
+    const all = registry.abortAll('shutdown').then(() => {
+      settled = true;
+    });
+    setTimeout(() => lease?.done(), 500);
+    await vi.advanceTimersByTimeAsync(499);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await all;
+    expect(settled).toBe(true);
+  });
+
+  it('un abortAll concurrent rend la même promesse et ne finit pas avant le premier', async () => {
+    vi.useFakeTimers();
+    const registry = make();
+    const lease = registry.begin('a');
+    const first = registry.abortAll('shutdown');
+    const second = registry.abortAll('shutdown');
+    expect(second).toBe(first);
+    let settled = false;
+    void second.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(settled).toBe(false);
+    lease?.done();
+    await first;
+    expect(settled).toBe(true);
+  });
+
+  it('après abortAll, plus aucun minuteur actif', async () => {
+    vi.useFakeTimers();
+    const registry = make();
+    registry.begin('a');
+    registry.begin('b')?.done();
+    const all = registry.abortAll('shutdown');
+    await vi.advanceTimersByTimeAsync(2000);
+    await all;
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });
