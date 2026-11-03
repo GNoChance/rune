@@ -124,6 +124,8 @@ export const CHANGE_REASON_CODES = [
   'ENGINE_REACTIVE_DELOAD',
   'PAIN_SUSPEND',
   'USER_SUSPEND',
+  /** Proposition du coach IA (spec brique 4 §12.3). */
+  'COACH_PROPOSAL',
 ] as const;
 export type ChangeReasonCode = (typeof CHANGE_REASON_CODES)[number];
 
@@ -179,6 +181,7 @@ export const REASON_TEXTS: Record<ReasonCode | ChangeReasonCode, string> = {
   ENGINE_REACTIVE_DELOAD: 'On te propose une semaine allégée pour récupérer.',
   PAIN_SUSPEND: 'Tu as signalé une douleur : cet exercice est mis de côté.',
   USER_SUSPEND: 'Tu as mis cet exercice de côté.',
+  COACH_PROPOSAL: 'Le coach IA te propose ce changement.',
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -323,3 +326,23 @@ export const InstanceChangeOperationSchema = z.discriminatedUnion('op', [
   }),
 ]);
 export type InstanceChangeOperation = z.infer<typeof InstanceChangeOperationSchema>;
+
+/**
+ * Auteurs permis par opération (05 §15). Le coach ne lève jamais une suspension. Lu par le validateur du domaine et
+ * par le schéma des opérations du coach (`CoachOperationSchema`, spec brique 4 §10).
+ */
+export const OPERATION_AUTHORS: Readonly<Record<InstanceChangeOperation['op'], readonly ChangeAuthor[]>> = {
+  replace_exercise: ['user', 'coach', 'engine'],
+  change_sets: ['user', 'coach'],
+  set_rep_range: ['user', 'coach'],
+  set_target_rir: ['user', 'coach'],
+  set_rest: ['user', 'coach'],
+  lighten_exercise: ['user', 'coach'],
+  start_deload: ['user', 'coach', 'engine'],
+  suspend_slot: ['user', 'coach', 'engine'],
+  resume_slot: ['user'],
+  remove_slot: ['user', 'coach'],
+  add_slot: ['user', 'coach'],
+  set_days_per_week: ['user', 'coach'],
+  switch_template: ['user', 'coach'],
+};

@@ -5,6 +5,7 @@ import {
   type EquipmentCode,
   type InstanceChangeOperation,
   type MovementPattern,
+  OPERATION_AUTHORS,
   type PROGRAM_LEVELS,
   type ServedProgramTemplate,
   type SessionProfile,
@@ -64,22 +65,8 @@ export interface ChangeError {
 
 export type ChangeValidation = { ok: true; program: EffectiveProgram } | { ok: false; errors: ChangeError[] };
 
-/** Auteurs permis par opération (05 §15). Le coach ne lève jamais une suspension. */
-export const OPERATION_AUTHORS: Readonly<Record<InstanceChangeOperation['op'], readonly ChangeAuthor[]>> = {
-  replace_exercise: ['user', 'coach', 'engine'],
-  change_sets: ['user', 'coach'],
-  set_rep_range: ['user', 'coach'],
-  set_target_rir: ['user', 'coach'],
-  set_rest: ['user', 'coach'],
-  lighten_exercise: ['user', 'coach'],
-  start_deload: ['user', 'coach', 'engine'],
-  suspend_slot: ['user', 'coach', 'engine'],
-  resume_slot: ['user'],
-  remove_slot: ['user', 'coach'],
-  add_slot: ['user', 'coach'],
-  set_days_per_week: ['user', 'coach'],
-  switch_template: ['user', 'coach'],
-};
+/** Auteurs permis par opération (05 §15) : la table vit dans les contrats, réexportée pour les imports du domaine. */
+export { OPERATION_AUTHORS };
 
 /** Identifiant d'un changement pas encore créé (nom provisoire d'un slot ajouté). */
 export const PENDING_CHANGE_ID = 'pending';

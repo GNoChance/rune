@@ -151,6 +151,9 @@ function changeOf(row: MirrorRow): InstanceChangeView | null {
     createdAt: row.createdAt,
     expiresAt: row.expiresAt ?? null,
     decidedAt: row.decidedAt ?? null,
+    aiGenerated: row.aiGenerated === true,
+    aiModel: row.aiModel ?? null,
+    coachThreadId: row.coachThreadId ?? null,
   });
   return parsed.success ? parsed.data : null;
 }

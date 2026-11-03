@@ -45,6 +45,13 @@ export const ApiErrorCode = z.enum([
   'not_proposed',
   'session_in_progress',
   'invalid_change',
+  'coach_unavailable',
+  'consent_required',
+  'daily_limit_reached',
+  'monthly_budget_reached',
+  'request_in_progress',
+  'thread_closed',
+  'duplicate_message',
   'internal',
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
@@ -68,6 +75,7 @@ export const ERROR_STATUS: Record<ApiErrorCode, number> = {
   health_consent_required: 403,
   reset_self_forbidden: 403,
   self_health_flag: 403,
+  consent_required: 403,
   not_found: 404,
   conflict: 409,
   username_taken: 409,
@@ -85,6 +93,9 @@ export const ERROR_STATUS: Record<ApiErrorCode, number> = {
   expired: 409,
   not_proposed: 409,
   session_in_progress: 409,
+  request_in_progress: 409,
+  thread_closed: 409,
+  duplicate_message: 409,
   account_deleted: 410,
   watermark_expired: 410,
   unsupported_media_type: 415,
@@ -94,7 +105,10 @@ export const ERROR_STATUS: Record<ApiErrorCode, number> = {
   invalid_change: 422,
   protocol_unsupported: 426,
   rate_limited: 429,
+  daily_limit_reached: 429,
+  monthly_budget_reached: 429,
   internal: 500,
+  coach_unavailable: 503,
 };
 
 export const ApiErrorBody = z.object({ error: ApiErrorCode }).passthrough();

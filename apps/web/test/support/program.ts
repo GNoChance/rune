@@ -369,4 +369,7 @@ export const CHANGE_VIEW = {
   createdAt: '2026-10-06T12:00:00.000Z',
   expiresAt: null,
   decidedAt: '2026-10-06T12:00:00.000Z',
+  aiGenerated: false,
+  aiModel: null,
+  coachThreadId: null,
 };

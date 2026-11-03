@@ -100,6 +100,9 @@ const CHANGE = {
   createdAt: '2026-11-01T10:00:00.000Z',
   expiresAt: null,
   decidedAt: null,
+  aiGenerated: false,
+  aiModel: null,
+  coachThreadId: null,
 };
 
 const SLOT_STATE = {

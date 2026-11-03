@@ -22,6 +22,7 @@ const GROUPS: Record<number, string[]> = {
     'health_consent_required',
     'reset_self_forbidden',
     'self_health_flag',
+    'consent_required',
   ],
   404: ['not_found'],
   409: [
@@ -41,18 +42,34 @@ const GROUPS: Record<number, string[]> = {
     'expired',
     'not_proposed',
     'session_in_progress',
+    'request_in_progress',
+    'thread_closed',
+    'duplicate_message',
   ],
   410: ['account_deleted', 'watermark_expired'],
   415: ['unsupported_media_type'],
   422: ['transition_blocked', 'template_unavailable', 'days_out_of_range', 'invalid_change'],
   426: ['protocol_unsupported'],
-  429: ['rate_limited'],
+  429: ['rate_limited', 'daily_limit_reached', 'monthly_budget_reached'],
   500: ['internal'],
+  503: ['coach_unavailable'],
 };
 
 describe('ApiErrorCode et ERROR_STATUS', () => {
-  it('compte 45 codes', () => {
-    expect(ApiErrorCode.options).toHaveLength(45);
+  it('compte 52 codes', () => {
+    expect(ApiErrorCode.options).toHaveLength(52);
+  });
+
+  it('porte les codes de la garde du coach et de son envoi avec leur statut (spec brique 4 §7.3)', () => {
+    expect(ERROR_STATUS).toMatchObject({
+      coach_unavailable: 503,
+      consent_required: 403,
+      daily_limit_reached: 429,
+      monthly_budget_reached: 429,
+      request_in_progress: 409,
+      thread_closed: 409,
+      duplicate_message: 409,
+    });
   });
 
   it('porte les codes de la relecture avec leur statut (spec brique 2 §3.6)', () => {

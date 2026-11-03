@@ -1,4 +1,13 @@
-export type HelpResourceId = 'emergency' | 'pain' | 'eating_disorder' | 'doping' | 'pregnancy' | 'distress';
+/** Identifiants des ressources, dans l'ordre de `HELP_RESOURCES` (outil `refer_to_help`, spec brique 4 §10). */
+export const HELP_RESOURCE_IDS = [
+  'emergency',
+  'pain',
+  'eating_disorder',
+  'doping',
+  'pregnancy',
+  'distress',
+] as const;
+export type HelpResourceId = (typeof HELP_RESOURCE_IDS)[number];
 
 export interface HelpResource {
   id: HelpResourceId;
@@ -60,3 +69,20 @@ export const HELP_RESOURCES: readonly HelpResource[] = [
     verifiedOn: '2026-10-06',
   },
 ];
+
+/**
+ * Numéros d'une ressource, un par bouton `tel:` (spec brique 4 §16.4) : `'15 / 112'` → `15` et `112` ; un numéro
+ * espacé garde son libellé (`'09 69 325 900'`) et ses seuls chiffres (`0969325900`).
+ */
+export function helpPhones(r: HelpResource): { label: string; digits: string }[] {
+  if (r.phone === null) return [];
+  return r.phone.split('/').map((part) => {
+    const label = part.trim();
+    return { label, digits: label.replace(/\D/g, '') };
+  });
+}
+
+/** Chiffres des numéros de `HELP_RESOURCES` : les seuls numéros admis par le filtre du coach (spec brique 4 §11.3). */
+export const HELP_PHONE_DIGITS: readonly string[] = HELP_RESOURCES.flatMap((r) =>
+  helpPhones(r).map((p) => p.digits),
+);

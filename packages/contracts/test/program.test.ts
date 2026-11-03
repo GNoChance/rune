@@ -8,6 +8,7 @@ import {
   InstanceChangeOperationSchema,
   MAX_CHANGE_OPERATIONS,
   MachineStepRequest,
+  OPERATION_AUTHORS,
   PAIN_CODE_REWRITES,
   ProgramTemplateSchema,
   REASON_CODES,
@@ -160,6 +161,16 @@ describe('InstanceChangeOperationSchema', () => {
   });
 });
 
+describe('OPERATION_AUTHORS (05 §15)', () => {
+  it("une entrée par opération ; resume_slot réservé à l'utilisateur, le coach a toutes les autres", () => {
+    const ops = InstanceChangeOperationSchema.options.map((o) => o.shape.op.value);
+    expect(Object.keys(OPERATION_AUTHORS).sort()).toEqual([...ops].sort());
+    expect(OPERATION_AUTHORS.resume_slot).toEqual(['user']);
+    for (const op of ops.filter((o) => o !== 'resume_slot'))
+      expect(OPERATION_AUTHORS[op], op).toContain('coach');
+  });
+});
+
 describe("requêtes de l'API", () => {
   const op = { op: 'start_deload' };
 
@@ -199,6 +210,11 @@ describe('codes raison', () => {
       expect(text, code).not.toContain('’');
     }
     expect(Object.keys(REASON_TEXTS)).toHaveLength(REASON_CODES.length + CHANGE_REASON_CODES.length);
+  });
+
+  it('a un code pour les propositions du coach IA (spec brique 4 §12.3)', () => {
+    expect(CHANGE_REASON_CODES).toContain('COACH_PROPOSAL');
+    expect(REASON_TEXTS.COACH_PROPOSAL).toBe('Le coach IA te propose ce changement.');
   });
 
   it('donne à chaque code une seule phrase, sans chiffre', () => {

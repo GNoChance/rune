@@ -91,6 +91,10 @@ export const InstanceChangeView = z.strictObject({
   createdAt: IsoDateTime,
   expiresAt: IsoDateTime.nullable(),
   decidedAt: IsoDateTime.nullable(),
+  /** Proposition du coach IA (spec brique 4 §12.3) : modèle de l'itération qui l'a faite, fil d'origine s'il existe. */
+  aiGenerated: z.boolean(),
+  aiModel: z.string().nullable(),
+  coachThreadId: z.string().nullable(),
 });
 export type InstanceChangeView = z.infer<typeof InstanceChangeView>;
 

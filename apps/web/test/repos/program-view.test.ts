@@ -341,6 +341,34 @@ describe('vue du programme', () => {
     expect(view?.changes.map((c) => c.id)).toEqual(['c-stale', 'c-rejected', 'c-accepted']);
     expect(view?.program.template.workouts[0]?.slots[0]?.sets[0]?.restS).toBe(150);
   });
+
+  it('proposition du coach (spec brique 4 §12.3) : aiGenerated, aiModel et coachThreadId lus du miroir', async () => {
+    const { repos, db } = await setup();
+    await seedMirror(db, 'instance_change', [
+      change('c-coach', {
+        author: 'coach',
+        status: 'proposed',
+        reasonCode: 'COACH_PROPOSAL',
+        operations: [{ op: 'set_rest', slot: 'A1', seconds: 120 }],
+        decidedAt: null,
+        expiresAt: new Date(DEFAULT_NOW + 86_400_000).toISOString(),
+        aiGenerated: true,
+        aiModel: 'claude-opus-5-5',
+        promptVersion: 'coach-1/adult',
+        coachThreadId: 't-coach',
+      }),
+    ]);
+    const view = await repos.programView.view();
+    expect(view?.proposals).toHaveLength(1);
+    expect(view?.proposals[0]).toMatchObject({
+      id: 'c-coach',
+      author: 'coach',
+      reasonCode: 'COACH_PROPOSAL',
+      aiGenerated: true,
+      aiModel: 'claude-opus-5-5',
+      coachThreadId: 't-coach',
+    });
+  });
 });
 
 describe('séance prévue', () => {

@@ -66,6 +66,9 @@ export function changeView(r: ChangeRow, consent: boolean): InstanceChangeView {
     createdAt: r.createdAt,
     expiresAt: r.expiresAt,
     decidedAt: r.decidedAt,
+    aiGenerated: r.aiGenerated === 1,
+    aiModel: r.aiModel,
+    coachThreadId: r.coachThreadId,
   };
 }
 

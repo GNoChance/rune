@@ -47,6 +47,13 @@ export const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   not_proposed: "Cette proposition n'est plus en attente.",
   session_in_progress: 'Termine ou abandonne ta séance en cours avant ce changement.',
   invalid_change: "Ce changement n'est pas possible.",
+  coach_unavailable: 'Le coach est en pause pour le cercle.',
+  consent_required: 'Le coach IA a besoin de ton accord.',
+  daily_limit_reached: "Tu as envoyé 30 messages aujourd'hui. Le coach revient demain.",
+  monthly_budget_reached: 'Tu as atteint la limite du mois pour le coach. Il revient le 1er.',
+  request_in_progress: 'Le coach termine une réponse…',
+  thread_closed: 'Ta conversation du jour est close. Reviens demain.',
+  duplicate_message: 'Ce message a déjà été envoyé.',
   internal: 'Le serveur a rencontré une erreur.',
 };
 

@@ -59,6 +59,16 @@ const accept = (u: Member, id: string, json: unknown) =>
 const reject = (u: Member, id: string) =>
   ctx.request(`/api/program/changes/${id}/reject`, { method: 'POST', cookie: u.cookie, json: {} });
 
+/** Fil du coach d'où viennent ses propositions (spec brique 4 §12.3). */
+const COACH_THREAD_ID = '019a4a00-0000-7000-8000-000000000c0a';
+const COACH_COLUMNS = {
+  reasonCode: 'COACH_PROPOSAL',
+  aiGenerated: 1,
+  aiModel: 'claude-opus-5-5',
+  promptVersion: 'coach-1/adult',
+  coachThreadId: COACH_THREAD_ID,
+};
+
 /** Proposition du moteur (ou du coach) sur `instanceId`, valable 7 jours, faite à la révision `baseRevision`. */
 async function proposal(
   u: Member,
@@ -76,7 +86,8 @@ async function proposal(
     instanceId,
     author: o.author ?? 'engine',
     operations: JSON.stringify(o.operations ?? [{ op: 'start_deload' }]),
-    reasonCode: o.author === 'coach' ? 'USER_CHANGE' : 'ENGINE_REACTIVE_DELOAD',
+    reasonCode: 'ENGINE_REACTIVE_DELOAD',
+    ...(o.author === 'coach' ? COACH_COLUMNS : {}),
     reason: o.reason ?? null,
     status: o.status ?? 'proposed',
     createdAt: NOW,
@@ -120,6 +131,9 @@ describe('POST /api/program/changes', () => {
       createdAt: NOW,
       expiresAt: null,
       decidedAt: NOW,
+      aiGenerated: false,
+      aiModel: null,
+      coachThreadId: null,
     });
     expect(ProgramInstanceView.parse(body.instance)).toMatchObject({ id: instanceId, revision: 1 });
     expect(rowOf('instance_change', body.change.id)).toMatchObject({
@@ -479,6 +493,26 @@ describe('POST /api/program/changes/:id/reject', () => {
     const withConsent = await proposal(a, instanceId, { author: 'coach', reason: 'TEMOIN_RAISON' });
     const granted = await reject(a, withConsent);
     expect(((await granted.json()) as { change: InstanceChangeView }).change.reason).toBe('TEMOIN_RAISON');
+  });
+
+  it('proposition du coach (spec brique 4 §12.3) : aiGenerated, aiModel et coachThreadId rendus', async () => {
+    const a = await setup();
+    const instanceId = await enrollIn(a);
+    const coach = await reject(a, await proposal(a, instanceId, { author: 'coach' }));
+    expect(InstanceChangeView.parse(((await coach.json()) as Body).change)).toMatchObject({
+      author: 'coach',
+      reasonCode: 'COACH_PROPOSAL',
+      aiGenerated: true,
+      aiModel: 'claude-opus-5-5',
+      coachThreadId: COACH_THREAD_ID,
+    });
+    const engine = await reject(a, await proposal(a, instanceId));
+    expect(InstanceChangeView.parse(((await engine.json()) as Body).change)).toMatchObject({
+      author: 'engine',
+      aiGenerated: false,
+      aiModel: null,
+      coachThreadId: null,
+    });
   });
 
   it('proposition périmée → expirée d’abord, puis 409 not_proposed', async () => {
