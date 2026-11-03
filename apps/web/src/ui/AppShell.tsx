@@ -29,18 +29,28 @@ export function AppShell(p: { children: ReactNode }) {
   useScreenEntrance(screen, path, transition);
   return (
     <div className={shell.shell} data-wide={wide ? '' : undefined}>
-      {wide ? <SideNav /> : null}
+      {wide ? (
+        <ReadErrorBoundary compact>
+          <SideNav />
+        </ReadErrorBoundary>
+      ) : null}
       <div className={shell.column}>
         {activeTab(path) === '/' ? <HomeHeader brand={!wide} /> : null}
         <div className={shell.bannerSlot}>
-          <UpdateBanner />
+          <ReadErrorBoundary compact>
+            <UpdateBanner />
+          </ReadErrorBoundary>
         </div>
         <main ref={screen} className={shell.main} data-screen-transition={transition}>
           <ReadErrorBoundary resetKey={path}>{p.children}</ReadErrorBoundary>
         </main>
         <PublicLinks />
       </div>
-      {wide ? null : <TabBar />}
+      {wide ? null : (
+        <ReadErrorBoundary compact>
+          <TabBar />
+        </ReadErrorBoundary>
+      )}
     </div>
   );
 }
@@ -91,7 +101,9 @@ export function PublicShell(p: { children: ReactNode; homeLink?: boolean }) {
           <span className={styles.brand}>Rune</span>
         </header>
       ) : null}
-      <main className={styles.main}>{p.children}</main>
+      <main className={styles.main}>
+        <ReadErrorBoundary>{p.children}</ReadErrorBoundary>
+      </main>
       <PublicLinks />
     </div>
   );

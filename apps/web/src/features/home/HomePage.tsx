@@ -222,71 +222,83 @@ export function HomePage() {
       {readsDone ? (
         <div className={`${styles.cards} stagger`}>
           {active ? (
-            <section aria-labelledby={resumeTitle} className={styles.card}>
-              <h2 id={resumeTitle} className={styles.cardTitle}>
-                Séance en cours
-              </h2>
-              <Link href={`/workout/${active.id}`} className={styles.action}>
-                Reprendre
-              </Link>
-            </section>
+            <ReadErrorBoundary compact>
+              <section aria-labelledby={resumeTitle} className={styles.card}>
+                <h2 id={resumeTitle} className={styles.cardTitle}>
+                  Séance en cours
+                </h2>
+                <Link href={`/workout/${active.id}`} className={styles.action}>
+                  Reprendre
+                </Link>
+              </section>
+            </ReadErrorBoundary>
           ) : null}
           <ReadErrorBoundary compact>
             <ProgramCards places={places} />
           </ReadErrorBoundary>
           {quests.every((q) => q.done) ? null : (
-            <SystemPanel title="Éveil en cours.">
-              <AwakeningQuests quests={quests} />
-            </SystemPanel>
+            <ReadErrorBoundary compact>
+              <SystemPanel title="Éveil en cours.">
+                <AwakeningQuests quests={quests} />
+              </SystemPanel>
+            </ReadErrorBoundary>
           )}
           {coach ? (
-            <CoachBubble coach={coach} label="Aujourd'hui">
-              <p>{coachLine(coach, 'daily', new Date(now), me.username, days)}</p>
-            </CoachBubble>
+            <ReadErrorBoundary compact>
+              <CoachBubble coach={coach} label="Aujourd'hui">
+                <p>{coachLine(coach, 'daily', new Date(now), me.username, days)}</p>
+              </CoachBubble>
+            </ReadErrorBoundary>
           ) : null}
           {primary || days !== null ? (
-            <div className={styles.tiles}>
-              {primary ? (
-                <Link href={`/places/${primary.id}`} className={styles.tile}>
-                  <PlaceIcon />
-                  <span className={styles.tileKey}>Lieu principal</span>{' '}
-                  <span className={styles.tileValue}>{primary.name}</span>
-                </Link>
-              ) : null}
-              {days !== null ? (
-                <Link href="/profile" className={styles.tile}>
-                  <CalendarIcon />
-                  <span className={styles.tileKey}>Rythme</span>{' '}
-                  <span className={styles.tileNumber}>
-                    <CountUp to={days} />
-                    <small aria-hidden="true">{` ${plural(days, 'séance', 'séances')} / sem.`}</small>
-                    <span
-                      className={styles.srOnly}
-                    >{` ${plural(days, 'séance', 'séances')} par semaine`}</span>
-                  </span>
-                </Link>
-              ) : null}
-            </div>
+            <ReadErrorBoundary compact>
+              <div className={styles.tiles}>
+                {primary ? (
+                  <Link href={`/places/${primary.id}`} className={styles.tile}>
+                    <PlaceIcon />
+                    <span className={styles.tileKey}>Lieu principal</span>{' '}
+                    <span className={styles.tileValue}>{primary.name}</span>
+                  </Link>
+                ) : null}
+                {days !== null ? (
+                  <Link href="/profile" className={styles.tile}>
+                    <CalendarIcon />
+                    <span className={styles.tileKey}>Rythme</span>{' '}
+                    <span className={styles.tileNumber}>
+                      <CountUp to={days} />
+                      <small aria-hidden="true">{` ${plural(days, 'séance', 'séances')} / sem.`}</small>
+                      <span
+                        className={styles.srOnly}
+                      >{` ${plural(days, 'séance', 'séances')} par semaine`}</span>
+                    </span>
+                  </Link>
+                ) : null}
+              </div>
+            </ReadErrorBoundary>
           ) : null}
           {goal && experience ? (
-            <Link href="/profile" className={styles.row}>
-              <span className={styles.rowText}>
-                <span className={styles.tileKey}>Objectif · niveau</span>{' '}
-                <span
-                  className={styles.rowValue}
-                >{`${GOAL_LABELS[goal]} · ${EXPERIENCE_LABELS[experience]}`}</span>
-              </span>
-              <Chevron />
-            </Link>
+            <ReadErrorBoundary compact>
+              <Link href="/profile" className={styles.row}>
+                <span className={styles.rowText}>
+                  <span className={styles.tileKey}>Objectif · niveau</span>{' '}
+                  <span
+                    className={styles.rowValue}
+                  >{`${GOAL_LABELS[goal]} · ${EXPERIENCE_LABELS[experience]}`}</span>
+                </span>
+                <Chevron />
+              </Link>
+            </ReadErrorBoundary>
           ) : null}
-          <div className={styles.readiness}>
-            <OfflineReadyIndicator readiness={readiness} />
-            {readiness.ready ? null : (
-              <Button variant="secondary" block onClick={onRetry} disabled={retrying}>
-                Réessayer
-              </Button>
-            )}
-          </div>
+          <ReadErrorBoundary compact>
+            <div className={styles.readiness}>
+              <OfflineReadyIndicator readiness={readiness} />
+              {readiness.ready ? null : (
+                <Button variant="secondary" block onClick={onRetry} disabled={retrying}>
+                  Réessayer
+                </Button>
+              )}
+            </div>
+          </ReadErrorBoundary>
         </div>
       ) : null}
     </Page>

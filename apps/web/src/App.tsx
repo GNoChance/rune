@@ -36,7 +36,7 @@ import { RejectionsPage } from './features/status/RejectionsPage';
 import { SettingsPage } from './features/status/SettingsPage';
 import { useRepos } from './repos';
 import type { ConnectionState } from './sync/engine';
-import { AppShell, PublicShell } from './ui';
+import { AppShell, PublicShell, ReadErrorBoundary } from './ui';
 
 /** Réglages de charge : hors du bundle initial, chargés à la première ouverture (fichier précaché par le SW). */
 const PlaceLoadSettings = lazy(() =>
@@ -206,7 +206,16 @@ function ConnectedRoutes() {
   );
 }
 
+/** Dernier recours : une lecture qui échoue hors de toute autre frontière affiche le message, jamais un écran blanc. */
 export function App() {
+  return (
+    <ReadErrorBoundary>
+      <AppRoutes />
+    </ReadErrorBoundary>
+  );
+}
+
+function AppRoutes() {
   const [path] = useLocation();
   const { loaded, me } = useMeState();
   const { connection } = useSyncState();
