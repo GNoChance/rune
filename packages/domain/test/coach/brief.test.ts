@@ -14,6 +14,7 @@ import {
   type CoachBriefInput,
   cleanFreeText,
   estimateTokens,
+  extendSlotAliases,
   namedPlaces,
   resolveSlotAlias,
   sortedJson,
@@ -173,6 +174,61 @@ describe("alias des slots ajoutés (identifiant d'un changement)", () => {
 
   it('sans programme : aucun alias', () => {
     expect(build((i) => (i.program = null)).slotAliases.size).toBe(0);
+  });
+});
+
+describe('extendSlotAliases : table figée du fil étendue (read_training, propose_program_change)', () => {
+  const later = '019a4b2c-3d4e-7f60-8a1b-2c3d4e5f6a7c';
+  const gone = '019a4b2c-3d4e-7f60-8a1b-2c3d4e5f6a7e';
+  /** Programme `GYM_AB` avec le slot ajouté du dossier, puis un second, ajouté après le gel. */
+  const program = () =>
+    effectiveProgram(GYM_AB, 3, [
+      addSlotChange(ADDED_CHANGE_ID, daysBefore(15)),
+      addSlotChange(later, daysBefore(1)),
+    ]);
+
+  it('sans table figée : la table de buildCoachBrief', () => {
+    const input = briefInput();
+    expect([...extendSlotAliases(input.program?.program ?? fail('programme'), new Map())]).toEqual([
+      ...buildCoachBrief(input).slotAliases,
+    ]);
+  });
+
+  it('la table figée est conservée ; un slot ajouté après le gel reçoit l’alias suivant de sa séance', () => {
+    const frozen = new Map([['A-x4', ADDED_SLOT_ID]]);
+    expect([...extendSlotAliases(program(), frozen)]).toEqual([
+      ['A-x4', ADDED_SLOT_ID],
+      ['A-x5', addedSlotId('A', later)],
+    ]);
+  });
+
+  it('deux appels : même table, dans le même ordre', () => {
+    const frozen = new Map([['A-x4', ADDED_SLOT_ID]]);
+    expect([...extendSlotAliases(program(), frozen)]).toEqual([...extendSlotAliases(program(), frozen)]);
+  });
+
+  it("alias figé d'un slot disparu : gardé, jamais donné à un autre slot", () => {
+    const frozen = new Map([
+      ['A-x1', addedSlotId('A', gone)],
+      ['A-x2', ADDED_SLOT_ID],
+    ]);
+    const extended = extendSlotAliases(program(), frozen);
+    expect(Object.fromEntries(extended)).toEqual({
+      'A-x1': addedSlotId('A', gone),
+      'A-x2': ADDED_SLOT_ID,
+      'A-x3': addedSlotId('A', later),
+    });
+  });
+
+  it('les alias de briefProgram sont ceux de la table étendue (ce que propose_program_change retraduit)', () => {
+    const input = briefInput((i) => {
+      if (i.program !== null) i.program.program = program();
+    });
+    const frozen = new Map([['A-x4', ADDED_SLOT_ID]]);
+    const extended = extendSlotAliases(input.program?.program ?? fail('programme'), frozen);
+    const sent = briefProgram(input, frozen)?.workouts.flatMap((w) => w.slots.map((s) => s.id)) ?? [];
+    const real = input.program?.program.template.workouts.flatMap((w) => w.slots.map((s) => s.id)) ?? [];
+    expect(sent.map((ref) => resolveSlotAlias(ref, extended))).toEqual(real);
   });
 });
 

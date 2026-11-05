@@ -391,17 +391,22 @@ function aliasRank(alias: string, workout: string): number {
 }
 
 /**
- * Alias des slots créés par `add_slot` (identifiant réel → alias) : leur identifiant porte celui d'un changement, un
- * UUIDv7 avec son instant, qui ne part jamais au modèle. `${workoutId}-x1`, `-x2`… par séance, dans l'ordre du
- * programme effectif, puis des références des propositions en attente à un slot qui n'y est plus ; jamais
- * l'identifiant d'un slot du modèle. Les slots du modèle gardent le leur.
+ * Seule règle des alias des slots créés par `add_slot` (identifiant réel → alias) : leur identifiant porte celui d'un
+ * changement, un UUIDv7 avec son instant, qui ne part jamais au modèle. `${workoutId}-x1`, `-x2`… par séance, dans
+ * l'ordre du programme effectif, puis des références `extraRefs` (propositions en attente) à un slot qui n'y est
+ * plus ; jamais l'identifiant d'un slot du modèle. Les slots du modèle gardent le leur. Les références de `extraRefs`
+ * passent après les slots du programme : elles ne changent l'alias d'aucun d'eux.
  *
  * `frozen` amorce la table : c'est la table figée d'un fil (alias → identifiant réel, `slotAliases` du dossier). Un
  * slot qui y est garde son alias, sauf si cet alias est devenu l'identifiant d'un slot du modèle ; un slot ajouté
  * depuis le gel reçoit un alias au-delà du plus grand alias figé de sa séance, et aucun alias figé ne change de slot.
  */
-function slotAliasesOf(program: BriefProgramInput, frozen: ReadonlyMap<string, string>): Map<string, string> {
-  const workouts = program.program.template.workouts;
+function assignAliases(
+  program: EffectiveProgram,
+  frozen: ReadonlyMap<string, string>,
+  extraRefs: readonly string[],
+): Map<string, string> {
+  const workouts = program.template.workouts;
   const taken = new Set(workouts.flatMap((w) => w.slots.map((s) => s.id)));
   const counts = new Map<string, number>();
   const aliases = new Map<string, string>();
@@ -427,8 +432,30 @@ function slotAliasesOf(program: BriefProgramInput, frozen: ReadonlyMap<string, s
     aliases.set(slotId, alias);
   };
   for (const w of workouts) for (const s of w.slots) give(s.id);
-  for (const c of program.pending) for (const op of c.operations) if ('slot' in op) give(op.slot);
+  for (const ref of extraRefs) give(ref);
   return aliases;
+}
+
+/** Alias du dossier et des outils (identifiant réel → alias) : slots du programme, puis références en attente. */
+function slotAliasesOf(program: BriefProgramInput, frozen: ReadonlyMap<string, string>): Map<string, string> {
+  const pendingRefs = program.pending.flatMap((c) =>
+    c.operations.flatMap((op) => ('slot' in op ? [op.slot] : [])),
+  );
+  return assignAliases(program.program, frozen, pendingRefs);
+}
+
+/**
+ * Table figée d'un fil étendue au programme courant (alias → identifiant réel) : chaque alias de `frozen` gardé, slot
+ * disparu compris (sauf s'il est devenu l'identifiant d'un slot du modèle), et un alias pour chaque slot ajouté qui
+ * n'y figure pas, au-delà du plus grand alias de sa séance, par la règle de `buildCoachBrief`. Déterministe : la
+ * table des alias que `read_training` montre (`briefProgram` amorcé par `frozen`), que `propose_program_change`
+ * retraduit par `resolveSlotAlias` avec le même programme et la même table figée.
+ */
+export function extendSlotAliases(
+  program: EffectiveProgram,
+  frozen: ReadonlyMap<string, string>,
+): ReadonlyMap<string, string> {
+  return new Map([...assignAliases(program, frozen, [])].map(([slotId, alias]) => [alias, slotId]));
 }
 
 /**
