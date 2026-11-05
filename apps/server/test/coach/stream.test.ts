@@ -11,7 +11,7 @@ import { runCli } from '../../src/cli';
 import { sseStream } from '../../src/coach/sse';
 import { startServer } from '../../src/main';
 import { grantConsent } from '../../src/privacy/consent';
-import { enableCoach, login, type TestContext } from '../support';
+import { createLogger, enableCoach, login, type TestContext } from '../support';
 import { exchangeKit } from '../support/coach';
 import { createUser } from '../support/users';
 
@@ -62,6 +62,38 @@ describe('sseStream', () => {
     expect(await res.text()).toBe(
       'event: text\ndata: {"text":"Bonjour."}\n\nevent: retry\ndata: {"reason":"filter"}\n\nevent: error\ndata: {"code":"internal"}\n\n',
     );
+  });
+
+  it('exception de run : journalisée par le nom de sa classe seulement, puis error internal', async () => {
+    const lines: string[] = [];
+    const res = await appWith(
+      async () => {
+        throw new TypeError('contenu SECRET-DU-MESSAGE');
+      },
+      { logger: createLogger((l) => lines.push(l)) },
+    ).request('/s');
+    expect(await res.text()).toBe('event: error\ndata: {"code":"internal"}\n\n');
+    expect(lines.map((l) => JSON.parse(l))).toEqual([
+      expect.objectContaining({ level: 'error', msg: 'coach_stream_failed', event: 'TypeError' }),
+    ]);
+    expect(lines.join('')).not.toContain('SECRET-DU-MESSAGE');
+  });
+
+  it('exception de run avec un journal en panne : error internal part quand même', async () => {
+    const logger = {
+      info: () => {},
+      warn: () => {},
+      error: () => {
+        throw new Error('journal en panne');
+      },
+    };
+    const res = await appWith(
+      async () => {
+        throw new Error('boum');
+      },
+      { logger },
+    ).request('/s');
+    expect(await res.text()).toBe('event: error\ndata: {"code":"internal"}\n\n');
   });
 
   it('commentaire : ping toutes les 15 s tant que run est retenu', async () => {

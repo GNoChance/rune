@@ -1,6 +1,7 @@
 import type { CoachStreamEvent } from '@rune/contracts';
 import type { Context } from 'hono';
 import type { AppEnv } from '../app-env';
+import type { Logger } from '../logger';
 
 /*
  * Flux SSE du coach (spec brique 4 §7.2). `event: <type>` puis `data: <JSON sans type>`, un commentaire `: ping`
@@ -21,7 +22,7 @@ function frame(event: CoachStreamEvent): string {
 export function sseStream(
   c: Context<AppEnv>,
   run: (send: (e: CoachStreamEvent) => void) => Promise<void>,
-  opts: { pingMs?: number } = {},
+  opts: { pingMs?: number; logger?: Logger } = {},
 ): Response {
   let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
   let open = true;
@@ -46,7 +47,17 @@ export function sseStream(
       timer = setInterval(() => write(': ping\n\n'), opts.pingMs ?? SSE_PING_MS);
       timer.unref();
       void run((e) => write(frame(e)))
-        .catch(() => write(frame({ type: 'error', code: 'internal' })))
+        .catch((error: unknown) => {
+          // Défaut de `run` : la classe de l'erreur seulement, son message peut citer le contenu (P-LOG-2).
+          try {
+            opts.logger?.error('coach_stream_failed', {
+              event: error instanceof Error ? error.name : 'unknown',
+            });
+          } catch {
+            // Journal en panne : le téléphone reçoit quand même l'erreur.
+          }
+          write(frame({ type: 'error', code: 'internal' }));
+        })
         .finally(() => {
           const wasOpen = open;
           stop();

@@ -36,7 +36,7 @@ export function coachRoutes(deps: AppDeps): Hono<AppEnv> {
     const user = userOf(c);
     const body = await parseJson(c, CoachMessageRequest);
     const exchange = await prepareExchange(deps, user.id, body, deps.clock.now());
-    return sseStream(c, (send) => runExchange(deps, exchange, send));
+    return sseStream(c, (send) => runExchange(deps, exchange, send), { logger: deps.logger });
   });
 
   routes.get('/threads', async (c) =>
