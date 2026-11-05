@@ -1,9 +1,27 @@
+import {
+  AI_COACH_CONSENT_TEXT,
+  type CoachStreamEvent,
+  CoachStreamEventSchema,
+  CURRENT_CONSENT_TEXTS,
+} from '@rune/contracts';
+import { COACH_CONFIG, type CoachConfig } from '@rune/domain';
 import type { AiChatRequest } from '../../src/ai/chat';
 import { createFakeAiClient, type FakeAiClient, type FakeChatTurn } from '../../src/ai/fake';
+import { type PreparedExchange, prepareExchange, runExchange } from '../../src/coach/orchestrator';
 import { refreshCoachConfig } from '../../src/coach/state';
 import type { ToolContext } from '../../src/coach/tools/types';
-import type { TestContext } from './context';
-import { dayAt, type SessionSpec, type SetSpec } from './program';
+import { createLogger } from '../../src/logger';
+import { grantConsent } from '../../src/privacy/consent';
+import { createTestContext, type TestContext } from './context';
+import {
+  dayAt,
+  enroll,
+  programTemplate,
+  type SessionSpec,
+  type SetSpec,
+  seedProgramCatalog,
+} from './program';
+import { createUser, type TestUser } from './users';
 
 /** Trois séries de travail faites à `loadG`, effort « correct » sur la dernière : la calibration finit à cette charge. */
 export const setsAt = (loadG: number): SetSpec[] => [{ loadG }, { loadG }, { loadG, effort: 'ok' }];
@@ -74,4 +92,91 @@ export async function enableCoach(
     .execute();
   await refreshCoachConfig(deps);
   return ai;
+}
+
+/** Tout ce qu'un échange de test a rendu : événements du flux (relus par leur schéma) et échange préparé. */
+export interface Asked {
+  events: CoachStreamEvent[];
+  x: PreparedExchange;
+}
+
+export interface ExchangeKit {
+  ctx: TestContext;
+  user: TestUser;
+  fake: FakeAiClient;
+  /** Lignes du journal technique. */
+  lines: string[];
+  /** Identifiant de l'instance du programme, avec `program: true`. */
+  instanceId: string | undefined;
+  /** Prépare puis joue un échange jusqu'à son événement final. */
+  ask(text?: string, o?: { clientMessageId?: string }): Promise<Asked>;
+  /** Comme `ask`, sans attendre la fin : l'échange est prêt (bail pris) quand la promesse rend. */
+  begin(text?: string): Promise<{ events: CoachStreamEvent[]; finished: Promise<void>; x: PreparedExchange }>;
+  rows(sql: string, ...params: (string | number)[]): Record<string, unknown>[];
+}
+
+/**
+ * Banc d'un échange du coach : contexte, membre avec les accords `ai_coach` (et `health` sauf `health: false`), faux
+ * client scripté, coach en service. `birthDate` : 2010 pour un mineur. `program` : catalogue et inscription (outil
+ * `propose_program_change`). `coachConfig` : réglages à remplacer (budget, par exemple).
+ */
+export async function exchangeKit(o: {
+  chat: readonly FakeChatTurn[] | ((req: AiChatRequest, call: number) => FakeChatTurn);
+  now?: string;
+  birthDate?: string;
+  health?: boolean;
+  program?: boolean;
+  coachConfig?: (config: CoachConfig) => CoachConfig;
+}): Promise<ExchangeKit> {
+  const lines: string[] = [];
+  const ctx = await createTestContext({
+    now: o.now ?? '2026-11-05T10:00:00.000Z',
+    deps: {
+      logger: createLogger((l) => lines.push(l)),
+      ...(o.coachConfig === undefined ? {} : { coachConfig: o.coachConfig(COACH_CONFIG) }),
+    },
+  });
+  const user = await createUser(ctx, o.birthDate === undefined ? {} : { birthDate: o.birthDate });
+  await grantConsent(ctx.deps.db, ctx.deps, user.id, 'ai_coach', AI_COACH_CONSENT_TEXT.version, null);
+  if (o.health !== false) {
+    await grantConsent(ctx.deps.db, ctx.deps, user.id, 'health', CURRENT_CONSENT_TEXTS.health.version, null);
+  }
+  let instanceId: string | undefined;
+  if (o.program === true) {
+    const template = programTemplate();
+    await seedProgramCatalog(ctx, [template]);
+    instanceId = await enroll(ctx, user.id, template);
+  }
+  const fake = await enableCoach(ctx, o.chat);
+  const begin = async (text = 'Comment était ma séance ?') => {
+    const events: CoachStreamEvent[] = [];
+    const x = await prepareExchange(
+      ctx.deps,
+      user.id,
+      { clientMessageId: ctx.deps.ids.uuidv7(), text },
+      ctx.clock.now(),
+    );
+    const finished = runExchange(ctx.deps, x, (e) => events.push(CoachStreamEventSchema.parse(e)));
+    return { events, finished, x };
+  };
+  return {
+    ctx,
+    user,
+    fake,
+    lines,
+    instanceId,
+    begin,
+    async ask(text = 'Comment était ma séance ?', ask = {}) {
+      const events: CoachStreamEvent[] = [];
+      const x = await prepareExchange(
+        ctx.deps,
+        user.id,
+        { clientMessageId: ask.clientMessageId ?? ctx.deps.ids.uuidv7(), text },
+        ctx.clock.now(),
+      );
+      await runExchange(ctx.deps, x, (e) => events.push(CoachStreamEventSchema.parse(e)));
+      return { events, x };
+    },
+    rows: (sql, ...params) => ctx.deps.sqlite.prepare(sql).all(...params) as Record<string, unknown>[],
+  };
 }

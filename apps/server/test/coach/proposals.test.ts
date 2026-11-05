@@ -56,6 +56,7 @@ const pending = (instanceId: string, o: Partial<PendingProposal> = {}): PendingP
   operations: [{ op: 'set_rest', slot: 'A1', seconds: 90 }],
   reason: REASON,
   model: 'claude-opus-5-5',
+  expiresAt: IN_7_DAYS,
   ...o,
 });
 
@@ -189,6 +190,16 @@ describe('insertCoachProposal (§12.3)', () => {
     const coach = await proposal(u, instanceId, { author: 'coach' });
     const p = pending(instanceId, { model: null });
     await expect(write(u.id, p)).rejects.toThrow('coach_proposal_model_missing');
+    expect(rowOf(p.id)).toBeUndefined();
+    expect(rowOf(coach)?.status).toBe('proposed');
+  });
+
+  it("fin de validité absente : erreur claire, rien d'écrit", async () => {
+    const u = await setup();
+    const instanceId = await enroll(ctx, u.id, TEMPLATE);
+    const coach = await proposal(u, instanceId, { author: 'coach' });
+    const p = pending(instanceId, { expiresAt: null });
+    await expect(write(u.id, p)).rejects.toThrow('coach_proposal_expiry_missing');
     expect(rowOf(p.id)).toBeUndefined();
     expect(rowOf(coach)?.status).toBe('proposed');
   });

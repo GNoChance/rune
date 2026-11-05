@@ -236,6 +236,7 @@ export const proposeProgramChange = defineTool({
       operations,
       reason: input.reason,
       model: null,
+      expiresAt: null,
     });
     return {
       isError: false,

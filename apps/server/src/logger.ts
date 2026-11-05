@@ -9,6 +9,8 @@ export type LogFields = Partial<{
   count: number;
   migration: string;
   job: string;
+  rounds: number;
+  blocks: number;
 }>;
 
 export interface Logger {
@@ -28,6 +30,8 @@ const ALLOWED: readonly (keyof LogFields)[] = [
   'count',
   'migration',
   'job',
+  'rounds',
+  'blocks',
 ];
 
 const defaultWrite = (line: string): void => {

@@ -147,6 +147,7 @@ describe('propose_program_change : succès', () => {
         operations: [REST],
         reason: REASON,
         model: null,
+        expiresAt: null,
       },
     ]);
     expect(tc.state.invalidProposals).toBe(0);

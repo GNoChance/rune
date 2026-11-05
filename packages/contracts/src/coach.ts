@@ -78,6 +78,7 @@ export const COACH_STREAM_ERROR_CODES = [
   'timeout',
   'shutdown',
   'consent_withdrawn',
+  'thread_closed',
   'internal',
 ] as const;
 export type CoachStreamErrorCode = (typeof COACH_STREAM_ERROR_CODES)[number];

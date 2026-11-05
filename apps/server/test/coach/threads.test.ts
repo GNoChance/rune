@@ -1,3 +1,4 @@
+import { AI_COACH_CONSENT_TEXT } from '@rune/contracts';
 import { buildCoachBrief, sortedJson } from '@rune/domain';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadBriefInput } from '../../src/coach/brief-input';
@@ -13,6 +14,7 @@ import {
   todayThread,
 } from '../../src/coach/threads';
 import { HttpError } from '../../src/http/errors';
+import { grantConsent } from '../../src/privacy/consent';
 import { STARTUP_TASKS } from '../../src/startup';
 import { createLogger, createTestContext, createUser, insertFixtureRow, type TestContext } from '../support';
 import { enroll, programTemplate, seedProgramCatalog } from '../support/program';
@@ -42,6 +44,21 @@ const rowOf = (table: string, id: string) =>
 const open = (userId: string) => openTodayThread(ctx.deps, userId, ctx.clock.now());
 
 describe('openTodayThread', () => {
+  it('requireConsent : sans accord ai_coach actif, aucun fil neuf (consent_required) ; un fil existant se rend', async () => {
+    await setup();
+    const user = await createUser(ctx);
+    const strict = () => openTodayThread(ctx.deps, user.id, ctx.clock.now(), { requireConsent: true });
+    await expect(strict()).rejects.toMatchObject({ code: 'consent_required', status: 403 });
+    expect(rowsOf('SELECT id FROM coach_thread')).toEqual([]);
+
+    await grantConsent(ctx.deps.db, ctx.deps, user.id, 'ai_coach', AI_COACH_CONSENT_TEXT.version, null);
+    const thread = await strict();
+    expect(rowsOf('SELECT id FROM coach_thread')).toHaveLength(1);
+    // Le fil existe : rendu tel quel, sans relire l'accord.
+    ctx.deps.sqlite.exec("DELETE FROM consent_event WHERE type = 'ai_coach'");
+    expect((await strict()).id).toBe(thread.id);
+  });
+
   it('ouverture concurrente : les deux appels rendent le même fil, une seule ligne', async () => {
     await setup();
     const user = await createUser(ctx);

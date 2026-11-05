@@ -281,8 +281,12 @@ const toolResultBlock = (id: string, outcome: ToolOutcome): ApiBlock => ({
   ...(outcome.isError ? { is_error: true } : {}),
 });
 
-/** Carte de proposition : identifiant de la ligne à écrire (jamais envoyé au modèle), motif nul sans l'accord santé. */
+/**
+ * Carte de proposition : identifiant de la ligne à écrire (jamais envoyé au modèle), motif nul sans l'accord santé.
+ * La fin de validité est posée sur la proposition : la ligne écrite par l'échange porte la même valeur.
+ */
 function proposalEvent(p: PendingProposal, input: AttemptInput): CoachStreamEvent {
+  p.expiresAt = new Date(input.now() + currentRules().proposalValidDays * DAY_MS).toISOString();
   return {
     type: 'proposal',
     id: p.id,
@@ -290,7 +294,7 @@ function proposalEvent(p: PendingProposal, input: AttemptInput): CoachStreamEven
     operations: p.operations,
     reasonCode: 'COACH_PROPOSAL',
     reason: input.healthConsent ? p.reason : null,
-    expiresAt: new Date(input.now() + currentRules().proposalValidDays * DAY_MS).toISOString(),
+    expiresAt: p.expiresAt,
   };
 }
 

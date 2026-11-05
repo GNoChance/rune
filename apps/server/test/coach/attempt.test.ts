@@ -576,6 +576,7 @@ describe('runAttempt : cartes', () => {
     operations: [{ op: 'start_deload' }],
     reason: 'Ta récupération compte.',
     model: null,
+    expiresAt: null,
   });
   const proposer = () =>
     fakeTool('propose_program_change', (_input, ctx) => {
@@ -612,7 +613,10 @@ describe('runAttempt : cartes', () => {
           expiresAt: new Date(NOW + 7 * DAY_MS).toISOString(),
         },
       ]);
-      expect(toolCtx.state.proposals).toEqual([{ ...pending(), model: 'claude-opus-5' }]);
+      // La tentative pose la fin de validité sur la proposition : la même que l'événement, que l'échange écrit.
+      expect(toolCtx.state.proposals).toEqual([
+        { ...pending(), model: 'claude-opus-5', expiresAt: new Date(NOW + 7 * DAY_MS).toISOString() },
+      ]);
       // L'identifiant de la proposition ne part jamais au modèle.
       expect(JSON.stringify(fake.chatCalls.map((c) => c.messages))).not.toContain(PROPOSAL_ID);
     },

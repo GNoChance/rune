@@ -13,7 +13,7 @@ import type { AppDeps } from '../../deps';
  * Proposition validée par `propose_program_change` dans la tentative ; elle n'est écrite qu'à l'enregistrement de
  * l'échange (§12.1). `instanceId` : l'instance validée, que l'écriture relit (elle peut avoir changé entre-temps) ;
  * `operations` : références de slot déjà retraduites en identifiants réels. `model` : modèle de l'itération qui a
- * fait l'appel, posé par la tentative.
+ * fait l'appel, `expiresAt` : fin de validité, posés par la tentative.
  */
 export interface PendingProposal {
   id: string;
@@ -22,6 +22,8 @@ export interface PendingProposal {
   operations: InstanceChangeOperation[];
   reason: string;
   model: string | null;
+  /** Fin de validité, posée par la tentative qui émet l'événement `proposal` : la ligne écrite porte la même valeur. */
+  expiresAt: string | null;
 }
 
 /** État des outils d'une tentative, neuf à chaque tentative. */

@@ -1,5 +1,5 @@
 import type { InstanceChangeOperation } from '@rune/contracts';
-import { coachLoadGuard, currentRules, UnknownRulesVersionError } from '@rune/domain';
+import { coachLoadGuard, UnknownRulesVersionError } from '@rune/domain';
 import { writeStamp } from '../db/rev';
 import type { DbExecutor } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -13,8 +13,6 @@ import type { PendingProposal } from './tools/types';
  * `propose_program_change` puis de nouveau à l'acceptation ; écriture en fin d'échange (§12.3, choix C4, C5, C7).
  * Rien de leur contenu n'entre dans les journaux.
  */
-
-const DAY_MS = 86_400_000;
 
 /**
  * Résultat de la garde de hausse : vérifiable, avec les slots dont la charge prévue monterait (triés, vide si aucun),
@@ -57,9 +55,9 @@ export async function checkCoachLoad(
  * propositions périmées expirées (`expireProposals`) ; propositions `proposed` du coach de la personne → `expired`,
  * chacune avec un rev neuf (C4 : celles du moteur restent) ; puis insertion de `p` sur son instance, `author` coach,
  * `reason_code` `COACH_PROPOSAL`, `reason` seulement avec l'accord santé (C7), `status` `proposed`, ou `expired` si
- * l'instance n'est plus active ou si sa révision n'est plus celle de la validation, `expires_at` = création + 7 jours,
+ * l'instance n'est plus active ou si sa révision n'est plus celle de la validation, `expires_at` = celui de la tentative (`p.expiresAt`, le même que l'événement `proposal`),
  * `ai_generated`, `ai_model` (modèle de l'itération), `prompt_version` et `coach_thread_id` du fil. Sans modèle
- * (`p.model` nul : la tentative ne l'a pas posé), erreur `coach_proposal_model_missing` avant toute écriture : une
+ * (`p.model` nul : la tentative ne l'a pas posé), erreur `coach_proposal_model_missing`, de même `coach_proposal_expiry_missing`, avant toute écriture : une
  * ligne `ai_generated` sans `ai_model` ne s'écrit jamais.
  */
 export async function insertCoachProposal(
@@ -69,6 +67,7 @@ export async function insertCoachProposal(
   ctx: { userId: string; threadId: string; promptVersion: string; now: Date; healthConsent: boolean },
 ): Promise<void> {
   if (p.model === null) throw new Error('coach_proposal_model_missing');
+  if (p.expiresAt === null) throw new Error('coach_proposal_expiry_missing');
   const { userId, now } = ctx;
   await expireProposals(trx, userId, now);
   const waiting = await trx
@@ -109,7 +108,7 @@ export async function insertCoachProposal(
       reasonCode: 'COACH_PROPOSAL',
       reason: ctx.healthConsent ? p.reason : null,
       status: current ? 'proposed' : 'expired',
-      expiresAt: new Date(now.getTime() + currentRules().proposalValidDays * DAY_MS).toISOString(),
+      expiresAt: p.expiresAt,
       decidedAt: null,
       aiGenerated: 1,
       aiModel: p.model,

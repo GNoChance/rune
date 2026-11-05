@@ -94,6 +94,7 @@ describe('constantes du coach IA (spec brique 4)', () => {
       'timeout',
       'shutdown',
       'consent_withdrawn',
+      'thread_closed',
       'internal',
     ]);
     expect(COACH_UNAVAILABLE_REASONS).toEqual(['disabled', 'suspended', 'not_configured']);
@@ -258,7 +259,7 @@ describe('CoachStreamEventSchema (§7.2)', () => {
     expect(CoachStreamEventSchema.safeParse(withReason).success).toBe(true);
   });
 
-  it('error : chacun des 8 codes accepté, un code hors liste refusé', () => {
+  it('error : chacun des 9 codes accepté, un code hors liste refusé', () => {
     for (const code of COACH_STREAM_ERROR_CODES)
       expect(CoachStreamEventSchema.safeParse({ type: 'error', code }).success, code).toBe(true);
     expect(CoachStreamEventSchema.safeParse({ type: 'error', code: 'boom' }).success).toBe(false);

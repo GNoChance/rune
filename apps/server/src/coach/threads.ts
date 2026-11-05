@@ -6,6 +6,7 @@ import { writeStamp } from '../db/rev';
 import type { CoachThreadTable, DbExecutor } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { httpError } from '../http/errors';
+import { isConsentActive } from '../privacy/consent-state';
 import type { StartupTask } from '../startup';
 import { loadBriefInput } from './brief-input';
 
@@ -63,14 +64,24 @@ export async function personaOf(db: DbExecutor, userId: string): Promise<CoachId
  * Fil du jour de Paris de `userId` : celui qui existe (ouvert ou clos), sinon un fil ouvert dans une transaction,
  * public calculé par le serveur à partir de la date de naissance (jamais du client), voix du profil, réglages
  * courants, dossier construit à `now` (`brief` = son JSON) et sa table d'alias (alias → identifiant réel, JSON
- * trié). Deux appareils en course : `UNIQUE (user_id, day)` garde le premier, l'autre relit le fil gagnant. Un
+ * trié). Avec `requireConsent`, un fil neuf ne s'ouvre que si l'accord `ai_coach` est actif dans la transaction
+ * (`consent_required` sinon ; un fil existant se rend sans contrôle). Deux appareils en course : `UNIQUE (user_id, day)` garde le premier, l'autre relit le fil gagnant. Un
  * dossier encore trop gros après la cascade est stocké tel quel, et journalisé par ses seuls jetons estimés.
  */
-export async function openTodayThread(deps: AppDeps, userId: string, now: Date): Promise<ThreadRow> {
+export async function openTodayThread(
+  deps: AppDeps,
+  userId: string,
+  now: Date,
+  opts: { requireConsent?: boolean } = {},
+): Promise<ThreadRow> {
   const day = parisDate(now);
   const existing = await todayThread(deps.db, userId, day);
   if (existing !== undefined) return existing;
   return deps.db.transaction().execute(async (trx) => {
+    // Un retrait de l'accord entre la garde et ici ne doit pas ouvrir un fil neuf (§8.1, course avec le retrait).
+    if (opts.requireConsent === true && !(await isConsentActive(trx, userId, 'ai_coach'))) {
+      throw httpError('consent_required');
+    }
     const input = await loadBriefInput(trx, deps, userId, now);
     const built = buildCoachBrief(input);
     const id = deps.ids.uuidv7();

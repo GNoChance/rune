@@ -38,6 +38,18 @@ type MessageRow = Selectable<CoachMessageTable>;
 
 const NO_EXTRAS: DisplayExtras = { helpCards: [], proposalIds: [], links: [], replaced: false };
 
+/** Dépense de `userId` pour le mois de Paris `month` (`YYYY-MM`), en micro-dollars, par `coach_call.day`. */
+export async function monthSpentMicros(db: DbExecutor, userId: string, month: string): Promise<number> {
+  const spent = await db
+    .selectFrom('coachCall')
+    .select((eb) => eb.fn.sum<number | null>('costUsdMicros').as('micros'))
+    .where('userId', '=', userId)
+    .where('day', '>=', `${month}-01`)
+    .where('day', '<=', `${month}-31`)
+    .executeTakeFirstOrThrow();
+  return Number(spent.micros ?? 0);
+}
+
 /**
  * Instantané de la garde à `now` : coach configuré, interrupteur et suspension, accord `ai_coach`, échanges comptés
  * du jour de Paris, dépense du mois de Paris (par `coach_call.day`), échange en cours au registre.
@@ -59,13 +71,6 @@ export async function loadGuardSnapshot(
     .where('day', '=', today)
     .where('counted', '=', 1)
     .executeTakeFirstOrThrow();
-  const spent = await db
-    .selectFrom('coachCall')
-    .select((eb) => eb.fn.sum<number | null>('costUsdMicros').as('micros'))
-    .where('userId', '=', userId)
-    .where('day', '>=', `${month}-01`)
-    .where('day', '<=', `${month}-31`)
-    .executeTakeFirstOrThrow();
   return {
     configured: deps.coach.configured.ok,
     enabled: state.enabled,
@@ -74,7 +79,7 @@ export async function loadGuardSnapshot(
     consent: { active: aiCoach.active, textVersion: aiCoach.textVersion },
     currentConsentVersion: CURRENT_CONSENT_TEXTS.ai_coach.version,
     countedToday: Number(counted.n),
-    monthSpentUsdMicros: Number(spent.micros ?? 0),
+    monthSpentUsdMicros: await monthSpentMicros(db, userId, month),
     inProgress: deps.coach.exchanges.inProgress(userId),
   };
 }
