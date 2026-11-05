@@ -25,7 +25,8 @@ export type CoachLoadCheck = { verifiable: true; increases: string[] } | { verif
  * `coachLoadGuard` sur le rejeu de l'instance active, dans chacun des lieux vivants (la liste que reçoit
  * `validateChange`) et au lieu principal de `planWorkout`, suspensions levées. Lecture seule. Non vérifiable seulement
  * sans rejeu possible : aucune entrée de rejeu (`loadReplayInput`, déjà journalisé), ou une séance aux règles inconnues
- * du serveur (`UnknownRulesVersionError`), qu'une mise à jour du serveur lève ; toute autre erreur remonte.
+ * du serveur (`UnknownRulesVersionError`), qu'une mise à jour du serveur lève ; toute autre exception de `planWorkout` ou de la garde
+ * l'est aussi (journal technique sans contenu).
  */
 export async function checkCoachLoad(
   db: DbExecutor,
@@ -37,16 +38,20 @@ export async function checkCoachLoad(
   const replay = await loadReplayInput(db, deps, userId);
   if (replay === null) return { verifiable: false };
   const places = [...(await placesOf(db, userId, { live: true })).values()];
-  const plan = await loadPlanContext(db, deps, userId, now);
   try {
+    const plan = await loadPlanContext(db, deps, userId, now);
     const increases = coachLoadGuard(
       { replay, change: { ...change, author: 'coach' }, decidedAt: now.getTime(), plan },
       places,
     );
     return { verifiable: true, increases };
   } catch (err) {
-    if (err instanceof UnknownRulesVersionError) return { verifiable: false };
-    throw err;
+    // Règles inconnues, ou tout autre défaut du rejeu (garde, `planWorkout`) : non vérifiable, jamais une 500 ; la
+    // proposition reste intacte. Le journal ne porte que la classe de l'erreur (P-LOG-2).
+    if (!(err instanceof UnknownRulesVersionError)) {
+      deps.logger.error('coach_load_check_failed', { event: err instanceof Error ? err.name : 'unknown' });
+    }
+    return { verifiable: false };
   }
 }
 

@@ -1,7 +1,22 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+/** Interrupteur de la garde : une exception de `coachLoadGuard` (ou de `planWorkout`) n'est pas une 500. */
+const guardFailure = vi.hoisted(() => ({ on: false }));
+vi.mock('@rune/domain', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@rune/domain')>();
+  return {
+    ...actual,
+    coachLoadGuard: (...args: Parameters<typeof actual.coachLoadGuard>) => {
+      if (guardFailure.on) throw new TypeError('boum interne SECRET-CONTENU');
+      return actual.coachLoadGuard(...args);
+    },
+  };
+});
+
 import { insertCoachProposal } from '../../src/coach/proposals';
 import type { PendingProposal } from '../../src/coach/tools/types';
 import {
+  createLogger,
   createTestContext,
   createUserAndLogin,
   insertFixtureRow,
@@ -36,7 +51,10 @@ const TO_PRESS = { op: 'replace_exercise', slot: 'A1', exercise: 'leg-press' } a
 const REASON = 'La presse soulage ton dos.';
 
 let ctx: TestContext;
-afterEach(() => ctx?.close());
+afterEach(() => {
+  guardFailure.on = false;
+  ctx?.close();
+});
 
 async function setup(): Promise<Member> {
   ctx = await createTestContext({ now: NOW });
@@ -261,5 +279,26 @@ describe("acceptation d'une proposition du coach : garde de hausse recalculée",
     // Témoin : la proposition du moteur, sur la même instance, n'est pas concernée par la garde.
     expect((await accept(u, engine)).status).toBe(200);
     expect(rowOf(engine)?.status).toBe('accepted');
+  });
+
+  it('exception de la garde (ou de planWorkout) : 422 coach_load_unverifiable, proposition intacte, journal sans contenu', async () => {
+    const u = await setup();
+    const lines: string[] = [];
+    ctx.deps.logger = createLogger((l) => lines.push(l));
+    const instanceId = await enroll(ctx, u.id, TEMPLATE);
+    const coach = await proposal(u, instanceId, { author: 'coach', operations: [TO_PRESS] });
+    const before = rowOf(coach);
+    guardFailure.on = true;
+
+    const res = await accept(u, coach);
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'coach_load_unverifiable' });
+    expect(rowOf(coach)).toEqual(before);
+    expect(instanceRow(instanceId).revision).toBe(0);
+    const logged = lines.map((l) => JSON.parse(l));
+    expect(logged).toContainEqual(
+      expect.objectContaining({ level: 'error', msg: 'coach_load_check_failed', event: 'TypeError' }),
+    );
+    expect(lines.join('')).not.toContain('SECRET-CONTENU');
   });
 });
