@@ -399,6 +399,17 @@ describe('CoachPage : états du §16.2', () => {
     expect(sendButton().hasAttribute('disabled')).toBe(false);
   });
 
+  it('fil chargé, hors ligne, envoi en échec, retour en ligne : plus de bannière « Hors ligne », saisie active', async () => {
+    init({ phase: 'idle' });
+    const sync = createFakeSyncEngine({ connection: 'offline' });
+    await renderWithServices(<CoachPage />, { path: '/coach', sync });
+    set({ phase: 'error', error: 'offline', pending: PENDING, draft: 'Une question' });
+    expect(screen.getByText(STATE_TEXTS.offline)).toBeTruthy();
+    act(() => sync.set({ connection: 'online' }));
+    expect(screen.queryByText(STATE_TEXTS.offline)).toBeNull();
+    expect(field().disabled).toBe(false);
+  });
+
   it('hors ligne, fil vide : les suggestions sont inactives comme le champ', async () => {
     init({ today: EMPTY_TODAY, status: status({}, { threadId: null, userMessageCount: 0 }) });
     await renderWithServices(<CoachPage />, {
@@ -422,7 +433,10 @@ describe('CoachPage : états du §16.2', () => {
 
   it('hors ligne sans fil chargé', async () => {
     init({ status: null, today: null, phase: 'error', error: 'offline' });
-    await renderPage();
+    await renderWithServices(<CoachPage />, {
+      path: '/coach',
+      sync: createFakeSyncEngine({ connection: 'offline' }),
+    });
     expect(screen.getByText('Hors ligne : le coach a besoin du réseau.')).toBeTruthy();
     expect(screen.getByText('Connecte-toi pour parler au coach.')).toBeTruthy();
   });

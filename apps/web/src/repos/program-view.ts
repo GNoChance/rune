@@ -366,7 +366,11 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
         deviceId,
       );
       return await planningOf(primary, history, context);
-    } catch {
+    } catch (error) {
+      // Nom de la classe seulement : jamais le message ni le contenu.
+      console.warn(
+        `program-view: aperçu des charges indisponible (${error instanceof Error ? error.constructor.name : typeof error})`,
+      );
       return null;
     }
   }

@@ -142,9 +142,9 @@ export function CoachPage() {
   const persona = today?.thread?.persona ?? status?.persona ?? null;
   // Un fil ou un message sans coach connu n'existe pas : le repli ne sert qu'au typage.
   const coach: CoachId = persona ?? 'ombre';
-  const offline = error === 'offline';
-  // Le réseau décide de la saisie ; l'erreur `offline` ne sert qu'au texte et ne reste pas collée au retour du réseau.
+  // Le réseau décide de la saisie et des textes « hors ligne » : l'erreur `offline` d'un envoi ne reste pas collée au retour du réseau.
   const noNetwork = connection === 'offline';
+  const offline = error === 'offline' && noNetwork;
   const closed =
     error === 'thread_closed' || (status !== null && status.today.threadId !== null && !status.today.open);
   const dailyLimit = status !== null && status.today.remaining === 0;
@@ -212,7 +212,7 @@ export function CoachPage() {
   ) : null;
 
   const errorBanner =
-    phase === 'error' && error !== null && error !== 'thread_closed' ? (
+    phase === 'error' && error !== null && error !== 'thread_closed' && (error !== 'offline' || noNetwork) ? (
       <div className={styles.state}>
         <Banner tone={offline ? 'warning' : 'error'}>{errorText(error)}</Banner>
         {FINAL_ERRORS.has(error) ? null : (

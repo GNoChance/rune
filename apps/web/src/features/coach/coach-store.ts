@@ -202,7 +202,7 @@ export function createCoachStore(s: AppServices): CoachStore {
     } catch (e) {
       if (gen !== generation) return;
       if (e instanceof ApiError && e.code === 'duplicate_message') {
-        // Le serveur a déjà ce message : le fil du jour le contient.
+        // Le serveur a déjà ce message : le fil du jour le contient, donc le texte n'est volontairement pas rendu au champ.
         await reloadToday(gen);
         if (gen === generation) set({ pending: null, phase: 'idle', error: null });
         return;
