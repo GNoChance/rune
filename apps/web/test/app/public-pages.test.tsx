@@ -96,7 +96,7 @@ describe('pages publiques', () => {
     await screen.findByRole('heading', { level: 1, name: 'Confidentialité et règles' });
     const text = document.body.textContent ?? '';
     for (const expected of [
-      'Version 1.0',
+      'Version 1.1',
       'peut techniquement lire la base',
       "aucune requête manuelle sur les données d'une personne sans son accord",
       "l'adresse de ton compte Tailscale",

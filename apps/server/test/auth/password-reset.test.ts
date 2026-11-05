@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PRIVACY_POLICY_VERSION } from '@rune/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
 import { acceptInvitation } from '../../src/auth/invitations';
 import { checkPasswordReset, consumePasswordReset } from '../../src/auth/password-reset';
@@ -192,7 +193,7 @@ describe('admin:reset (CLI)', () => {
     try {
       await acceptInvitation(
         c.deps,
-        { code, username: 'porteur', password: 'quatorze carac', termsVersion: '1.0' },
+        { code, username: 'porteur', password: 'quatorze carac', termsVersion: PRIVACY_POLICY_VERSION },
         null,
       );
       expect(await runCli(['admin:reset', 'PORTEUR'], env, o, e)).toBe(0);

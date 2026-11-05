@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '@rune/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
 import { traitsOn, userTraits } from '../../src/auth/me';
 import { createTestContext, createUser, insertFixtureRow, login, type TestContext } from '../support';
@@ -27,7 +28,7 @@ describe('GET /api/me', () => {
       mustChangePassword: false,
       passwordReminderDue: false,
       onboardingStep: 'ready',
-      termsVersion: '1.0',
+      termsVersion: PRIVACY_POLICY_VERSION,
     });
     expect(body.consents).toEqual({
       health: { active: false, textVersion: null, at: null },

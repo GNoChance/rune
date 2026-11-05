@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '@rune/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
 import { hashSecret } from '../../src/auth/secret';
 import { createLogger } from '../../src/logger';
@@ -24,7 +25,7 @@ const check = (code: string, ip = '100.64.0.7') =>
 const accept = (code: string, username: string, password: string, extra: object = {}, ip = '100.64.0.7') =>
   ctx.request('/api/invitations/accept', {
     method: 'POST',
-    json: { code, username, password, termsVersion: '1.0', ...extra },
+    json: { code, username, password, termsVersion: PRIVACY_POLICY_VERSION, ...extra },
     ip,
   });
 const canonical = (code: string): string => code.replaceAll('-', '');
@@ -182,7 +183,7 @@ describe('POST /api/invitations/accept', () => {
       username: 'Éloïse_2',
       role: 'member',
       birthDate: '2001-05-04',
-      termsVersion: '1.0',
+      termsVersion: PRIVACY_POLICY_VERSION,
       onboardingCompletedAt: null,
     });
     expect(res.headers.get('set-cookie')).toMatch(/^__Host-session=/);

@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PRIVACY_POLICY_VERSION } from '@rune/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
 import { bootstrapAdminInvitation } from '../../src/auth/bootstrap';
 import { hashSecret } from '../../src/auth/secret';
@@ -21,7 +22,7 @@ const check = (c: TestContext, code: string) =>
 const accept = (c: TestContext, code: string, username: string, password: string) =>
   c.request('/api/invitations/accept', {
     method: 'POST',
-    json: { code, username, password, termsVersion: '1.0' },
+    json: { code, username, password, termsVersion: PRIVACY_POLICY_VERSION },
     ip: '100.64.0.7',
   });
 

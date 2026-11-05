@@ -1,3 +1,4 @@
+import { PRIVACY_POLICY_VERSION } from '@rune/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestContext, createUser, login, type TestContext } from '../support';
 
@@ -21,7 +22,7 @@ const members = () =>
 const accept = (code: string, username: string, password: string) =>
   ctx.request('/api/invitations/accept', {
     method: 'POST',
-    json: { code, username, password, termsVersion: '1.0' },
+    json: { code, username, password, termsVersion: PRIVACY_POLICY_VERSION },
     ip: '100.64.0.7',
   });
 

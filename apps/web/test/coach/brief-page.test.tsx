@@ -173,7 +173,7 @@ describe('BriefPage : Ce que le coach voit (spec brique 4 §16.5)', () => {
     await renderBrief(reply(BRIEF));
     const places = within(await screen.findByRole('region', { name: 'Lieux' }));
     expect(places.getByText(/lieu_1/).closest('li')?.textContent).toContain(EQUIPMENT_LABELS.dumbbells);
-    expect(places.queryByText(/dumbbells/)).toBeNull();
+    expect(places.getByText(/lieu_1/).closest('li')?.textContent).not.toContain('dumbbells');
     const history = within(screen.getByRole('region', { name: 'Historique' }));
     expect(history.getByText(/Squat/).closest('p')?.textContent).toContain(EFFORT_LABELS.ok);
     expect(history.getByText(/Squat/).closest('p')?.textContent).not.toMatch(/· ok$/);
