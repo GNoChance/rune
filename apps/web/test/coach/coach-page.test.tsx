@@ -475,6 +475,17 @@ describe('coach-page.module.css', () => {
     }
   });
 
+  it('liens des cartes, choix de catégorie : cibles de 48 px (la carte du programme comprise)', () => {
+    for (const selector of ['.action', '.reportChoice']) {
+      expect(declarationsOf(blocks, selector)?.get('min-height'), selector).toBe('48px');
+    }
+    expect(declarationsOf(blocks, '.action')?.get('min-width')).toBe('48px');
+    const program = parseCssBlocks(
+      readFileSync(resolve(import.meta.dirname, '../../src/features/program/program.module.css'), 'utf8'),
+    );
+    expect(declarationsOf(program, '.cardLink')?.get('min-height')).toBe('48px');
+  });
+
   it('mouvement réduit : aucune animation des phrases ni des cartes', () => {
     const animated = blocks
       .filter((b) => b.media === null && b.declarations.has('animation'))

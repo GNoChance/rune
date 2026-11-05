@@ -48,11 +48,4 @@ describe('HelpCard (spec brique 4 §16.4)', () => {
     expect(HELP_NOTES.eating_disorder).toBe("Un médecin peut aussi t'aider.");
     expect(screen.getByText(HELP_NOTES.eating_disorder)).toBeTruthy();
   });
-
-  it('les liens sont des cibles de 48 px', async () => {
-    await renderWithServices(<HelpCard resource="emergency" minor={false} />);
-    for (const link of screen.getAllByRole('link')) {
-      expect(link.className).toMatch(/action/);
-    }
-  });
 });

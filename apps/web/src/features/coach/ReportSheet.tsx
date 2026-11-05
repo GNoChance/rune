@@ -1,4 +1,4 @@
-import { COACH_REPORT_CATEGORIES, type CoachReportCategory, coachTextLength } from '@rune/contracts';
+import { COACH_REPORT_CATEGORIES, type CoachReportCategory } from '@rune/contracts';
 import { useId, useState } from 'react';
 import { NetworkRequiredError } from '../../api/client';
 import { useRepos } from '../../repos';
@@ -23,7 +23,9 @@ export function ReportSheet(p: { threadId: string; messageSeq: number; onClose()
   const [phase, setPhase] = useState<'form' | 'sending' | 'sent'>('form');
   const [error, setError] = useState<string | null>(null);
 
-  const tooLong = coachTextLength(comment) > COMMENT_CHARS;
+  // Le texte qui part est le texte rogné ; le serveur compte en unités UTF-16 (`z.string().max(500)`).
+  const sentComment = comment.trim();
+  const tooLong = sentComment.length > COMMENT_CHARS;
   const canSend = category !== null && !tooLong && phase === 'form';
 
   async function send() {
@@ -35,7 +37,7 @@ export function ReportSheet(p: { threadId: string; messageSeq: number; onClose()
         threadId: p.threadId,
         messageSeq: p.messageSeq,
         category,
-        ...(comment.trim() === '' ? {} : { comment: comment.trim() }),
+        ...(sentComment === '' ? {} : { comment: sentComment }),
       });
       setPhase('sent');
     } catch (e) {
@@ -57,7 +59,7 @@ export function ReportSheet(p: { threadId: string; messageSeq: number; onClose()
               {REPORT_TEXTS.send}
             </Button>
             <Button variant="secondary" block onClick={p.onClose}>
-              Fermer
+              {REPORT_TEXTS.close}
             </Button>
           </>
         )

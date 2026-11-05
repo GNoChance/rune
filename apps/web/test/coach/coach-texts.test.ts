@@ -79,6 +79,7 @@ const TEXTS: [string, string, string[], string[]?][] = [
   ['REPORT_TEXTS.title', REPORT_TEXTS.title, []],
   ['REPORT_TEXTS.categoryLegend', REPORT_TEXTS.categoryLegend, []],
   ['REPORT_TEXTS.send', REPORT_TEXTS.send, []],
+  ['REPORT_TEXTS.close', REPORT_TEXTS.close, []],
   ['REPORT_TEXTS.commentLabel', REPORT_TEXTS.commentLabel, []],
   ...Object.entries(REPORT_TEXTS.categories).map(([k, t]): [string, string, string[]] => [
     `REPORT_TEXTS.categories.${k}`,

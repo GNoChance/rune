@@ -163,6 +163,29 @@ describe('ProposalCard compacte', () => {
   });
 });
 
+describe('ProposalCard : sans lieu principal', () => {
+  it('pas d’aperçu des charges : les lignes avant / après seules, sans erreur', async () => {
+    await open([ENGINE_ROW], { id: 'c-eng' }, async (db) => {
+      await seedMirror(db, 'place', [
+        {
+          id: 'p-1',
+          ownerId: 'u-1',
+          kind: 'gym',
+          gymId: 'g-1',
+          name: null,
+          isPrimary: false,
+          visibleAtGym: true,
+          loadSettings: null,
+        },
+      ]);
+    });
+    await screen.findByRole('article', {}, LAZY);
+    expect(within(card()).getByText('Squat goblet · 3 × 6')).toBeTruthy();
+    expect(within(card()).queryByText('Charge')).toBeNull();
+    expect(within(card()).queryByText(/Calibration|→/)).toBeNull();
+  });
+});
+
 describe('ProposalCard : aperçu quand les règles sont inconnues (décision 1)', () => {
   it('une séance faite avec des règles que l’appli ne connaît pas : pas d’aperçu des charges, les lignes avant / après restent', async () => {
     await open([ENGINE_ROW], { id: 'c-eng' }, async (db) => {

@@ -28,6 +28,7 @@ import {
   type RulesSet,
   replayInstance,
   resolveSlot,
+  type SessionRecord,
   type SlotState,
   UnknownRulesVersionError,
 } from '@rune/domain';
@@ -316,24 +317,25 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
     return instance === null || snapshot === null ? null : { instance, snapshot };
   }
 
-  /** Contexte de `planWorkout` au lieu principal, le même que celui de `plannedWorkout` ; null sans lieu principal. */
-  async function planContext(
-    input: ReplayInput,
+  /**
+   * Entrée de `planWorkout` hors rejeu et séance, commune à la séance du jour et à l'aperçu des propositions : profil,
+   * tranche d'âge, jour de Paris, dernières charges de `sessions`, niveau.
+   */
+  async function planningOf(
+    place: PlaceView,
+    sessions: readonly SessionRecord[],
     context: ProgramTemplate['context'],
-    now: number,
-  ): Promise<ProgramView['plan']> {
-    const primary = (await places.list()).find((p) => p.isPrimary);
-    if (primary === undefined) return null;
+  ): Promise<Omit<PlanInput, 'replay' | 'workoutId'>> {
     const [member, sheets, me] = await Promise.all([catalog.context(), catalog.sheets(), getMeta(db, 'me')]);
     return {
-      place: placeContext(primary),
+      place: placeContext(place),
       catalog: sheets,
       profile: member.cautious ? 'cautious' : 'adult',
       // Faute de savoir, le message aux mineurs s'affiche (comme le profil prudent par défaut).
       ageBand: me?.ageBand ?? 'minor',
       context,
-      today: parisDate(new Date(now)),
-      lastLoadByExercise: lastLoadsOf(input.sessions),
+      today: parisDate(new Date(s.now())),
+      lastLoadByExercise: lastLoadsOf(sessions),
       maxLevel: member.maxLevel,
     };
   }
@@ -391,7 +393,13 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
     }
 
     const now = s.now();
-    const plan = await planContext(input, replay.program.template.context, now);
+    // Lu à chaque reconstruction, même sans proposition : l'événement `proposal` du fil du coach, « en préparation »,
+    // n'a pas encore de ligne dans le miroir et montre déjà son aperçu ; ces lectures sont celles de `plannedWorkout`.
+    const primary = (await places.list()).find((p) => p.isPrimary);
+    const plan =
+      primary === undefined
+        ? null
+        : await planningOf(primary, input.sessions, replay.program.template.context);
     const pending = (c: InstanceChangeView) =>
       c.status === 'proposed' && (c.expiresAt === null || Date.parse(c.expiresAt) > now);
     const byCreation = (a: InstanceChangeView, b: InstanceChangeView) =>
@@ -420,29 +428,20 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
     const all = await places.list();
     const place = placeId === null ? all.find((p) => p.isPrimary) : all.find((p) => p.id === placeId);
     if (place === undefined) return null;
-    const [member, sheets, me, sessionRows, deviceId] = await Promise.all([
+    const [member, sessionRows, deviceId] = await Promise.all([
       catalog.context(),
-      catalog.sheets(),
-      getMeta(db, 'me'),
       db.mirror('workout_session').toArray(),
       getMeta(db, 'deviceId'),
     ]);
-    const profile: SessionProfile = member.cautious ? 'cautious' : 'adult';
     const history = await composeSessions(db, sessionRows, ownerId, deviceId ?? null);
     try {
+      const base = await planningOf(place, history, program.program.template.context);
       const plan = planWorkout({
+        ...base,
         replay: program.replay,
         workoutId: workoutId ?? program.replay.state.nextWorkoutId,
-        place: placeContext(place),
-        catalog: sheets,
-        profile,
-        // Faute de savoir, le message aux mineurs s'affiche (comme le profil prudent par défaut).
-        ageBand: me?.ageBand ?? 'minor',
-        context: program.program.template.context,
-        today: parisDate(new Date(s.now())),
-        lastLoadByExercise: lastLoadsOf(history),
-        maxLevel: member.maxLevel,
       });
+      const profile: SessionProfile = member.cautious ? 'cautious' : 'adult';
       return {
         plan,
         placeId: place.id,

@@ -122,6 +122,7 @@ export const REPORT_TEXTS = {
   commentLabel: 'Un commentaire (facultatif)',
   warning: "L'admin pourra lire cet échange (ton message et la réponse) et saura qu'il vient de toi.",
   send: 'Envoyer',
+  close: 'Fermer',
   thanks: "Merci, l'admin le lira.",
   tooLong: '500 caractères au plus.',
   failed: "Le signalement n'est pas parti. Réessaie.",
