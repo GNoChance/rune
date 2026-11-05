@@ -92,9 +92,17 @@ export interface PlannedSession {
   templateVersion: number;
 }
 
+export interface ViewOptions {
+  /** Une proposition du flux du coach, sans ligne dans le miroir, attend son aperçu des charges. */
+  preparing?: boolean;
+}
+
 export interface ProgramViewRepo {
-  /** Null sans instance active (ou avec un `snapshot` illisible). */
-  view(): Promise<ProgramView | null>;
+  /**
+   * Null sans instance active (ou avec un `snapshot` illisible). `plan` n'est calculé que si une proposition est à
+   * afficher : en attente dans le miroir, ou `preparing` (une proposition du fil du coach, `en préparation`).
+   */
+  view(opts?: ViewOptions): Promise<ProgramView | null>;
   /**
    * Séance du jour au lieu `placeId` (le lieu principal si null) : `workoutId`, ou celle de la rotation si null. Null
    * sans programme, sans ce lieu, ou pour une séance absente du programme.
@@ -340,7 +348,30 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
     };
   }
 
-  async function view(): Promise<ProgramView | null> {
+  /** Contexte de `planWorkout` au lieu principal pour l'aperçu des charges ; null sans lieu principal ni en cas d'échec. */
+  async function previewPlan(
+    ownerId: string,
+    deviceId: string | null,
+    context: ProgramTemplate['context'],
+  ): Promise<ProgramView['plan']> {
+    try {
+      const primary = (await places.list()).find((p) => p.isPrimary);
+      if (primary === undefined) return null;
+      // Dernières charges de toutes les séances (libres et anciennes instances comprises), comme la séance du jour ; le
+      // rejeu, lui, ne lit que celles de l'instance.
+      const history = await composeSessions(
+        db,
+        await db.mirror('workout_session').toArray(),
+        ownerId,
+        deviceId,
+      );
+      return await planningOf(primary, history, context);
+    } catch {
+      return null;
+    }
+  }
+
+  async function view(opts: ViewOptions = {}): Promise<ProgramView | null> {
     const ownerId = await currentUserId(db);
     if (ownerId === null) return null;
     const active = await activeInstance(ownerId);
@@ -393,19 +424,14 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
     }
 
     const now = s.now();
-    // Lu à chaque reconstruction, même sans proposition : l'événement `proposal` du fil du coach, « en préparation »,
-    // n'a pas encore de ligne dans le miroir et montre déjà son aperçu ; ces lectures sont celles de `plannedWorkout`.
-    const primary = (await places.list()).find((p) => p.isPrimary);
-    // Dernières charges de toutes les séances (libres et anciennes instances comprises), comme la séance du jour ; le
-    // rejeu, lui, ne lit que celles de l'instance.
-    const history =
-      primary === undefined
-        ? []
-        : await composeSessions(db, await db.mirror('workout_session').toArray(), ownerId, deviceId);
-    const plan =
-      primary === undefined ? null : await planningOf(primary, history, replay.program.template.context);
     const pending = (c: InstanceChangeView) =>
       c.status === 'proposed' && (c.expiresAt === null || Date.parse(c.expiresAt) > now);
+    // L'aperçu des charges relit tout l'historique : il n'est calculé que pour une proposition à afficher (en attente
+    // dans le miroir, ou « en préparation » dans le fil du coach). Une panne du calcul ne prend pas la vue avec elle.
+    const plan =
+      opts.preparing === true || changeViews.some(pending)
+        ? await previewPlan(ownerId, deviceId, replay.program.template.context)
+        : null;
     const byCreation = (a: InstanceChangeView, b: InstanceChangeView) =>
       binary(a.createdAt, b.createdAt) || binary(a.id, b.id);
     return {
@@ -595,9 +621,10 @@ function useProgramViewRepo(): ProgramViewRepo {
 }
 
 /** Programme actif, observé ; `undefined` tant que la base n'a pas répondu, null sans programme. */
-export function useProgramView(): ProgramView | null | undefined {
+export function useProgramView(opts: ViewOptions = {}): ProgramView | null | undefined {
   const repo = useProgramViewRepo();
-  return useLive(() => repo.view(), [repo]);
+  const preparing = opts.preparing === true;
+  return useLive(() => repo.view({ preparing }), [repo, preparing]);
 }
 
 /** Candidats de « Changer d'exercice » pour un exercice de la séance, observés ; `undefined` pendant la lecture. */

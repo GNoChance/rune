@@ -1,12 +1,13 @@
 import type { MeResponse, ProgramTemplate } from '@rune/contracts';
 import { renderHook, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type AppServices, ServicesProvider } from '../../src/app-services';
 import { targetSummary } from '../../src/features/workout/workout-labels';
 import type { AppDb } from '../../src/local-db/db';
 import { setMeta } from '../../src/local-db/meta';
 import { type Repos, reposFor } from '../../src/repos';
+import { catalogRepoFor } from '../../src/repos/catalog-repo';
 import { usePlannedWorkout, useProgramView } from '../../src/repos/program-view';
 import { applyPulledRows } from '../../src/sync/apply-pull';
 import { seedCatalog, seedTrainingProfile } from '../support/catalog';
@@ -261,10 +262,44 @@ describe('vue du programme', () => {
         loggedAt: '2026-10-03T08:10:00.000Z',
       },
     ]);
-    const view = await repos.programView.view();
+    const view = await repos.programView.view({ preparing: true });
     expect(view?.plan?.lastLoadByExercise.get('goblet-squat')).toBe(14_000);
     // Le rejeu, lui, ne lit que l'instance.
     expect(view?.replayInput.sessions).toEqual([]);
+  });
+
+  describe('aperçu des charges (`plan`)', () => {
+    const PROPOSED = () =>
+      change('c-proposed', {
+        author: 'engine',
+        status: 'proposed',
+        reasonCode: 'ENGINE_REACTIVE_DELOAD',
+        operations: [{ op: 'start_deload' }],
+        decidedAt: null,
+        expiresAt: new Date(DEFAULT_NOW + 86_400_000).toISOString(),
+      });
+
+    it("rien à afficher : `plan` est nul, l'historique n'est pas relu", async () => {
+      const { repos, db } = await setup();
+      await seedMirror(db, 'instance_change', [change('c-accepted', {})]);
+      expect((await repos.programView.view())?.plan).toBeNull();
+    });
+
+    it('une proposition en attente dans le miroir, ou « en préparation » dans le fil : `plan` est calculé', async () => {
+      const { repos, db } = await setup();
+      expect((await repos.programView.view({ preparing: true }))?.plan).not.toBeNull();
+      await seedMirror(db, 'instance_change', [PROPOSED()]);
+      expect((await repos.programView.view())?.plan).not.toBeNull();
+    });
+
+    it("une exception du calcul n'emporte pas la vue Programme : `plan` est nul", async () => {
+      const { repos, db, services } = await setup();
+      await seedMirror(db, 'instance_change', [PROPOSED()]);
+      vi.spyOn(catalogRepoFor(services), 'context').mockRejectedValue(new Error('catalogue illisible'));
+      const view = await repos.programView.view();
+      expect(view?.plan).toBeNull();
+      expect(view?.proposals.map((c) => c.id)).toEqual(['c-proposed']);
+    });
   });
 
   it('sans instance active : null', async () => {
