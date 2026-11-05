@@ -1,6 +1,6 @@
 // Écart annoncé à la spec §13 : prompts et voix en modules .ts, pas en .md (ni esbuild ni tsx n'importent un .md). Toute modification d'un prompt ou d'une voix crée une nouvelle prompt_version.
 import type { CoachId } from '@rune/contracts';
-import type { FilterRule } from '@rune/domain';
+import type { FilterRule, promptVariant } from '@rune/domain';
 import type { CachedBlock } from '../../ai';
 import { COACH_1_ADULT } from './coach-1-adult';
 import { COACH_1_MINOR } from './coach-1-minor';
@@ -14,7 +14,7 @@ import { STYLE_SKALD } from './style-skald';
  */
 
 /** Variante stockée dans `coach_thread.prompt_version` (`promptVariant`). */
-export type PromptVersion = 'coach-1/adult' | 'coach-1/minor';
+export type PromptVersion = ReturnType<typeof promptVariant>;
 
 export const PROMPTS: Record<PromptVersion, string> = {
   'coach-1/adult': COACH_1_ADULT,
@@ -27,15 +27,20 @@ export const STYLES: Record<CoachId, string> = {
   scribe: STYLE_SCRIBE,
 };
 
-/** Les deux blocs `system`, chacun point de cache (§8.2) ; `briefJson` : le dossier figé du fil, tel que stocké. */
+/**
+ * Les deux blocs `system`, chacun point de cache (§8.2) ; `briefJson` : le dossier figé du fil, tel que stocké. Chaque
+ * « < » du JSON devient `\u003c`, que `JSON.parse` lit à l'identique : une note de la personne ne peut ni fermer ni
+ * ouvrir une balise du bloc.
+ */
 export function systemBlocks(
   promptVersion: PromptVersion,
   persona: CoachId,
   briefJson: string,
 ): CachedBlock[] {
+  const brief = briefJson.replaceAll('<', '\\u003c');
   return [
     { text: PROMPTS[promptVersion], cache: true },
-    { text: `${STYLES[persona]}\n\n<dossier>\n${briefJson}\n</dossier>`, cache: true },
+    { text: `${STYLES[persona]}\n\n<dossier>\n${brief}\n</dossier>`, cache: true },
   ];
 }
 
@@ -46,9 +51,9 @@ export function systemBlocks(
 const REGENERATION_NOTES: Record<FilterRule, string> = {
   phone:
     "Note de l'appli : une première version de ta réponse à ce message a été bloquée, car elle contenait un numéro de téléphone. Réponds de nouveau sans écrire aucun numéro : si une aide est utile, utilise refer_to_help, dont la carte affiche les numéros. Ne parle pas de ce blocage à la personne.",
-  unit: "Note de l'appli : une première version de ta réponse à ce message a été bloquée, car elle contenait un nombre suivi d'une unité (charge, pourcentage ou valeur nutritionnelle) absent du dossier et des résultats d'outils. Réponds de nouveau sans ce nombre : cite seulement les valeurs du dossier ou des outils, telles quelles et sans rien calculer, ou renvoie vers Mon programme. Ne parle pas de ce blocage à la personne.",
+  unit: "Note de l'appli : une première version de ta réponse à ce message a été bloquée, car elle contenait un nombre suivi d'une unité (charge, pourcentage ou valeur nutritionnelle) que l'appli ne peut pas vérifier. Réponds de nouveau sans aucun nombre absent du dossier et des résultats d'outils : cite seulement leurs valeurs, telles quelles et sans rien calculer, ou renvoie vers Mon programme. Ne parle pas de ce blocage à la personne.",
   forbidden_term:
-    "Note de l'appli : une première version de ta réponse à ce message a été bloquée, car elle contenait un terme interdit, l'un des termes à éviter de tes consignes. Réponds de nouveau sans ce terme ni aucune de ses formes, avec les tournures à préférer de tes consignes. Ne parle pas de ce blocage à la personne.",
+    "Note de l'appli : une première version de ta réponse à ce message a été bloquée, car elle contenait un terme interdit. Réponds de nouveau sans aucun des termes à éviter de tes consignes, sous aucune de leurs formes, avec les tournures à préférer de la même liste. Ne parle pas de ce blocage à la personne.",
 };
 
 export function regenerationNote(rule: FilterRule): string {
