@@ -6,9 +6,15 @@ import { useSyncExternalStore } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CoachPage } from '../../src/features/coach/CoachPage';
 import type { CoachState, CoachStore } from '../../src/features/coach/coach-store';
-import { counterText, PARENT_LINE, STATE_TEXTS, TOOL_LABELS } from '../../src/features/coach/coach-texts';
+import {
+  counterText,
+  PARENT_LINE,
+  STATE_TEXTS,
+  SUGGESTIONS,
+  TOOL_LABELS,
+} from '../../src/features/coach/coach-texts';
 import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
-import { createFakeApi } from '../support/fake-api';
+import { createFakeApi, createFakeSyncEngine } from '../support/fake-api';
 import { createTestLocalDb } from '../support/local-db';
 import { changeRow, seedProgram } from '../support/program';
 import { renderWithServices } from '../support/render';
@@ -367,12 +373,51 @@ describe('CoachPage : états du §16.2', () => {
 
   it('hors ligne avec un fil chargé : bannière, fil visible, saisie inactive, texte gardé', async () => {
     init({ phase: 'error', error: 'offline', draft: 'Mon texte' });
-    await renderPage();
+    await renderWithServices(<CoachPage />, {
+      path: '/coach',
+      sync: createFakeSyncEngine({ connection: 'offline' }),
+    });
     expect(screen.getByText('Hors ligne : le coach a besoin du réseau.')).toBeTruthy();
     expect(screen.getByText('Bonjour, voici ma réponse.')).toBeTruthy();
     expect(field().value).toBe('Mon texte');
     expect(field().disabled).toBe(true);
     expect(sendButton().hasAttribute('disabled')).toBe(true);
+  });
+
+  it('la saisie suit le réseau : coupée hors ligne, rendue au retour, même si l’erreur offline reste dans le magasin', async () => {
+    init({ phase: 'idle' });
+    const sync = createFakeSyncEngine({ connection: 'online' });
+    await renderWithServices(<CoachPage />, { path: '/coach', sync });
+    expect(field().disabled).toBe(false);
+    act(() => sync.set({ connection: 'offline' }));
+    expect(field().disabled).toBe(true);
+    // L'échec `offline` d'un envoi reste en mémoire : il n'éteint plus la saisie quand le réseau revient.
+    set({ phase: 'error', error: 'offline', draft: 'Mon texte' });
+    act(() => sync.set({ connection: 'online' }));
+    expect(field().disabled).toBe(false);
+    fireEvent.change(field(), { target: { value: 'Mon texte' } });
+    expect(sendButton().hasAttribute('disabled')).toBe(false);
+  });
+
+  it('hors ligne, fil vide : les suggestions sont inactives comme le champ', async () => {
+    init({ today: EMPTY_TODAY, status: status({}, { threadId: null, userMessageCount: 0 }) });
+    await renderWithServices(<CoachPage />, {
+      path: '/coach',
+      sync: createFakeSyncEngine({ connection: 'offline' }),
+    });
+    const suggestions = SUGGESTIONS.map((text) => screen.getByRole('button', { name: text }));
+    expect(suggestions.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+  });
+
+  it('fil fermé et vide : ni accueil ni suggestions, la saisie étant retirée', async () => {
+    init({
+      status: status({}, { open: false, closedReason: 'day' }),
+      today: { ...EMPTY_TODAY, thread: { ...THREAD, open: false } } as CoachTodayResponse,
+    });
+    await renderPage();
+    expect(screen.getByText(STATE_TEXTS.threadClosed)).toBeTruthy();
+    expect(screen.queryByText("Message d'accueil")).toBeNull();
+    expect(screen.queryByRole('button', { name: SUGGESTIONS[0] as string })).toBeNull();
   });
 
   it('hors ligne sans fil chargé', async () => {
@@ -605,6 +650,28 @@ describe('CoachPage : cartes d’aide et de proposition, signalement', () => {
     expect(screen.getAllByRole('article')).toHaveLength(1);
     expect(screen.getAllByRole('region', { name: /Urgence|Prévention/ })).toHaveLength(1);
     expect((screen.getByRole('button', { name: 'Accepter' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('après done, la ligne pas encore arrivée dans le miroir : la carte « en préparation » reste, puis devient active', async () => {
+    init({
+      today: {
+        ...TODAY,
+        messages: [
+          message(1, 'user', 'Salut'),
+          message(2, 'assistant', 'Voici.', { proposalIds: ['c-coach'] }),
+        ],
+      } as CoachTodayResponse,
+    });
+    const { db } = await open();
+    await screen.findByText('en préparation', {}, LAZY);
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    await act(async () => seedMirror(db, 'instance_change', [ROW]));
+    await waitFor(
+      () =>
+        expect((screen.getByRole('button', { name: 'Accepter' }) as HTMLButtonElement).disabled).toBe(false),
+      LAZY,
+    );
+    expect(screen.queryByText('en préparation')).toBeNull();
   });
 
   it('mineur : la carte d’aide porte la ligne « parle à un adulte »', async () => {

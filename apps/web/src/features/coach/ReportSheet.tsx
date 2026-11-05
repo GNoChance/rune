@@ -1,4 +1,5 @@
 import { COACH_REPORT_CATEGORIES, type CoachReportCategory } from '@rune/contracts';
+import { COACH_CONFIG } from '@rune/domain';
 import { useId, useState } from 'react';
 import { NetworkRequiredError } from '../../api/client';
 import { useRepos } from '../../repos';
@@ -7,7 +8,7 @@ import styles from './coach-page.module.css';
 import { REPORT_TEXTS, STATE_TEXTS } from './coach-texts';
 
 /** Plafond du commentaire (`reportCommentChars`, spec §5.2). */
-const COMMENT_CHARS = 500;
+const COMMENT_CHARS = COACH_CONFIG.limits.reportCommentChars;
 
 /**
  * Feuille « Signaler » d'une réponse du coach (spec brique 4 §16.6) : une catégorie, un commentaire de 500

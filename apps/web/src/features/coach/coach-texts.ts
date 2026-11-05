@@ -1,4 +1,5 @@
 import type { ApiErrorCode, CoachAdminView, CoachStreamErrorCode, CoachToolName } from '@rune/contracts';
+import { COACH_CONFIG } from '@rune/domain';
 import { formatDate } from '../../ui/format';
 import { ANTHROPIC_RETENTION_TEXT } from '../privacy/messages';
 import type { CoachError } from './coach-store';
@@ -33,7 +34,7 @@ export const STATE_TEXTS = {
   consentChanged: "Le texte de l'accord a changé.",
   paused: 'Le coach est en pause pour le cercle.',
   suspended: "Le coach est en pause pour tout le cercle jusqu'au 1er du mois.",
-  dailyLimit: "Tu as envoyé 30 messages aujourd'hui. Le coach revient demain.",
+  dailyLimit: `Tu as envoyé ${COACH_CONFIG.limits.messagesPerDay} messages aujourd'hui. Le coach revient demain.`,
   monthlyBudget: 'Tu as atteint la limite du mois pour le coach. Il revient le 1er.',
   threadClosed: 'Ta conversation du jour est close. Reviens demain.',
   previousThreads: 'Conversations précédentes',
@@ -84,7 +85,7 @@ export function errorText(code: CoachError): string {
 }
 
 /** Plafond d'un message, en points de code (spec §5.2 `messageChars`). */
-export const MESSAGE_CHARS = 2000;
+export const MESSAGE_CHARS = COACH_CONFIG.limits.messageChars;
 /** Le compteur apparaît à partir de là (§16.2). */
 export const COUNTER_FROM = 1800;
 /** « Il te reste N messages » apparaît à partir de là. */
@@ -126,7 +127,7 @@ export const REPORT_TEXTS = {
   send: 'Envoyer',
   close: 'Fermer',
   thanks: "Merci, l'admin le lira.",
-  tooLong: '500 caractères au plus.',
+  tooLong: `${COACH_CONFIG.limits.reportCommentChars} caractères au plus.`,
   failed: "Le signalement n'est pas parti. Réessaie.",
 } as const;
 

@@ -41,12 +41,12 @@ describe('bornes des contrats = COACH_CONFIG.limits', () => {
     expect(days(limits.readTrainingMaxDays + 1).success).toBe(false);
   });
 
-  it('texte d’un message : la constante de l’écran vaut messageChars', () => {
-    const texts = readFileSync(
-      new URL('../../../web/src/features/coach/coach-texts.ts', import.meta.url),
-      'utf8',
-    );
-    const match = /export const MESSAGE_CHARS = ([\d_]+);/.exec(texts);
-    expect(Number(match?.[1]?.replaceAll('_', ''))).toBe(limits.messageChars);
+  it('texte d’un message : l’écran importe la limite de COACH_CONFIG, il ne la réécrit pas', () => {
+    const source = (file: string) =>
+      readFileSync(new URL(`../../../web/src/features/coach/${file}`, import.meta.url), 'utf8');
+    const texts = source('coach-texts.ts');
+    expect(texts).toMatch(/import \{[^}]*\bCOACH_CONFIG\b[^}]*\} from '@rune\/domain';/);
+    expect(texts).toMatch(/export const MESSAGE_CHARS = COACH_CONFIG\.limits\.messageChars;/);
+    expect(source('ReportSheet.tsx')).toMatch(/COACH_CONFIG\.limits\.reportCommentChars/);
   });
 });

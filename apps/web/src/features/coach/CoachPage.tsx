@@ -4,7 +4,7 @@ import { Link, useLocation } from 'wouter';
 import { useSyncState } from '../../app-services';
 import { useProgramEditContext, useProgramView } from '../../repos';
 import { Banner, BottomSheet, Button, CoachAvatar, Page, SystemPanel } from '../../ui';
-import { ProposalCard } from '../program/ProposalCard';
+import { PreparingCard, ProposalCard } from '../program/ProposalCard';
 import { programNames } from '../program/program-model';
 import { ChatBubble } from './ChatBubble';
 import { Composer } from './Composer';
@@ -116,7 +116,7 @@ export function CoachPage() {
   const announced = useAnswerAnnounced(phase);
   const end = useRef<HTMLDivElement>(null);
   const [report, setReport] = useState<{ threadId: string; messageSeq: number } | null>(null);
-  const program = useProgramView();
+  const program = useProgramView({ preparing: (pending?.proposals.length ?? 0) > 0 });
   const ctx = useProgramEditContext();
   const { connection } = useSyncState();
 
@@ -143,11 +143,13 @@ export function CoachPage() {
   // Un fil ou un message sans coach connu n'existe pas : le repli ne sert qu'au typage.
   const coach: CoachId = persona ?? 'ombre';
   const offline = error === 'offline';
+  // Le réseau décide de la saisie ; l'erreur `offline` ne sert qu'au texte et ne reste pas collée au retour du réseau.
+  const noNetwork = connection === 'offline';
   const closed =
     error === 'thread_closed' || (status !== null && status.today.threadId !== null && !status.today.open);
   const dailyLimit = status !== null && status.today.remaining === 0;
   const monthlyLimit = status !== null && status.budgetUsedPct >= 100;
-  const blocked = offline || inProgress || dailyLimit || monthlyLimit;
+  const blocked = noNetwork || inProgress || dailyLimit || monthlyLimit;
 
   const names = useMemo(() => (program && ctx ? programNames(program, ctx) : null), [program, ctx]);
   const minor = (today?.thread?.audience ?? status?.audience) === 'minor';
@@ -162,10 +164,8 @@ export function CoachPage() {
     proposals: readonly { id: string; event?: CoachProposalEvent }[],
   ) => {
     const rows = new Map([...(program?.proposals ?? []), ...(program?.changes ?? [])].map((c) => [c.id, c]));
-    const shown = proposals.flatMap(({ id, event }) => {
-      const proposal = rows.get(id) ?? event;
-      return proposal ? [{ id, proposal }] : [];
-    });
+    // Sans ligne ni événement (la réponse est finie, le pull n'a pas encore apporté la ligne) : « en préparation ».
+    const shown = proposals.map(({ id, event }) => ({ id, proposal: rows.get(id) ?? event ?? null }));
     if (helpCards.length === 0 && shown.length === 0) return null;
     return (
       <div className={styles.cards}>
@@ -173,17 +173,21 @@ export function CoachPage() {
           <HelpCard key={resource} resource={resource} minor={minor} />
         ))}
         {program && ctx && names
-          ? shown.map(({ id, proposal }) => (
-              <ProposalCard
-                key={id}
-                proposal={proposal}
-                view={program}
-                ctx={ctx}
-                names={names}
-                offline={connection === 'offline'}
-                compact
-              />
-            ))
+          ? shown.map(({ id, proposal }) =>
+              proposal === null ? (
+                <PreparingCard key={id} />
+              ) : (
+                <ProposalCard
+                  key={id}
+                  proposal={proposal}
+                  view={program}
+                  ctx={ctx}
+                  names={names}
+                  offline={noNetwork}
+                  compact
+                />
+              ),
+            )
           : null}
       </div>
     );
@@ -241,7 +245,8 @@ export function CoachPage() {
         </SystemPanel>
       );
     }
-    const empty = messages.length === 0 && !showPending;
+    // Fil fermé : la saisie est retirée, l'accueil et les suggestions (qui la remplissent) le sont avec elle.
+    const empty = messages.length === 0 && !showPending && !closed;
     return (
       <>
         {status.devUnevaluated ? <Banner tone="warning">{DEV_BANNER}</Banner> : null}
@@ -262,6 +267,7 @@ export function CoachPage() {
                     key={text}
                     type="button"
                     className={styles.suggestion}
+                    disabled={blocked}
                     onClick={() => store.setDraft(text)}
                   >
                     {text}

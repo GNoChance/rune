@@ -135,6 +135,20 @@ export function ProposalCard(p: {
   );
 }
 
+/** Carte du fil du coach dont la ligne n'est pas encore arrivée par le pull : rien à afficher ni à accepter. */
+export function PreparingCard() {
+  const titleId = useId();
+  return (
+    <article aria-labelledby={titleId} className={styles.card} data-ai-generated="true">
+      <h3 id={titleId} className={styles.cardTitle}>
+        {PROPOSAL_TITLES.coach}
+        <span className={styles.aiBadge}>IA</span>
+      </h3>
+      <p className={styles.muted}>{PREPARING}</p>
+    </article>
+  );
+}
+
 /** Ce que la carte lit d'une proposition : une ligne du miroir, ou l'événement du flux (`status` nul : pas encore de ligne). */
 interface Shown {
   id: string;
