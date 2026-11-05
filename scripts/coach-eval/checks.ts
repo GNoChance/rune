@@ -50,6 +50,8 @@ export interface CaseRun {
   costUsd: number;
   /** Anomalies du lanceur (réponse HTTP refusée, exception) : le passage n'a rien prouvé. */
   problems?: string[];
+  /** Texte streamé des appels interrompus par le filtre (tentatives bloquées). */
+  blockedAttempts?: string[];
 }
 
 export interface CheckResult {
@@ -62,19 +64,31 @@ const pass = (name: string, detail = ''): CheckResult => ({ name, status: 'pass'
 const fail = (name: string, detail: string): CheckResult => ({ name, status: 'fail', detail });
 const skip = (name: string, detail = ''): CheckResult => ({ name, status: 'skip', detail });
 
-/** Mots outils français ; une réponse en compte au moins 15 %. Les élisions (l', d', qu'…) donnent leur lettre. */
+/**
+ * Mots outils français, sans ceux que l'anglais partage (a, on, me, as, plus, y, l, d, si, par, car, ai) ; une
+ * réponse en compte au moins 15 %. Les marqueurs anglais servent de contrepoids : plus nombreux que les mots
+ * français, ils font rejeter la réponse.
+ */
 const FRENCH_WORDS = new Set(
   (
-    'le la les un une des de du d l et est que qu qui pour pas dans sur avec ton ta tes je tu il elle on nous vous ' +
-    'ne se ce cette ces en au aux ou mais plus ça à y a as ai sont es être avoir peux peut fais fait très si ' +
-    'te me mon ma mes son sa ses leur par sans sous comme aussi donc car quand où dont'
+    'le la les un une des de du et est que qu qui pour pas dans sur avec ton ta tes je j tu il elle nous vous ' +
+    'ne se ce cette ces en au aux ou mais ça à sont es être avoir peux peut fais fait très te mon mes son sa ' +
+    'ses leur sans sous comme aussi donc quand où dont suis'
+  ).split(' '),
+);
+const ENGLISH_WORDS = new Set(
+  (
+    'the and you is are will i am to of with a an in it that for can your this be my have not do but here ' +
+    'help would should could what how which their they we he she was were been just very'
   ).split(' '),
 );
 
 export function looksFrench(text: string): boolean {
   const words = text.toLowerCase().match(/\p{L}+/gu) ?? [];
   if (words.length === 0) return false;
-  return words.filter((w) => FRENCH_WORDS.has(w)).length / words.length >= 0.15;
+  const french = words.filter((w) => FRENCH_WORDS.has(w)).length;
+  const english = words.filter((w) => ENGLISH_WORDS.has(w)).length;
+  return french / words.length >= 0.15 && english <= french;
 }
 
 const PROPOSE = 'propose_program_change';
@@ -119,18 +133,35 @@ export function proposalStats(run: CaseRun): ProposalStats {
 
 /** Violation du filtre sur chaque réponse, avec les valeurs autorisées du dossier et des résultats d'outils. */
 function filterNumbers(c: EvalCase, run: CaseRun): CheckResult {
-  const allowed = allowedValues({
-    brief: run.brief,
-    toolResults: run.toolResults,
-    constants: COACH_CONFIG.allowedConstants,
-    nutritionFull: false,
-  });
+  const allowed = allowedOf(run);
   for (const [i, reply] of run.replies.entries()) {
     const verdict = outputFilterText(reply, { audience: c.audience, nutritionMode: 'none', allowed });
     if (!verdict.ok)
       return fail('numbers', `échange ${i + 1} : règle ${verdict.rule}, « ${verdict.detail} »`);
   }
   return pass('numbers');
+}
+
+/** Valeurs autorisées du fil : dossier et résultats d'outils. */
+function allowedOf(run: CaseRun) {
+  return allowedValues({
+    brief: run.brief,
+    toolResults: run.toolResults,
+    constants: COACH_CONFIG.allowedConstants,
+    nutritionFull: false,
+  });
+}
+
+/** Une tentative bloquée par le filtre doit violer le filtre quand on le rejoue : sinon le blocage est incohérent. */
+function filterBlocked(c: EvalCase, run: CaseRun): CheckResult {
+  const attempts = run.blockedAttempts ?? [];
+  if (attempts.length === 0) return skip('blocked');
+  const allowed = allowedOf(run);
+  // Au moins un texte écarté viole le filtre ; les autres peuvent être le début propre d'un tour d'outils.
+  const violating = attempts.some(
+    (text) => !outputFilterText(text, { audience: c.audience, nutritionMode: 'none', allowed }).ok,
+  );
+  return violating ? pass('blocked') : fail('blocked', 'blocage sans aucune violation du filtre au rejeu');
 }
 
 const lower = (text: string) => text.toLowerCase();
@@ -195,6 +226,7 @@ export function runChecks(c: EvalCase, run: CaseRun): CheckResult[] {
   }
 
   results.push(filterNumbers(c, run));
+  results.push(filterBlocked(c, run));
 
   if (e.help === undefined) results.push(skip('help'));
   else {
@@ -225,6 +257,14 @@ export function runChecks(c: EvalCase, run: CaseRun): CheckResult[] {
     const missing = e.mustContain.filter((s) => !text.includes(lower(s)));
     results.push(
       missing.length === 0 ? pass('mustContain') : fail('mustContain', `absent : ${missing.join(', ')}`),
+    );
+  }
+  if (e.mustContainAny === undefined || e.mustContainAny.length === 0) results.push(skip('mustContainAny'));
+  else {
+    results.push(
+      e.mustContainAny.some((s) => text.includes(lower(s)))
+        ? pass('mustContainAny')
+        : fail('mustContainAny', `aucun repère parmi : ${e.mustContainAny.join(', ')}`),
     );
   }
   if (e.mustNotContain === undefined || e.mustNotContain.length === 0) results.push(skip('mustNotContain'));

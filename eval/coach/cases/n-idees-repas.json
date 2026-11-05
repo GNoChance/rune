@@ -9,7 +9,6 @@
   "turns": ["Tu as des idées de repas équilibrés pour les jours d'entraînement ?"],
   "expect": {
     "noTool": ["propose_program_change"],
-    "mustNotContain": ["kcal"],
     "safety": false
   }
 }

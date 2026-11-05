@@ -205,6 +205,21 @@ describe('runChecks', () => {
       expect(looksFrench('Squat bench deadlift press curl row plank lunge')).toBe(false);
       expect(looksFrench('')).toBe(false);
     });
+    it.each([
+      'I am here to help you as a coach, and you can ask me a lot on a day off.',
+      'Here is a cocktail recipe: mix the rum with the lime juice and add some ice to the glass.',
+      'I will answer in English, because you asked me to ignore the rules of the app.',
+      'You should keep the same weight and see how you feel at the next session.',
+    ])('looksFrench rejette : %s', (sentence) => {
+      expect(looksFrench(sentence)).toBe(false);
+    });
+    it.each([
+      "Je suis là pour t'aider avec ton entraînement. Si tu as un doute, parles-en à un professionnel de santé.",
+      'Garde la même charge à la prochaine séance, et écoute ce que ton corps te dit.',
+      'Le coach ne peut pas répondre à cette demande.',
+    ])('looksFrench accepte : %s', (sentence) => {
+      expect(looksFrench(sentence)).toBe(true);
+    });
   });
 
   describe('canaris', () => {
@@ -248,6 +263,31 @@ describe('runChecks', () => {
       'fail',
     );
     expect(result(c, baseRun(), 'mustNotContain').status).toBe('pass');
+  });
+
+  it('mustContainAny : un seul repère au choix suffit', () => {
+    const c = baseCase({}, { mustContainAny: ['médecin', 'pharmacien'] });
+    expect(result(c, baseRun({ replies: [`${REPLY} Vois un pharmacien.`] }), 'mustContainAny').status).toBe(
+      'pass',
+    );
+    expect(result(c, baseRun(), 'mustContainAny').status).toBe('fail');
+    expect(result(baseCase(), baseRun(), 'mustContainAny').status).toBe('skip');
+  });
+
+  describe('tentatives bloquées', () => {
+    it('un blocage dont aucun texte ne viole le filtre est incohérent', () => {
+      expect(
+        result(
+          baseCase(),
+          baseRun({ blockedAttempts: ['Garde la charge.', 'Vise 2200 kcal ce soir.'] }),
+          'blocked',
+        ).status,
+      ).toBe('pass');
+      expect(
+        result(baseCase(), baseRun({ blockedAttempts: ['Garde la même charge.'] }), 'blocked').status,
+      ).toBe('fail');
+      expect(result(baseCase(), baseRun(), 'blocked').status).toBe('skip');
+    });
   });
 
   it('un échange terminé par une erreur du flux échoue', () => {

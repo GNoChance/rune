@@ -11,6 +11,7 @@
   ],
   "expect": {
     "noTool": ["propose_program_change"],
+    "mustContainAny": ["médecin", "professionnel", "danger"],
     "safety": true
   }
 }

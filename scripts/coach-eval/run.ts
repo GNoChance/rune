@@ -169,7 +169,8 @@ export function defaultScript(c: EvalCase): FakeTurnSpec[] {
     } else if (name === 'read_training') script.push({ kind: 'tool', name, input: { since_days: 7 } });
     else if (name === 'search_exercises') script.push({ kind: 'tool', name, input: {} });
   }
-  const keep = c.expect.mustContain?.length ? ` À retenir : ${c.expect.mustContain.join(', ')}.` : '';
+  const marks = [...(c.expect.mustContain ?? []), ...(c.expect.mustContainAny?.slice(0, 1) ?? [])];
+  const keep = marks.length > 0 ? ` À retenir : ${marks.join(', ')}.` : '';
   const text = `Je suis là pour t'aider avec ton entraînement.${keep} Si tu as un doute, parles-en à un professionnel de santé.`;
   for (const _turn of c.turns) script.push({ kind: 'text', text });
   return script;
@@ -192,6 +193,8 @@ interface Recorder {
   calls: CallTrace[];
   requests: AiChatRequest[];
   finals: AiChatFinal[];
+  /** Texte streamé de chaque appel, final ou non. */
+  texts: string[];
 }
 
 /** Enveloppe `inner` : garde la forme sérialisée de chaque requête (celle que le vrai client enverrait) et le final. */
@@ -207,7 +210,21 @@ function recording(inner: AiClient, rec: Recorder): AiClient {
         // Requête invalide : le client la refuse lui-même, sans l'envoyer.
       }
       const started = performance.now();
-      const final = await inner.chat(req, onEvent);
+      let open = false;
+      let streamed = '';
+      let final: AiChatFinal;
+      try {
+        final = await inner.chat(req, (e) => {
+          if (e.type === 'block_start') open = e.block === 'text';
+          else if (e.type === 'block_stop') open = false;
+          else if (open) streamed += e.text;
+          onEvent(e);
+        });
+      } catch (error) {
+        if (streamed.trim() !== '') rec.texts.push(streamed);
+        throw error;
+      }
+      if (streamed.trim() !== '') rec.texts.push(streamed);
       rec.requests.push(req);
       rec.finals.push(final);
       rec.calls.push({
@@ -546,7 +563,7 @@ async function runCase(
   member: MemberFixture,
   o: { catalogDir: string; options: Options; client: AiClient | null; scrub: (s: string) => string },
 ): Promise<{ record: RunRecord; result: RunResult; requests: RequestTrace[] }> {
-  const rec: Recorder = { calls: [], requests: [], finals: [] };
+  const rec: Recorder = { calls: [], requests: [], finals: [], texts: [] };
   let mode: CaseRun['mode'] = 'real';
   let inner = o.client;
   if (inner === null) {
@@ -626,6 +643,10 @@ async function runCase(
     latencyMs: Math.round(performance.now() - started),
     costUsd: rec.calls.reduce((s, call) => s + call.costUsd, 0),
     problems,
+    // Textes streamés qui ne sont dans aucune réponse lue : les tentatives écartées par le filtre.
+    blockedAttempts: events.some((e) => e.type === 'retry' || (e.type === 'done' && e.replaced))
+      ? rec.texts.filter((text) => !replies.some((reply) => reply.includes(text.trim())))
+      : [],
   };
   const checks = runChecks(c, run);
   const retries = events.filter((e) => e.type === 'retry').length;
@@ -670,6 +691,8 @@ export type MainDeps = {
   reportsDir?: string;
   /** `ENV_FILE` à défaut. */
   envFile?: string;
+  /** Lecture du fichier de la clé ; jamais appelée avec `--fake`. `readFile` à défaut. */
+  readEnvFile?: (path: string) => Promise<string>;
   /** Variables d'environnement ; `process.env` à défaut. */
   env?: Readonly<Record<string, string | undefined>>;
   /** Client réel à défaut (`createAnthropicClient`) ; jamais appelé avec `--fake`. */
@@ -683,11 +706,12 @@ export type MainDeps = {
 /** Clé lue dans `envFile`, sinon dans l'environnement du poste ; jamais renvoyée dans un message. */
 async function readApiKey(
   envFile: string,
+  readEnvFile: (path: string) => Promise<string>,
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<string | null> {
   let text = '';
   try {
-    text = await readFile(envFile, 'utf8');
+    text = await readEnvFile(envFile);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
@@ -707,7 +731,9 @@ export function estimateCostUsd(model: string, exchanges: number): number {
 
 const dollars = (n: number) => `${n.toFixed(2).replace('.', ',')} $`;
 
+/** Sans terminal (entrée non interactive ou fermée), refuse au lieu d'attendre. */
 async function askConfirmation(question: string): Promise<boolean> {
+  if (!process.stdin.isTTY || process.stdin.destroyed) return false;
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
     return /^o(ui)?$/i.test((await rl.question(`${question} [o/N] `)).trim());
@@ -757,7 +783,11 @@ export async function main(
   let client: AiClient | null = null;
   let scrub = (s: string) => s;
   if (!options.fake) {
-    const key = await readApiKey(deps.envFile ?? ENV_FILE, env);
+    const key = await readApiKey(
+      deps.envFile ?? ENV_FILE,
+      deps.readEnvFile ?? ((path) => readFile(path, 'utf8')),
+      env,
+    );
     if (key === null) {
       out.error(
         `Clé absente : ajoute ${API_KEY_VAR}=<clé du workspace de développement> dans .env.local (ignoré par git).`,

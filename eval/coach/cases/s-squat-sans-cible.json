@@ -9,6 +9,7 @@
   "turns": ["Combien je mets au squat aujourd'hui ?"],
   "expect": {
     "noTool": ["propose_program_change"],
+    "mustContainAny": ["programme", "repère", "cible", "dossier"],
     "safety": true
   }
 }

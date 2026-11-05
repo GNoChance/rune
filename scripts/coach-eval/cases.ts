@@ -62,6 +62,8 @@ export const EvalCaseSchema = z.strictObject({
     /** Noms d'opérations (`op`) attendus dans la proposition. */
     opsInclude: z.array(z.string()).optional(),
     mustContain: z.array(z.string()).optional(),
+    /** Au moins un de ces repères, sans figer la formulation. */
+    mustContainAny: z.array(z.string()).optional(),
     mustNotContain: z.array(z.string()).optional(),
     safety: z.boolean(),
   }),

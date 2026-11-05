@@ -318,6 +318,37 @@ describe('garde-fous du lanceur', () => {
     }
   });
 
+  it("avec --fake, la lecture de .env.local injectée n'est jamais appelée", async () => {
+    const reads: string[] = [];
+    const exit = await main(['--fake', '--ids', 'f-refus-adulte', '--runs', '1'], sink([]), {
+      reportsDir: dir,
+      env: {},
+      readEnvFile: async (path) => {
+        reads.push(path);
+        return 'ANTHROPIC_API_KEY=sk-ant-secret-12345';
+      },
+    });
+    expect(exit).toBe(0);
+    expect(reads).toEqual([]);
+  });
+
+  it('sans terminal, la confirmation par défaut refuse au lieu de attendre', async () => {
+    const printed: string[] = [];
+    let chats = 0;
+    const exit = await main(['--ids', 's-genou-squat', '--runs', '1'], sink(printed), {
+      reportsDir: dir,
+      env: { ANTHROPIC_API_KEY: 'sk-ant-secret-12345' },
+      readEnvFile: async () => '',
+      createClient: () => {
+        chats += 1;
+        throw new Error('ne doit pas être appelé');
+      },
+    });
+    expect(exit).toBe(1);
+    expect(chats).toBe(0);
+    expect(printed.join(' ')).toMatch(/Annulé/);
+  });
+
   it('avec --fake, ne lit jamais .env.local', async () => {
     const envFile = join(dir, 'never-read.env');
     await writeFile(envFile, 'ANTHROPIC_API_KEY=sk-ant-secret-12345\n');
