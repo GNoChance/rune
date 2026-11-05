@@ -38,8 +38,9 @@ export type RecordedReply =
       attempt: Extract<AttemptOutcome, { kind: 'answered' }>;
       regenerationNote: string | null;
       state: AttemptToolState;
+      helpCards: readonly HelpResourceId[];
     }
-  | { kind: 'replaced'; regenerationNote: string };
+  | { kind: 'replaced'; regenerationNote: string; helpCards: readonly HelpResourceId[] };
 
 /**
  * L'accord `ai_coach` ou le fil a disparu pendant l'échange (course avec un retrait ou une suppression, §8.7) :
@@ -173,7 +174,7 @@ export async function recordExchange(
   x: PreparedExchange,
   reply: RecordedReply,
   summary: CallSummary,
-): Promise<{ userSeq: number; assistantSeq: number; proposalIds: string[] }> {
+): Promise<{ userSeq: number; assistantSeq: number; proposalIds: string[]; healthConsent: boolean }> {
   if (!(await isConsentActive(trx, x.userId, 'ai_coach'))) throw new ExchangeGoneError('consent_withdrawn');
   const thread = await trx
     .selectFrom('coachThread')
@@ -201,16 +202,26 @@ export async function recordExchange(
       aiGenerated: false,
     });
   }
-  let proposalIds: string[] = [];
-  let helpCards: HelpResourceId[] = [];
+  // Cartes d'aide de toutes les tentatives de l'échange, sans doublon, même pour la réponse type (§8.5).
+  const helpCards = [...new Set(reply.helpCards)];
+  const proposalIds: string[] = [];
   if (reply.kind === 'answered') {
     const { attempt, state } = reply;
-    helpCards = [...new Set(state.helpCards)];
-    proposalIds = state.proposals.map((p) => p.id);
     const final = attempt.turns.at(-1);
     if (final === undefined) throw new Error('coach_reply_missing');
     for (const turn of attempt.turns.slice(0, -1)) {
       messages.push({ role: turn.role, blocks: turn.blocks, aiGenerated: turn.role === 'assistant' });
+    }
+    for (const p of state.proposals) {
+      const status = await insertCoachProposal(trx, deps, p, {
+        userId: x.userId,
+        threadId: x.thread.id,
+        promptVersion: x.thread.promptVersion,
+        now,
+        healthConsent,
+      });
+      // Une proposition écrite `expired` n'a pas de carte : ni `proposalIds`, ni événement.
+      if (status === 'proposed') proposalIds.push(p.id);
     }
     messages.push({
       role: 'assistant',
@@ -222,18 +233,6 @@ export async function recordExchange(
       stopReason: attempt.stopReason,
       truncated: attempt.truncated,
     });
-    for (const p of state.proposals) {
-      await insertCoachProposal(trx, deps, p, {
-        userId: x.userId,
-        threadId: x.thread.id,
-        promptVersion: x.thread.promptVersion,
-        now,
-        healthConsent,
-      });
-    }
-    for (const resource of helpCards) {
-      await bumpCounter(trx, parisMonthOf(x.day), `help_${resource}`);
-    }
   } else {
     // Réponse type de l'appli (§8.5) : pas une sortie du modèle, donc ni modèle ni `ai_generated`.
     const links: CoachLink[] = ['program', 'coach_help'];
@@ -241,9 +240,13 @@ export async function recordExchange(
       role: 'assistant',
       blocks: [{ type: 'text', text: STANDARD_REPLY }],
       displayText: STANDARD_REPLY,
-      displayExtras: { helpCards: [], proposalIds: [], links, replaced: true },
+      displayExtras: { helpCards, proposalIds: [], links, replaced: true },
       aiGenerated: false,
     });
+  }
+
+  for (const resource of helpCards) {
+    await bumpCounter(trx, parisMonthOf(x.day), `help_${resource}`);
   }
 
   const last = await trx
@@ -283,5 +286,5 @@ export async function recordExchange(
     .execute();
   await insertCall(trx, deps, x, summary);
   await bumpExchangeCounters(trx, x, summary);
-  return { userSeq, assistantSeq: seq, proposalIds };
+  return { userSeq, assistantSeq: seq, proposalIds, healthConsent };
 }

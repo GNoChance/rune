@@ -58,14 +58,15 @@ export async function checkCoachLoad(
  * l'instance n'est plus active ou si sa révision n'est plus celle de la validation, `expires_at` = celui de la tentative (`p.expiresAt`, le même que l'événement `proposal`),
  * `ai_generated`, `ai_model` (modèle de l'itération), `prompt_version` et `coach_thread_id` du fil. Sans modèle
  * (`p.model` nul : la tentative ne l'a pas posé), erreur `coach_proposal_model_missing`, de même `coach_proposal_expiry_missing`, avant toute écriture : une
- * ligne `ai_generated` sans `ai_model` ne s'écrit jamais.
+ * ligne `ai_generated` sans `ai_model` ne s'écrit jamais. Rend le statut écrit : seule une proposition `proposed` a une
+ * carte et figure dans `proposalIds`.
  */
 export async function insertCoachProposal(
   trx: DbExecutor,
   deps: AppDeps,
   p: PendingProposal,
   ctx: { userId: string; threadId: string; promptVersion: string; now: Date; healthConsent: boolean },
-): Promise<void> {
+): Promise<'proposed' | 'expired'> {
   if (p.model === null) throw new Error('coach_proposal_model_missing');
   if (p.expiresAt === null) throw new Error('coach_proposal_expiry_missing');
   const { userId, now } = ctx;
@@ -96,6 +97,7 @@ export async function insertCoachProposal(
     .executeTakeFirst();
   const current = instance?.status === 'active' && instance.revision === p.baseRevision;
   const stamp = await writeStamp(trx, deps, null);
+  const status = current ? 'proposed' : 'expired';
   await trx
     .insertInto('instanceChange')
     .values({
@@ -107,7 +109,7 @@ export async function insertCoachProposal(
       operations: JSON.stringify(p.operations),
       reasonCode: 'COACH_PROPOSAL',
       reason: ctx.healthConsent ? p.reason : null,
-      status: current ? 'proposed' : 'expired',
+      status,
       expiresAt: p.expiresAt,
       decidedAt: null,
       aiGenerated: 1,
@@ -119,4 +121,5 @@ export async function insertCoachProposal(
       ...stamp,
     })
     .execute();
+  return status;
 }

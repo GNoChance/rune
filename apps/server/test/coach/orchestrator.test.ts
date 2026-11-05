@@ -705,7 +705,7 @@ describe('correction 1 : preuves des décisions 1b et 6, et pannes après la val
     expect(registry.inProgress(kit.user.id)).toBe(false);
   });
 
-  it("6 : accord santé retiré pendant le flux, l'événement porte le motif, la base garde blocks et motif nuls", async () => {
+  it("6 : accord santé retiré pendant le flux, l'événement suit l'accord relu à l'enregistrement : motif nul comme en base", async () => {
     const { turn, release } = gated('Je te propose un repos plus court.');
     kit = await exchangeKit({
       program: true,
@@ -724,7 +724,7 @@ describe('correction 1 : preuves des décisions 1b et 6, et pannes après la val
     await run.finished;
 
     expect(run.x.healthConsent).toBe(true);
-    expect(run.events.find((e) => e.type === 'proposal')).toMatchObject({ reason: REASON });
+    expect(run.events.find((e) => e.type === 'proposal')).toMatchObject({ reason: null });
     expect(lastEvent(run.events)).toMatchObject({ type: 'done' });
     expect(kit.rows('SELECT blocks FROM coach_message').every((r) => r.blocks === null)).toBe(true);
     expect(messages()).toHaveLength(4);
@@ -733,19 +733,76 @@ describe('correction 1 : preuves des décisions 1b et 6, et pannes après la val
     ]);
   });
 
-  it("carte d'aide d'une tentative bloquée : ni événement, ni compteur help_*, ni carte enregistrée", async () => {
+  it("carte d'aide d'une tentative bloquée : gardée (événement, compteur help_*, carte enregistrée), une fois", async () => {
     kit = await exchangeKit({
-      chat: [fakeToolUse('t1', 'refer_to_help', { resource: 'pain' }), fakeText(BLOCKED), fakeText(FINE)],
+      chat: [
+        fakeToolUse('t1', 'refer_to_help', { resource: 'pain' }),
+        fakeText(BLOCKED),
+        fakeToolUse('t2', 'refer_to_help', { resource: 'pain' }),
+        fakeText(FINE),
+      ],
     });
     const { events } = await kit.ask();
-    expect(types(events)).toEqual(['tool_running', 'retry', 'text', 'done']);
-    expect(counters()).toEqual([{ kind: 'filter_block', count: 1 }]);
+    expect(types(events)).toEqual(['tool_running', 'retry', 'tool_running', 'text', 'help_card', 'done']);
+    expect(events.filter((e) => e.type === 'help_card')).toEqual([{ type: 'help_card', resource: 'pain' }]);
+    expect(counters()).toEqual([
+      { kind: 'filter_block', count: 1 },
+      { kind: 'help_pain', count: 1 },
+    ]);
     const reply = kit.rows(
       'SELECT display_extras FROM coach_message WHERE role = ? AND display_text = ?',
       'assistant',
       FINE,
     );
-    expect(JSON.parse(reply[0]?.display_extras as string).helpCards).toEqual([]);
+    expect(JSON.parse(reply[0]?.display_extras as string).helpCards).toEqual(['pain']);
+  });
+
+  it('double blocage après refer_to_help(distress) : la réponse type porte la carte distress, compteur à 1', async () => {
+    kit = await exchangeKit({
+      chat: [
+        fakeToolUse('t1', 'refer_to_help', { resource: 'distress' }),
+        fakeText(BLOCKED),
+        fakeText(BLOCKED),
+      ],
+    });
+    const { events } = await kit.ask();
+    expect(events.filter((e) => e.type === 'help_card')).toEqual([
+      { type: 'help_card', resource: 'distress' },
+    ]);
+    expect(events.find((e) => e.type === 'text')).toEqual({ type: 'text', text: STANDARD_REPLY });
+    expect(lastEvent(events)).toMatchObject({ type: 'done', replaced: true, proposalIds: [] });
+    const reply = kit.rows("SELECT display_extras FROM coach_message WHERE role = 'assistant'");
+    expect(JSON.parse(reply[0]?.display_extras as string)).toEqual({
+      helpCards: ['distress'],
+      proposalIds: [],
+      links: ['program', 'coach_help'],
+      replaced: true,
+    });
+    expect(counters()).toEqual([
+      { kind: 'filter_block', count: 2 },
+      { kind: 'help_distress', count: 1 },
+    ]);
+  });
+
+  it('proposition écrite expired (révision changée pendant le flux) : pas de carte, done.proposalIds vide', async () => {
+    const { turn, release } = gated('Je te propose un repos plus court.');
+    kit = await exchangeKit({
+      program: true,
+      chat: [fakeToolUse('t1', 'propose_program_change', PROPOSE), turn],
+    });
+    const run = await kit.begin();
+    await untilCalls(2);
+    kit.ctx.deps.sqlite.exec('UPDATE program_instance SET revision = revision + 1');
+    release();
+    await run.finished;
+    expect(kit.rows('SELECT status FROM instance_change')).toEqual([{ status: 'expired' }]);
+    expect(run.events.some((e) => e.type === 'proposal')).toBe(false);
+    expect(lastEvent(run.events)).toMatchObject({ type: 'done', proposalIds: [] });
+    const reply = kit.rows(
+      'SELECT display_extras FROM coach_message WHERE display_text IS NOT NULL AND role = ?',
+      'assistant',
+    );
+    expect(JSON.parse(reply[0]?.display_extras as string).proposalIds).toEqual([]);
   });
 
   it("journal en panne après l'enregistrement : done part, une seule ligne coach_call, pas d'error", async () => {

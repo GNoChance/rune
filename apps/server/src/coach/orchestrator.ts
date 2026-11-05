@@ -180,8 +180,9 @@ type Attempted = { outcome: AttemptOutcome; state: AttemptToolState; held: Coach
  *
  * - Requête : `historyForApi` + message de la personne ; réglages figés du fil ; `fallbacks` selon son public.
  * - Au plus une régénération, après `retry` : mêmes messages, suivis du message `system` de `regenerationNote`.
- *   Chaque tentative a son état d'outils neuf ; ses cartes (`proposal`, `help_card`) ne partent qu'à la fin de la
- *   tentative retenue, une tentative bloquée n'en montre aucune. Un second blocage donne la réponse type.
+ *   Chaque tentative a son état d'outils neuf ; ses cartes `proposal` ne partent qu'à la fin de la tentative
+ *   retenue, et seulement si la ligne est écrite `proposed` ; les cartes `help_card` de toutes les tentatives partent, sans
+ *   doublon (§8.5). Un second blocage donne la réponse type.
  * - Plafonds : avant chaque appel, dépense du mois + coût de l'échange (régénération comprise) contre le budget.
  * - Un échec d'écriture, ou un fil disparu : rien du fil n'est écrit, seule la ligne `coach_call` l'est.
  */
@@ -302,7 +303,8 @@ export async function runExchange(
           const spentMicros = await monthSpentMicros(deps.db, x.userId, month);
           return spentMicros + (priorCostUsd + spentUsd) * 1_000_000 < budgetMicros;
         },
-        emit: (e) => (e.type === 'proposal' || e.type === 'help_card' ? held.push(e) : send(e)),
+        // Cartes de proposition retenues avec la tentative ; cartes d'aide relues de `state` (toutes les tentatives).
+        emit: (e) => (e.type === 'proposal' ? held.push(e) : e.type === 'help_card' ? undefined : send(e)),
         now: () => deps.clock.now().getTime(),
         healthConsent: x.healthConsent,
       });
@@ -312,12 +314,14 @@ export async function runExchange(
     };
 
     let current = await attempt(null, 0);
+    const attempted = [current];
     let note: string | null = null;
     if (current.outcome.kind === 'blocked') {
       tally.filterBlocks = 1;
       note = regenerationNote(current.outcome.verdict.rule);
       send({ type: 'retry', reason: 'filter' });
       current = await attempt(note, costOf(current.outcome.calls));
+      attempted.push(current);
       if (current.outcome.kind === 'blocked') tally.filterBlocks = 2;
     }
 
@@ -352,10 +356,12 @@ export async function runExchange(
       return await settleError(code, outcome.code === 'empty');
     }
 
+    // Cartes d'aide de toutes les tentatives, sans doublon, dans l'ordre : une tentative bloquée a pu les appeler (§8.5).
+    const helpCards = [...new Set(attempted.flatMap((a) => a.state.helpCards))];
     const reply: RecordedReply =
       outcome.kind === 'answered'
-        ? { kind: 'answered', attempt: outcome, regenerationNote: note, state: current.state }
-        : { kind: 'replaced', regenerationNote: note ?? '' };
+        ? { kind: 'answered', attempt: outcome, regenerationNote: note, state: current.state, helpCards }
+        : { kind: 'replaced', regenerationNote: note ?? '', helpCards };
     const firstTextLatencyMs =
       outcome.kind === 'answered' && outcome.firstTextAtMs !== null
         ? Math.max(0, outcome.firstTextAtMs - x.startedAt.getTime())
@@ -382,8 +388,14 @@ export async function runExchange(
       deps.logger.error('coach_remaining_failed', { event: errorName(error) });
     }
     log(outcome.kind === 'answered' ? 'answered' : 'replaced', summary);
+    for (const resource of helpCards) send({ type: 'help_card', resource });
     if (outcome.kind === 'answered') {
-      for (const event of current.held) send(event);
+      // Seules les propositions écrites `proposed` ont une carte, dont le motif suit l'accord santé de l'enregistrement.
+      for (const event of current.held) {
+        if (event.type !== 'proposal' || !recorded.proposalIds.includes(event.id)) continue;
+        const pending = current.state.proposals.find((p) => p.id === event.id);
+        send({ ...event, reason: recorded.healthConsent ? (pending?.reason ?? event.reason) : null });
+      }
     } else {
       send({ type: 'text', text: STANDARD_REPLY });
     }
