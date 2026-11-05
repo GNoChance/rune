@@ -3,6 +3,7 @@ import { estimateTokens, sortedJson } from '@rune/domain';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openTodayThread } from '../../../src/coach/threads';
 import { runTool } from '../../../src/coach/tools';
+import { fitReadTraining, type ReadTrainingResult } from '../../../src/coach/tools/read-training';
 import { grantConsent } from '../../../src/privacy/consent';
 import { insertConsentEvent } from '../../../src/privacy/consent-state';
 import {
@@ -10,6 +11,8 @@ import {
   createTestContext,
   createUserAndLogin,
   insertFixtureRow,
+  seedSheet,
+  sheetFixture,
   syncPush,
   type TestContext,
 } from '../../support';
@@ -18,11 +21,13 @@ import {
   dayAt,
   enroll,
   grantHealth,
+  PROGRAM_SHEETS,
   programTemplate,
   type SessionSpec,
   seedProgramCatalog,
   sessionOps,
 } from '../../support/program';
+import { rebuild } from '../../support/review';
 
 /*
  * `read_training` (spec brique 4 §10, choix C49) : 28 jours au plus, formes du dossier, douleur seulement avec
@@ -42,6 +47,8 @@ const YESTERDAY = 64;
 /** Changements `add_slot` acceptés (UUIDv7 : leur identifiant ne doit jamais sortir). */
 const FIRST_ADD = '019a4b2c-3d4e-7f60-8a1b-2c3d4e5f6a01';
 const SECOND_ADD = '019a4b2c-3d4e-7f60-8a1b-2c3d4e5f6a02';
+/** Toute forme d'UUID, n'importe où dans une chaîne (le canari du dossier). */
+const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 let ctx: TestContext;
 afterEach(() => ctx?.close());
@@ -66,13 +73,15 @@ async function push(u: Member, ...specs: SessionSpec[]): Promise<void> {
 const grantCoach = (userId: string) =>
   grantConsent(ctx.deps.db, ctx.deps, userId, 'ai_coach', AI_COACH_CONSENT_TEXT.version, null);
 
-async function read(userId: string, input: unknown, thread?: { id: string }) {
+type Thread = { id?: string; audience?: 'adult' | 'minor' };
+
+async function read(userId: string, input: unknown, thread?: Thread) {
   const tc = toolContext(ctx, userId, thread === undefined ? {} : { thread });
   return runTool('read_training', input, tc);
 }
 
 /** Résultat d'un appel réussi. */
-async function result(userId: string, input: unknown, thread?: { id: string }): Promise<Row> {
+async function result(userId: string, input: unknown, thread?: Thread): Promise<Row> {
   const outcome = await read(userId, input, thread);
   expect(outcome.isError).toBe(false);
   return outcome.result as Row;
@@ -179,6 +188,34 @@ describe("read_training : santé et âge à l'instant de l'appel", () => {
     const ofAdult = await result(adult.id, { since_days: 28 });
     expect((ofAdult.records as Row[])[0]).toHaveProperty('e1rm_kg');
   });
+
+  it('fil minor le jour des 18 ans : mineur pour les deux outils (ni e1rm_kg, ni fiche not_for_minors)', async () => {
+    // Né le 5 novembre 2008 : adulte à l'instant de l'appel, mais le fil a été ouvert pour un mineur.
+    const u = await setup({ birthDate: '2008-11-05' });
+    await seedSheet(
+      ctx,
+      sheetFixture('box-jump', { equipment_options: [[]], load_mode: 'bodyweight', not_for_minors: true }),
+    );
+    await rebuild(ctx, [TEMPLATE]);
+    await push(u, {
+      instanceId: null,
+      startedAt: dayAt(YESTERDAY),
+      exercises: [{ slotId: null, sets: [{ reps: 5 }, { reps: 5 }, { reps: 5, effort: 'ok' }] }],
+    });
+    const asMinor = await result(u.id, { since_days: 28 }, { audience: 'minor' });
+    expect(asMinor.records).not.toEqual([]);
+    expect(JSON.stringify(asMinor)).not.toContain('e1rm_kg');
+    expect((await result(u.id, { since_days: 28 })).records).toEqual([
+      expect.objectContaining({ e1rm_kg: expect.any(Number) }),
+    ]);
+
+    const search = async (audience: 'adult' | 'minor') => {
+      const outcome = await runTool('search_exercises', {}, toolContext(ctx, u.id, { thread: { audience } }));
+      return (outcome.result as { exercises: { id: string }[] }).exercises.map((e) => e.id);
+    };
+    expect(await search('minor')).not.toContain('box-jump');
+    expect(await search('adult')).toContain('box-jump');
+  });
 });
 
 describe('read_training : taille', () => {
@@ -210,6 +247,84 @@ describe('read_training : taille', () => {
     const u = await setup();
     await push(u, { instanceId: null, startedAt: dayAt(YESTERDAY), exercises: [{ slotId: null }] });
     expect((await result(u.id, { since_days: 28 })).truncated).toBe(false);
+  });
+
+  /** Plafond de `read_training` abaissé à `max` jetons. */
+  const lowerLimit = (max: number) => {
+    const config = ctx.deps.coachConfig;
+    ctx.deps.coachConfig = { ...config, limits: { ...config.limits, readTrainingMaxTokens: max } };
+  };
+
+  it('plafond dépassé après les séances : records coupés à 10, programme intact, truncated', async () => {
+    const u = await setup();
+    const extras = Array.from({ length: 6 }, (_, i) => `extra-${i + 1}`);
+    for (const id of extras) await seedSheet(ctx, sheetFixture(id, { equipment_options: [[]] }));
+    await rebuild(ctx, [TEMPLATE]);
+    const instanceId = await enroll(ctx, u.id, TEMPLATE);
+    const all = [...PROGRAM_SHEETS.map((s) => s.id), ...extras];
+    await push(
+      u,
+      {
+        instanceId,
+        startedAt: dayAt(YESTERDAY - 1),
+        exercises: [{}, { exerciseId: 'dumbbell-romanian-deadlift' }],
+      },
+      {
+        instanceId: null,
+        startedAt: dayAt(YESTERDAY),
+        exercises: all.map((exerciseId) => ({ slotId: null, exerciseId })),
+      },
+    );
+    const full = await result(u.id, { since_days: 28 });
+    expect(full.truncated).toBe(false);
+    expect((full.records as Row[]).length).toBe(all.length);
+    expect(full.decisions).not.toEqual([]);
+
+    lowerLimit(300);
+    const r = await result(u.id, { since_days: 28 });
+    expect(r.sessions).toEqual([]);
+    expect(r.decisions).toEqual([]);
+    expect(r.records).toEqual((full.records as Row[]).slice(0, 10));
+    expect(r.program).toEqual(full.program);
+    expect(r.pending_proposals).toEqual(full.pending_proposals);
+    // Le programme seul dépasse le plafond : il n'est jamais coupé, et le résultat le dit.
+    expect(estimateTokens(sortedJson(r))).toBeGreaterThan(300);
+    expect(r.truncated).toBe(true);
+  });
+
+  it('sans séance au départ et au-dessus du plafond : truncated', async () => {
+    const u = await setup();
+    await enroll(ctx, u.id, TEMPLATE);
+    lowerLimit(50);
+    const r = await result(u.id, { since_days: 28 });
+    expect(r.sessions).toEqual([]);
+    expect(r.program).not.toBeNull();
+    expect(r.truncated).toBe(true);
+  });
+
+  it('fitReadTraining : les décisions les plus anciennes en dernier recours ; rien à couper → inchangé', () => {
+    const decision = (days_ago: number) => ({
+      days_ago,
+      slot: 'A1',
+      exercise_id: 'goblet-squat',
+      result: 'PROGRESS' as const,
+      reason_code: 'LOAD_UP' as const,
+    });
+    const base: ReadTrainingResult = {
+      revision: null,
+      program: null,
+      sessions: [],
+      decisions: Array.from({ length: 30 }, (_, i) => decision(i)),
+      records: [],
+      pending_proposals: [],
+      truncated: false,
+    };
+    const cut = fitReadTraining(base, 300);
+    expect(cut.truncated).toBe(true);
+    expect(estimateTokens(sortedJson(cut))).toBeLessThanOrEqual(300);
+    expect(cut.decisions.length).toBeGreaterThan(0);
+    expect(cut.decisions).toEqual(base.decisions.slice(0, cut.decisions.length));
+    expect(fitReadTraining(base, 4000)).toBe(base);
   });
 });
 
@@ -284,6 +399,43 @@ describe('read_training : programme et alias du fil', () => {
     ]);
     expect(JSON.stringify(frozen)).not.toContain(FIRST_ADD);
     expect(JSON.stringify(frozen)).not.toContain(SECOND_ADD);
+  });
+
+  it('slot ajouté, travaillé une fois, puis retiré : aucun UUID dans read_training ni dans search_exercises', async () => {
+    const u = await setup();
+    const instanceId = await enroll(ctx, u.id, TEMPLATE);
+    await addSlot(u.id, instanceId, FIRST_ADD, '2026-11-01T10:00:00.000Z');
+    await push(u, {
+      instanceId,
+      startedAt: dayAt(YESTERDAY),
+      exercises: [{}, { slotId: `A-${FIRST_ADD}`, exerciseId: 'leg-press' }],
+    });
+    await insertFixtureRow(ctx.deps.db, 'instance_change', {
+      ownerId: u.id,
+      instanceId,
+      status: 'accepted',
+      author: 'user',
+      reasonCode: 'USER_CHANGE',
+      operations: JSON.stringify([{ op: 'remove_slot', slot: `A-${FIRST_ADD}` }]),
+      decidedAt: '2026-11-05T09:00:00.000Z',
+    });
+    // Le fil s'ouvre après le retrait : sa table figée ne connaît pas le slot.
+    const thread = await openTodayThread(ctx.deps, u.id, ctx.clock.now());
+    expect(thread.slotAliases).toBe('{}');
+
+    const r = await result(u.id, { since_days: 28 }, thread);
+    expect(slotIds(r)).not.toContain(`A-${FIRST_ADD}`);
+    const decision = (r.decisions as Row[]).find((d) => d.exercise_id === 'leg-press');
+    expect(decision?.slot).toMatch(/^A-x\d+$/);
+    expect(JSON.stringify(r)).not.toMatch(UUID_ANYWHERE);
+
+    const found = await runTool(
+      'search_exercises',
+      { available_equipment_only: false },
+      toolContext(ctx, u.id),
+    );
+    expect(found.isError).toBe(false);
+    expect(JSON.stringify(found)).not.toMatch(UUID_ANYWHERE);
   });
 });
 

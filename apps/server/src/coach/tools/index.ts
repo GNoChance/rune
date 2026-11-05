@@ -32,7 +32,9 @@ export function toolDefinitions(tools: readonly CoachTool[]): AiTool[] {
  * `{error: 'unknown_tool'}`. Entrée revalidée par le schéma Zod complet avant le gestionnaire ; invalide →
  * `{error: 'invalid_input', issues: [{path, message}]}`, une entrée par problème Zod, `path` joint par des points
  * (vide à la racine), `message` celui du schéma. Pour `propose_program_change`, un échec de schéma compte dans
- * `ctx.state.invalidProposals`, le compteur des refus du validateur (`corrections_exhausted`, P10).
+ * `ctx.state.invalidProposals`, le compteur des refus du validateur (`corrections_exhausted`, P10). Une exception du
+ * gestionnaire (base, rejeu, table d'alias illisible) n'est pas captée ici : elle remonte à la tentative (tâche 20),
+ * qui la convertit.
  */
 export async function runTool(
   name: string,

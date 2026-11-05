@@ -436,12 +436,20 @@ function assignAliases(
   return aliases;
 }
 
-/** Alias du dossier et des outils (identifiant réel → alias) : slots du programme, puis références en attente. */
-function slotAliasesOf(program: BriefProgramInput, frozen: ReadonlyMap<string, string>): Map<string, string> {
-  const pendingRefs = program.pending.flatMap((c) =>
-    c.operations.flatMap((op) => ('slot' in op ? [op.slot] : [])),
-  );
-  return assignAliases(program.program, frozen, pendingRefs);
+/** Slots cités par les propositions en attente, dans leur ordre. */
+const pendingRefsOf = (program: BriefProgramInput): string[] =>
+  program.pending.flatMap((c) => c.operations.flatMap((op) => ('slot' in op ? [op.slot] : [])));
+
+/**
+ * Alias du dossier et des outils (identifiant réel → alias) : slots du programme, puis références en attente, puis
+ * `extraRefs` (slots des décisions du moteur, pour `read_training`).
+ */
+function slotAliasesOf(
+  program: BriefProgramInput,
+  frozen: ReadonlyMap<string, string>,
+  extraRefs: readonly string[] = [],
+): Map<string, string> {
+  return assignAliases(program.program, frozen, [...pendingRefsOf(program), ...extraRefs]);
 }
 
 /**
@@ -570,6 +578,10 @@ export function briefProgram(
  * Décisions du moteur des `days` derniers jours (`read_training`), la plus récente d'abord, dans l'ordre du rejeu pour
  * une même séance : la forme de `last_decision`, avec le slot (son alias pour un slot ajouté, `frozen` comme pour
  * `briefProgram`) et l'exercice fait. `exerciseId` : celles de cet exercice. Aucune sans programme.
+ *
+ * Le slot d'une décision peut ne plus être au programme (ajouté, travaillé, puis retiré) : les slots de toutes les
+ * décisions du rejeu reçoivent aussi un alias, après les slots du programme et les références en attente, qui gardent
+ * donc les leurs. Jamais l'identifiant d'un changement dans la sortie.
  */
 export function briefDecisions(
   input: CoachBriefInput,
@@ -578,7 +590,11 @@ export function briefDecisions(
 ): BriefDecision[] {
   const program = input.program;
   if (program === null) return [];
-  const aliases = slotAliasesOf(program, frozen);
+  const aliases = slotAliasesOf(
+    program,
+    frozen,
+    program.replay.decisions.map((d) => d.slotId),
+  );
   return program.replay.decisions
     .flatMap((d) => {
       const at = program.decisionEndedAt.get(d.id);

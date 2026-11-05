@@ -172,4 +172,37 @@ describe('TOOLS_1 et définitions', () => {
       expect(toStructuredSchema(def.inputSchema)).toEqual(def.inputSchema);
     }
   });
+
+  it('limites du mode strict sur toute la requête : 24 propriétés facultatives, 16 paramètres en anyOf', () => {
+    // Somme sur tous les schémas d'une requête ; la tâche 18 y ajoutera propose_program_change (TOOLS_1 complet).
+    let optional = 0;
+    let unions = 0;
+    const walk = (node: unknown): void => {
+      if (node === null || typeof node !== 'object') return;
+      if (Array.isArray(node)) {
+        for (const n of node) walk(n);
+        return;
+      }
+      const schema = node as Record<string, unknown>;
+      if (Array.isArray(schema.anyOf)) unions += 1;
+      const properties = schema.properties;
+      if (properties !== null && typeof properties === 'object' && !Array.isArray(properties)) {
+        const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+        optional += Object.keys(properties).filter((name) => !required.has(name)).length;
+        for (const prop of Object.values(properties)) walk(prop);
+      }
+      for (const key of ['items', 'anyOf', 'allOf', '$defs']) {
+        const child = schema[key];
+        if (key === '$defs' && child !== null && typeof child === 'object') {
+          for (const def of Object.values(child)) walk(def);
+        } else walk(child);
+      }
+    };
+    for (const def of toolDefinitions(TOOLS_1)) walk(def.inputSchema);
+    // read_training : exercise_id ; search_exercises : ses 4 champs.
+    expect(optional).toBe(5);
+    expect(optional).toBeLessThanOrEqual(24);
+    expect(unions).toBe(0);
+    expect(unions).toBeLessThanOrEqual(16);
+  });
 });

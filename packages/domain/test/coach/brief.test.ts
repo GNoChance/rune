@@ -21,6 +21,7 @@ import {
 } from '../../src/coach/brief';
 import { addedSlotId, effectiveProgram } from '../../src/program/effective';
 import { parisDaysUntil } from '../../src/program/program-state';
+import type { AcceptedChange } from '../../src/program/types';
 import {
   ADDED_CHANGE_ID,
   ADDED_SLOT_ID,
@@ -194,7 +195,7 @@ describe('extendSlotAliases : table figée du fil étendue (read_training, propo
     ]);
   });
 
-  it('la table figée est conservée ; un slot ajouté après le gel reçoit l’alias suivant de sa séance', () => {
+  it("la table figée est conservée ; un slot ajouté après le gel reçoit l'alias suivant de sa séance", () => {
     const frozen = new Map([['A-x4', ADDED_SLOT_ID]]);
     expect([...extendSlotAliases(program(), frozen)]).toEqual([
       ['A-x4', ADDED_SLOT_ID],
@@ -303,7 +304,7 @@ describe('briefDecisions (read_training)', () => {
     reason_code,
   });
 
-  it('décisions de la période, la plus récente d’abord, slot ajouté sous son alias', () => {
+  it("décisions de la période, la plus récente d'abord, slot ajouté sous son alias", () => {
     expect(briefDecisions(briefInput(), { days: 7 })).toEqual([
       decision(3, 'B2', 'overhead-press', 'CALIBRATION', 'CALIBRATION_DONE'),
       decision(3, 'B3', 'lat-pulldown', 'CALIBRATION', 'CALIBRATION_DONE'),
@@ -346,6 +347,49 @@ describe('briefDecisions (read_training)', () => {
         { days: 28 },
       ),
     ).toEqual([]);
+  });
+
+  describe('slot ajouté, travaillé une fois, puis retiré (vie privée)', () => {
+    const removed: AcceptedChange = {
+      id: '019a4b2c-3d4e-7f60-8a1b-2c3d4e5f6a7f',
+      author: 'user',
+      reasonCode: 'USER_CHANGE',
+      decidedAt: daysBefore(2),
+      operations: [{ op: 'remove_slot', slot: ADDED_SLOT_ID }],
+    };
+    /** Le rejeu garde la décision du slot retiré ; `keepPending` : la proposition du coach sur ce slot reste. */
+    const input = (keepPending: boolean) =>
+      briefInput((i) => {
+        if (i.program === null) return;
+        i.program.program = effectiveProgram(GYM_AB, 3, [
+          addSlotChange(ADDED_CHANGE_ID, daysBefore(15)),
+          removed,
+        ]);
+        if (!keepPending) i.program.pending = i.program.pending.filter((c) => c.author !== 'coach');
+      });
+
+    it("sa décision porte un alias, jamais l'UUID, avec ou sans table figée", () => {
+      const i = input(false);
+      const slots = i.program?.program.template.workouts.flatMap((w) => w.slots.map((s) => s.id));
+      expect(slots).not.toContain(ADDED_SLOT_ID);
+      expect(i.program?.replay.decisions.map((d) => d.slotId)).toContain(ADDED_SLOT_ID);
+
+      const decisions = briefDecisions(i, { days: 28 });
+      expect(decisions.find((d) => d.exercise_id === 'calf-raise')?.slot).toBe('A-x1');
+      expect(JSON.stringify(decisions)).not.toMatch(UUID_ANYWHERE);
+      const frozen = new Map([['A-x2', ADDED_SLOT_ID]]);
+      expect(briefDecisions(i, { days: 28 }, frozen).find((d) => d.exercise_id === 'calf-raise')?.slot).toBe(
+        'A-x2',
+      );
+    });
+
+    it('référence en attente et décision du même slot retiré : le même alias', () => {
+      const i = input(true);
+      const pending = briefProgram(i)?.pending_proposals.find((c) => c.author === 'coach')?.operations[0];
+      const decision = briefDecisions(i, { days: 28 }).find((d) => d.exercise_id === 'calf-raise');
+      expect(pending).toMatchObject({ slot: 'A-x1' });
+      expect(decision?.slot).toBe('A-x1');
+    });
   });
 });
 
