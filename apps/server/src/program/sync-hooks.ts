@@ -249,6 +249,36 @@ const SET_BOUNDS = Object.entries({
   position: currentRules().setBounds.position,
 });
 
+/**
+ * Série écrite avec un `logged_at` non nul : si sa séance est vivante, son exercice supprimé revit (rev neuf). Rend
+ * vrai quand la série est sous une séance vivante, ce que `reviveOnWrite` attend.
+ */
+async function reviveExerciseOfLoggedSet(
+  { trx, deps, userId, op }: HookCtx,
+  loggedAt: unknown,
+): Promise<boolean> {
+  if (loggedAt == null) return false;
+  const exercise = await trx
+    .selectFrom('performedSet as t')
+    .innerJoin('performedExercise as e', 'e.id', 't.performedExerciseId')
+    .innerJoin('workoutSession as s', 's.id', 'e.sessionId')
+    .select(['e.id', 'e.deletedAt'])
+    .where('t.id', '=', op.id)
+    .where('t.ownerId', '=', userId)
+    .where('s.deletedAt', 'is', null)
+    .executeTakeFirst();
+  if (!exercise) return false;
+  if (exercise.deletedAt !== null) {
+    const stamp = await writeStamp(trx, deps, userId);
+    await trx
+      .updateTable('performedExercise')
+      .set({ deletedAt: null, ...stamp })
+      .where('id', '=', exercise.id)
+      .execute();
+  }
+  return true;
+}
+
 const performedSet: Omit<EntitySyncHooks, 'afterBatch'> = {
   // L'exercice d'une série est fixé à sa création (ruling R30).
   immutableColumns: ['performed_exercise_id'],
@@ -297,27 +327,17 @@ const performedSet: Omit<EntitySyncHooks, 'afterBatch'> = {
    * séance ») : la suppression l'emporte. Écart assumé à R-SYN-6 et à « la suppression l'emporte sur tout patch
    * ultérieur ». Le rejeu et D4 suivent dans `afterBatch`.
    */
-  async reviveOnWrite({ trx, deps, userId, op }: HookCtx, fields: Fields) {
-    if (fields.logged_at == null) return false;
-    const exercise = await trx
-      .selectFrom('performedSet as t')
-      .innerJoin('performedExercise as e', 'e.id', 't.performedExerciseId')
-      .innerJoin('workoutSession as s', 's.id', 'e.sessionId')
-      .select(['e.id', 'e.deletedAt'])
-      .where('t.id', '=', op.id)
-      .where('t.ownerId', '=', userId)
-      .where('s.deletedAt', 'is', null)
-      .executeTakeFirst();
-    if (!exercise) return false;
-    if (exercise.deletedAt !== null) {
-      const stamp = await writeStamp(trx, deps, userId);
-      await trx
-        .updateTable('performedExercise')
-        .set({ deletedAt: null, ...stamp })
-        .where('id', '=', exercise.id)
-        .execute();
-    }
-    return true;
+  async reviveOnWrite(ctx: HookCtx, fields: Fields) {
+    return reviveExerciseOfLoggedSet(ctx, fields.logged_at);
+  },
+
+  /**
+   * Série faite créée ou patchée vivante sous un exercice supprimé (C41) : un `create` d'une série inconnue n'a pas de
+   * tombe, donc ne passe pas par `reviveOnWrite`. Même règle : l'exercice revit si la séance est vivante.
+   */
+  async afterApply(ctx: HookCtx) {
+    const { op } = ctx;
+    if (op.kind === 'create' || op.kind === 'patch') await reviveExerciseOfLoggedSet(ctx, op.fields.loggedAt);
   },
 };
 

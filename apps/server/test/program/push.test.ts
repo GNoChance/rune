@@ -770,6 +770,66 @@ describe('série faite poussée après sa suppression (I2, spec brique 4 §18, c
   });
 });
 
+describe('série faite créée hors ligne sous un exercice supprimé (C41)', () => {
+  const createSet = (a: Member, id: string, exercise: string, loggedAt: string | null) =>
+    makeOp({
+      userId: a.id,
+      entity: 'performed_set',
+      id,
+      kind: 'create',
+      fields: {
+        performedExerciseId: exercise,
+        position: 3,
+        kind: 'work',
+        loadMode: 'dumbbell',
+        loadG: 25_000,
+        reps: 8,
+        loggedAt,
+      },
+    });
+
+  it('create d’une série inconnue et faite : vivante, exercice ressuscité, séance terminée par D4', async () => {
+    const a = await setup();
+    const instanceId = await enroll(ctx, a.id, templateFixture('t'));
+    const s = sessionOps(a.id, {
+      instanceId,
+      status: 'in_progress',
+      endedAt: null,
+      exercises: [{ sets: [{ logged: false }] }],
+    });
+    await syncPush(ctx, a.cookie, s.ops);
+    const exercise = s.exerciseIds[0] as string;
+    // L'appareil A refait le plan (swap) : exercice et série supprimés, séance abandonnée faute de série faite.
+    await syncPush(ctx, a.cookie, [
+      del(a, 'performed_set', (s.setIds[0] as string[])[0] as string),
+      del(a, 'performed_exercise', exercise),
+      patch(a, 'workout_session', s.sessionId, { status: 'abandoned', endedAt: dayAt(0, 1) }),
+    ]);
+    expect(rowOf('performed_exercise', exercise)?.deleted_at).not.toBeNull();
+    const newSet = newId();
+    const res = await syncPush(ctx, a.cookie, [createSet(a, newSet, exercise, dayAt(0, 0.5))]);
+    expect(codes(res.body)).toEqual(['applied']);
+    expect(rowOf('performed_set', newSet)).toMatchObject({ deleted_at: null, reps: 8 });
+    expect(rowOf('performed_exercise', exercise)?.deleted_at).toBeNull();
+    expect(rowOf('workout_session', s.sessionId)?.status).toBe('completed');
+  });
+
+  it('create d’une série non faite sous un exercice supprimé : l’exercice reste supprimé', async () => {
+    const a = await setup();
+    const s = sessionOps(a.id, {
+      status: 'in_progress',
+      endedAt: null,
+      exercises: [{ sets: [{ logged: false }] }],
+    });
+    await syncPush(ctx, a.cookie, s.ops);
+    const exercise = s.exerciseIds[0] as string;
+    await syncPush(ctx, a.cookie, [del(a, 'performed_exercise', exercise)]);
+    const res = await syncPush(ctx, a.cookie, [createSet(a, newId(), exercise, null)]);
+    expect(codes(res.body)).toEqual(['applied']);
+    expect(rowOf('performed_exercise', exercise)?.deleted_at).not.toBeNull();
+  });
+});
+
 describe('D4 appliquée par le serveur (ruling R51)', () => {
   it('séance abandoned qui reçoit une série de travail faite → completed (rev neuf, fin à la dernière série faite), puis rejouée', async () => {
     const a = await setup();
@@ -810,7 +870,7 @@ describe('D4 appliquée par le serveur (ruling R51)', () => {
     });
   });
 
-  it('reste abandoned : échauffement seul fait, série faite d’un exercice supprimé, séance supprimée ; une séance en cours reste en cours', async () => {
+  it('reste abandoned : échauffement seul fait, séance supprimée ; une séance en cours reste en cours ; une série faite arrivée sous un exercice supprimé le ressuscite (C41) et termine la séance', async () => {
     const a = await setup();
     const warmup = sessionOps(a.id, {
       status: 'abandoned',
@@ -839,7 +899,9 @@ describe('D4 appliquée par le serveur (ruling R51)', () => {
       status: 'abandoned',
       note: 'touchée',
     });
-    expect(rowOf('workout_session', orphan.sessionId)?.status).toBe('abandoned');
+    // Le create de la série faite (C41) ressuscite l'exercice supprimé : la séance est terminée par D4.
+    expect(rowOf('workout_session', orphan.sessionId)?.status).toBe('completed');
+    expect(rowOf('performed_exercise', orphan.exerciseIds[0] ?? '')?.deleted_at).toBeNull();
     expect(rowOf('performed_set', orphan.setIds[0]?.[0] ?? '')?.deleted_at).toBeNull();
     expect(rowOf('workout_session', running.sessionId)).toMatchObject({
       status: 'in_progress',
