@@ -215,6 +215,13 @@ async function killAll(proc: ChildProcess): Promise<void> {
     }
   }
   if (proc.exitCode === null && proc.signalCode === null) await exitOf(proc);
+  // Sous Windows, `taskkill` rend la main avant que les petits-enfants (serveur, Vite) aient lâché leurs fichiers :
+  // on attend leur disparition avant de supprimer le dossier temporaire (sinon EPERM). Un processus qui reste est une
+  // vraie erreur, rapportée telle quelle.
+  await waitFor('processus arrêtés', async () => ![...pids].some(isAlive), {
+    timeoutMs: 15_000,
+    scriptAlive: false,
+  });
 }
 
 async function waitFor(
@@ -281,7 +288,7 @@ afterEach(async () => {
   try {
     written = homeEntries();
   } finally {
-    rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    rmSync(tmp, { recursive: true, force: true, maxRetries: 30, retryDelay: 200 });
   }
   // Rien sous le dossier personnel : RUNE_DATA_DIR est toujours donné, aucun outil n'a à y écrire.
   expect(written, 'écritures sous le dossier personnel').toEqual([]);

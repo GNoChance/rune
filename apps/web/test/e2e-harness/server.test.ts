@@ -13,10 +13,17 @@ const SERVER_TS = resolve(import.meta.dirname, '../../e2e/support/server.ts');
 const SETTLE_MS = 3000;
 
 const servers: http.Server[] = [];
-const cleanups: (() => void)[] = [];
+const cleanups: (() => void | Promise<void>)[] = [];
+
+/**
+ * Suppression d'un dossier temporaire : sous Windows, un processus qui vient d'être tué garde un instant ses fichiers
+ * ouverts (EPERM, EBUSY). `rmSync` réessaie ; une erreur qui dure reste une erreur.
+ */
+const removeDir = (dir: string): void =>
+  rmSync(dir, { recursive: true, force: true, maxRetries: 30, retryDelay: 200 });
 
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0)) cleanup();
+  for (const cleanup of cleanups.splice(0)) await cleanup();
   await Promise.all(
     servers.splice(0).map(
       (server) =>
@@ -101,7 +108,7 @@ describe('proxy E2E : relais', () => {
 function startWorker(): Promise<{ worker: ChildProcess; pids: number[]; dataDir: string }> {
   const publicDir = mkdtempSync(join(tmpdir(), 'rune-e2e-public-'));
   writeFileSync(join(publicDir, 'index.html'), '<!doctype html><title>Rune</title>');
-  cleanups.push(() => rmSync(publicDir, { recursive: true, force: true }));
+  cleanups.push(() => removeDir(publicDir));
   const code = [
     `import { livePids, startE2EServer } from ${JSON.stringify(pathToFileURL(SERVER_TS).href)};`,
     `const server = await startE2EServer({ publicDir: ${JSON.stringify(publicDir)} });`,
@@ -124,13 +131,15 @@ function startWorker(): Promise<{ worker: ChildProcess; pids: number[]; dataDir:
       const line = stdout.split('\n').find((l) => l.startsWith('{'));
       if (!line) return;
       const { pids, dataDir } = JSON.parse(line) as { pids: number[]; dataDir: string };
-      cleanups.push(() => {
+      cleanups.push(async () => {
         for (const pid of pids) {
           try {
             process.kill(pid, 'SIGKILL');
           } catch {}
         }
-        rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+        // Les fichiers du serveur ne sont libres qu'à sa sortie : on l'attend avant de supprimer son dossier.
+        await allGone(pids, 10_000);
+        removeDir(dataDir);
       });
       done({ worker, pids, dataDir });
     });
