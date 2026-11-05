@@ -1,9 +1,12 @@
 import { fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { callText } from '../../src/features/coach/coach-texts';
+import { callText, REPORT_TEXTS, THREAD_TEXTS } from '../../src/features/coach/coach-texts';
 import { coachMessage, coachStatus, serveCoach } from '../support/coach';
 import { createFakeApi, type FakeApi } from '../support/fake-api';
+import { createTestLocalDb } from '../support/local-db';
+import { changeRow, seedProgram } from '../support/program';
 import { renderApp } from '../support/render';
+import { seedMirror } from '../support/seed';
 import { until } from '../support/wait';
 
 const THREADS = {
@@ -23,6 +26,21 @@ const THREAD = {
   userMessageCount: 1,
   createdAt: '2025-10-28T08:00:00.000Z',
 };
+
+const PROPOSAL = changeRow('c-coach', {
+  author: 'coach',
+  operations: [{ op: 'replace_exercise', slot: 'A1', exercise: 'goblet-squat' }],
+  reasonCode: 'COACH_PROPOSAL',
+  reason: 'Ton genou te gêne sur la barre.',
+  status: 'proposed',
+  baseRevision: 4,
+  createdAt: '2025-10-28T08:00:00.000Z',
+  expiresAt: '2030-10-12T08:00:00.000Z',
+  decidedAt: null,
+  aiGenerated: true,
+  aiModel: 'claude-opus-5-5',
+  coachThreadId: 't2',
+});
 
 const calls = (api: FakeApi, method: string, path: string) =>
   api.calls.filter((c) => c.method === method && c.path === path);
@@ -77,11 +95,17 @@ describe('ThreadsPage : conversations précédentes (spec brique 4 §16.3)', () 
 describe('ThreadPage : un fil en lecture seule', () => {
   async function renderThread(
     messages = [coachMessage(1, 'user', 'Salut'), coachMessage(2, 'assistant', 'Bonjour')],
+    withProgram = false,
   ) {
     const api = serveCoach(createFakeApi(), coachStatus());
     api.on('GET', '/api/coach/threads/t2', { status: 200, body: { thread: THREAD, messages } });
     api.on('DELETE', '/api/coach/threads/t2', { status: 204 });
-    const view = await renderApp({ path: '/coach/threads/t2', api });
+    const db = createTestLocalDb();
+    if (withProgram) {
+      await seedProgram(db);
+      await seedMirror(db, 'instance_change', [PROPOSAL]);
+    }
+    const view = await renderApp({ path: '/coach/threads/t2', api, db });
     await screen.findByRole('heading', { level: 1, name: 'mar. 28 oct.' });
     return { ...view, api };
   }
@@ -102,6 +126,39 @@ describe('ThreadPage : un fil en lecture seule', () => {
     const bubble = await screen.findByText('Je suis là.');
     const call = screen.getByRole('link', { name: callText('3114') });
     expect(bubble.compareDocumentPosition(call) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("une proposition du coach s'affiche à sa place, sous le message qui la porte", async () => {
+    await renderThread(
+      [
+        coachMessage(1, 'user', 'Change'),
+        coachMessage(2, 'assistant', 'Voici.', { proposalIds: ['c-coach'] }),
+      ],
+      true,
+    );
+    const card = await screen.findByRole('article', {}, { timeout: 10_000 });
+    const bubble = screen.getByText('Voici.');
+    expect(bubble.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('« Signaler » sur une réponse du coach ouvre la feuille du signalement', async () => {
+    await renderThread();
+    fireEvent.click(await screen.findByRole('button', { name: 'Signaler' }));
+    expect(await screen.findByRole('dialog', { name: REPORT_TEXTS.title })).toBeTruthy();
+  });
+
+  it('un message qui contient du HTML est rendu comme du texte', async () => {
+    await renderThread([coachMessage(1, 'user', 'Salut'), coachMessage(2, 'assistant', 'Voici <b>x</b>')]);
+    const log = await screen.findByRole('log');
+    expect(within(log).getByText('Voici <b>x</b>')).toBeTruthy();
+    expect(log.querySelector('b')).toBeNull();
+  });
+
+  it("fil absent : « Cette conversation n'existe plus. »", async () => {
+    const api = serveCoach(createFakeApi(), coachStatus());
+    api.on('GET', '/api/coach/threads/zz', { status: 404, body: { error: 'not_found' } });
+    await renderApp({ path: '/coach/threads/zz', api });
+    expect(await screen.findByText(THREAD_TEXTS.unavailable)).toBeTruthy();
   });
 
   it('« Supprimer cette conversation » : confirmation, DELETE du fil, retour à la liste', async () => {

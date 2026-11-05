@@ -1,6 +1,7 @@
 import type { CoachThreadResponse } from '@rune/contracts';
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { useLocation, useParams } from 'wouter';
+import { ApiError } from '../../api/client';
 import { useSyncState } from '../../app-services';
 import { useProgramEditContext, useProgramView, useRepos } from '../../repos';
 import { Banner, Button, errorMessage, Page } from '../../ui';
@@ -42,7 +43,10 @@ export function ThreadPage() {
         if (live) setThread(t);
       },
       (e: unknown) => {
-        if (live) setError(errorMessage(e));
+        if (live)
+          setError(
+            e instanceof ApiError && e.code === 'not_found' ? THREAD_TEXTS.unavailable : errorMessage(e),
+          );
       },
     );
     return () => {

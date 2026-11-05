@@ -1,4 +1,5 @@
 import type { ApiErrorCode, CoachStreamErrorCode, CoachToolName } from '@rune/contracts';
+import { ANTHROPIC_RETENTION_TEXT } from '../privacy/messages';
 import type { CoachError } from './coach-store';
 
 /*
@@ -161,7 +162,7 @@ export const MY_COACH_TEXTS = {
     'Les propositions du coach encore en attente.',
   ],
   deactivateKept: 'Les propositions que tu as acceptées restent dans ton programme.',
-  deactivateAnthropic: "Ce qu'Anthropic a déjà reçu suit sa propre durée de conservation.",
+  deactivateAnthropic: ANTHROPIC_RETENTION_TEXT,
   deactivateExport: "Télécharger mes données d'abord",
   nextTone: "Le nouveau ton s'appliquera à ta conversation de demain.",
   delete: 'Supprimer',

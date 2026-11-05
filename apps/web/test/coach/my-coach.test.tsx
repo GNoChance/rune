@@ -84,6 +84,15 @@ describe('Mon coach : section « Coach IA » (spec brique 4 §16.7)', () => {
     expect(screen.getByRole('link', { name: 'Bien utiliser le coach' })).toBeTruthy();
   });
 
+  it("texte d'accord changé : pas de conversation, mais les conversations, leur suppression et la désactivation restent", async () => {
+    await renderCoach(coachStatus({ consent: { needsRenewal: true, textVersion: '0.9' } }));
+    await screen.findByRole('link', { name: 'Activer le coach IA' });
+    expect(screen.queryByRole('link', { name: 'Ouvrir la conversation' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Conversations précédentes' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Supprimer mes conversations' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Désactiver le coach IA' })).toBeTruthy();
+  });
+
   it("coach en pause : l'état dit la pause du cercle", async () => {
     await renderCoach(coachStatus({ available: false, unavailableReason: 'disabled' }));
     await screen.findByText(MY_COACH_TEXTS.paused);

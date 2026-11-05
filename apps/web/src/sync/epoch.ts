@@ -118,18 +118,26 @@ export async function resendJournal(io: EpochIo): Promise<void> {
 export async function replayWithdrawal(io: EpochIo): Promise<void> {
   const { db } = io;
   if (!db.mirrorNames.includes('consent_event')) return;
+  const withdrawn: { type: string; key: 'health' | 'aiCoach'; at: string }[] = [];
   for (const { type, key } of REPLAYED) {
     const last = await db
       .mirror('consent_event')
       .where('[type+createdAt]')
       .between([type, Dexie.minKey], [type, Dexie.maxKey])
       .last();
-    if (last?.action !== 'withdraw' || typeof last.createdAt !== 'string') continue;
-    const me = await io.request('GET', '/api/me');
-    if (!me.res.ok) throw httpErrorOf(me);
-    if (!MeConsents.parse(me.body).consents[key].active) continue;
+    if (last?.action === 'withdraw' && typeof last.createdAt === 'string') {
+      withdrawn.push({ type, key, at: last.createdAt });
+    }
+  }
+  if (withdrawn.length === 0) return;
+  // Un seul `GET /api/me` pour les deux accords.
+  const me = await io.request('GET', '/api/me');
+  if (!me.res.ok) throw httpErrorOf(me);
+  const consents = MeConsents.parse(me.body).consents;
+  for (const { type, key, at } of withdrawn) {
+    if (!consents[key].active) continue;
     const reply = await io.request('POST', `/api/me/consents/${type}/replay-withdraw`, {
-      withdrawnAt: last.createdAt,
+      withdrawnAt: at,
     });
     if (reply.res.ok) continue;
     const error = httpErrorOf(reply);

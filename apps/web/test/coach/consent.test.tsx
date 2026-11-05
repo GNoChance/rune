@@ -40,6 +40,16 @@ describe('ConsentPage (spec brique 4 §14.1)', () => {
     expect(grants(api).map((c) => c.body)).toEqual([{ type: 'ai_coach', textVersion: '1.0' }]);
   });
 
+  it("statut pas encore connu : aucun lien d'aide, ni adulte ni jeunes", async () => {
+    const api: FakeApi = createFakeApi();
+    api.on('GET', '/api/coach/status', { status: 500, body: { error: 'internal' } });
+    api.on('GET', '/api/coach/today', { status: 500, body: { error: 'internal' } });
+    await renderApp({ path: '/coach/consent', api });
+    await screen.findByRole('heading', { level: 1, name: 'Accord pour le coach IA' });
+    expect(screen.queryByRole('link', { name: 'Bien utiliser le coach' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Tu as 16 ou 17 ans' })).toBeNull();
+  });
+
   it('adulte : lien « Bien utiliser le coach » vers /help/coach', async () => {
     await renderConsent();
     expect(screen.getByRole('link', { name: 'Bien utiliser le coach' }).getAttribute('href')).toBe(

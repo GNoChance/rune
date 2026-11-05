@@ -38,9 +38,12 @@ export function ConsentPage() {
         {status?.consent.needsRenewal ? <Banner tone="info">{STATE_TEXTS.consentChanged}</Banner> : null}
         <p className={styles.lead}>{CONSENT_TEXTS.intro}</p>
         <p className={styles.agreement}>{AI_COACH_CONSENT_TEXT.text}</p>
-        <Link href={minor ? '/help/coach#jeunes' : '/help/coach'} className={styles.link}>
-          {minor ? CONSENT_TEXTS.minorLink : CONSENT_TEXTS.adultLink}
-        </Link>
+        {/* Sans `status`, on ne sait pas si la personne est mineure : aucun lien plutôt que le lien adulte. */}
+        {status === null ? null : (
+          <Link href={minor ? '/help/coach#jeunes' : '/help/coach'} className={styles.link}>
+            {minor ? CONSENT_TEXTS.minorLink : CONSENT_TEXTS.adultLink}
+          </Link>
+        )}
         <label className={styles.check}>
           <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
           <span>{CONSENT_TEXTS.checkbox}</span>

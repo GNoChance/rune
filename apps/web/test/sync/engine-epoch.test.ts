@@ -344,6 +344,7 @@ describe('nouvelle époque (Review Focus 2)', () => {
     await makeEngine().syncNow('manual');
     expect(server.paths()).toContain('POST /api/me/consents/health/replay-withdraw');
     expect(server.paths()).toContain('POST /api/me/consents/ai_coach/replay-withdraw');
+    expect(server.paths().filter((p) => p === 'GET /api/me')).toHaveLength(1);
     expect(await getMeta(db, 'serverEpoch')).toBe('E2');
   });
 

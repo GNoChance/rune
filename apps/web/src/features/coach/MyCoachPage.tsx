@@ -122,7 +122,10 @@ function CoachSection() {
   }, [store]);
 
   const { status } = state;
-  const on = status?.consent.active === true && !status.consent.needsRenewal;
+  // Accord actif : on peut le retirer et effacer ses conversations, même si le texte a changé ; parler au coach
+  // demande en plus le texte en vigueur.
+  const active = status?.consent.active === true;
+  const on = active && !status.consent.needsRenewal;
   const stateText =
     status === null
       ? state.error === null
@@ -156,11 +159,11 @@ function CoachSection() {
             <ListRow label={MY_COACH_TEXTS.activate} href="/coach/consent" />
           )}
           {on ? <ListRow label={MY_COACH_TEXTS.brief} href="/coach/brief" /> : null}
-          {on ? <ListRow label={STATE_TEXTS.previousThreads} href="/coach/threads" /> : null}
+          {active ? <ListRow label={STATE_TEXTS.previousThreads} href="/coach/threads" /> : null}
           <ListRow label={MY_COACH_TEXTS.usage} href="/help/coach" />
         </ListGroup>
       )}
-      {on ? (
+      {active ? (
         <>
           <Button variant="secondary" block onClick={() => setConfirming(true)}>
             {MY_COACH_TEXTS.deleteAll}
