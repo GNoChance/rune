@@ -122,7 +122,7 @@ describe('PrivacySettingsPage (02 §11, R-CST-5, 03 §13, maquette C05)', () => 
     const policy = screen.getByRole('link', { name: 'Lire la page Confidentialité et règles' });
     expect(policy.getAttribute('href')).toBe('/privacy');
     expect(policy.textContent).toContain('Confidentialité et règles');
-    expect(description(policy)).toBe('Version en vigueur : 1.0');
+    expect(description(policy)).toBe('Version en vigueur : 1.1');
     expect(
       within(screen.getByRole('main')).queryByRole('link', { name: 'Confidentialité et règles' }),
     ).toBeNull();

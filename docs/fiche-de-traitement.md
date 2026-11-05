@@ -1,6 +1,6 @@
 # Fiche de traitement Rune
 
-Version 1.0 (`PRIVACY_POLICY_VERSION`), complétée le 2026-10-13, avant toute mise en service.
+Version 1.1 (`PRIVACY_POLICY_VERSION`), mise à jour le 2026-11-05 (coach IA), complétée le 2026-10-13 avant toute mise en service.
 
 Cette fiche tient lieu de registre des traitements, obligatoire dès qu'on traite des données de santé (RGPD, art. 30.5). Elle est la source de la page Confidentialité de l'appli (`apps/web/src/features/public/privacy-content.ts`) : toute modification de fond change les deux, et la version `PRIVACY_POLICY_VERSION` (03 §1, §13.5). L'exemption domestique (art. 2.2.c) est plausible mais pas garantie : on ne s'y fie pas.
 
@@ -13,7 +13,7 @@ Le porteur du projet, personne physique, qui héberge le serveur chez lui, en Fr
 - Suivi d'entraînement entre proches : comptes sur invitation, profil, lieux et matériel, programmes, séances et progression.
 - Adaptation des séances et des repères aux données de santé, seulement avec l'accord santé.
 - Séances et séries (brique 3) : enregistrement de chaque séance faite (exercices, séries, charges, répétitions, durées, effort ressenti), calcul des repères de charge à partir de cet historique, et export des séries en CSV à la demande de la personne.
-- Coach IA (brique 4), seulement avec l'accord coach.
+- Coach IA, seulement avec l'accord coach.
 - Relecture des fiches d'exercices (brique 2) : des membres volontaires, que l'admin désigne comme relectrices, commentent et valident les fiches ; une relectrice qui se déclare professionnelle de santé donne le feu vert santé des fiches sensibles. Base légale : l'accord de la personne, recueilli par l'admin avant de cocher un drapeau de relecteur.
 - Sécurité du service : journal de sécurité, sessions, sauvegardes, supervision.
 

@@ -53,7 +53,7 @@ const ChooseProgram = lazy(() =>
   import('./features/program/ChooseProgram').then((m) => ({ default: m.ChooseProgram })),
 );
 
-/** Conversation avec le coach (brique 4) : hors du bundle initial, chargée à la première ouverture (fichier précaché par le SW). */
+/** Conversation avec le coach : hors du bundle initial, chargée à la première ouverture (fichier précaché par le SW). */
 const CoachPage = lazy(() => import('./features/coach/CoachPage').then((m) => ({ default: m.CoachPage })));
 /** Ce que le coach voit (/coach/brief) : même chunk paresseux que le coach. */
 const AdminCoachPage = lazy(() =>

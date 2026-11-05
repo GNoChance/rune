@@ -180,7 +180,7 @@ describe("lien d'invitation dans l'appli installée (R-ARR-1, R-INV-4)", () => {
       code: CODE,
       username: 'lea',
       password: PHRASE,
-      termsVersion: '1.0',
+      termsVersion: '1.1',
     });
     expect((await db.meta.get('userId'))?.value).toBe('u-9');
   });
