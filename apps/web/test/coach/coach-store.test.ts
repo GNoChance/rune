@@ -235,6 +235,37 @@ describe('CoachStore', () => {
     });
   });
 
+  it('refusalMessage est remis à null par un nouvel envoi et par load', async () => {
+    const { store, api } = await setup();
+    api.on('POST', '/api/coach/messages', sse('event: refused\ndata: {"message":"non"}\n\n'));
+    await store.load();
+    store.setDraft('Salut');
+    await store.send();
+    expect(store.getState().refusalMessage).toBe('non');
+    await store.load();
+    expect(store.getState().refusalMessage).toBeNull();
+
+    await store.send();
+    expect(store.getState().refusalMessage).toBe('non');
+    api.on('POST', '/api/coach/messages', sse(`${TEXT('ok')}${DONE()}`));
+    await store.send();
+    expect(store.getState()).toMatchObject({ refusalMessage: null, phase: 'idle' });
+  });
+
+  it("done, today illisible puis load réussi : l'échec est effacé", async () => {
+    const { store, api } = await setup();
+    await store.load();
+    api.on('POST', '/api/coach/messages', sse(`${TEXT('Bonjour')}${DONE()}`));
+    api.on('GET', '/api/coach/today', { status: 500, body: { error: 'internal' } });
+    store.setDraft('Salut');
+    await store.send();
+    expect(store.getState()).toMatchObject({ phase: 'error', error: 'internal' });
+    api.on('GET', '/api/coach/today', { status: 200, body: TODAY_WITH_USER });
+    await store.load();
+    expect(store.getState()).toMatchObject({ phase: 'idle', pending: null, error: null });
+    expect(store.getState().today?.messages).toHaveLength(2);
+  });
+
   it("erreur JSON avant le flux : code de l'API, texte gardé", async () => {
     const { store, api } = await setup();
     api.on('POST', '/api/coach/messages', { status: 409, body: { error: 'request_in_progress' } });

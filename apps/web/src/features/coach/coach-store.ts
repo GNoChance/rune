@@ -90,6 +90,8 @@ export function createCoachStore(s: AppServices): CoachStore {
   let generation = 0;
   // Génération du sondage en cours : un sondage d'un ancien compte ne bloque pas celui du nouveau.
   let pollingGen: number | null = null;
+  // Après `done` dont la relecture de `today` a échoué : le serveur a la réponse, un `load` réussi efface l'échec.
+  let answerRecorded = false;
   let watching = false;
 
   const set = (patch: Partial<CoachState>) => {
@@ -104,6 +106,7 @@ export function createCoachStore(s: AppServices): CoachStore {
   const reset = () => {
     generation += 1;
     pollingGen = null;
+    answerRecorded = false;
     state = INITIAL;
     for (const fn of listeners) fn();
   };
@@ -138,6 +141,7 @@ export function createCoachStore(s: AppServices): CoachStore {
 
   async function run(pending: PendingExchange, firstOfDay: boolean): Promise<void> {
     const gen = generation;
+    answerRecorded = false;
     set({ pending, phase: 'streaming', error: null, refusalMessage: null });
     if (firstOfDay) await flush();
     if (gen !== generation) return;
@@ -215,6 +219,7 @@ export function createCoachStore(s: AppServices): CoachStore {
       if (gen !== generation) return;
     }
     // Sans la relecture, la bulle reste affichée et l'erreur est rendue.
+    answerRecorded = today === null;
     set({
       today: today ?? state.today,
       status: status ?? state.status,
@@ -244,11 +249,21 @@ export function createCoachStore(s: AppServices): CoachStore {
         await flush();
         const [status, today] = await Promise.all([repo.status(), repo.today()]);
         if (gen !== generation || isStreaming()) return;
-        const keepFailure = state.pending !== null && (state.phase === 'error' || state.phase === 'refused');
+        const keepFailure =
+          !answerRecorded && state.pending !== null && (state.phase === 'error' || state.phase === 'refused');
+        const wasRecorded = answerRecorded;
+        answerRecorded = false;
         set(
           keepFailure
             ? { status, today, refusalMessage: null }
-            : { status, today, phase: 'idle', error: null, refusalMessage: null },
+            : {
+                status,
+                today,
+                phase: 'idle',
+                error: null,
+                refusalMessage: null,
+                pending: wasRecorded ? null : state.pending,
+              },
         );
       } catch (e) {
         if (gen !== generation || isStreaming()) return;
