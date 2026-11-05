@@ -8,11 +8,12 @@ import {
 } from '@rune/contracts';
 import { type RawBuilder, sql, type Transaction } from 'kysely';
 import { logSecurityEvent } from '../auth/security-log';
+import { coachHealthWithdrawHook, withdrawCoachConsent } from '../coach/consent';
 import { writeStamp } from '../db/rev';
 import type { Database, DbExecutor } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { httpError } from '../http/errors';
-import { getConsentState, isHealthConsentActive } from './consent-state';
+import { getConsentState, insertConsentEvent, isHealthConsentActive } from './consent-state';
 
 type Row = { rid: number };
 
@@ -45,11 +46,13 @@ function rewritePainCodes(table: string, clearReason: boolean): HealthWithdrawHo
 /**
  * Une entrée remplace la règle générique du retrait pour sa table (09 §8). Brique 3 : les motifs et codes de douleur
  * des changements de programme et des décisions du moteur. `pain_level`, `swap_reason = 'pain'` et `pain_streak`
- * passent par la règle générique (`c2Columns`, `c2Values`) ; les suspensions de slot restent.
+ * passent par la règle générique (`c2Columns`, `c2Values`) ; les suspensions de slot restent. Brique 4 : le coach
+ * (fils clos, dossiers et blocs bruts effacés, choix C13), dont les tables n'ont pas de rev.
  */
 export const HEALTH_WITHDRAW_HOOKS: HealthWithdrawHooks = {
   instance_change: rewritePainCodes('instance_change', true),
   engine_decision: rewritePainCodes('engine_decision', false),
+  coach_thread: coachHealthWithdrawHook,
 };
 
 const SYNC: readonly string[] = SYNC_COLUMNS;
@@ -70,29 +73,6 @@ export async function latestGrant(
     .orderBy('rev', 'desc')
     .limit(1)
     .executeTakeFirst();
-}
-
-async function insertConsentEvent(
-  trx: DbExecutor,
-  deps: AppDeps,
-  userId: string,
-  type: ConsentType,
-  action: 'grant' | 'withdraw',
-  textVersion: string,
-): Promise<void> {
-  const stamp = await writeStamp(trx, deps, userId);
-  await trx
-    .insertInto('consentEvent')
-    .values({
-      id: deps.ids.uuidv7(),
-      ownerId: userId,
-      type,
-      action,
-      textVersion,
-      createdAt: stamp.updatedAt,
-      ...stamp,
-    })
-    .execute();
 }
 
 /** R-CST-1 : un accord identique à l'accord actif n'écrit rien. La version est validée par l'appelant. */
@@ -136,6 +116,8 @@ async function stampRows(
 /**
  * Règle générique du retrait pour une table liée au propriétaire :
  * C2 → contenu à NULL et tombstone ; sinon `c2Columns` à NULL et valeurs `c2Values` effacées.
+ * Une table sans `rev` (classe H, tables du coach) est ignorée ; si elle porte du C2, seul un crochet de
+ * `HEALTH_WITHDRAW_HOOKS` sait l'effacer : sans crochet, le retrait est refusé (transaction annulée).
  */
 async function clearTable(
   trx: Transaction<Database>,
@@ -146,6 +128,15 @@ async function clearTable(
   actorId: string | null,
 ): Promise<void> {
   if (rule.ownerColumn === null) return;
+  const values = Object.entries(rule.c2Values ?? {});
+  if (!rule.columns.includes('rev')) {
+    if (rule.category === 'C2' || rule.c2Columns.length > 0 || values.length > 0) {
+      throw new Error(
+        `Retrait santé : la table ${table} n'a pas de rev ; ses données C2 demandent un crochet dans HEALTH_WITHDRAW_HOOKS.`,
+      );
+    }
+    return;
+  }
   const owner = sql`${sql.ref(rule.ownerColumn)} = ${userId}`;
   const isNull = (cols: readonly string[]) => cols.map((c) => sql`${sql.ref(c)} = null`);
 
@@ -162,7 +153,6 @@ async function clearTable(
     return;
   }
 
-  const values = Object.entries(rule.c2Values ?? {});
   if (rule.c2Columns.length === 0 && values.length === 0) return;
   const concerned = [
     ...rule.c2Columns.map((c) => sql`${sql.ref(c)} is not null`),
@@ -212,6 +202,21 @@ export async function withdrawHealthConsent(
     details: { consentType: 'health', ...(opts.replay ? { replay: true } : {}) },
   });
 }
+
+/** Retrait d'un accord dans la transaction de l'appelant ; sans effet si l'accord n'est pas actif. */
+export type ConsentWithdrawal = (
+  trx: Transaction<Database>,
+  deps: AppDeps,
+  userId: string,
+  actor: { actorId: string | null; ip: string | null },
+  opts?: { replay?: boolean },
+) => Promise<void>;
+
+/** Retrait de chaque accord : route avec mot de passe, renvoi R-SYN-28 et `privacy:reapply`. */
+export const CONSENT_WITHDRAWALS: Readonly<Record<ConsentType, ConsentWithdrawal>> = {
+  health: withdrawHealthConsent,
+  ai_coach: withdrawCoachConsent,
+};
 
 /**
  * Garde C2 (R-CST-4, P-CST-2). Les routes l'appliquent avant parseJson (ordre des erreurs) ;

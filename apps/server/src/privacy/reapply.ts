@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import type { DbExecutor } from '../db/schema';
 import type { AppDeps } from '../deps';
-import { withdrawHealthConsent } from './consent';
-import { isHealthConsentActive } from './consent-state';
+import { CONSENT_WITHDRAWALS } from './consent';
+import { isConsentActive } from './consent-state';
 import { deleteAccount } from './delete-account';
 
 /**
@@ -70,8 +70,8 @@ export async function collectPrivacyEvents(db: DbExecutor, since: string): Promi
  * Réapplique, après restauration, les suppressions et retraits survenus depuis la sauvegarde
  * (03 §8 étapes 3-4, R-SUP-6, P-DRT-3, P-CST-3). Une transaction, dans l'ordre de la liste ;
  * idempotent. Le dernier admin peut être supprimé : la CLI signale alors l'absence d'admin.
- * `ai_coach` est ignoré : aucun accord coach n'existe avant la brique 4.
- * Un accord santé retiré puis redonné après la sauvegarde est retiré de nouveau (fail-closed, voulu).
+ * Accords santé et `ai_coach` (choix C35) : un accord retiré puis redonné après la sauvegarde est retiré de nouveau
+ * (fail-closed, voulu).
  */
 export async function reapplyPrivacyEvents(
   deps: AppDeps,
@@ -93,8 +93,11 @@ export async function reapplyPrivacyEvents(
       if (event.type === 'account_deleted') {
         await deleteAccount(trx, deps, event.targetId, actor, { enforceLastAdmin: false });
         accountsDeleted += 1;
-      } else if (event.consentType === 'health' && (await isHealthConsentActive(trx, event.targetId))) {
-        await withdrawHealthConsent(trx, deps, event.targetId, actor);
+      } else if (
+        event.consentType !== undefined &&
+        (await isConsentActive(trx, event.targetId, event.consentType))
+      ) {
+        await CONSENT_WITHDRAWALS[event.consentType](trx, deps, event.targetId, actor);
         consentsWithdrawn += 1;
       }
     }

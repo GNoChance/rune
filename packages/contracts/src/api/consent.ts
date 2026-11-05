@@ -58,14 +58,16 @@ export const CONSENT_ACTIONS = ['grant', 'withdraw'] as const;
 export const ConsentActionSchema = z.enum(CONSENT_ACTIONS);
 export type ConsentAction = z.infer<typeof ConsentActionSchema>;
 
+/** `textVersion` doit être la version exacte du texte en vigueur (`CURRENT_CONSENT_TEXTS`, choix C36). */
 export const GrantConsentRequest = z.strictObject({
-  type: ConsentTypeSchema.extract(['health']),
+  type: ConsentTypeSchema,
   textVersion: z.string(),
 });
 export type GrantConsentRequest = z.infer<typeof GrantConsentRequest>;
 
+/** Retrait de l'accord santé, ou de l'accord coach (désactivation du coach, choix C34). */
 export const WithdrawConsentRequest = z.strictObject({
-  type: ConsentTypeSchema.extract(['health']),
+  type: ConsentTypeSchema,
   password: z.string().min(1).max(1024),
 });
 export type WithdrawConsentRequest = z.infer<typeof WithdrawConsentRequest>;

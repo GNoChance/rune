@@ -49,9 +49,12 @@ async function setup(): Promise<Member> {
 }
 
 describe('POST /api/me/consents/health/replay-withdraw (R-SYN-28)', () => {
-  it('rejoue un retrait fait avant le début de l’époque, sans mot de passe', async () => {
+  it('rejoue un retrait fait avant le début de l’époque, sans mot de passe, et interrompt l’échange du coach', async () => {
     const u = await setup();
+    const lease = ctx.deps.coach.exchanges.begin(u.id);
     const res = await replay(u, '2026-10-06T11:00:00.000Z');
+    lease?.done();
+    expect(lease?.signal.reason).toBe('consent_withdrawn');
     expect(res.status).toBe(200);
     const me = (await res.json()) as { consents: { health: { active: boolean } } };
     expect(me.consents.health.active).toBe(false);
@@ -74,10 +77,13 @@ describe('POST /api/me/consents/health/replay-withdraw (R-SYN-28)', () => {
   it.each([
     ['égal au dernier accord', '2026-10-06T10:00:00.000Z'],
     ["égal au début de l'époque", '2026-10-06T12:00:00.000Z'],
-  ])('refuse un retrait %s (409, rien ne change)', async (_label, withdrawnAt) => {
+  ])('refuse un retrait %s (409, rien ne change, l’échange continue)', async (_label, withdrawnAt) => {
     const u = await setup();
     const before = await state(u.id);
+    const lease = ctx.deps.coach.exchanges.begin(u.id);
     const res = await replay(u, withdrawnAt);
+    lease?.done();
+    expect(lease?.signal.aborted).toBe(false);
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: 'conflict' });
     expect(await state(u.id)).toEqual(before);

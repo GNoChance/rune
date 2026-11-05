@@ -1,10 +1,11 @@
 import { type EntityRulesMap, entityRules, SYNC_COLUMNS } from '@rune/contracts';
 import { sql } from 'kysely';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { coachHealthWithdrawHook } from '../../src/coach/consent';
 import type { Migration } from '../../src/db/migrations/index';
 import { createLogger } from '../../src/logger';
 import { HEALTH_WITHDRAW_HOOKS, withdrawHealthConsent } from '../../src/privacy/consent';
-import { createTestContext, createUserAndLogin, type TestContext } from '../support';
+import { createTestContext, createUserAndLogin, insertFixtureRow, type TestContext } from '../support';
 
 let ctx: TestContext;
 afterEach(() => ctx?.close());
@@ -258,8 +259,13 @@ describe('retrait du consentement santé (R-CST-5, P-CST-3, 09 §8)', () => {
 });
 
 describe('HEALTH_WITHDRAW_HOOKS', () => {
-  it('ne porte que les tables dont le retrait réécrit des codes (brique 3)', () => {
-    expect(Object.keys(HEALTH_WITHDRAW_HOOKS).sort()).toEqual(['engine_decision', 'instance_change']);
+  it('porte les tables dont le retrait réécrit des codes (brique 3) et le coach (brique 4)', () => {
+    expect(Object.keys(HEALTH_WITHDRAW_HOOKS).sort()).toEqual([
+      'coach_thread',
+      'engine_decision',
+      'instance_change',
+    ]);
+    expect(HEALTH_WITHDRAW_HOOKS.coach_thread).toBe(coachHealthWithdrawHook);
   });
 
   it('un hook remplace la règle générique pour sa table', async () => {
@@ -271,7 +277,7 @@ describe('HEALTH_WITHDRAW_HOOKS', () => {
         ctx.deps,
         u.id,
         { actorId: u.id, ip: null },
-        { hooks: { t19_c2_log: spy } },
+        { hooks: { ...HEALTH_WITHDRAW_HOOKS, t19_c2_log: spy } },
       );
       expect(spy).toHaveBeenCalledTimes(1);
       expect(spy).toHaveBeenCalledWith(trx, ctx.deps, u.id);
@@ -283,6 +289,41 @@ describe('HEALTH_WITHDRAW_HOOKS', () => {
       expect.objectContaining({ painNote: null }),
       expect.objectContaining({ painNote: null }),
     ]);
+  });
+
+  it('une table sans rev à colonnes C2 et sans crochet : refus clair, rien d’effacé', async () => {
+    const { u } = await setup();
+    await insertFixtureRow(ctx.deps.db, 'coach_thread', {
+      userId: u.id,
+      brief: JSON.stringify({ note: WITNESS }),
+    });
+    const before = await snapshot(u.id);
+    const { coach_thread: _coach, ...withoutCoach } = HEALTH_WITHDRAW_HOOKS;
+    const attempt = ctx.deps.db
+      .transaction()
+      .execute((trx) =>
+        withdrawHealthConsent(trx, ctx.deps, u.id, { actorId: u.id, ip: null }, { hooks: withoutCoach }),
+      );
+    await expect(attempt).rejects.toThrow(/coach_thread.*crochet/);
+    expect(await snapshot(u.id)).toEqual(before);
+    expect((await me(u)).consents.health.active).toBe(true);
+    const thread = await ctx.deps.db
+      .selectFrom('coachThread')
+      .select('brief')
+      .where('userId', '=', u.id)
+      .executeTakeFirstOrThrow();
+    expect(thread.brief).toContain(WITNESS);
+  });
+
+  it('les tables sans rev et sans colonne C2 sont ignorées (usage et signalements du coach)', async () => {
+    const { u } = await setup();
+    const usage = await insertFixtureRow(ctx.deps.db, 'coach_call', { userId: u.id });
+    const report = await insertFixtureRow(ctx.deps.db, 'coach_report', { userId: u.id });
+    expect((await withdraw(u)).status).toBe(200);
+    const kept = (table: 'coachCall' | 'coachReport') =>
+      ctx.deps.db.selectFrom(table).selectAll().where('userId', '=', u.id).execute();
+    expect(await kept('coachCall')).toEqual([usage]);
+    expect(await kept('coachReport')).toEqual([report]);
   });
 });
 

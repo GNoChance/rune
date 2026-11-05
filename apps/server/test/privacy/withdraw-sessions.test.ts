@@ -98,7 +98,10 @@ async function seed(u: Member) {
 
 describe('retrait santé : séances et programmes (spec brique 3 §5.5)', () => {
   it('HEALTH_WITHDRAW_HOOKS porte instance_change et engine_decision', () => {
-    expect(Object.keys(HEALTH_WITHDRAW_HOOKS).sort()).toEqual(['engine_decision', 'instance_change']);
+    // La liste complète (coach compris) est figée par withdraw.test.ts.
+    expect(Object.keys(HEALTH_WITHDRAW_HOOKS)).toEqual(
+      expect.arrayContaining(['engine_decision', 'instance_change']),
+    );
   });
 
   it('efface les champs C2, réécrit les codes PAIN_*, nouveaux rev, rien d autre ne bouge', async () => {

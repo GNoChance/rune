@@ -1,7 +1,8 @@
 import {
   CODE_CHECKS_PER_HOUR,
+  CONSENT_TYPES,
+  CURRENT_CONSENT_TEXTS,
   GrantConsentRequest,
-  HEALTH_CONSENT_TEXT,
   HEALTH_QUESTIONNAIRE,
   HealthScreeningRequest,
   LimitationInput,
@@ -22,15 +23,15 @@ import { httpError } from '../http/errors';
 import { parseJson } from '../http/validate';
 import {
   assertHealthConsent,
+  CONSENT_WITHDRAWALS,
   createLimitation,
   deleteLimitation,
   grantConsent,
   latestGrant,
   saveHealthScreening,
   updateLimitation,
-  withdrawHealthConsent,
 } from './consent';
-import { isHealthConsentActive } from './consent-state';
+import { isConsentActive } from './consent-state';
 
 /** Fenêtre du limiteur de renvoi : la règle est de CODE_CHECKS_PER_HOUR (20) appels par heure et par IP. */
 const REPLAY_WINDOW_MS = 60 * 60 * 1000;
@@ -68,10 +69,11 @@ export function consentRoutes(deps: AppDeps): Hono<AppEnv> {
   const me = (user: SessionUser) =>
     buildMe(deps.db, deps, user.id, { mustChangePassword: user.mustChangePassword });
 
+  // Seule la version exacte du texte en vigueur vaut accord (choix C36).
   routes.post('/consents', requireUser, async (c) => {
     const user = userOf(c);
     const body = await parseJson(c, GrantConsentRequest);
-    if (body.textVersion !== HEALTH_CONSENT_TEXT.version)
+    if (body.textVersion !== CURRENT_CONSENT_TEXTS[body.type].version)
       throw httpError('validation', { field: 'textVersion' });
     const ip = validClientIp(c);
     await deps.db
@@ -80,6 +82,7 @@ export function consentRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json(await me(user));
   });
 
+  // Après la validation du retrait, l'échange du coach en cours s'arrête (`consent_withdrawn`, spec brique 4 §8.7).
   routes.post('/consents/withdraw', requireUser, async (c) => {
     const user = userOf(c);
     const body = await parseJson(c, WithdrawConsentRequest);
@@ -87,31 +90,36 @@ export function consentRoutes(deps: AppDeps): Hono<AppEnv> {
     await verifyUserPassword(deps.db, deps, user, body.password, ip);
     await deps.db
       .transaction()
-      .execute((trx) => withdrawHealthConsent(trx, deps, user.id, { actorId: user.id, ip }));
+      .execute((trx) => CONSENT_WITHDRAWALS[body.type](trx, deps, user.id, { actorId: user.id, ip }));
+    deps.coach.exchanges.abortFor(user.id, 'consent_withdrawn');
     return c.json(await me(user));
   });
 
-  // R-SYN-28 : renvoi d'un retrait perdu par une restauration, sans mot de passe (exception à P-AUT-5).
-  routes.post('/consents/health/replay-withdraw', requireUser, async (c) => {
-    const user = userOf(c);
-    const ip = validClientIp(c);
-    const verdict = replayLimiter(deps).hit(ip);
-    if (!verdict.allowed) throw httpError('rate_limited', { retryAfterS: verdict.retryAfterS });
-    const body = await parseJson(c, ReplayWithdrawRequest);
-    const withdrawnAt = new Date(body.withdrawnAt).getTime();
-    await deps.db.transaction().execute(async (trx) => {
-      const grant = await latestGrant(trx, user.id, 'health');
-      const { epochStartedAt } = await getServerMeta(trx);
-      const accepted =
-        grant !== undefined &&
-        (await isHealthConsentActive(trx, user.id)) &&
-        withdrawnAt > new Date(grant.createdAt).getTime() &&
-        withdrawnAt < new Date(epochStartedAt).getTime();
-      if (!accepted) throw httpError('conflict');
-      await withdrawHealthConsent(trx, deps, user.id, { actorId: user.id, ip }, { replay: true });
+  // R-SYN-28 : renvoi d'un retrait perdu par une restauration, sans mot de passe (exception à P-AUT-5), pour chaque
+  // accord (choix C35), sous un seul limiteur.
+  for (const type of CONSENT_TYPES) {
+    routes.post(`/consents/${type}/replay-withdraw`, requireUser, async (c) => {
+      const user = userOf(c);
+      const ip = validClientIp(c);
+      const verdict = replayLimiter(deps).hit(ip);
+      if (!verdict.allowed) throw httpError('rate_limited', { retryAfterS: verdict.retryAfterS });
+      const body = await parseJson(c, ReplayWithdrawRequest);
+      const withdrawnAt = new Date(body.withdrawnAt).getTime();
+      await deps.db.transaction().execute(async (trx) => {
+        const grant = await latestGrant(trx, user.id, type);
+        const { epochStartedAt } = await getServerMeta(trx);
+        const accepted =
+          grant !== undefined &&
+          (await isConsentActive(trx, user.id, type)) &&
+          withdrawnAt > new Date(grant.createdAt).getTime() &&
+          withdrawnAt < new Date(epochStartedAt).getTime();
+        if (!accepted) throw httpError('conflict');
+        await CONSENT_WITHDRAWALS[type](trx, deps, user.id, { actorId: user.id, ip }, { replay: true });
+      });
+      deps.coach.exchanges.abortFor(user.id, 'consent_withdrawn');
+      return c.json(await me(user));
     });
-    return c.json(await me(user));
-  });
+  }
 
   routes.put('/health-screening', requireUser, async (c) => {
     const user = userOf(c);

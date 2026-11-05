@@ -8,6 +8,7 @@ import {
   createSyncTestContext,
   createUserAndLogin,
   dumpDatabase,
+  insertFixtureRow,
   makeOp,
   restoreInPlace,
   seqIds,
@@ -148,7 +149,7 @@ describe('privacy:reapply après restauration (03 §17 n°10, P-DRT-3, P-CST-3)'
     ]);
   });
 
-  it('réapplication : ignore les événements antérieurs à since et le retrait ai_coach', async () => {
+  it('réapplication : ignore les événements antérieurs à since et le retrait d’un accord inactif', async () => {
     ctx = await createSyncTestContext();
     const y = await createUserAndLogin(ctx, { username: 'yasmine' });
     await equipHealth(y);
@@ -169,6 +170,60 @@ describe('privacy:reapply après restauration (03 §17 n°10, P-DRT-3, P-CST-3)'
     expect(await reapplyPrivacyEvents(ctx.deps, list)).toEqual({ accountsDeleted: 0, consentsWithdrawn: 0 });
     expect(await userExists(y.id)).toBe(true);
     expect(dumpDatabase(ctx.deps.sqlite)).toContain(WITNESS);
+  });
+
+  it('réapplique un retrait ai_coach survenu après la sauvegarde (choix C35)', async () => {
+    ctx = await createSyncTestContext();
+    const y = await createUserAndLogin(ctx, { username: 'yasmine' });
+    const grant = { type: 'ai_coach', textVersion: '1.0' };
+    expect((await call(y, '/api/me/consents', 'POST', grant)).status).toBe(200);
+    const thread = await insertFixtureRow(ctx.deps.db, 'coach_thread', { userId: y.id });
+    await insertFixtureRow(ctx.deps.db, 'coach_message', { userId: y.id, threadId: thread.id });
+    const usage = await insertFixtureRow(ctx.deps.db, 'coach_call', { userId: y.id, threadId: thread.id });
+    ctx.clock.advance(1000);
+
+    await snapshotDb(ctx, S);
+    const since = now();
+    ctx.clock.advance(60_000);
+    const withdraw = await call(y, '/api/me/consents/withdraw', 'POST', {
+      type: 'ai_coach',
+      password: y.password,
+    });
+    expect(withdraw.status).toBe(200);
+    const events = await collectPrivacyEvents(ctx.deps.db, since);
+    expect(events).toEqual([
+      { type: 'consent_revoked', at: expect.any(String), targetId: y.id, consentType: 'ai_coach' },
+    ]);
+
+    await restoreInPlace(ctx, S);
+    const threads = () =>
+      ctx.deps.db.selectFrom('coachThread').select('id').where('userId', '=', y.id).execute();
+    expect(await threads()).toEqual([{ id: thread.id }]);
+
+    ctx.clock.advance(1000);
+    const list = { since, collectedAt: now(), source: 'test', events };
+    expect(await reapplyPrivacyEvents(ctx.deps, list)).toEqual({ accountsDeleted: 0, consentsWithdrawn: 1 });
+    expect(await threads()).toEqual([]);
+    expect(
+      await ctx.deps.db.selectFrom('coachMessage').select('id').where('userId', '=', y.id).execute(),
+    ).toEqual([]);
+    expect(
+      await ctx.deps.db
+        .selectFrom('coachCall')
+        .select(['id', 'threadId'])
+        .where('userId', '=', y.id)
+        .execute(),
+    ).toEqual([{ id: usage.id, threadId: null }]);
+    const me = (await (await call(y, '/api/me')).json()) as { consents: { aiCoach: { active: boolean } } };
+    expect(me.consents.aiCoach.active).toBe(false);
+    const revoked = await ctx.deps.db
+      .selectFrom('securityEvent')
+      .select(['actorId', 'details'])
+      .where('type', '=', 'consent_revoked')
+      .execute();
+    expect(revoked).toEqual([{ actorId: null, details: JSON.stringify({ consentType: 'ai_coach' }) }]);
+
+    expect(await reapplyPrivacyEvents(ctx.deps, list)).toEqual({ accountsDeleted: 0, consentsWithdrawn: 0 });
   });
 
   it('supprime le dernier admin sans last_admin (enforceLastAdmin: false)', async () => {

@@ -56,10 +56,10 @@ describe('POST /api/me/consents (R-CST-1)', () => {
     expect(JSON.parse(logged[0]?.details ?? 'null')).toEqual({ consentType: 'health' });
   });
 
-  it('refuse une autre version du texte ou un autre type', async () => {
+  it('refuse une autre version du texte ou un type inconnu', async () => {
     const u = await setup();
     expect((await grant(u, { type: 'health', textVersion: '0.9' })).status).toBe(400);
-    expect((await grant(u, { type: 'ai_coach', textVersion: '1.0' })).status).toBe(400);
+    expect((await grant(u, { type: 'nutrition', textVersion: '1.0' })).status).toBe(400);
     expect(await consentEvents(u.id)).toHaveLength(0);
   });
 
