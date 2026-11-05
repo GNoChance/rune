@@ -146,8 +146,11 @@ const KEPT_SESSIONS = 3;
 const LAST_SESSIONS = 1;
 const FREE_SESSION_NAME = 'Séance libre';
 
-/** Sans lieu principal, tout est faisable (spec brique 2 §4.1) : le slot montre l'exercice prévu. */
-const ANYWHERE: PlaceContext = {
+/**
+ * Lieu de résolution sans lieu principal : tout est faisable (spec brique 2 §4.1), le slot montre l'exercice prévu.
+ * Le même pour le dossier et pour le contexte de la séance prévue côté serveur (`loadPlanContext`).
+ */
+export const ANYWHERE: PlaceContext = {
   id: '',
   equipment: new Set(EQUIPMENT),
   loadSettings: defaultLoadSettings('gym'),

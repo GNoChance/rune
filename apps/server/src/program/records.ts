@@ -139,7 +139,8 @@ function parseLoadSettings(text: string | null | undefined): LoadSettings | null
   }
 }
 
-const isEquipmentCode = (code: string): code is EquipmentCode =>
+/** Code de la taxonomie du matériel (une ligne en base peut porter un code retiré). */
+export const isEquipmentCode = (code: string): code is EquipmentCode =>
   (EQUIPMENT as readonly string[]).includes(code);
 
 /** Lieu tel que le moteur le lit, avec ce que le téléphone affiche (`places-repo`). */

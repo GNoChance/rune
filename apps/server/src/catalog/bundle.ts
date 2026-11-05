@@ -122,11 +122,14 @@ export async function rebuildCatalog(
 
 /**
  * Bloc à servir : celui en mémoire s'il porte la version de `server_meta`, sinon reconstruit depuis la base (rien
- * en mémoire, ou écriture annulée après sa reconstruction).
+ * en mémoire, ou écriture annulée après sa reconstruction). `db` : la transaction de l'appelant s'il en tient une (une
+ * requête sur `deps.db` y lèverait) ; la reconstruction s'y fait alors, sinon dans sa propre transaction.
  */
-export async function currentCatalog(deps: AppDeps): Promise<CatalogBundle> {
+export async function currentCatalog(deps: AppDeps, db: DbExecutor = deps.db): Promise<CatalogBundle> {
   const bundle = getServedCatalog(deps);
-  const { catalogVersion: stored } = await getServerMeta(deps.db);
+  const { catalogVersion: stored } = await getServerMeta(db);
   if (bundle !== null && bundle.version === stored) return bundle;
-  return deps.db.transaction().execute((trx) => rebuildCatalog(trx, deps));
+  return db.isTransaction
+    ? rebuildCatalog(db, deps)
+    : db.transaction().execute((trx) => rebuildCatalog(trx, deps));
 }

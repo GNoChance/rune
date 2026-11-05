@@ -1,24 +1,19 @@
 import {
-  type AgeBand,
   type CatalogBundle,
-  type CoachAgeBand,
   CURRENT_CONSENT_TEXTS,
-  defaultLoadSettings,
-  EQUIPMENT,
   InstanceChangeOperationSchema,
   MAX_CHANGE_OPERATIONS,
   maxExerciseLevel,
 } from '@rune/contracts';
 import {
-  ageBandOn,
+  ANYWHERE,
   type BriefLimitation,
   type BriefPlaceInput,
   type BriefProgramInput,
   type BriefSession,
   type CoachBriefInput,
-  coachAgeBand,
+  expandEquipment,
   lastLoadsOf,
-  type PlaceContext,
   type PlanInput,
   parisDate,
   parisDaysBetween,
@@ -30,58 +25,26 @@ import {
   UnknownRulesVersionError,
 } from '@rune/domain';
 import { z } from 'zod';
-import { userTraits } from '../auth/me';
-import { getServedCatalog, rebuildCatalog } from '../catalog/bundle';
+import { traitsOn } from '../auth/me';
+import { currentCatalog } from '../catalog/bundle';
 import type { DbExecutor } from '../db/schema';
-import { getServerMeta } from '../db/server-meta';
 import type { AppDeps } from '../deps';
 import { getConsentState } from '../privacy/consent-state';
 import { activeInstance, type InstanceRow } from '../program/enroll';
-import { toSessionRecords } from '../program/records';
-import { loadInput, parseSnapshot, placesOf } from '../program/replay-service';
+import { isEquipmentCode, toPlaceContext, toSessionRecords } from '../program/records';
+import { loadInput, parseSnapshot, placeRowsOf } from '../program/replay-service';
 
 /*
  * Entrée du dossier du coach (spec brique 4 §9) et contexte de la séance prévue, rassemblés par le serveur avec ses
- * chargeurs existants : rejeu de l'instance (`loadInput`), lieux (`placesOf`), séances (`toSessionRecords`), accords,
- * catalogue servi. Lecture seule : rien n'est écrit (pas même l'expiration des propositions, filtrées à la lecture).
- * R-AGE-3 : la date de naissance n'est lue qu'ici, et passe aussitôt à `age.ts` ; l'entrée n'en garde que `audience`
- * et `ageBand`.
+ * chargeurs existants : rejeu de l'instance (`loadInput`), lieux (`placeRowsOf`), séances (`toSessionRecords`),
+ * accords, catalogue servi (`currentCatalog`). Lecture seule : rien n'est écrit (pas même l'expiration des
+ * propositions, filtrées à la lecture), hors reconstruction du bloc servi s'il manque. R-AGE-3 : l'âge vient de
+ * `traitsOn` au jour de Paris de `now` ; l'entrée n'en garde que `audience` et `ageBand`.
  */
 
 const DAY_MS = 86_400_000;
 
-/** Sans lieu principal, tout est faisable (spec brique 2 §4.1), comme dans le dossier. */
-const ANYWHERE: PlaceContext = {
-  id: '',
-  equipment: new Set(EQUIPMENT),
-  loadSettings: defaultLoadSettings('gym'),
-};
-
 const Operations = z.array(InstanceChangeOperationSchema).min(1).max(MAX_CHANGE_OPERATIONS);
-
-/** Public et tranche d'âge du coach au jour de Paris `today`, calculés par `age.ts` (R-AGE-3). */
-export async function coachAgeOf(
-  db: DbExecutor,
-  userId: string,
-  today: string,
-): Promise<{ audience: AgeBand; ageBand: CoachAgeBand }> {
-  const { birthDate } = await db
-    .selectFrom('user')
-    .select('birthDate')
-    .where('id', '=', userId)
-    .executeTakeFirstOrThrow();
-  return { audience: ageBandOn(birthDate, today), ageBand: coachAgeBand(birthDate, today) };
-}
-
-/**
- * Bloc servi, comme `currentCatalog`, mais lu dans l'exécuteur de l'appelant : une requête sur `deps.db` lèverait
- * dans la transaction d'ouverture du fil.
- */
-async function servedCatalog(db: DbExecutor, deps: AppDeps): Promise<CatalogBundle> {
-  const bundle = getServedCatalog(deps);
-  const { catalogVersion } = await getServerMeta(db);
-  return bundle !== null && bundle.version === catalogVersion ? bundle : rebuildCatalog(db, deps);
-}
 
 function skip(deps: AppDeps, code: string): void {
   deps.logger.warn('coach_replay_skipped', { code });
@@ -142,29 +105,29 @@ async function consentsOf(db: DbExecutor, userId: string): Promise<CoachBriefInp
 
 /**
  * Lieux vivants, triés par identifiant (ordre binaire) : `lieu_2`… désigne le même lieu dans le dossier figé et dans
- * les outils. Matériel étendu par ses implications et réglages de charge résolus (lieu, salle, défaut), ceux du
- * rejeu (`placesOf`).
+ * les outils. Matériel vivant déclaré, sans ses implications (le dossier les étend pour résoudre les slots), trié ;
+ * réglages de charge résolus (lieu, salle, défaut), ceux du rejeu.
  */
 async function livePlaces(db: DbExecutor, userId: string): Promise<BriefPlaceInput[]> {
-  const contexts = await placesOf(db, userId, { live: true });
-  const rows = await db
+  const rows = new Map((await placeRowsOf(db, userId, { live: true })).map((p) => [p.id, p]));
+  const places = await db
     .selectFrom('place')
-    .select(['id', 'kind', 'name', 'isPrimary'])
+    .select(['id', 'name', 'isPrimary'])
     .where('ownerId', '=', userId)
     .where('deletedAt', 'is', null)
     .orderBy('id')
     .execute();
-  return rows.flatMap((r) => {
-    const place = contexts.get(r.id);
+  return places.flatMap((r) => {
+    const place = rows.get(r.id);
     if (place === undefined) return [];
     return [
       {
         id: r.id,
         name: r.name,
-        kind: r.kind,
+        kind: place.kind,
         primary: r.isPrimary === 1,
-        equipment: [...place.equipment],
-        loadSettings: place.loadSettings,
+        equipment: [...new Set(place.equipment.filter(isEquipmentCode))].sort(),
+        loadSettings: toPlaceContext(place).loadSettings,
       },
     ];
   });
@@ -408,12 +371,11 @@ export async function loadBriefInput(
   now: Date,
 ): Promise<CoachBriefInput> {
   const today = parisDate(now);
-  const { audience, ageBand } = await coachAgeOf(db, userId, today);
+  const { audience, ageBand, cautious } = await traitsOn(db, userId, today);
   const consents = await consentsOf(db, userId);
   const health = consents.health && consents.coach;
   const profile = await trainingProfile(db, userId);
-  const { cautious } = await userTraits(db, deps, userId);
-  const catalog = await servedCatalog(db, deps);
+  const catalog = await currentCatalog(deps, db);
   return {
     today,
     audience,
@@ -448,8 +410,7 @@ export async function loadPlanContext(
   now: Date,
 ): Promise<Omit<PlanInput, 'replay' | 'workoutId'>> {
   const today = parisDate(now);
-  const { audience } = await coachAgeOf(db, userId, today);
-  const { cautious } = await userTraits(db, deps, userId);
+  const { audience, cautious } = await traitsOn(db, userId, today);
   const profile = await trainingProfile(db, userId);
   const primary = (await livePlaces(db, userId)).find((p) => p.primary);
   const instance = await activeInstance(db, userId);
@@ -458,8 +419,12 @@ export async function loadPlanContext(
     place:
       primary === undefined
         ? ANYWHERE
-        : { id: primary.id, equipment: new Set(primary.equipment), loadSettings: primary.loadSettings },
-    catalog: (await servedCatalog(db, deps)).exercises,
+        : {
+            id: primary.id,
+            equipment: expandEquipment(primary.equipment),
+            loadSettings: primary.loadSettings,
+          },
+    catalog: (await currentCatalog(deps, db)).exercises,
     profile: cautious ? 'cautious' : 'adult',
     ageBand: audience,
     context:

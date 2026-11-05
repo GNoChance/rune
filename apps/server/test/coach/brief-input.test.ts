@@ -1,5 +1,5 @@
 import { AI_COACH_CONSENT_TEXT } from '@rune/contracts';
-import { buildCoachBrief, lastLoadsOf, replayInstance } from '@rune/domain';
+import { ANYWHERE, buildCoachBrief, lastLoadsOf, replayInstance } from '@rune/domain';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadBriefInput, loadPlanContext, loadReplayInput } from '../../src/coach/brief-input';
 import { openTodayThread } from '../../src/coach/threads';
@@ -97,6 +97,28 @@ describe('loadBriefInput', () => {
     expect(dump(loaded)).not.toContain(BIRTH);
     const thread = await openTodayThread(ctx.deps, u.id, ctx.clock.now());
     expect(dump(thread)).not.toContain(BIRTH);
+  });
+
+  it('le jour des 18 ans : public et profil du moteur pris au même instant `now`, pas à l’horloge', async () => {
+    ctx = await createTestContext({ now: '2026-11-03T10:00:00.000Z' });
+    const u = await createUserAndLogin(ctx, { birthDate: '2008-11-04' });
+    const birthday = new Date('2026-11-04T10:00:00.000Z');
+    const adult = await loadBriefInput(ctx.deps.db, ctx.deps, u.id, birthday);
+    expect(adult).toMatchObject({ audience: 'adult', ageBand: '18-29', profile: { engineProfile: 'adult' } });
+    const thread = await openTodayThread(ctx.deps, u.id, birthday);
+    expect(thread).toMatchObject({ day: '2026-11-04', audience: 'adult', promptVersion: 'coach-1/adult' });
+    expect(JSON.parse(thread.brief ?? '')).toMatchObject({
+      audience: 'adult',
+      profile: { engine_profile: 'adult' },
+    });
+
+    ctx.clock.set('2026-11-04T10:00:00.000Z');
+    const eve = await loadBriefInput(ctx.deps.db, ctx.deps, u.id, new Date('2026-11-03T10:00:00.000Z'));
+    expect(eve).toMatchObject({
+      audience: 'minor',
+      ageBand: '16-17',
+      profile: { engineProfile: 'cautious' },
+    });
   });
 
   it("séances terminées des 28 derniers jours : celle d'il y a 29 jours, une en cours et une supprimée absentes", async () => {
@@ -222,19 +244,34 @@ describe('loadBriefInput', () => {
         ...(id === 'place-b' ? { deletedAt: '2026-10-01T10:00:00.000Z' } : {}),
       });
     }
+    for (const code of ['dumbbells', 'adjustable_bench']) {
+      await insertFixtureRow(ctx.deps.db, 'home_equipment', {
+        id: `place-a:${code}`,
+        ownerId: u.id,
+        placeId: 'place-a',
+        equipmentCode: code,
+      });
+    }
     await insertFixtureRow(ctx.deps.db, 'home_equipment', {
-      id: 'place-a:dumbbells',
+      id: 'place-a:chair',
       ownerId: u.id,
       placeId: 'place-a',
-      equipmentCode: 'dumbbells',
+      deletedAt: '2026-10-01T10:00:00.000Z',
     });
-    const { places } = await input(u.id);
+    const loaded = await input(u.id);
+    const { places } = loaded;
     expect(places.map((p) => [p.id, p.primary])).toEqual([
       ['place-a', false],
       ['place-c', true],
     ]);
-    expect(places[0]).toMatchObject({ kind: 'home', name: 'Chez place-a', equipment: ['dumbbells'] });
+    // Codes déclarés et vivants, sans leurs implications (`flat_bench`) : le dossier les étend lui-même.
+    expect(places[0]).toMatchObject({
+      kind: 'home',
+      name: 'Chez place-a',
+      equipment: ['adjustable_bench', 'dumbbells'],
+    });
     expect(places[0]?.loadSettings).toEqual(expect.objectContaining({ barG: expect.any(Number) }));
+    expect(buildCoachBrief(loaded).brief.places[1]?.equipment).toEqual(['adjustable_bench', 'dumbbells']);
   });
 
   it('programme : celui du rejeu, propositions en attente seulement (ni périmées, ni d’une autre révision)', async () => {
@@ -278,8 +315,10 @@ describe('loadBriefInput', () => {
 });
 
 describe('loadReplayInput', () => {
-  it('replayInstance(loadReplayInput) rend les slot_state que replayInstanceInDb vient d’écrire', async () => {
+  it('replayInstance(loadReplayInput) rend les slot_state que replayInstanceInDb vient d’écrire, colonne par colonne', async () => {
     const u = await setup();
+    // Accord santé : `pain_streak` est écrit tel que le rejeu le rend.
+    await grantHealth(ctx, u.id);
     const instanceId = await enroll(ctx, u.id, TEMPLATE);
     await push(u, {
       instanceId,
@@ -298,27 +337,34 @@ describe('loadReplayInput', () => {
       .prepare('SELECT * FROM slot_state WHERE deleted_at IS NULL ORDER BY id')
       .all() as Row[];
     expect(stored.length).toBeGreaterThan(0);
-    expect(
-      states.map((s) => ({
-        id: s.id,
-        mode: s.mode,
-        loadG: s.loadG,
-        targetReps: s.targetReps,
-        calibrationLeft: s.calibrationLeft,
-        lastSessionId: s.lastSessionId,
-        suspended: s.suspended ? 1 : 0,
-      })),
-    ).toEqual(
-      stored.map((r) => ({
-        id: r.id,
-        mode: r.mode,
-        loadG: r.load_g,
-        targetReps: r.target_reps,
-        calibrationLeft: r.calibration_left,
-        lastSessionId: r.last_session_id,
-        suspended: r.suspended,
-      })),
+    const expected = states.map((s) => ({
+      id: s.id,
+      owner_id: u.id,
+      instance_id: s.instanceId,
+      slot_id: s.slotId,
+      exercise_id: s.exerciseId,
+      mode: s.mode,
+      load_g: s.loadG,
+      target_reps: s.targetReps,
+      variant_rank: s.variantRank,
+      duration_s: s.durationS,
+      calibration_left: s.calibrationLeft,
+      no_progress_count: s.noProgressCount,
+      stall_rank: s.stallRank,
+      pain_streak: s.painStreak,
+      suspended: s.suspended ? 1 : 0,
+      last_session_id: s.lastSessionId,
+      rules_version: s.rulesVersion,
+      machine_step_g_override: null,
+      deleted_at: null,
+    }));
+    // Toutes les colonnes de la table sauf l'estampille de synchro (rev, dates, auteur), écrite par le serveur.
+    const stamp = ['rev', 'created_at', 'updated_at', 'updated_by'];
+    const compared = stored.map((r) =>
+      Object.fromEntries(Object.entries(r).filter(([k]) => !stamp.includes(k))),
     );
+    expect(Object.keys(stored[0] ?? {}).sort()).toEqual([...Object.keys(expected[0] ?? {}), ...stamp].sort());
+    expect(compared).toEqual(expected);
   });
 
   it('sans instance active : null, et pas de programme dans le dossier', async () => {
@@ -346,8 +392,17 @@ describe('loadPlanContext', () => {
       exercises: [{ slotId: null, exerciseId: 'dumbbell-bench-press', sets: [{ loadG: 18_000 }] }],
     });
 
+    await insertFixtureRow(ctx.deps.db, 'home_equipment', {
+      id: `${place.id as string}:adjustable_bench`,
+      ownerId: u.id,
+      placeId: place.id,
+      equipmentCode: 'adjustable_bench',
+    });
+
     const plan = await loadPlanContext(ctx.deps.db, ctx.deps, u.id, ctx.clock.now());
     expect(plan.place.id).toBe(place.id);
+    // Le contexte de `planWorkout` attend le matériel étendu (R-EQ-2).
+    expect([...plan.place.equipment].sort()).toEqual(['adjustable_bench', 'flat_bench']);
     expect(plan).toMatchObject({
       profile: 'adult',
       ageBand: 'adult',
@@ -370,7 +425,7 @@ describe('loadPlanContext', () => {
     const u = await createUserAndLogin(ctx, { birthDate: '2009-01-01' });
     const plan = await loadPlanContext(ctx.deps.db, ctx.deps, u.id, ctx.clock.now());
     expect(plan).toMatchObject({ profile: 'cautious', ageBand: 'minor', context: 'gym', maxLevel: 2 });
-    expect(plan.place.equipment.has('barbell')).toBe(true);
+    expect(plan.place).toBe(ANYWHERE);
     expect(plan.lastLoadByExercise).toEqual(lastLoadsOf([]));
   });
 });

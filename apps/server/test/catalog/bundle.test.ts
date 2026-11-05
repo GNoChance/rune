@@ -298,4 +298,38 @@ describe('currentCatalog', () => {
     expect(served.version).toBe(committed.version);
     expect(served.exercises[0]?.name).toBe('Exercice published-sheet');
   });
+
+  it("dans la transaction de l'appelant : lu et reconstruit dans `trx`, sans requête sur deps.db", async () => {
+    await setup();
+    await seedStatuses();
+    expect(getServedCatalog(ctx.deps)).toBeNull();
+    const [rebuilt, served] = await ctx.deps.db.transaction().execute(async (trx) => {
+      const first = await currentCatalog(ctx.deps, trx);
+      return [first, await currentCatalog(ctx.deps, trx)] as const;
+    });
+    expect(rebuilt.exercises.map((s) => s.id)).toEqual(['published-sheet', 'retired-published']);
+    expect(served).toBe(rebuilt);
+    expect((await getServerMeta(ctx.deps.db)).catalogVersion).toBe(rebuilt.version);
+  });
+
+  it('reconstruction annulée avec la transaction de l’appelant : le bloc de la base est servi ensuite', async () => {
+    await setup();
+    await seedStatuses();
+    const committed: CatalogBundle = await rebuild();
+    await expect(
+      ctx.deps.db.transaction().execute(async (trx) => {
+        await trx
+          .updateTable('exercise')
+          .set({ name: 'Perdu' })
+          .where('id', '=', 'published-sheet')
+          .execute();
+        await trx.updateTable('serverMeta').set({ catalogVersion: 'périmée' }).execute();
+        expect((await currentCatalog(ctx.deps, trx)).exercises[0]?.name).toBe('Perdu');
+        throw new Error('échec après la reconstruction');
+      }),
+    ).rejects.toThrow('échec');
+    const served = await currentCatalog(ctx.deps);
+    expect(served.version).toBe(committed.version);
+    expect(served.exercises[0]?.name).toBe('Exercice published-sheet');
+  });
 });

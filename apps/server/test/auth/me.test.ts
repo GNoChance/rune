@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { userTraits } from '../../src/auth/me';
+import { traitsOn, userTraits } from '../../src/auth/me';
 import { createTestContext, createUser, insertFixtureRow, login, type TestContext } from '../support';
 
 let ctx: TestContext;
@@ -44,6 +44,22 @@ describe('GET /api/me', () => {
     ctx.clock.set('2026-10-06T22:30:00.000Z');
     expect(await me(cookie)).toMatchObject({ ageBand: 'adult', cautious: false });
     expect(await userTraits(ctx.deps.db, ctx.deps, u.id)).toEqual({ ageBand: 'adult', cautious: false });
+  });
+
+  it('traitsOn : public, tranche du coach et prudence au jour donné, pas à celui de l’horloge (R-AGE-3)', async () => {
+    ctx = await createTestContext({ now: '2026-11-03T10:00:00.000Z' });
+    const u = await createUser(ctx, { birthDate: '2008-11-04' });
+    expect(await traitsOn(ctx.deps.db, u.id, '2026-11-03')).toEqual({
+      audience: 'minor',
+      ageBand: '16-17',
+      cautious: true,
+    });
+    expect(await traitsOn(ctx.deps.db, u.id, '2026-11-04')).toEqual({
+      audience: 'adult',
+      ageBand: '18-29',
+      cautious: false,
+    });
+    expect(await userTraits(ctx.deps.db, ctx.deps, u.id)).toEqual({ ageBand: 'minor', cautious: true });
   });
 
   it('mode prudent et précaution déclarée (R-CST-7)', async () => {

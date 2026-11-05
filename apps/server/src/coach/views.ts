@@ -1,4 +1,5 @@
 import {
+  type CoachBrief,
   type CoachBriefResponse,
   CoachBriefSchema,
   type CoachMessageView,
@@ -19,11 +20,12 @@ import {
   parisMonthOf,
 } from '@rune/domain';
 import type { Selectable } from 'kysely';
+import { traitsOn } from '../auth/me';
 import type { CoachMessageTable, DbExecutor } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { httpError } from '../http/errors';
 import { getConsentState } from '../privacy/consent-state';
-import { coachAgeOf, loadBriefInput } from './brief-input';
+import { loadBriefInput } from './brief-input';
 import { readCoachState } from './state';
 import { personaOf, type ThreadRow, todayThread } from './threads';
 
@@ -153,7 +155,7 @@ export async function coachStatus(
       currentVersion: currentConsentVersion,
       needsRenewal: consent.active && consent.textVersion !== currentConsentVersion,
     },
-    audience: thread?.audience ?? (await coachAgeOf(db, userId, today)).audience,
+    audience: thread?.audience ?? (await traitsOn(db, userId, today)).audience,
     persona: thread?.persona ?? (await personaOf(db, userId)),
     today: {
       threadId: thread?.id ?? null,
@@ -222,7 +224,19 @@ export async function coachThread(db: DbExecutor, userId: string, id: string): P
 }
 
 /**
- * `GET /api/coach/brief` (§16.5) : le dossier stocké du fil du jour, analysé (`null` après le retrait santé) ; sans
+ * Dossier stocké d'un fil, exactement (§9, transparence : l'ordre de ses clés compris) ; null après le retrait santé.
+ * Au schéma courant, il doit passer `CoachBriefSchema` (sinon erreur interne) ; celui d'un ancien `brief_schema` est
+ * rendu brut, sans être validé par un schéma qui n'est pas le sien.
+ */
+function storedBrief(deps: AppDeps, thread: ThreadRow): CoachBrief | null {
+  if (thread.brief === null) return null;
+  const raw: unknown = JSON.parse(thread.brief);
+  if (thread.briefSchema === deps.coachConfig.briefSchema) CoachBriefSchema.parse(raw);
+  return raw as CoachBrief;
+}
+
+/**
+ * `GET /api/coach/brief` (§16.5) : le dossier stocké du fil du jour, tel quel (`null` après le retrait santé) ; sans
  * fil, un aperçu construit à `now`, jamais stocké (`preview`).
  */
 export async function coachBrief(
@@ -234,12 +248,7 @@ export async function coachBrief(
   const day = parisDate(now);
   const thread = await todayThread(db, userId, day);
   if (thread !== undefined) {
-    return {
-      brief: thread.brief === null ? null : CoachBriefSchema.parse(JSON.parse(thread.brief)),
-      threadId: thread.id,
-      day,
-      preview: false,
-    };
+    return { brief: storedBrief(deps, thread), threadId: thread.id, day, preview: false };
   }
   const { brief } = buildCoachBrief(await loadBriefInput(db, deps, userId, now));
   return { brief, threadId: null, day, preview: true };

@@ -1,5 +1,10 @@
-import { ADMIN_PASSWORD_REMINDER_MONTHS, type AgeBand, type MeResponse } from '@rune/contracts';
-import { ageBandOn, computeCautious, parisDate, usernameKey } from '@rune/domain';
+import {
+  ADMIN_PASSWORD_REMINDER_MONTHS,
+  type AgeBand,
+  type CoachAgeBand,
+  type MeResponse,
+} from '@rune/contracts';
+import { ageBandOn, coachAgeBand, computeCautious, parisDate, usernameKey } from '@rune/domain';
 import type { SessionUser } from '../app-env';
 import { writeStamp } from '../db/rev';
 import type { DbExecutor } from '../db/schema';
@@ -20,14 +25,15 @@ function addMonths(iso: string, months: number): Date {
 }
 
 /**
- * Point d'extension R-AGE-3 : tranche d'âge et mode prudent, seuls éléments d'âge exposés
- * aux autres briques (jamais `birthDate`).
+ * Point d'extension R-AGE-3, seul lecteur de la date de naissance : public (`adult` | `minor`), tranche d'âge du coach
+ * et mode prudent au jour de Paris `today`, calculés par `age.ts` ; seuls éléments d'âge exposés aux autres briques
+ * (jamais `birthDate`).
  */
-export async function userTraits(
+export async function traitsOn(
   db: DbExecutor,
-  deps: AppDeps,
   userId: string,
-): Promise<{ ageBand: AgeBand; cautious: boolean }> {
+  today: string,
+): Promise<{ audience: AgeBand; ageBand: CoachAgeBand; cautious: boolean }> {
   const user = await db
     .selectFrom('user')
     .select('birthDate')
@@ -45,14 +51,24 @@ export async function userTraits(
     .where('ownerId', '=', userId)
     .where('deletedAt', 'is', null)
     .executeTakeFirst();
-  const ageBand = ageBandOn(user.birthDate, parisDate(deps.clock.now()));
+  const audience = ageBandOn(user.birthDate, today);
   const cautious = computeCautious({
-    ageBand,
+    ageBand: audience,
     cautiousMode: profile?.cautiousMode === 1,
     healthConsentActive: await isHealthConsentActive(db, userId),
     caution: screening?.caution == null ? null : screening.caution === 1,
   });
-  return { ageBand, cautious };
+  return { audience, ageBand: coachAgeBand(user.birthDate, today), cautious };
+}
+
+/** `traitsOn` au jour de Paris de l'horloge : tranche (`adult` | `minor`) et mode prudent. */
+export async function userTraits(
+  db: DbExecutor,
+  deps: AppDeps,
+  userId: string,
+): Promise<{ ageBand: AgeBand; cautious: boolean }> {
+  const { audience, cautious } = await traitsOn(db, userId, parisDate(deps.clock.now()));
+  return { ageBand: audience, cautious };
 }
 
 export async function buildMe(

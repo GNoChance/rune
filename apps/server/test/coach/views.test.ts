@@ -14,7 +14,14 @@ import {
   threadView,
 } from '../../src/coach/views';
 import { grantConsent } from '../../src/privacy/consent';
-import { createTestContext, createUser, enableCoach, insertFixtureRow, type TestContext } from '../support';
+import {
+  createTestContext,
+  createUser,
+  dumpDatabase,
+  enableCoach,
+  insertFixtureRow,
+  type TestContext,
+} from '../support';
 
 /*
  * Instantané de la garde et vues du coach (spec brique 4 §7.1, §7.3) : jour et mois de Paris, messages rendus
@@ -368,15 +375,29 @@ describe('coachStatus', () => {
 });
 
 describe('coachBrief', () => {
-  it('sans fil : aperçu calculé à l’instant, rien écrit', async () => {
+  it('sans fil : aperçu calculé à l’instant, rien écrit (hors bloc servi absent)', async () => {
     await setup();
     const user = await createUser(ctx);
-    const changes = () => (ctx.deps.sqlite.prepare('SELECT total_changes() AS n').get() as { n: number }).n;
-    // Bloc servi construit d'avance, comme au démarrage.
+    const dump = () => JSON.parse(dumpDatabase(ctx.deps.sqlite)) as Record<string, Row[]>;
+    const meta = (d: Record<string, Row[]>) => d.server_meta?.[0] ?? {};
+
+    // Premier appel, sans bloc servi en mémoire : `currentCatalog` le reconstruit et peut écrire
+    // `server_meta.catalog_version` (comme `GET /api/catalog`). C'est la seule écriture.
+    const initial = dump();
     await coachBrief(ctx.deps.db, ctx.deps, user.id, ctx.clock.now());
-    const before = changes();
+    const afterFirst = dump();
+    const { server_meta: _before, ...others } = initial;
+    const { server_meta: _after, ...othersAfter } = afterFirst;
+    expect(othersAfter).toEqual(others);
+    const { catalog_version: v0, catalog_updated_at: _t0, ...metaRest } = meta(initial);
+    const { catalog_version: v1, catalog_updated_at: _t1, ...metaRestAfter } = meta(afterFirst);
+    expect(metaRestAfter).toEqual(metaRest);
+    expect(v0).toBeNull();
+    expect(v1).toEqual(expect.any(String));
+
+    // Bloc servi à jour : plus aucune écriture.
     const response = await coachBrief(ctx.deps.db, ctx.deps, user.id, ctx.clock.now());
-    expect(changes()).toBe(before);
+    expect(dump()).toEqual(afterFirst);
     expect(response).toMatchObject({ threadId: null, day: '2026-11-05', preview: true });
     expect(CoachBriefSchema.parse(response.brief)).toEqual(response.brief);
     expect(response.brief).toMatchObject({ schema: 'coach-brief/1', today: '2026-11-05', audience: 'adult' });
@@ -394,6 +415,8 @@ describe('coachBrief', () => {
       day: '2026-11-05',
       preview: false,
     });
+    // Exactement le JSON stocké, dans l'ordre de ses clés (§9, transparence).
+    expect(JSON.stringify(response.brief)).toBe(thread.brief);
 
     // État laissé par le crochet du retrait santé (tâche 16) : dossier effacé, fil clos.
     await ctx.deps.db
@@ -407,5 +430,28 @@ describe('coachBrief', () => {
       day: '2026-11-05',
       preview: false,
     });
+  });
+
+  it("dossier d'un ancien brief_schema : rendu brut, sans erreur ; au schéma courant, il doit le passer", async () => {
+    await setup();
+    const user = await createUser(ctx);
+    const stored = '{"schema":"coach-brief/0","today":"2026-11-05","ancien":{"z":1,"a":2}}';
+    const thread = await insertFixtureRow(ctx.deps.db, 'coach_thread', {
+      userId: user.id,
+      day: '2026-11-05',
+      briefSchema: 'coach-brief/0',
+      brief: stored,
+    });
+    const response = await coachBrief(ctx.deps.db, ctx.deps, user.id, ctx.clock.now());
+    expect(response).toMatchObject({ threadId: thread.id, preview: false });
+    expect(JSON.stringify(response.brief)).toBe(stored);
+
+    // Même contenu sous le schéma courant : un dossier illisible est une erreur interne.
+    await ctx.deps.db
+      .updateTable('coachThread')
+      .set({ briefSchema: ctx.deps.coachConfig.briefSchema })
+      .where('id', '=', thread.id as string)
+      .execute();
+    await expect(coachBrief(ctx.deps.db, ctx.deps, user.id, ctx.clock.now())).rejects.toThrow();
   });
 });

@@ -26,7 +26,7 @@ import type {
 import type { AppDeps } from '../deps';
 import { isHealthConsentActive } from '../privacy/consent-state';
 import { expireProposals } from './expire';
-import { toAcceptedChange, toPlaceContext, toSessionRecords } from './records';
+import { type PlaceRow, toAcceptedChange, toPlaceContext, toSessionRecords } from './records';
 
 /*
  * Rejeu d'une instance par le serveur (spec brique 3 §4.4, §5.3 ; R-SYN-19) : il charge l'historique de l'instance,
@@ -222,6 +222,15 @@ export async function placesOf(
   ownerId: string,
   o: { live?: boolean } = {},
 ): Promise<Map<string, PlaceContext>> {
+  return new Map((await placeRowsOf(trx, ownerId, o)).map((p) => [p.id, toPlaceContext(p)]));
+}
+
+/** Lieux de `placesOf` avant `toPlaceContext` : réglages bruts et matériel vivant déclaré, sans ses implications. */
+export async function placeRowsOf(
+  trx: DbExecutor,
+  ownerId: string,
+  o: { live?: boolean } = {},
+): Promise<PlaceRow[]> {
   const places = await trx
     .selectFrom('place')
     .leftJoin('gym', 'gym.id', 'place.gymId')
@@ -251,24 +260,16 @@ export async function placesOf(
           .where('gymId', 'in', gymIds)
           .where('deletedAt', 'is', null)
           .execute();
-  const out = new Map<string, PlaceContext>();
-  for (const p of places) {
-    const equipment =
+  return places.map((p) => ({
+    id: p.id,
+    kind: p.kind,
+    loadSettings: p.loadSettings,
+    gymLoadSettings: p.kind === 'gym' ? p.gymLoadSettings : null,
+    equipment:
       p.kind === 'gym'
         ? gym.filter((g) => g.gymId === p.gymId).map((g) => g.equipmentCode)
-        : home.filter((h) => h.placeId === p.id).map((h) => h.equipmentCode);
-    out.set(
-      p.id,
-      toPlaceContext({
-        id: p.id,
-        kind: p.kind,
-        loadSettings: p.loadSettings,
-        gymLoadSettings: p.kind === 'gym' ? p.gymLoadSettings : null,
-        equipment,
-      }),
-    );
-  }
-  return out;
+        : home.filter((h) => h.placeId === p.id).map((h) => h.equipmentCode),
+  }));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
