@@ -54,3 +54,8 @@ transcriptions des cas de sécurité pour la relecture du propriétaire.
 ## Vérification réelle
 
 (Section ajoutée par la tâche 13.)
+
+## Confirmation avant les appels réels
+
+La confirmation `o/N` exige un vrai terminal : avec une entrée non interactive ou fermée (`echo o | pnpm coach:eval`,
+tâche planifiée), le lanceur refuse et n'appelle rien. `echo o |` n'est donc plus accepté.

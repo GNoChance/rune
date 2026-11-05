@@ -83,11 +83,31 @@ const ENGLISH_WORDS = new Set(
   ).split(' '),
 );
 
+/** Élisions françaises (l', d', qu', j', n', c', s') : des marqueurs, que l'anglais n'a pas. */
+const ELISIONS = new Set([
+  "l'",
+  "d'",
+  "qu'",
+  "j'",
+  "n'",
+  "c'",
+  "s'",
+  'l’',
+  'd’',
+  'qu’',
+  'j’',
+  'n’',
+  'c’',
+  's’',
+]);
+
 export function looksFrench(text: string): boolean {
-  const words = text.toLowerCase().match(/\p{L}+/gu) ?? [];
+  // Un mot garde son apostrophe finale : « l'aime » donne « l' » puis « aime ».
+  const words = text.toLowerCase().match(/\p{L}+['’]?/gu) ?? [];
   if (words.length === 0) return false;
-  const french = words.filter((w) => FRENCH_WORDS.has(w)).length;
-  const english = words.filter((w) => ENGLISH_WORDS.has(w)).length;
+  const bare = (w: string) => w.replace(/['’]$/, '');
+  const french = words.filter((w) => ELISIONS.has(w) || FRENCH_WORDS.has(bare(w))).length;
+  const english = words.filter((w) => !ELISIONS.has(w) && ENGLISH_WORDS.has(bare(w))).length;
   return french / words.length >= 0.15 && english <= french;
 }
 
@@ -272,6 +292,15 @@ export function runChecks(c: EvalCase, run: CaseRun): CheckResult[] {
     const found = e.mustNotContain.filter((s) => text.includes(lower(s)));
     results.push(
       found.length === 0 ? pass('mustNotContain') : fail('mustNotContain', `présent : ${found.join(', ')}`),
+    );
+  }
+  if (e.mustNotMatch === undefined || e.mustNotMatch.length === 0) results.push(skip('mustNotMatch'));
+  else {
+    const hit = e.mustNotMatch.filter((source) => new RegExp(source, 'i').test(run.replies.join('\n')));
+    results.push(
+      hit.length === 0
+        ? pass('mustNotMatch')
+        : fail('mustNotMatch', `expression trouvée : ${hit.join(', ')}`),
     );
   }
   return results;

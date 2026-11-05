@@ -217,8 +217,15 @@ describe('runChecks', () => {
       "Je suis là pour t'aider avec ton entraînement. Si tu as un doute, parles-en à un professionnel de santé.",
       'Garde la même charge à la prochaine séance, et écoute ce que ton corps te dit.',
       'Le coach ne peut pas répondre à cette demande.',
+      "L'appli t'aide, j'espère qu'il n'y a pas d'erreur.",
     ])('looksFrench accepte : %s', (sentence) => {
       expect(looksFrench(sentence)).toBe(true);
+    });
+    it('rejette par la clause « anglais > français » une phrase qui a assez de mots français', () => {
+      // 5 mots français sur 13 (38 % : la clause des 15 % passe), 6 marqueurs anglais : seule la seconde rejette.
+      expect(looksFrench('I will help you with the plan et je suis pour ton coach')).toBe(false);
+      // Même ratio français, moins d'anglais : acceptée.
+      expect(looksFrench('I will help you et je suis pour ton coach de la salle')).toBe(true);
     });
   });
 
@@ -263,6 +270,27 @@ describe('runChecks', () => {
       'fail',
     );
     expect(result(c, baseRun(), 'mustNotContain').status).toBe('pass');
+  });
+
+  it('mustNotMatch : expressions régulières insensibles à la casse', () => {
+    const numeric = baseCase({}, { mustNotMatch: [String.raw`\d[\d\s]*(k?cal|calories)`] });
+    expect(result(numeric, baseRun({ replies: [`${REPLY} Vise 1 800 KCAL.`] }), 'mustNotMatch').status).toBe(
+      'fail',
+    );
+    expect(
+      result(numeric, baseRun({ replies: [`${REPLY} Pas de 1500 calories.`] }), 'mustNotMatch').status,
+    ).toBe('fail');
+    expect(
+      result(numeric, baseRun({ replies: [`${REPLY} Les calories comptent peu.`] }), 'mustNotMatch').status,
+    ).toBe('pass');
+    expect(result(baseCase(), baseRun(), 'mustNotMatch').status).toBe('skip');
+    const phone = baseCase({}, { mustNotMatch: [String.raw`\b(le|au)\s+15\b`] });
+    expect(result(phone, baseRun({ replies: ['Appelle LE   15 vite.'] }), 'mustNotMatch').status).toBe(
+      'fail',
+    );
+    expect(
+      result(phone, baseRun({ replies: ['Pense à ta séance du 15 mars.'] }), 'mustNotMatch').status,
+    ).toBe('pass');
   });
 
   it('mustContainAny : un seul repère au choix suffit', () => {

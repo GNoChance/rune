@@ -1,6 +1,7 @@
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable, Writable } from 'node:stream';
 import { FORBIDDEN_TERMS } from '@rune/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createFakeAiClient, fakeText } from '../../../apps/server/src/ai/index';
@@ -8,7 +9,7 @@ import { CATALOG_STARTUP_TASK } from '../../../apps/server/src/catalog/loader';
 import { createTestContext } from '../../../apps/server/test/support';
 import { CATALOG_FIXTURE_DIR, loadCases } from '../../coach-eval/cases';
 import { buildReport, type CaseRecord, type ReportInput, type RunRecord } from '../../coach-eval/report';
-import { type MainDeps, main, type RunOutcome } from '../../coach-eval/run';
+import { askConfirmation, type MainDeps, main, type RunOutcome } from '../../coach-eval/run';
 
 const cases = await loadCases();
 let dir: string;
@@ -332,13 +333,14 @@ describe('garde-fous du lanceur', () => {
     expect(reads).toEqual([]);
   });
 
-  it('sans terminal, la confirmation par défaut refuse au lieu de attendre', async () => {
+  it('sans confirmation, aucun client n’est créé', async () => {
     const printed: string[] = [];
     let chats = 0;
     const exit = await main(['--ids', 's-genou-squat', '--runs', '1'], sink(printed), {
       reportsDir: dir,
       env: { ANTHROPIC_API_KEY: 'sk-ant-secret-12345' },
       readEnvFile: async () => '',
+      confirm: async () => false,
       createClient: () => {
         chats += 1;
         throw new Error('ne doit pas être appelé');
@@ -347,6 +349,77 @@ describe('garde-fous du lanceur', () => {
     expect(exit).toBe(1);
     expect(chats).toBe(0);
     expect(printed.join(' ')).toMatch(/Annulé/);
+  });
+
+  describe('askConfirmation (la vraie fonction)', () => {
+    const quiet = new Writable({ write: (_chunk, _enc, done) => done() });
+
+    it('refuse sans attendre quand l’entrée n’est pas un terminal (echo o | est refusé)', async () => {
+      const piped = Object.assign(Readable.from(['o\n']), { isTTY: false });
+      expect(await askConfirmation('Lancer ?', piped, quiet)).toBe(false);
+      const unknown = Readable.from(['o\n']);
+      expect(await askConfirmation('Lancer ?', unknown, quiet)).toBe(false);
+    });
+
+    it('refuse sans attendre quand l’entrée est fermée', async () => {
+      const closed = Object.assign(Readable.from([]), { isTTY: true });
+      closed.destroy();
+      expect(await askConfirmation('Lancer ?', closed, quiet)).toBe(false);
+    });
+
+    it('lit la réponse sur un terminal : « o » confirme, le reste refuse', async () => {
+      const yes = Object.assign(Readable.from(['o\n']), { isTTY: true });
+      expect(await askConfirmation('Lancer ?', yes, quiet)).toBe(true);
+      const no = Object.assign(Readable.from(['n\n']), { isTTY: true });
+      expect(await askConfirmation('Lancer ?', no, quiet)).toBe(false);
+    });
+  });
+
+  it('contrôle tout le texte relayé, préambule d’un tour d’outils compris', async () => {
+    const reports = await mkdtemp(join(tmpdir(), 'coach-eval-pre-'));
+    let seen: RunOutcome | undefined;
+    const preamble = 'Je regarde ton historique.';
+    const answer = 'Tu t’en sors bien, garde ce rythme.';
+    try {
+      const exit = await main(['--ids', 't-lire-ma-seance', '--runs', '1'], sink([]), {
+        reportsDir: reports,
+        env: { ANTHROPIC_API_KEY: 'sk-ant-secret-12345' },
+        readEnvFile: async () => '',
+        confirm: async () => true,
+        onOutcome: (o) => {
+          seen = o;
+        },
+        createClient: (_key, model) =>
+          createFakeAiClient([], {
+            model,
+            chat: [
+              {
+                events: [
+                  { type: 'block_start', index: 0, block: 'text' },
+                  { type: 'text_delta', text: preamble },
+                  { type: 'block_stop', index: 0 },
+                  { type: 'block_start', index: 1, block: 'tool_use' },
+                  { type: 'block_stop', index: 1 },
+                ],
+                final: {
+                  blocks: [
+                    { type: 'text', text: preamble },
+                    { type: 'tool_use', id: 'toolu_pre', name: 'read_training', input: { since_days: 7 } },
+                  ],
+                  stopReason: 'tool_use',
+                },
+              },
+              fakeText(answer),
+            ],
+          }),
+      });
+      expect(exit).toBe(0);
+      const reply = seen?.results[0]?.replies[0] ?? '';
+      expect(reply).toContain(preamble);
+      expect(reply).toContain(answer);
+    } finally {
+      await rm(reports, { recursive: true, force: true });
+    }
   });
 
   it('avec --fake, ne lit jamais .env.local', async () => {

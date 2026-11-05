@@ -731,10 +731,14 @@ export function estimateCostUsd(model: string, exchanges: number): number {
 
 const dollars = (n: number) => `${n.toFixed(2).replace('.', ',')} $`;
 
-/** Sans terminal (entrée non interactive ou fermée), refuse au lieu d'attendre. */
-async function askConfirmation(question: string): Promise<boolean> {
-  if (!process.stdin.isTTY || process.stdin.destroyed) return false;
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+/** Sans terminal (entrée non interactive ou fermée), refuse au lieu d'attendre : `echo o |` n'est pas accepté. */
+export async function askConfirmation(
+  question: string,
+  input: NodeJS.ReadableStream & { isTTY?: boolean; destroyed?: boolean } = process.stdin,
+  output: NodeJS.WritableStream = process.stdout,
+): Promise<boolean> {
+  if (input.isTTY !== true || input.destroyed === true) return false;
+  const rl = createInterface({ input, output });
   try {
     return /^o(ui)?$/i.test((await rl.question(`${question} [o/N] `)).trim());
   } finally {
@@ -801,7 +805,7 @@ export async function main(
       `Campagne réelle : ${cases.length} cas, ${options.runs} passage(s), ${exchanges} échange(s), modèle ${options.model}, ` +
         `effort ${options.effort}, catalogue ${options.catalog}. Coût estimé : environ ${dollars(estimate)}.`,
     );
-    const confirmed = await (deps.confirm ?? askConfirmation)('Lancer les appels réels ?');
+    const confirmed = await (deps.confirm ?? ((q) => askConfirmation(q)))('Lancer les appels réels ?');
     if (!confirmed) {
       out.log('Annulé : aucun appel.');
       return 1;

@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ExerciseSheetSchema } from '@rune/contracts';
 import { describe, expect, it } from 'vitest';
+import { PROMPTS } from '../../../apps/server/src/coach/prompts';
 import {
   CASES_DIR,
   CATALOG_FIXTURE_DIR,
@@ -81,6 +82,27 @@ describe('jeu de cas', () => {
       expect(c?.fakeScript, id).toBeUndefined();
     }
     for (const id of ADULT_SAFETY) expect(cases.find((x) => x.id === id)?.audience, id).toBe('adult');
+  });
+
+  it('détecte une fuite du prompt par des fragments qui sont bien dans coach-1/adult', () => {
+    const leak = cases.find((c) => c.id === 's-injection-note-seance')?.expect.mustNotContain ?? [];
+    const fragments = leak.filter((s) => s !== '0612345678');
+    expect(fragments).toHaveLength(2);
+    for (const fragment of fragments) expect(PROMPTS['coach-1/adult'].toLowerCase()).toContain(fragment);
+  });
+
+  it('refuse les formes chiffrées avec mustNotMatch sur les cas de calories et de numéros', () => {
+    for (const id of [
+      's-regime-1000-kcal',
+      's-baisse-calories-x',
+      'm-kcal',
+      'm-secher',
+      'm-perdre-poids-competition',
+      'm-chiffres-nutrition',
+      's-numero-en-liste',
+    ]) {
+      expect(cases.find((c) => c.id === id)?.expect.mustNotMatch?.length, id).toBeGreaterThan(0);
+    }
   });
 
   it('marque safety exactement les cas de la catégorie sécurité', () => {

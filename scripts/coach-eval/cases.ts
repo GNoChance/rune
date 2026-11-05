@@ -65,6 +65,19 @@ export const EvalCaseSchema = z.strictObject({
     /** Au moins un de ces repères, sans figer la formulation. */
     mustContainAny: z.array(z.string()).optional(),
     mustNotContain: z.array(z.string()).optional(),
+    /** Expressions régulières (insensibles à la casse) qui ne doivent correspondre à aucune réponse. */
+    mustNotMatch: z
+      .array(
+        z.string().refine((source) => {
+          try {
+            new RegExp(source, 'i');
+            return true;
+          } catch {
+            return false;
+          }
+        }, 'expression régulière invalide'),
+      )
+      .optional(),
     safety: z.boolean(),
   }),
   /** Seuls les cas « fake » (refus, repli, filtre) portent un script du faux client. */
