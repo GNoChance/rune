@@ -93,10 +93,13 @@ export function livePids(): number[] {
   return [...live].flatMap((child) => (child.pid === undefined ? [] : [child.pid]));
 }
 
-function spawnServer(args: string[], env: Env): ChildProcess {
+/** Point d'entrée du serveur de production, celui de `pnpm dev` et des E2E, sauf `entry`. */
+const DEFAULT_ENTRY = 'src/main.ts';
+
+function spawnServer(args: string[], env: Env, entry: string = DEFAULT_ENTRY): ChildProcess {
   const child = spawn(
     process.execPath,
-    ['--import', parentWatchImport(process.pid), '--import', 'tsx', 'src/main.ts', ...args],
+    ['--import', parentWatchImport(process.pid), '--import', 'tsx', entry, ...args],
     { cwd: SERVER_DIR, env, stdio: ['ignore', 'pipe', 'pipe'] },
   );
   live.add(child);
@@ -143,8 +146,8 @@ interface Backend {
 }
 
 /** Serveur sur `port` ; prêt quand /api/health répond 200 (30 s au plus). Journal : dernières lignes, codes et liens d'invitation masqués (T38-F3). */
-async function startBackend(port: number, env: Env, log: string[]): Promise<Backend> {
-  const child = spawnServer([], { ...env, PORT: String(port) });
+async function startBackend(port: number, env: Env, log: string[], entry: string): Promise<Backend> {
+  const child = spawnServer([], { ...env, PORT: String(port) }, entry);
   const keep = (chunk: string) => {
     log.push(
       ...maskInvitation(chunk)
@@ -238,8 +241,18 @@ export function relay(req: http.IncomingMessage, res: http.ServerResponse, port:
  * n'utilise que `url` (localhost), jamais 127.0.0.1.
  */
 export async function startE2EServer(
-  opts: { env?: Record<string, string>; publicDir?: string; port?: number } = {},
+  opts: {
+    env?: Record<string, string>;
+    publicDir?: string;
+    port?: number;
+    /**
+     * Point d'entrée du serveur qui écoute (chemin absolu, ou relatif à apps/server) : un point d'entrée de test qui
+     * injecte un faux client IA, par exemple. `init` et le CLI restent ceux de `src/main.ts`.
+     */
+    entry?: string;
+  } = {},
 ): Promise<E2EServer> {
+  const entry = opts.entry ?? DEFAULT_ENTRY;
   let fault: E2EFault = null;
   let backend: Backend | null = null;
   const held = new Set<Socket>();
@@ -328,7 +341,7 @@ export async function startE2EServer(
   try {
     const init = await runCli(['init'], env);
     if (init.code !== 0) throw new Error(`init a échoué (code ${init.code}) : ${init.stderr}`);
-    backend = await startBackend(backendPort, env, log);
+    backend = await startBackend(backendPort, env, log, entry);
   } catch (error) {
     await closeProxies();
     throw error;
@@ -342,7 +355,7 @@ export async function startE2EServer(
     async restart(extra) {
       await stop();
       env = mergeEnv(env, extra);
-      backend = await startBackend(backendPort, env, log);
+      backend = await startBackend(backendPort, env, log, entry);
     },
     async close() {
       await stop();

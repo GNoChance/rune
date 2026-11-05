@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PRIVACY_POLICY_VERSION } from '@rune/contracts';
+import { HELP_RESOURCES, PRIVACY_POLICY_VERSION } from '@rune/contracts';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -323,6 +323,7 @@ describe('P1 Installation initiale', () => {
       'Initialisation de la base et invitation admin',
       'Premier déploiement',
       'Recette',
+      'Mise en service du coach IA',
       'Exercice de reconstruction',
       'Enveloppe de secours',
     ]);
@@ -1861,6 +1862,90 @@ describe('relecture des exercices : drapeaux, commentaires et validations (spec 
       'tes commentaires et tes validations restent sur les fiches, sans ton pseudo',
     ]) {
       expect(rights, needle).toContain(needle);
+    }
+  });
+});
+
+describe('coach IA (brique 4, §17.4 et §19.5) : mise en service, rotation de la clé et recette', () => {
+  const ordered = (text: string, needles: readonly string[]) => expectInOrder(text, needles);
+  const digitsOf = (phone: string): string => phone.replace(/\D/g, '');
+  const phones = HELP_RESOURCES.flatMap((r) => (r.phone === null ? [] : r.phone.split('/').map(digitsOf)));
+
+  it("P1 : mise en service du coach, étapes 0 à 7 du §17.4 dans l'ordre", () => {
+    const body = section(p[1] as string, 'Mise en service du coach IA');
+    expect(steps(body).map((s) => s.head.split(' : ')[0])).toEqual([
+      'Étape 0',
+      'Étape 1',
+      'Étape 2',
+      'Étape 3',
+      'Étape 4',
+      'Étape 5',
+      'Étape 6',
+      'Étape 7',
+    ]);
+    ordered(body, [
+      'rune-dev',
+      'coach:eval',
+      'COACH_CONFIG.evaluated',
+      'catalogVersion',
+      'HELP_RESOURCES',
+      'verifiedOn',
+      "protection de l'enfance",
+      'rune-prod',
+      '20 $',
+      'recette-telephones.md',
+      'interrupteur',
+    ]);
+    expectSteps('P1 mise en service du coach', body);
+    expect(body).toContain('--catalog repo');
+  });
+
+  it('P5 : workspace rune-prod plafonné à 20 $ (valeur de COACH_CONFIG), message de test en moins de 30 s', () => {
+    const body = section(p[5] as string, 'Clé API Anthropic de production');
+    expect(body).toContain('20 $');
+    expect(body).toContain('workspaceMonthlyLimitUsd');
+    expect(body).toMatch(/réponse en moins de 30 s/);
+    expect(body).not.toMatch(/sans objet avant la brique 4/);
+  });
+
+  it('recette-telephones : les 4 contrôles du coach, après ceux de la séance', () => {
+    const body = section(recette, 'Contrôles du coach IA');
+    expect(steps(body).map((s) => s.head)).toEqual([
+      'flux progressif derrière `tailscale serve`',
+      'écran verrouillé pendant une réponse, puis retour',
+      'Tailscale coupé pendant un flux',
+      "bouton « Appeler » de la carte d'aide, sur iPhone et sur Android",
+    ]);
+    const titles = sections(recette).map((s) => s.title);
+    expect(titles.indexOf('Contrôles du coach IA')).toBe(titles.indexOf('Contrôles de la séance') + 1);
+  });
+
+  it("les numéros d'aide ne sont recopiés ni dans P1, ni dans P5, ni dans la recette : HELP_RESOURCES seul fait foi", () => {
+    expect(phones.length).toBeGreaterThan(0);
+    for (const [name, text] of Object.entries({ P1: p[1], P5: p[5], recette })) {
+      const compact = (text as string).replace(/[\s .]/g, '');
+      for (const digits of phones.filter((d) => d.length >= 4)) {
+        expect(compact, `${name} cite le numéro ${digits}`).not.toContain(digits);
+      }
+    }
+  });
+
+  it("P3 : les numéros qu'elle cite sont ceux de HELP_RESOURCES", () => {
+    const line =
+      (p[3] as string).split('\n').find((l) => l.includes('Revérifier les numéros de la page Aide')) ?? '';
+    for (const digits of phones.filter((d) => d.length <= 4))
+      expect(line, `numéro ${digits}`).toContain(digits);
+  });
+
+  it('P1, P5 et la recette ne contiennent ni clé API, ni adresse e-mail', () => {
+    for (const [name, text] of Object.entries({ P1: p[1], P5: p[5], recette })) {
+      expect(text as string, `${name} : clé Anthropic`).not.toMatch(/sk-ant-[\w-]{8,}/);
+      // `git@github.com` (adresse SSH du dépôt, P1) et les unités systemd (`x@y.service`) ne sont pas des adresses e-mail.
+      const mails = (text as string).match(/[\w.+-]+@[\w-]+\.[\w.]+/g) ?? [];
+      expect(
+        mails.filter((m) => m !== 'git@github.com' && !m.endsWith('.service')),
+        `${name} : adresse e-mail`,
+      ).toEqual([]);
     }
   });
 });

@@ -110,6 +110,9 @@ it('node build.mjs produit un seul server.mjs ESM, sans import hors node:*', BUN
   expect(src).toMatch(/^export \{/m);
   // Le faux client IA n'entre jamais dans le serveur de production : seul un point d'entrée de test l'injecte.
   expect(src).not.toContain('createFakeAiClient');
+  expect(src).not.toContain('Faux client IA');
+  // Variable du seul point d'entrée de test des E2E du coach.
+  expect(src).not.toContain('E2E_COACH_SCRIPT');
   expect(src).not.toMatch(/(?:from|import\()\s*['"](?!node:)[a-z@][^'"]*['"]/);
   expect(requiredModules(src).filter((specifier) => !isBuiltin(specifier))).toEqual([]);
   const { inputs, imports } = await bundleImports(join(DIST_DIR, 'server.mjs'));

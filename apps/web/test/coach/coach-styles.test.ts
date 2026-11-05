@@ -84,3 +84,14 @@ describe('feuille du coach (coach.module.css)', () => {
     }
   });
 });
+
+describe('feuille de la page du coach (coach-page.module.css)', () => {
+  it('« Appeler » et « Ouvrir l’aide » : texte en accent sur la surface de la carte, pas en texte d’accent (blanc sur blanc)', () => {
+    const all = parseCssBlocks(
+      readFileSync(resolve(import.meta.dirname, '../../src/features/coach/coach-page.module.css'), 'utf8'),
+    );
+    const action = declarations(all, '.action');
+    expect(action.get('background')).toBe('var(--surface)');
+    expect(action.get('color')).toBe('var(--accent)');
+  });
+});
