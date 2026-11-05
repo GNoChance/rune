@@ -47,6 +47,7 @@ export const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   not_proposed: "Cette proposition n'est plus en attente.",
   session_in_progress: 'Termine ou abandonne ta séance en cours avant ce changement.',
   invalid_change: "Ce changement n'est pas possible.",
+  coach_load_increase: 'Cette proposition ferait maintenant monter une charge : elle a expiré.',
   coach_unavailable: 'Le coach est en pause pour le cercle.',
   consent_required: 'Le coach IA a besoin de ton accord.',
   daily_limit_reached: "Tu as envoyé 30 messages aujourd'hui. Le coach revient demain.",

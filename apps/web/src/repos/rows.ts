@@ -40,12 +40,13 @@ export async function ownedRows(db: AppDb, entity: string, ownerId: string | nul
 }
 
 /** Refus qui disent que le miroir est en retard sur le serveur : un pull le met à jour avant de réessayer. */
-const STALE_MIRROR_CODES: readonly string[] = ['stale_revision', 'expired'];
+const STALE_MIRROR_CODES: readonly string[] = ['stale_revision', 'expired', 'coach_load_increase'];
 
 /**
  * Écriture de classe E : l'API d'abord (hors ligne → NetworkRequiredError, rien d'écrit en local),
  * puis `apply` sur la réponse (meta.me par exemple), puis un pull qui ramène les lignes serveur.
- * Un 409 `stale_revision` ou `expired` tire aussi avant de relancer l'erreur (ruling R52) : sans cela, réessayer
+ * Un 409 `stale_revision` ou `expired`, ou un 422 `coach_load_increase` (la proposition du coach vient de passer à
+ * `expired`, spec brique 4 §12.2), tire aussi avant de relancer l'erreur (ruling R52) : sans cela, réessayer
  * renverrait la même révision périmée ; un pull en échec ne remplace pas l'erreur du serveur.
  */
 export async function sendThenPull<T = void>(

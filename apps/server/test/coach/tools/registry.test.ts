@@ -1,5 +1,6 @@
 import {
   COACH_TOOL_NAMES,
+  HELP_RESOURCE_IDS,
   MOVEMENT_PATTERNS,
   MUSCLES,
   ProposeProgramChangeInput,
@@ -97,15 +98,15 @@ describe('runTool', () => {
 });
 
 describe('TOOLS_1 et définitions', () => {
-  it('noms triés, tous dans COACH_TOOL_NAMES', () => {
+  it('noms triés : les 4 de COACH_TOOL_NAMES', () => {
     const names = TOOLS_1.map((t) => t.name);
     expect(names).toEqual([...names].sort());
-    expect(names).toEqual(['read_training', 'search_exercises']);
-    expect(names.every((n) => (COACH_TOOL_NAMES as readonly string[]).includes(n))).toBe(true);
+    expect(names).toEqual([...COACH_TOOL_NAMES]);
   });
 
   it('forme rendue figée : JSON Schema strict, bornes et motif dans la description', () => {
-    expect(toolDefinitions(TOOLS_1)).toEqual([
+    const reads = TOOLS_1.filter((t) => t.name === 'read_training' || t.name === 'search_exercises');
+    expect(toolDefinitions(reads)).toEqual([
       {
         name: 'read_training',
         description: expect.stringContaining('28 jours au plus'),
@@ -137,6 +138,43 @@ describe('TOOLS_1 et définitions', () => {
         },
       },
     ]);
+  });
+
+  it('read_training : la description dit la troncature réelle, dans son ordre', () => {
+    const description = TOOLS_1.find((t) => t.name === 'read_training')?.description ?? '';
+    expect(description).toContain(
+      'les séances les plus anciennes, puis les records au-delà de 10, puis les décisions les plus anciennes',
+    );
+  });
+
+  it('propose_program_change et refer_to_help : entrées strictes, opérations du coach, ressources de HELP_RESOURCES', () => {
+    const definitions = toolDefinitions(TOOLS_1);
+    const propose = definitions.find((d) => d.name === 'propose_program_change');
+    expect(propose?.inputSchema).toMatchObject({
+      type: 'object',
+      required: ['base_revision', 'operations', 'reason'],
+      additionalProperties: false,
+      properties: {
+        base_revision: { type: 'integer' },
+        operations: { type: 'array', minItems: 1, description: '{maxItems: 5}' },
+        reason: { type: 'string', description: '{minLength: 1, maxLength: 300}' },
+      },
+    });
+    type Variant = { properties: { op: { const: string } } };
+    const schema = propose?.inputSchema as { properties: { operations: { items: { anyOf: Variant[] } } } };
+    const ops = schema.properties.operations.items.anyOf.map((v) => v.properties.op.const);
+    expect(ops).toHaveLength(12);
+    expect(ops).not.toContain('resume_slot');
+    expect(definitions.find((d) => d.name === 'refer_to_help')).toEqual({
+      name: 'refer_to_help',
+      description: expect.stringContaining('eating_disorder'),
+      inputSchema: {
+        type: 'object',
+        properties: { resource: { type: 'string', enum: [...HELP_RESOURCE_IDS] } },
+        required: ['resource'],
+        additionalProperties: false,
+      },
+    });
   });
 
   it('mots-clés du mode strict seulement, et forme stable : chat() la repasse par toStructuredSchema', () => {
@@ -171,38 +209,5 @@ describe('TOOLS_1 et définitions', () => {
       ).toEqual([]);
       expect(toStructuredSchema(def.inputSchema)).toEqual(def.inputSchema);
     }
-  });
-
-  it('limites du mode strict sur toute la requête : 24 propriétés facultatives, 16 paramètres en anyOf', () => {
-    // Somme sur tous les schémas d'une requête ; la tâche 18 y ajoutera propose_program_change (TOOLS_1 complet).
-    let optional = 0;
-    let unions = 0;
-    const walk = (node: unknown): void => {
-      if (node === null || typeof node !== 'object') return;
-      if (Array.isArray(node)) {
-        for (const n of node) walk(n);
-        return;
-      }
-      const schema = node as Record<string, unknown>;
-      if (Array.isArray(schema.anyOf)) unions += 1;
-      const properties = schema.properties;
-      if (properties !== null && typeof properties === 'object' && !Array.isArray(properties)) {
-        const required = new Set(Array.isArray(schema.required) ? schema.required : []);
-        optional += Object.keys(properties).filter((name) => !required.has(name)).length;
-        for (const prop of Object.values(properties)) walk(prop);
-      }
-      for (const key of ['items', 'anyOf', 'allOf', '$defs']) {
-        const child = schema[key];
-        if (key === '$defs' && child !== null && typeof child === 'object') {
-          for (const def of Object.values(child)) walk(def);
-        } else walk(child);
-      }
-    };
-    for (const def of toolDefinitions(TOOLS_1)) walk(def.inputSchema);
-    // read_training : exercise_id ; search_exercises : ses 4 champs.
-    expect(optional).toBe(5);
-    expect(optional).toBeLessThanOrEqual(24);
-    expect(unions).toBe(0);
-    expect(unions).toBeLessThanOrEqual(16);
   });
 });

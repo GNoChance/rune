@@ -113,6 +113,24 @@ export function threadSlotAliases(thread: ThreadRow): ReadonlyMap<string, string
 }
 
 /**
+ * Table des alias figée avec le fil `threadId` de `userId` (`read_training`, `propose_program_change`) ; aucune si le
+ * fil n'existe pas, plus, ou est celui d'un autre.
+ */
+export async function frozenSlotAliases(
+  db: DbExecutor,
+  userId: string,
+  threadId: string,
+): Promise<ReadonlyMap<string, string>> {
+  const thread = await db
+    .selectFrom('coachThread')
+    .selectAll()
+    .where('id', '=', threadId)
+    .where('userId', '=', userId)
+    .executeTakeFirst();
+  return thread === undefined ? new Map() : threadSlotAliases(thread);
+}
+
+/**
  * Gel (§6.4) : un fil ouvert dont un réglage figé (modèle, effort, `prompt_version`, `tools_version`,
  * `brief_schema`) n'est plus le réglage courant est fermé (`version_change`). Vrai s'il vient d'être fermé.
  */

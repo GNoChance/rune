@@ -11,10 +11,13 @@ import type { AppDeps } from '../../deps';
 
 /**
  * Proposition validée par `propose_program_change` dans la tentative ; elle n'est écrite qu'à l'enregistrement de
- * l'échange (§12.1). `model` : modèle de l'itération qui a fait l'appel, posé par la tentative.
+ * l'échange (§12.1). `instanceId` : l'instance validée, que l'écriture relit (elle peut avoir changé entre-temps) ;
+ * `operations` : références de slot déjà retraduites en identifiants réels. `model` : modèle de l'itération qui a
+ * fait l'appel, posé par la tentative.
  */
 export interface PendingProposal {
   id: string;
+  instanceId: string;
   baseRevision: number;
   operations: InstanceChangeOperation[];
   reason: string;

@@ -9,10 +9,18 @@ import {
   MAX_CHANGE_OPERATIONS,
   type ProgramInstanceView,
 } from '@rune/contracts';
-import { type EffectiveProgram, effectiveProgram, levelFromExperience, validateChange } from '@rune/domain';
+import {
+  type ChangeValidationInput,
+  type EffectiveProgram,
+  effectiveProgram,
+  levelFromExperience,
+  parisDate,
+  validateChange,
+} from '@rune/domain';
 import type { Selectable, Transaction } from 'kysely';
 import { z } from 'zod';
-import { userTraits } from '../auth/me';
+import { traitsOn } from '../auth/me';
+import { coachLoadIncreases } from '../coach/proposals';
 import { writeStamp } from '../db/rev';
 import type { Database, DbExecutor, InstanceChangeTable } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -44,7 +52,7 @@ export type ChangeRow = Selectable<InstanceChangeTable>;
 export type ServedCatalog = Pick<CatalogBundle, 'exercises' | 'programTemplates'>;
 
 /** Refus qui laisse la transaction s'achever : l'expiration de la proposition est gardée. */
-export type Refusal = { refused: 'expired' | 'stale_revision' | 'not_proposed' };
+export type Refusal = { refused: 'expired' | 'stale_revision' | 'not_proposed' | 'coach_load_increase' };
 
 const Operations = z.array(InstanceChangeOperationSchema).min(1).max(MAX_CHANGE_OPERATIONS);
 
@@ -108,7 +116,8 @@ export async function instanceProgram(
   return effectiveProgram(snapshot, instance.daysPerWeek, changes);
 }
 
-interface PendingChange {
+/** Changement à valider ; `id` est celui de la ligne à créer, qui nomme un slot ajouté. */
+export interface PendingChange {
   id: string;
   author: ChangeAuthor;
   baseRevision: number;
@@ -116,9 +125,42 @@ interface PendingChange {
 }
 
 /**
- * Validateur des changements (05 §15) sur le programme effectif de l'instance, avec le profil (prudent ou non), le
- * niveau (`experience`), les lieux vivants et le catalogue servi du membre. Rend le programme résultant ; 422
- * `invalid_change` avec une erreur par opération fautive sinon.
+ * Entrée du validateur des changements (05 §15) : `program`, le programme effectif de l'instance (`instanceProgram`),
+ * avec le profil (prudent ou non) au jour de Paris de `now`, le niveau (`experience`), les lieux vivants et le
+ * catalogue servi du membre. Lecture seule ; sert aux routes du programme et à `propose_program_change`.
+ */
+export async function changeValidationInput(
+  db: DbExecutor,
+  instance: InstanceRow,
+  program: EffectiveProgram,
+  change: PendingChange,
+  catalog: ServedCatalog,
+  now: Date,
+): Promise<ChangeValidationInput> {
+  const { ownerId } = instance;
+  const { cautious } = await traitsOn(db, ownerId, parisDate(now));
+  const training = await db
+    .selectFrom('trainingProfile')
+    .select('experience')
+    .where('ownerId', '=', ownerId)
+    .where('deletedAt', 'is', null)
+    .executeTakeFirst();
+  return {
+    program,
+    revision: instance.revision,
+    change,
+    catalog: catalog.exercises,
+    places: [...(await placesOf(db, ownerId, { live: true })).values()],
+    profile: cautious ? 'cautious' : 'adult',
+    level: training?.experience == null ? 'beginner' : levelFromExperience(training.experience),
+    servedTemplates: catalog.programTemplates,
+    instanceTemplateVersion: instance.templateVersion,
+  };
+}
+
+/**
+ * Validateur des changements (05 §15) sur le programme effectif de l'instance (`changeValidationInput`, à l'heure de
+ * l'horloge). Rend le programme résultant ; 422 `invalid_change` avec une erreur par opération fautive sinon.
  */
 async function validate(
   trx: DbExecutor,
@@ -127,25 +169,10 @@ async function validate(
   change: PendingChange,
   catalog: ServedCatalog,
 ): Promise<EffectiveProgram> {
-  const { ownerId } = instance;
-  const { cautious } = await userTraits(trx, deps, ownerId);
-  const training = await trx
-    .selectFrom('trainingProfile')
-    .select('experience')
-    .where('ownerId', '=', ownerId)
-    .where('deletedAt', 'is', null)
-    .executeTakeFirst();
-  const result = validateChange({
-    program: await instanceProgram(trx, instance),
-    revision: instance.revision,
-    change,
-    catalog: catalog.exercises,
-    places: [...(await placesOf(trx, ownerId, { live: true })).values()],
-    profile: cautious ? 'cautious' : 'adult',
-    level: training?.experience == null ? 'beginner' : levelFromExperience(training.experience),
-    servedTemplates: catalog.programTemplates,
-    instanceTemplateVersion: instance.templateVersion,
-  });
+  const program = await instanceProgram(trx, instance);
+  const result = validateChange(
+    await changeValidationInput(trx, instance, program, change, catalog, deps.clock.now()),
+  );
   if (!result.ok) throw httpError('invalid_change', { errors: result.errors });
   return result.program;
 }
@@ -293,7 +320,10 @@ async function expire(trx: DbExecutor, deps: AppDeps, id: string): Promise<void>
  * limite dépassée → `expired` ; sa `base_revision` n'est plus la révision de son instance, ou l'instance n'est plus
  * active → `stale_revision`. Un `baseRevision` du client seul périmé → 409 `stale_revision`, proposition intacte : le
  * client relit et recommence. 422 `invalid_change` si le programme résultant ne passe pas le validateur (la
- * proposition reste `proposed`). Acceptée : `decided_at` maintenant, `revision` + 1, rejeu.
+ * proposition reste `proposed`). Proposition du coach : la garde de hausse (spec brique 4 §12.2, étape 6, choix C6)
+ * est recalculée maintenant, sur tous les lieux vivants, car la charge prévue a pu changer depuis la proposition ; une
+ * hausse → la proposition passe à `expired`, refus 422 `coach_load_increase` rendu après la transaction. Acceptée :
+ * `decided_at` maintenant, `revision` + 1, rejeu.
  */
 export async function acceptChange(
   trx: Trx,
@@ -329,6 +359,13 @@ export async function acceptChange(
     { id, author: row.author, baseRevision: row.baseRevision, operations },
     catalog,
   );
+  if (
+    row.author === 'coach' &&
+    (await coachLoadIncreases(trx, deps, userId, { id, operations }, now)).length > 0
+  ) {
+    await expire(trx, deps, id);
+    return { refused: 'coach_load_increase' };
+  }
   if (switchOf(operations)) await assertNoSessionInProgress(trx, instance);
   const stamp = await writeStamp(trx, deps, userId);
   await trx

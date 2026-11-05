@@ -48,7 +48,13 @@ const GROUPS: Record<number, string[]> = {
   ],
   410: ['account_deleted', 'watermark_expired'],
   415: ['unsupported_media_type'],
-  422: ['transition_blocked', 'template_unavailable', 'days_out_of_range', 'invalid_change'],
+  422: [
+    'transition_blocked',
+    'template_unavailable',
+    'days_out_of_range',
+    'invalid_change',
+    'coach_load_increase',
+  ],
   426: ['protocol_unsupported'],
   429: ['rate_limited', 'daily_limit_reached', 'monthly_budget_reached'],
   500: ['internal'],
@@ -56,8 +62,12 @@ const GROUPS: Record<number, string[]> = {
 };
 
 describe('ApiErrorCode et ERROR_STATUS', () => {
-  it('compte 52 codes', () => {
-    expect(ApiErrorCode.options).toHaveLength(52);
+  it('compte 53 codes', () => {
+    expect(ApiErrorCode.options).toHaveLength(53);
+  });
+
+  it('refus de la garde de hausse à l’acceptation d’une proposition du coach : 422 (spec brique 4 §12.2)', () => {
+    expect(ERROR_STATUS.coach_load_increase).toBe(422);
   });
 
   it('porte les codes de la garde du coach et de son envoi avec leur statut (spec brique 4 §7.3)', () => {

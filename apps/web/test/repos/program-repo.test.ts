@@ -1,6 +1,6 @@
 import { ServedProgramTemplateSchema } from '@rune/contracts';
 import { describe, expect, it } from 'vitest';
-import { NetworkRequiredError } from '../../src/api/client';
+import { ApiError, NetworkRequiredError } from '../../src/api/client';
 import { createRepos } from '../../src/repos';
 import { changeErrorsOf, isExpired, isStaleRevision } from '../../src/repos/program-repo';
 import { dumpLocalDb } from '../support/local-db';
@@ -233,6 +233,19 @@ describe('repos.program', () => {
       [true, false],
     ]);
     expect(order).toEqual(['pull', 'error', 'pull', 'error', 'pull', 'error']);
+  });
+
+  it("422 coach_load_increase : la proposition du coach a expiré sur le serveur, un pull avant l'erreur", async () => {
+    const { repos, api, sync } = await setup();
+    api.on('POST', '/api/program/changes/:id/accept', {
+      status: 422,
+      body: { error: 'coach_load_increase' },
+    });
+    const e = await repos.program.accept('c-1', 0).catch((err: unknown) => err);
+    expect(e).toBeInstanceOf(ApiError);
+    expect((e as ApiError).code).toBe('coach_load_increase');
+    expect(changeErrorsOf(e)).toBeNull();
+    expect(sync.pullCount).toBe(1);
   });
 
   it('hors ligne : « Nécessite le réseau », aucune écriture locale', async () => {

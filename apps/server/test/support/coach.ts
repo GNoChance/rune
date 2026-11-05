@@ -3,6 +3,20 @@ import { createFakeAiClient, type FakeAiClient, type FakeChatTurn } from '../../
 import { refreshCoachConfig } from '../../src/coach/state';
 import type { ToolContext } from '../../src/coach/tools/types';
 import type { TestContext } from './context';
+import { dayAt, type SessionSpec, type SetSpec } from './program';
+
+/** Trois séries de travail faites à `loadG`, effort « correct » sur la dernière : la calibration finit à cette charge. */
+export const setsAt = (loadG: number): SetSpec[] => [{ loadG }, { loadG }, { loadG, effort: 'ok' }];
+
+/**
+ * Séances de l'instance pour la garde de hausse (spec brique 4 §12.2, étape 6) : A1 fait une fois à la presse à
+ * cuisses à 60 kg (« Changer d'exercice »), puis au goblet squat, son exercice, à 40 kg. Remplacer A1 par la presse
+ * ferait passer sa charge prévue de 40 à 60 kg.
+ */
+export const pressThenGoblet = (instanceId: string): SessionSpec[] => [
+  { instanceId, startedAt: dayAt(60), exercises: [{ exerciseId: 'leg-press', sets: setsAt(60_000) }] },
+  { instanceId, startedAt: dayAt(62), exercises: [{ sets: setsAt(40_000) }] },
+];
 
 /**
  * Contexte d'appel d'un outil du coach pour `userId` : état de tentative neuf, aucune valeur autorisée, instant de
