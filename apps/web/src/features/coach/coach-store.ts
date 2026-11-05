@@ -142,8 +142,11 @@ export function createCoachStore(s: AppServices): CoachStore {
     }
   }
 
+  /** Le texte envoyé revient au champ seulement si la personne n'y a rien tapé depuis. */
+  const given = (pending: PendingExchange) => (state.draft === '' ? pending.text : state.draft);
+
   async function fail(gen: number, pending: PendingExchange, code: CoachError): Promise<void> {
-    set({ pending: emptied(pending), draft: pending.text, phase: 'error', error: code });
+    set({ pending: emptied(pending), draft: given(pending), phase: 'error', error: code });
     if (code !== 'offline') await reloadToday(gen);
     // Accord retiré pendant l'échange (ailleurs, ou par une restauration) : `status` le dit et l'écran propose de le
     // redonner, au lieu d'une bannière sans issue.
@@ -153,7 +156,9 @@ export function createCoachStore(s: AppServices): CoachStore {
   async function run(pending: PendingExchange, firstOfDay: boolean): Promise<void> {
     const gen = generation;
     answerRecorded = false;
-    set({ pending, phase: 'streaming', error: null, refusalMessage: null });
+    // Le champ est libre dès l'envoi : ce qui y est tapé pendant le flux est à la personne.
+    const draft = state.draft === pending.text ? '' : state.draft;
+    set({ pending, draft, phase: 'streaming', error: null, refusalMessage: null });
     if (firstOfDay) await flush();
     if (gen !== generation) return;
 
@@ -199,7 +204,7 @@ export function createCoachStore(s: AppServices): CoachStore {
       if (e instanceof ApiError && e.code === 'duplicate_message') {
         // Le serveur a déjà ce message : le fil du jour le contient.
         await reloadToday(gen);
-        if (gen === generation) set({ draft: '', pending: null, phase: 'idle', error: null });
+        if (gen === generation) set({ pending: null, phase: 'idle', error: null });
         return;
       }
       await fail(gen, pending, errorOf(e));
@@ -210,7 +215,7 @@ export function createCoachStore(s: AppServices): CoachStore {
     const { done, error, refused } = seen;
     if (error !== null) return fail(gen, pending, error);
     if (refused !== null) {
-      set({ pending: null, draft: pending.text, phase: 'refused', error: null, refusalMessage: refused });
+      set({ pending: null, draft: given(pending), phase: 'refused', error: null, refusalMessage: refused });
       return;
     }
     // Un flux fermé sans `done` ni `error` : la réponse s'est peut-être enregistrée, `today` le dira.
@@ -234,7 +239,6 @@ export function createCoachStore(s: AppServices): CoachStore {
     set({
       today: today ?? state.today,
       status: status ?? state.status,
-      draft: '',
       pending: today ? null : state.pending,
       phase: today ? 'idle' : 'error',
       error: today ? null : errorOf(todayError),

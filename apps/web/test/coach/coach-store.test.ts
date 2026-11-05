@@ -79,6 +79,7 @@ const DONE = (proposalIds: string[] = []) =>
 
 const TEXT = (text: string) => `event: text\ndata: ${JSON.stringify({ text })}\n\n`;
 const ERROR = (code: string) => `event: error\ndata: ${JSON.stringify({ code })}\n\n`;
+const REFUSED = 'event: refused\ndata: {"message":"non"}\n\n';
 
 const PROPOSAL: CoachProposalEvent = {
   type: 'proposal',
@@ -399,6 +400,97 @@ describe('CoachStore', () => {
     expect(calls('GET', '/api/coach/today').length).toBe(reads + 1);
     expect(store.getState()).toMatchObject({ draft: '', pending: null, phase: 'idle', error: null });
     expect(store.getState().today?.messages).toHaveLength(2);
+  });
+
+  describe('texte tapé pendant le flux', () => {
+    /** Le champ est vidé dès l'envoi ; la personne tape la suite pendant que la réponse arrive. */
+    async function typingDuring(
+      setupSend: Awaited<ReturnType<typeof setup>>,
+      response: Parameters<Awaited<ReturnType<typeof setup>>['api']['on']>[2],
+      typed: string,
+    ) {
+      const { services, store, api } = setupSend;
+      api.on('POST', '/api/coach/messages', response);
+      const inner = services.transport;
+      services.transport = {
+        fetch: async (path, init) => {
+          if (path === '/api/coach/messages') store.setDraft(typed);
+          return inner.fetch(path, init);
+        },
+      };
+    }
+
+    it("le champ est vide dès l'envoi", async () => {
+      const t = await setup();
+      await t.store.load();
+      await typingDuring(t, sse(`${TEXT('ok')}${DONE()}`), '');
+      t.store.setDraft('Salut');
+      const sending = t.store.send();
+      expect(t.store.getState().draft).toBe('');
+      await sending;
+    });
+
+    it('done : la suite tapée pendant le flux reste au champ', async () => {
+      const t = await setup();
+      await t.store.load();
+      await typingDuring(t, sse(`${TEXT('ok')}${DONE()}`), 'La suite');
+      t.api.on('GET', '/api/coach/today', { status: 200, body: TODAY_WITH_USER });
+      t.store.setDraft('Salut');
+      await t.store.send();
+      expect(t.store.getState()).toMatchObject({ draft: 'La suite', phase: 'idle', pending: null });
+    });
+
+    it("error : la suite tapée reste, le message envoyé n'écrase rien", async () => {
+      const t = await setup();
+      await t.store.load();
+      await typingDuring(t, sse(ERROR('api_unavailable')), 'La suite');
+      t.store.setDraft('Salut');
+      await t.store.send();
+      expect(t.store.getState()).toMatchObject({ draft: 'La suite', phase: 'error', error: 'api_unavailable' });
+      expect(t.store.getState().pending?.text).toBe('Salut');
+    });
+
+    it("refused : la suite tapée reste, le message envoyé n'écrase rien", async () => {
+      const t = await setup();
+      await t.store.load();
+      await typingDuring(t, sse(REFUSED), 'La suite');
+      t.store.setDraft('Salut');
+      await t.store.send();
+      expect(t.store.getState()).toMatchObject({ draft: 'La suite', phase: 'refused' });
+    });
+
+    it('duplicate_message : la suite tapée reste', async () => {
+      const t = await setup();
+      await t.store.load();
+      t.api.on('POST', '/api/coach/messages', sse(ERROR('api_unavailable')));
+      t.store.setDraft('Salut');
+      await t.store.send();
+      expect(t.store.getState().draft).toBe('Salut');
+      await typingDuring(t, { status: 409, body: { error: 'duplicate_message', seq: 1 } }, 'La suite');
+      t.api.on('GET', '/api/coach/today', { status: 200, body: TODAY_WITH_USER });
+      await t.store.retry();
+      expect(t.store.getState()).toMatchObject({ draft: 'La suite', phase: 'idle', pending: null });
+    });
+
+    it("l'échec rend le texte envoyé quand le champ est resté vide", async () => {
+      const t = await setup();
+      await t.store.load();
+      await typingDuring(t, sse(ERROR('timeout')), '');
+      t.store.setDraft('Salut');
+      await t.store.send();
+      expect(t.store.getState().draft).toBe('Salut');
+    });
+  });
+
+  it("un échec avant done, puis un load réussi : l'erreur et le texte restent (keepFailure)", async () => {
+    const { store, api } = await setup();
+    await store.load();
+    api.on('POST', '/api/coach/messages', sse(`${TEXT('Début')}${ERROR('api_unavailable')}`));
+    store.setDraft('Salut');
+    await store.send();
+    await store.load();
+    expect(store.getState()).toMatchObject({ draft: 'Salut', phase: 'error', error: 'api_unavailable' });
+    expect(store.getState().pending?.text).toBe('Salut');
   });
 
   it('flux qui se tait 30 s : erreur silence, today relu', async () => {
