@@ -849,6 +849,46 @@ describe('correction 1 : preuves des décisions 1b et 6, et pannes après la val
     expect(calls()).toEqual([expect.objectContaining({ error_code: 'api_unavailable' })]);
   });
 
+  /** Journal technique dont `error` lève : ce qui suit un échec déjà absorbé ne doit pas défaire l'issue. */
+  const brokenErrorLog = () => {
+    const { logger } = kit.ctx.deps;
+    kit.ctx.deps.logger = {
+      ...logger,
+      error: () => {
+        throw new Error('journal en panne');
+      },
+    };
+  };
+
+  it('compte du jour illisible après la validation, journal error en panne : done part, une seule ligne coach_call', async () => {
+    kit = await exchangeKit({ chat: [fakeText(FINE)] });
+    brokenErrorLog();
+    const { coachConfig } = kit.ctx.deps;
+    const fake = kit.fake;
+    kit.ctx.deps.coachConfig = {
+      ...coachConfig,
+      get limits(): typeof coachConfig.limits {
+        if (fake.chatCalls.length > 0) throw new Error('réglages illisibles');
+        return coachConfig.limits;
+      },
+    };
+    const { events } = await kit.ask();
+    expect(types(events)).toEqual(['text', 'done']);
+    expect(calls()).toHaveLength(1);
+    expect(messages()).toHaveLength(2);
+  });
+
+  it('journal de sécurité et journal error en panne sur auth : api_unavailable reste, une seule ligne coach_call', async () => {
+    kit = await exchangeKit({ chat: [{ error: new AiError('auth', 'Clé refusée.') }] });
+    brokenErrorLog();
+    kit.ctx.deps.sqlite.exec(
+      `CREATE TRIGGER sec_boom BEFORE INSERT ON security_event BEGIN SELECT RAISE(ABORT, 'journal refusé'); END`,
+    );
+    const { events } = await kit.ask();
+    expect(events).toEqual([{ type: 'error', code: 'api_unavailable' }]);
+    expect(calls()).toEqual([expect.objectContaining({ error_code: 'api_unavailable' })]);
+  });
+
   it('le lecteur parti (emit qui lève) : l’échange se termine, s’enregistre, le bail est libéré', async () => {
     kit = await exchangeKit({ chat: [fakeText(FINE)] });
     const x = await prepareExchange(

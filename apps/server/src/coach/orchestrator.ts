@@ -235,6 +235,14 @@ export async function runExchange(
       // Journal en panne : l'issue est déjà écrite.
     }
   };
+  /** Journal d'erreur dont la panne est absorbée : après un échec déjà traité, il ne doit rien produire de plus. */
+  const logError = (msg: string, fields: Parameters<AppDeps['logger']['error']>[1]): void => {
+    try {
+      deps.logger.error(msg, fields);
+    } catch {
+      // Journal en panne : l'issue de l'échange ne dépend pas de lui.
+    }
+  };
   /** Échange non enregistré : `coach_call` (et la suspension si la limite de dépense est atteinte), puis l'événement. */
   const settleError = async (code: CoachStreamErrorCode, received = false): Promise<void> => {
     const summary = summarize({ errorCode: code, received });
@@ -244,7 +252,7 @@ export async function runExchange(
         if (code === 'spend_limit') await suspendCoach(trx, deps, deps.clock.now());
       });
     } catch (error) {
-      deps.logger.error('coach_call_failed', { event: errorName(error) });
+      logError('coach_call_failed', { event: errorName(error) });
     }
     log('error', summary);
     send({ type: 'error', code });
@@ -348,10 +356,10 @@ export async function runExchange(
           });
         } catch (error) {
           // Le journal de sécurité en panne ne doit pas masquer `api_unavailable`.
-          deps.logger.error('coach_security_log_failed', { event: errorName(error) });
+          logError('coach_security_log_failed', { event: errorName(error) });
         }
       } else if (outcome.cause === 'bad_request') {
-        deps.logger.error('coach_api_error', { code: 'bad_request' });
+        logError('coach_api_error', { code: 'bad_request' });
       }
       return await settleError(code, outcome.code === 'empty');
     }
@@ -385,7 +393,7 @@ export async function runExchange(
       remainingToday = Math.max(0, deps.coachConfig.limits.messagesPerDay - counted);
     } catch (error) {
       // Le téléphone relit `/api/coach/status` pour le compte exact.
-      deps.logger.error('coach_remaining_failed', { event: errorName(error) });
+      logError('coach_remaining_failed', { event: errorName(error) });
     }
     log(outcome.kind === 'answered' ? 'answered' : 'replaced', summary);
     for (const resource of helpCards) send({ type: 'help_card', resource });
@@ -411,7 +419,7 @@ export async function runExchange(
     });
   } catch (error) {
     // Défaut du code ou de la base (écriture refusée, par exemple) : rien du fil n'a été écrit (transaction annulée).
-    deps.logger.error('coach_exchange_failed', { code: 'internal', event: errorName(error) });
+    logError('coach_exchange_failed', { code: 'internal', event: errorName(error) });
     await settleError('internal');
   } finally {
     x.lease.done();
