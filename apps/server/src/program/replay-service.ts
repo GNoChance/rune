@@ -127,8 +127,8 @@ export function parseSnapshot(text: string): ProgramTemplate | null {
 }
 
 /** Entrée de `replayInstance`, ou le code de la raison qui empêche le rejeu. */
-async function loadInput(
-  trx: Trx,
+export async function loadInput(
+  trx: DbExecutor,
   instance: InstanceRow,
   slotRows: readonly SlotRow[],
 ): Promise<ReplayInput | string> {
