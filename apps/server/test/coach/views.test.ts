@@ -207,12 +207,26 @@ describe('messages et fils', () => {
     await thread('2026-08-06');
     await insertFixtureRow(ctx.deps.db, 'coach_thread', { day: '2026-11-04' });
 
-    expect(await coachThreads(ctx.deps.db, user.id, ctx.clock.now())).toEqual({
+    expect(await coachThreads(ctx.deps.db, ctx.deps, user.id, ctx.clock.now())).toEqual({
       threads: [
         { id: today.id, day: '2026-11-05', userMessageCount: 4, open: true },
         { id: limit.id, day: '2026-08-07', userMessageCount: 0, open: false },
       ],
     });
+  });
+
+  it('coachThreads : la fenêtre suit deps.coachConfig.retention.threadDays, comme la purge', async () => {
+    await setup();
+    const user = await createUser(ctx);
+    await insertFixtureRow(ctx.deps.db, 'coach_thread', { userId: user.id, day: '2026-11-05' });
+    const old = await insertFixtureRow(ctx.deps.db, 'coach_thread', { userId: user.id, day: '2026-10-25' });
+    ctx.deps.coachConfig = {
+      ...ctx.deps.coachConfig,
+      retention: { ...ctx.deps.coachConfig.retention, threadDays: 10 },
+    };
+    const { threads } = await coachThreads(ctx.deps.db, ctx.deps, user.id, ctx.clock.now());
+    expect(threads.map((t) => t.day)).toEqual(['2026-11-05']);
+    expect(threads.some((t) => t.id === old.id)).toBe(false);
   });
 
   it('coachToday : le fil du jour de Paris, sans fil null', async () => {

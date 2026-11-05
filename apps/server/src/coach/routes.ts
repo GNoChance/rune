@@ -39,7 +39,9 @@ export function coachRoutes(deps: AppDeps): Hono<AppEnv> {
     return sseStream(c, (send) => runExchange(deps, exchange, send));
   });
 
-  routes.get('/threads', async (c) => c.json(await coachThreads(deps.db, userOf(c).id, deps.clock.now())));
+  routes.get('/threads', async (c) =>
+    c.json(await coachThreads(deps.db, deps, userOf(c).id, deps.clock.now())),
+  );
 
   routes.get('/threads/:id', async (c) =>
     c.json(await coachThread(deps.db, userOf(c).id, c.req.param('id'))),

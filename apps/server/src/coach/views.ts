@@ -10,14 +10,7 @@ import {
   CURRENT_CONSENT_TEXTS,
   DisplayExtras,
 } from '@rune/contracts';
-import {
-  buildCoachBrief,
-  COACH_CONFIG,
-  coachAccessGuard,
-  type GuardSnapshot,
-  parisDate,
-  parisMonthOf,
-} from '@rune/domain';
+import { buildCoachBrief, coachAccessGuard, type GuardSnapshot, parisDate, parisMonthOf } from '@rune/domain';
 import type { Selectable } from 'kysely';
 import { traitsOn } from '../auth/me';
 import type { CoachMessageTable, DbExecutor } from '../db/schema';
@@ -196,8 +189,13 @@ function daysBefore(day: string, days: number): string {
 }
 
 /** `GET /api/coach/threads` : fils des 90 derniers jours de Paris (le jour d'il y a 90 jours compris), récents d'abord. */
-export async function coachThreads(db: DbExecutor, userId: string, now: Date): Promise<CoachThreadsResponse> {
-  const since = daysBefore(parisDate(now), COACH_CONFIG.retention.threadDays);
+export async function coachThreads(
+  db: DbExecutor,
+  deps: AppDeps,
+  userId: string,
+  now: Date,
+): Promise<CoachThreadsResponse> {
+  const since = daysBefore(parisDate(now), deps.coachConfig.retention.threadDays);
   const rows = await db
     .selectFrom('coachThread')
     .select(['id', 'day', 'userMessageCount', 'isOpen'])
