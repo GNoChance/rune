@@ -655,3 +655,168 @@ describe('garde avant le flux', () => {
     x.lease.done();
   });
 });
+
+describe('correction 1 : preuves des décisions 1b et 6, et pannes après la validation', () => {
+  const withdrawAiCoachSync = () =>
+    kit.ctx.deps.sqlite
+      .prepare(
+        `INSERT INTO consent_event (id, owner_id, type, action, text_version, created_at, rev, updated_at)
+         VALUES (?, ?, ?, 'withdraw', '1.0', '2026-11-05T10:00:01.000Z', 999, '2026-11-05T10:00:01.000Z')`,
+      )
+      .run(kit.ctx.deps.ids.uuidv7(), kit.user.id, 'ai_coach');
+
+  it('1b avec un fil du jour déjà ouvert : retrait juste après begin, la garde relue refuse, aucun appel, bail libéré', async () => {
+    kit = await exchangeKit({ chat: [fakeText(FINE), fakeText(FINE)] });
+    await kit.ask('Premier message.');
+    expect(kit.rows('SELECT id FROM coach_thread')).toHaveLength(1);
+    const callsBefore = kit.fake.chatCalls.length;
+
+    const registry = kit.ctx.deps.coach.exchanges;
+    const realBegin = registry.begin.bind(registry);
+    // Retrait synchrone dans le crochet : déterministe, sans transaction lancée sans `await`.
+    registry.begin = (userId) => {
+      const lease = realBegin(userId);
+      withdrawAiCoachSync();
+      return lease;
+    };
+
+    await expect(kit.ask('Second message.')).rejects.toMatchObject({ code: 'consent_required', status: 403 });
+    expect(kit.fake.chatCalls).toHaveLength(callsBefore);
+    expect(registry.inProgress(kit.user.id)).toBe(false);
+    expect(messages()).toHaveLength(2);
+  });
+
+  it('1b avec un fil existant : coach coupé juste après begin, coach_unavailable, aucun appel, bail libéré', async () => {
+    kit = await exchangeKit({ chat: [fakeText(FINE), fakeText(FINE)] });
+    await kit.ask('Premier message.');
+    const callsBefore = kit.fake.chatCalls.length;
+    const registry = kit.ctx.deps.coach.exchanges;
+    const realBegin = registry.begin.bind(registry);
+    registry.begin = (userId) => {
+      const lease = realBegin(userId);
+      kit.ctx.deps.sqlite.exec('UPDATE coach_state SET enabled = 0');
+      return lease;
+    };
+    await expect(kit.ask('Second message.')).rejects.toMatchObject({
+      code: 'coach_unavailable',
+      status: 503,
+    });
+    expect(kit.fake.chatCalls).toHaveLength(callsBefore);
+    expect(registry.inProgress(kit.user.id)).toBe(false);
+  });
+
+  it("6 : accord santé retiré pendant le flux, l'événement porte le motif, la base garde blocks et motif nuls", async () => {
+    const { turn, release } = gated('Je te propose un repos plus court.');
+    kit = await exchangeKit({
+      program: true,
+      chat: [fakeToolUse('t1', 'propose_program_change', PROPOSE), turn],
+    });
+    const run = await kit.begin();
+    await untilCalls(2);
+    // Retrait santé sans fermer le fil : seul l'événement `withdraw` change.
+    kit.ctx.deps.sqlite
+      .prepare(
+        `INSERT INTO consent_event (id, owner_id, type, action, text_version, created_at, rev, updated_at)
+         VALUES (?, ?, 'health', 'withdraw', '1.0', '2026-11-05T10:00:01.000Z', 999, '2026-11-05T10:00:01.000Z')`,
+      )
+      .run(kit.ctx.deps.ids.uuidv7(), kit.user.id);
+    release();
+    await run.finished;
+
+    expect(run.x.healthConsent).toBe(true);
+    expect(run.events.find((e) => e.type === 'proposal')).toMatchObject({ reason: REASON });
+    expect(lastEvent(run.events)).toMatchObject({ type: 'done' });
+    expect(kit.rows('SELECT blocks FROM coach_message').every((r) => r.blocks === null)).toBe(true);
+    expect(messages()).toHaveLength(4);
+    expect(kit.rows('SELECT reason, status FROM instance_change')).toEqual([
+      { reason: null, status: 'proposed' },
+    ]);
+  });
+
+  it("carte d'aide d'une tentative bloquée : ni événement, ni compteur help_*, ni carte enregistrée", async () => {
+    kit = await exchangeKit({
+      chat: [fakeToolUse('t1', 'refer_to_help', { resource: 'pain' }), fakeText(BLOCKED), fakeText(FINE)],
+    });
+    const { events } = await kit.ask();
+    expect(types(events)).toEqual(['tool_running', 'retry', 'text', 'done']);
+    expect(counters()).toEqual([{ kind: 'filter_block', count: 1 }]);
+    const reply = kit.rows(
+      'SELECT display_extras FROM coach_message WHERE role = ? AND display_text = ?',
+      'assistant',
+      FINE,
+    );
+    expect(JSON.parse(reply[0]?.display_extras as string).helpCards).toEqual([]);
+  });
+
+  it("journal en panne après l'enregistrement : done part, une seule ligne coach_call, pas d'error", async () => {
+    kit = await exchangeKit({ chat: [fakeText(FINE)] });
+    const { logger } = kit.ctx.deps;
+    kit.ctx.deps.logger = {
+      ...logger,
+      info: (msg, f) => {
+        if (msg === 'coach_exchange') throw new Error('journal en panne');
+        logger.info(msg, f);
+      },
+    };
+    const { events } = await kit.ask();
+    expect(types(events)).toEqual(['text', 'done']);
+    expect(calls()).toHaveLength(1);
+    expect(messages()).toHaveLength(2);
+    expect(kit.ctx.deps.coach.exchanges.inProgress(kit.user.id)).toBe(false);
+  });
+
+  it('compte du jour illisible après la validation : done part quand même (remainingToday 0)', async () => {
+    kit = await exchangeKit({ chat: [fakeText(FINE)] });
+    const { coachConfig } = kit.ctx.deps;
+    const fake = kit.fake;
+    kit.ctx.deps.coachConfig = {
+      ...coachConfig,
+      get limits(): typeof coachConfig.limits {
+        if (fake.chatCalls.length > 0) throw new Error('réglages illisibles');
+        return coachConfig.limits;
+      },
+    };
+    const { events } = await kit.ask();
+    expect(types(events)).toEqual(['text', 'done']);
+    expect(lastEvent(events)).toMatchObject({ type: 'done', remainingToday: 0 });
+    expect(calls()).toHaveLength(1);
+  });
+
+  it('journal de sécurité en panne sur auth : api_unavailable reste, une seule ligne coach_call', async () => {
+    kit = await exchangeKit({ chat: [{ error: new AiError('auth', 'Clé refusée.') }] });
+    kit.ctx.deps.sqlite.exec(
+      `CREATE TRIGGER sec_boom BEFORE INSERT ON security_event BEGIN SELECT RAISE(ABORT, 'journal refusé'); END`,
+    );
+    const { events } = await kit.ask();
+    expect(events).toEqual([{ type: 'error', code: 'api_unavailable' }]);
+    expect(calls()).toEqual([expect.objectContaining({ error_code: 'api_unavailable' })]);
+  });
+
+  it('le lecteur parti (emit qui lève) : l’échange se termine, s’enregistre, le bail est libéré', async () => {
+    kit = await exchangeKit({ chat: [fakeText(FINE)] });
+    const x = await prepareExchange(
+      kit.ctx.deps,
+      kit.user.id,
+      { clientMessageId: kit.ctx.deps.ids.uuidv7(), text: 'Salut.' },
+      kit.ctx.clock.now(),
+    );
+    const { runExchange } = await import('../../src/coach/orchestrator');
+    await runExchange(kit.ctx.deps, x, () => {
+      throw new Error('téléphone parti');
+    });
+    expect(messages()).toHaveLength(2);
+    expect(calls()).toHaveLength(1);
+    expect(kit.ctx.deps.coach.exchanges.inProgress(kit.user.id)).toBe(false);
+  });
+
+  it('doublon dans un fil gelé : thread_closed (le contrôle du gel précède l’idempotence)', async () => {
+    kit = await exchangeKit({ chat: [fakeText(FINE)] });
+    const id = '019a5e00-0000-7000-8000-0000000000e1';
+    await kit.ask('Salut.', { clientMessageId: id });
+    kit.ctx.deps.coachConfig = { ...kit.ctx.deps.coachConfig, toolsVersion: 'tools-2' };
+    await expect(kit.ask('Salut.', { clientMessageId: id })).rejects.toMatchObject({
+      code: 'thread_closed',
+      extra: { reason: 'version_change' },
+    });
+  });
+});

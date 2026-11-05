@@ -105,6 +105,7 @@ export async function prepareExchange(
       thread = { ...thread, isOpen: 0, closedReason: 'version_change' };
     }
     if (thread.isOpen !== 1) throw httpError('thread_closed', { reason: thread.closedReason });
+    // Ordre du §7.3 : un doublon d'un fil clos ou gelé répond `thread_closed`, pas `duplicate_message`.
     const duplicate = await deps.db
       .selectFrom('coachMessage')
       .select('seq')
@@ -213,18 +214,25 @@ export async function runExchange(
       o.received === true || tally.filterBlocks > 0 || tally.calls.some((call) => call.stopReason !== null),
     durationMs: Math.max(0, deps.clock.now().getTime() - x.startedAt.getTime()),
   });
-  /** Journal technique de l'issue : ses compteurs seulement (P-LOG-2) ; un modèle sans prix est signalé. */
+  /**
+   * Journal technique de l'issue : ses compteurs seulement (P-LOG-2) ; un modèle sans prix est signalé. Il passe
+   * après l'écriture : une panne du journal ne doit ni défaire l'issue ni écrire une 2e ligne `coach_call`.
+   */
   const log = (event: 'answered' | 'replaced' | 'refused' | 'error', summary: CallSummary): void => {
-    for (const model of new Set(tally.calls.filter((c) => c.priceUnknown).map((c) => c.model))) {
-      deps.logger.warn('price_unknown', { code: model });
+    try {
+      for (const model of new Set(tally.calls.filter((c) => c.priceUnknown).map((c) => c.model))) {
+        deps.logger.warn('price_unknown', { code: model });
+      }
+      deps.logger.info('coach_exchange', {
+        event,
+        rounds: summary.toolRounds,
+        blocks: summary.filterBlocks,
+        durationMs: summary.durationMs,
+        ...(summary.errorCode === null ? {} : { code: summary.errorCode }),
+      });
+    } catch {
+      // Journal en panne : l'issue est déjà écrite.
     }
-    deps.logger.info('coach_exchange', {
-      event,
-      rounds: summary.toolRounds,
-      blocks: summary.filterBlocks,
-      durationMs: summary.durationMs,
-      ...(summary.errorCode === null ? {} : { code: summary.errorCode }),
-    });
   };
   /** Échange non enregistré : `coach_call` (et la suspension si la limite de dépense est atteinte), puis l'événement. */
   const settleError = async (code: CoachStreamErrorCode, received = false): Promise<void> => {
@@ -326,13 +334,18 @@ export async function runExchange(
       const code = outcome.code === 'empty' ? 'internal' : outcome.code;
       if (outcome.cause === 'auth') {
         // Clé refusée : l'administrateur doit le savoir, sans contenu.
-        await logSecurityEvent(deps.db, deps, {
-          type: 'coach_api_auth_failed',
-          actorId: null,
-          targetId: null,
-          ip: null,
-          outcome: 'failure',
-        });
+        try {
+          await logSecurityEvent(deps.db, deps, {
+            type: 'coach_api_auth_failed',
+            actorId: null,
+            targetId: null,
+            ip: null,
+            outcome: 'failure',
+          });
+        } catch (error) {
+          // Le journal de sécurité en panne ne doit pas masquer `api_unavailable`.
+          deps.logger.error('coach_security_log_failed', { event: errorName(error) });
+        }
       } else if (outcome.cause === 'bad_request') {
         deps.logger.error('coach_api_error', { code: 'bad_request' });
       }
@@ -359,7 +372,15 @@ export async function runExchange(
       if (error instanceof ExchangeGoneError) return await settleError(error.reason, true);
       throw error;
     }
-    const counted = await countedToday(deps.db, x.userId, x.day);
+    // Après la validation : rien d'ici ne doit produire `error` ni une 2e ligne `coach_call`.
+    let remainingToday = 0;
+    try {
+      const counted = await countedToday(deps.db, x.userId, x.day);
+      remainingToday = Math.max(0, deps.coachConfig.limits.messagesPerDay - counted);
+    } catch (error) {
+      // Le téléphone relit `/api/coach/status` pour le compte exact.
+      deps.logger.error('coach_remaining_failed', { event: errorName(error) });
+    }
     log(outcome.kind === 'answered' ? 'answered' : 'replaced', summary);
     if (outcome.kind === 'answered') {
       for (const event of current.held) send(event);
@@ -374,7 +395,7 @@ export async function runExchange(
       truncated: outcome.kind === 'answered' && outcome.truncated,
       replaced: outcome.kind === 'blocked',
       proposalIds: recorded.proposalIds,
-      remainingToday: Math.max(0, deps.coachConfig.limits.messagesPerDay - counted),
+      remainingToday,
     });
   } catch (error) {
     // Défaut du code ou de la base (écriture refusée, par exemple) : rien du fil n'a été écrit (transaction annulée).

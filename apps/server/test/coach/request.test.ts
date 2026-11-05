@@ -99,3 +99,22 @@ describe('requête sérialisée, pour chaque public', () => {
     ]);
   });
 });
+
+describe('point de cache avec un historique', () => {
+  it('plusieurs messages et le message system de régénération : le point porte sur le dernier bloc du dernier message non system', async () => {
+    kit = await exchangeKit({
+      chat: [
+        fakeText('Garde ton rythme actuel.'),
+        fakeText('Voici ta charge : 200 kg.'),
+        fakeText('Reste sur ton programme.'),
+      ],
+    });
+    await kit.ask('Premier message.');
+    await kit.ask('Second message.');
+    const body = kit.fake.chatParams[2]?.body as unknown as Body;
+
+    expect(body.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'system']);
+    const marked = body.messages.map((m) => m.content.map((b) => b.cache_control !== undefined));
+    expect(marked).toEqual([[false], [false], [true], [false]]);
+  });
+});
