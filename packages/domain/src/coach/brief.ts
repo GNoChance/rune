@@ -20,6 +20,7 @@ import {
   maxExerciseLevel,
   PAIN_CODE_REWRITES,
   type PainLevel,
+  REASON_CODES,
   type ReasonCode,
   SESSION_MINUTES,
   type ServedProgramTemplate,
@@ -160,10 +161,9 @@ export const ANYWHERE: PlaceContext = {
 };
 
 /** Codes de douleur réécrits sans l'accord C2, comme au retrait de l'accord santé (05 §13.9). */
-const PAIN_REASONS: Partial<Record<ReasonCode, ReasonCode>> = {
-  PAIN_HOLD: PAIN_CODE_REWRITES.PAIN_HOLD,
-  PAIN_LIGHTEN: PAIN_CODE_REWRITES.PAIN_LIGHTEN,
-};
+const PAIN_REASONS: Partial<Record<ReasonCode, ReasonCode>> = Object.fromEntries(
+  Object.entries(PAIN_CODE_REWRITES).filter(([code]) => (REASON_CODES as readonly string[]).includes(code)),
+);
 
 /** Table des alias figée avec un fil (alias → identifiant réel, la forme de `slotAliases`) : aucune. */
 const NO_ALIASES: ReadonlyMap<string, string> = new Map();
@@ -779,7 +779,7 @@ function withoutNotes(brief: CoachBrief): CoachBrief {
 
 /**
  * Plafond (choix C43, cascade du contrôleur, écart au §9) : au-delà de `max` jetons estimés, dans l'ordre, (a) les
- * séances les plus anciennes jusqu'à en garder 3, (b) les records au-delà de 15, (c) les notes (séances gardées et
+ * séances les plus anciennes jusqu'à en garder 3, (b) les records au-delà de `TRUNCATED_RECORDS` (10), (c) les notes (séances gardées et
  * limitations), (d) les séances jusqu'à en garder 1. Chaque étape s'arrête dès que le dossier tient ;
  * `history.truncated` n'est vrai que si une étape a retiré quelque chose. Le programme n'est jamais coupé : un dossier
  * encore trop gros est rendu tel quel (`oversize` de `buildCoachBrief`).
