@@ -210,9 +210,10 @@ function expectTextOnPage(
     for (const bg of ['--bg', '--surface']) {
       const b = tokens.get(bg) as string;
       const ratio = contrastRatio(fg as string, b);
-      expect(ratio, `${name} ${fg} sur ${bg} ${b} (${palette}) : ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
-        TEXT,
-      );
+      expect(
+        ratio,
+        `${name} ${fg} sur ${bg} ${b} (${palette}) : ${ratio.toFixed(2)}:1`,
+      ).toBeGreaterThanOrEqual(TEXT);
     }
   }
 }

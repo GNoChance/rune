@@ -24,6 +24,11 @@ type Message = CoachThreadResponse['messages'][number];
  */
 export function ThreadPage() {
   const { id = '' } = useParams<{ id: string }>();
+  // Un autre fil repart de zéro : ni les messages, ni l'erreur, ni les feuilles ouvertes du précédent.
+  return <ThreadView key={id} id={id} />;
+}
+
+function ThreadView({ id }: { id: string }) {
   const repos = useRepos();
   const { store } = useCoachStore();
   const [, navigate] = useLocation();

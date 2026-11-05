@@ -1,11 +1,14 @@
-import { fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { Route, Router } from 'wouter';
+import { ServicesProvider } from '../../src/app-services';
 import { callText, REPORT_TEXTS, THREAD_TEXTS } from '../../src/features/coach/coach-texts';
+import { ThreadPage } from '../../src/features/coach/ThreadPage';
 import { coachMessage, coachStatus, serveCoach } from '../support/coach';
 import { createFakeApi, type FakeApi } from '../support/fake-api';
 import { createTestLocalDb } from '../support/local-db';
 import { changeRow, seedProgram } from '../support/program';
-import { renderApp } from '../support/render';
+import { createTestServices, renderApp } from '../support/render';
 import { seedMirror } from '../support/seed';
 import { until } from '../support/wait';
 
@@ -169,5 +172,34 @@ describe('ThreadPage : un fil en lecture seule', () => {
     fireEvent.click(dialog.getByRole('button', { name: 'Supprimer' }));
     await until(() => location() === '/coach/threads');
     expect(calls(api, 'DELETE', '/api/coach/threads/t2')).toHaveLength(1);
+  });
+});
+
+describe('ThreadPage : changement de fil', () => {
+  it("l'id qui change efface le fil précédent pendant la lecture du suivant", async () => {
+    const { services, api, memory } = await createTestServices({ path: '/coach/threads/t2' });
+    const other = { ...THREAD, id: 't1', day: '2025-10-27' };
+    api.on('GET', '/api/coach/threads/t2', {
+      status: 200,
+      body: { thread: THREAD, messages: [coachMessage(1, 'user', 'Message du fil t2')] },
+    });
+    api.on('GET', '/api/coach/threads/t1', {
+      status: 200,
+      body: { thread: other, messages: [coachMessage(1, 'user', 'Message du fil t1')] },
+    });
+    render(
+      <Router hook={memory.hook} searchHook={memory.searchHook}>
+        <ServicesProvider services={services}>
+          <Route path="/coach/threads/:id">
+            <ThreadPage />
+          </Route>
+        </ServicesProvider>
+      </Router>,
+    );
+    await screen.findByText('Message du fil t2');
+    // Le fil suivant ne répond pas encore.
+    api.on('GET', '/api/coach/threads/t1', () => new Promise<never>(() => {}));
+    act(() => memory.navigate('/coach/threads/t1'));
+    expect(screen.queryByText('Message du fil t2')).toBeNull();
   });
 });

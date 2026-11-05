@@ -130,7 +130,9 @@ function CoachSection() {
     status === null
       ? state.error === null
         ? null
-        : MY_COACH_TEXTS.unknown
+        : state.error === 'offline'
+          ? STATE_TEXTS.offline
+          : MY_COACH_TEXTS.unknown
       : !on
         ? status.consent.needsRenewal
           ? STATE_TEXTS.consentChanged

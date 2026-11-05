@@ -2,7 +2,7 @@ import type { CoachStatusView } from '@rune/contracts';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { coachStoreFor } from '../../src/features/coach/coach-store';
-import { MY_COACH_TEXTS } from '../../src/features/coach/coach-texts';
+import { MY_COACH_TEXTS, STATE_TEXTS } from '../../src/features/coach/coach-texts';
 import { fill } from '../support/auth';
 import { coachStatus, serveCoach } from '../support/coach';
 import { createFakeApi, type FakeApi } from '../support/fake-api';
@@ -47,6 +47,18 @@ function orderOf(names: readonly string[]): string[] {
 }
 
 describe('Mon coach : section « Coach IA » (spec brique 4 §16.7)', () => {
+  it('hors ligne sans statut : « Hors ligne », pas « indisponible pour le moment »', async () => {
+    const api = createFakeApi();
+    const me = makeMe();
+    const db = createTestLocalDb();
+    await seedProfile(db, { ...TRAINING, coach: 'skald' });
+    serveProfile(api, db, me);
+    api.setOffline('reject');
+    await renderApp({ path: '/profile/coach', me, db, api });
+    await screen.findByText(STATE_TEXTS.offline);
+    expect(screen.queryByText(MY_COACH_TEXTS.unknown)).toBeNull();
+  });
+
   it('remplace la mention « la vraie conversation arrivera plus tard »', async () => {
     await renderCoach();
     await screen.findByText(MY_COACH_TEXTS.active);

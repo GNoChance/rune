@@ -446,7 +446,11 @@ describe('CoachStore', () => {
       await typingDuring(t, sse(ERROR('api_unavailable')), 'La suite');
       t.store.setDraft('Salut');
       await t.store.send();
-      expect(t.store.getState()).toMatchObject({ draft: 'La suite', phase: 'error', error: 'api_unavailable' });
+      expect(t.store.getState()).toMatchObject({
+        draft: 'La suite',
+        phase: 'error',
+        error: 'api_unavailable',
+      });
       expect(t.store.getState().pending?.text).toBe('Salut');
     });
 
