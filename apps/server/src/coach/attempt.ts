@@ -261,8 +261,12 @@ async function callOnce(
   try {
     const final = await input.ai.chat({ ...input.request, messages, signal: controller.signal }, (e) => {
       if (relay.verdict !== null) return;
-      if (e.type === 'block_start') open = e.block;
-      else if (e.type === 'block_stop') open = null;
+      if (e.type === 'block_start') {
+        // Un bloc de texte sans ponctuation finale ne se colle pas au suivant : sa phrase part quand un autre bloc
+        // commence (mots précédents gardés). Fin du flux sans autre bloc, un refus ne vide pas le tampon (§8.5).
+        relay.flush();
+        open = e.block;
+      } else if (e.type === 'block_stop') open = null;
       else if (open === 'text') relay.push(e.text);
       if (relay.verdict !== null) controller.abort();
     });

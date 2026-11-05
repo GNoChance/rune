@@ -774,6 +774,22 @@ describe('runAttempt : replis et coûts', () => {
     expect(cost).toBeGreaterThan(costUsd('claude-opus-5', second));
   });
 
+  it('bloc de texte sans ponctuation finale suivi d’un repli : la phrase part à la fin du bloc, pas collée à la suivante', async () => {
+    const { events, run } = await setup({
+      chat: [
+        turn(
+          [text('Garde ton rythme'), fallback(MODEL, 'claude-opus-5'), text('Fais trois séries.')],
+          'end_turn',
+          {
+            fallbackUsed: true,
+          },
+        ),
+      ],
+    });
+    expect(await run()).toMatchObject({ kind: 'answered', text: 'Garde ton rythmeFais trois séries.' });
+    expect(texts(events)).toEqual(['Garde ton rythme', 'Fais trois séries.']);
+  });
+
   it('fallbackUsed lu sur AiChatFinal (tâche 12), jamais recalculé ici', async () => {
     const reader = fakeTool('read_training', ok({ sessions: [] }));
     const { run } = await setup({
