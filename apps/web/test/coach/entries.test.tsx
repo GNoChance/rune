@@ -13,6 +13,7 @@ import { seedPrimaryGym, seedProfile } from '../support/onboarding';
 import { seedProgram } from '../support/program';
 import { DEFAULT_NOW, makeMe, renderApp } from '../support/render';
 import { seedMirror } from '../support/seed';
+import { until } from '../support/wait';
 import { seedBase } from '../workout/seed';
 
 // Entrées vers le coach (spec brique 4 §16.1) : accueil, Mon programme, fin de séance. Aucune n'envoie quoi que
@@ -82,13 +83,13 @@ describe("accueil : l'entrée de la bulle « Aujourd'hui »", () => {
 });
 
 describe('Mon programme : « Ajuster mon programme avec le coach »', () => {
-  async function openProgram(sync?: FakeSyncEngine) {
+  async function openProgram(sync?: FakeSyncEngine, me = WITH_CONSENT) {
     const db = createTestLocalDb();
     opened.push(db);
     await seedProgram(db);
     const api = createFakeApi();
     serveCoach(api, coachStatus());
-    const view = await renderApp({ path: '/program', db, api, me: WITH_CONSENT, sync });
+    const view = await renderApp({ path: '/program', db, api, me, sync });
     await screen.findByRole('button', { name: 'Ajuster mon programme avec le coach' }, LAZY);
     return { ...view, api };
   }
@@ -104,6 +105,14 @@ describe('Mon programme : « Ajuster mon programme avec le coach »', () => {
     expect(api.calls.filter((c) => c.method === 'POST')).toEqual([]);
   });
 
+  it('sans l’accord : vers /profile/coach, sans brouillon ni envoi', async () => {
+    const { api, location, services } = await openProgram(undefined, WITHOUT_CONSENT);
+    fireEvent.click(screen.getByRole('button', { name: 'Ajuster mon programme avec le coach' }));
+    await until(() => location() === '/profile/coach');
+    expect(coachStoreFor(services).getState().draft).toBe('');
+    expect(api.calls.filter((c) => c.method === 'POST')).toEqual([]);
+  });
+
   it('hors ligne : grisé, « Nécessite le réseau »', async () => {
     await openProgram(createFakeSyncEngine({ connection: 'offline' }));
     const button = screen.getByRole('button', {
@@ -115,7 +124,7 @@ describe('Mon programme : « Ajuster mon programme avec le coach »', () => {
 });
 
 describe('fin de séance : « Une question sur cette séance ? »', () => {
-  async function openSummary(me: typeof WITH_CONSENT) {
+  async function openSummary(me: typeof WITH_CONSENT, sync?: FakeSyncEngine) {
     const db = await seedBase();
     opened.push(db);
     await seedMirror(db, 'workout_session', [
@@ -137,7 +146,7 @@ describe('fin de séance : « Une question sur cette séance ? »', () => {
         note: null,
       },
     ]);
-    const view = await renderApp({ path: '/workout/s-now/summary', db, me });
+    const view = await renderApp({ path: '/workout/s-now/summary', db, me, sync });
     await screen.findByRole('group', { name: 'Séance gravée.' }, { timeout: 5000 });
     return view;
   }
@@ -148,6 +157,16 @@ describe('fin de séance : « Une question sur cette séance ? »', () => {
     expect(link.getAttribute('href')).toBe('/coach');
     const label = screen.getByText('Fin de séance');
     expect(label.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('hors ligne : grisé, « Nécessite le réseau », plus de lien', async () => {
+    await openSummary(WITH_CONSENT, createFakeSyncEngine({ connection: 'offline' }));
+    const button = screen.getByRole('button', {
+      name: 'Une question sur cette séance ?',
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(screen.queryByRole('link', { name: 'Une question sur cette séance ?' })).toBeNull();
+    expect(screen.getByText(OFFLINE)).toBeTruthy();
   });
 
   it('sans l’accord : pas de lien', async () => {

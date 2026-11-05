@@ -1,6 +1,6 @@
 import { type CSSProperties, type ReactNode, useId, useMemo } from 'react';
 import { Link, Redirect, useLocation } from 'wouter';
-import { useLive, useMe } from '../../app-services';
+import { useLive, useMe, useSyncState } from '../../app-services';
 import {
   useCatalog,
   useHistory,
@@ -9,7 +9,16 @@ import {
   useSessionDecisions,
   type WorkoutSessionView,
 } from '../../repos';
-import { Button, CoachBubble, EmptyState, formatInt, Page, RankBadge, SystemPanel } from '../../ui';
+import {
+  Button,
+  CoachBubble,
+  EmptyState,
+  formatInt,
+  NETWORK_REQUIRED_MESSAGE,
+  Page,
+  RankBadge,
+  SystemPanel,
+} from '../../ui';
 import { coachLine } from '../coach/coach-lines';
 import { ENTRY_TEXTS } from '../coach/coach-texts';
 import { sessionName, workStat } from '../history/history-format';
@@ -65,6 +74,7 @@ function Summary(p: { session: WorkoutSessionView }) {
   const { session } = p;
   const repos = useRepos();
   const me = useMe();
+  const offline = useSyncState().connection === 'offline';
   const [, navigate] = useLocation();
   const history = useHistory();
   const catalog = useCatalog();
@@ -97,9 +107,18 @@ function Summary(p: { session: WorkoutSessionView }) {
           </CoachBubble>
         ) : null}
         {me?.consents.aiCoach.active ? (
-          <Link href="/coach" className={styles.coachLink}>
-            {ENTRY_TEXTS.question}
-          </Link>
+          offline ? (
+            <div className={styles.coachLink}>
+              <Button variant="secondary" disabled aria-describedby="coach-offline">
+                {ENTRY_TEXTS.question}
+              </Button>
+              <p id="coach-offline">{NETWORK_REQUIRED_MESSAGE}</p>
+            </div>
+          ) : (
+            <Link href="/coach" className={styles.coachLink}>
+              {ENTRY_TEXTS.question}
+            </Link>
+          )
         ) : null}
         <Button block onClick={() => navigate('/')}>
           Terminé

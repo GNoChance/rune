@@ -1,6 +1,6 @@
 import { type ReactNode, useId, useMemo, useState } from 'react';
 import { Link, useLocation } from 'wouter';
-import { useServices, useSyncState } from '../../app-services';
+import { useMe, useServices, useSyncState } from '../../app-services';
 import {
   type ProgramEditContext,
   type ProgramView,
@@ -196,13 +196,19 @@ export function ProgramPage() {
   const repos = useRepos();
   const { connection } = useSyncState();
   const services = useServices();
+  const me = useMe();
   const [, navigate] = useLocation();
   const offline = connection === 'offline';
   const [sheet, setSheet] = useState<OpenSheet | null>(null);
   const names = useMemo(() => (view && ctx ? programNames(view, ctx) : null), [view, ctx]);
   const close = () => setSheet(null);
   // Ne part rien : le début de message attend dans le champ du coach, que la personne complète et envoie.
+  // Sans l'accord, comme l'accueil : vers Mon coach, sans brouillon.
   const askCoach = () => {
+    if (me?.consents.aiCoach.active !== true) {
+      navigate('/profile/coach');
+      return;
+    }
     coachStoreFor(services).setDraft(PROGRAM_PREFILL);
     navigate('/coach');
   };

@@ -75,6 +75,8 @@ export function AdminCoachPage() {
           <CostsSection view={view.data} />
           <ReportsSection
             reports={reports.data}
+            error={reports.error}
+            onRetry={() => void reports.reload()}
             selected={selected}
             onSelect={setSelected}
             onClassify={(id) => setConfirm({ kind: 'classify', id })}
@@ -178,6 +180,8 @@ function CostsSection(p: { view: CoachAdminView }) {
 
 function ReportsSection(p: {
   reports: CoachReportSummary[] | null;
+  error: string | null;
+  onRetry(): void;
   selected: string | null;
   onSelect(id: string | null): void;
   onClassify(id: string): void;
@@ -188,6 +192,7 @@ function ReportsSection(p: {
     <>
       <section aria-labelledby={id} className={styles.section}>
         <h2 id={id}>{T.reportsTitle}</h2>
+        {p.error ? <LoadFailure message={p.error} onRetry={p.onRetry} /> : null}
         {p.reports && p.reports.length === 0 ? <p>{T.noReports}</p> : null}
         {p.reports && p.reports.length > 0 ? (
           <ul className={`${styles.card} ${styles.coachCard} ${styles.coachList}`}>

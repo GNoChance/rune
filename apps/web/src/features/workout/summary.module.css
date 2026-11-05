@@ -304,3 +304,12 @@
   font-weight: 600;
   text-decoration: underline;
 }
+
+.coachLink p {
+  margin: 0;
+}
+
+.coachLink {
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}

@@ -203,6 +203,32 @@ describe('Admin › Coach : signalements', () => {
     expect(rows).toEqual(['05/10/2026 à 10:30 Dangereux ines.m Mineur', '04/10/2026 à 20:00 Inexact lea']);
   });
 
+  it('lecture des signalements en échec : l’erreur et « Réessayer » dans la section, le reste reste', async () => {
+    const api = serve();
+    let fail = true;
+    api.on('GET', `${COACH}/reports`, () =>
+      fail ? { status: 500, body: { error: 'internal' } } : { status: 200, body: [REPORT_B] },
+    );
+    await openAdmin(api);
+    const reports = region('Signalements');
+    await reports.findByRole('button', { name: 'Réessayer' });
+    expect(screen.getByRole('switch', { name: 'Coach IA pour le cercle' })).toBeTruthy();
+    fail = false;
+    fireEvent.click(reports.getByRole('button', { name: 'Réessayer' }));
+    await reports.findByRole('button', { name: /lea/ });
+    expect(reports.queryByRole('button', { name: 'Réessayer' })).toBeNull();
+  });
+
+  it('l’échange est rendu comme du texte, jamais comme du HTML', async () => {
+    const api = serve();
+    api.on('GET', `${COACH}/reports/:id`, { status: 200, body: { ...DETAIL_A, exchangeText: '<b>x</b>' } });
+    await openAdmin(api);
+    fireEvent.click(region('Signalements').getByRole('button', { name: /ines.m/ }));
+    const detail = await screen.findByRole('region', { name: 'Signalement' });
+    expect(within(detail).getByText('<b>x</b>')).toBeTruthy();
+    expect(detail.querySelector('b')).toBeNull();
+  });
+
   it('aucun signalement : le dit', async () => {
     await openAdmin(serve({ reports: [] }));
     expect(region('Signalements').getByText('Aucun signalement à lire.')).toBeTruthy();
