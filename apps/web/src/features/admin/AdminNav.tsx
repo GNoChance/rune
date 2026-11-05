@@ -5,12 +5,13 @@ const LINKS: readonly { href: string; label: string }[] = [
   { href: '/admin/members', label: 'Membres' },
   { href: '/admin/invitations', label: 'Invitations' },
   { href: '/admin/gyms', label: 'Salles' },
+  { href: '/admin/coach', label: 'Coach' },
   { href: '/admin/health', label: 'Serveur' },
 ];
 
 /**
  * Sous-navigation de l'administration (02 §6, spec refonte §10.5, maquettes E01 à E05) : Membres · Invitations ·
- * Salles · Serveur, en pilule segmentée ; la section affichée porte `aria-current="page"` (adresse comparée sans
+ * Salles · Coach · Serveur, en pilule segmentée ; la section affichée porte `aria-current="page"` (adresse comparée sans
  * tenir compte de la casse ni de la barre finale, comme les routes).
  */
 export function AdminNav() {

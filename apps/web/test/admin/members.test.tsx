@@ -43,6 +43,22 @@ const INES: MemberSummary = {
   healthProfessional: false,
 };
 
+const COACH_VIEW = {
+  state: {
+    enabled: true,
+    suspendedUntil: null,
+    configured: true,
+    notConfiguredCause: null,
+    catalogChanged: false,
+  },
+  month: '2026-10',
+  totalUsd: 0,
+  workspaceLimitUsd: 20,
+  members: [],
+  counters: [],
+  openReports: 0,
+};
+
 async function renderMembers(o: { api?: FakeApi; members?: MemberSummary[]; now?: number } = {}) {
   const api = o.api ?? createFakeApi();
   api.on('GET', '/api/admin/members', { status: 200, body: o.members ?? [BASTIEN, INES] });
@@ -128,11 +144,18 @@ describe('MembersPage : une carte par membre (02 §6, P-ADM-1, spec refonte §10
     await renderMembers();
     // Initiale de l'avatar (décorative), pseudo, badges, connexion, accords et onboarding : rien de plus.
     expect(screen.getByRole('article', { name: 'ines.m' }).textContent).toBe(
-      'Iines.mActifMineurJamais connectéAccord santéOuiAccord coachNonOnboardingEn cours',
+      'Iines.mActifMineurJamais connectéCoût IA du mois : 0,00 $Accord santéOuiAccord coachNonOnboardingEn cours',
     );
     expect(screen.getByRole('article', { name: 'bastien' }).textContent).toBe(
-      'BbastienAdminActifDernière connexion : il y a 3 hAccord santéNonAccord coachOuiOnboardingTerminé',
+      'BbastienAdminActifDernière connexion : il y a 3 hCoût IA du mois : 0,00 $Accord santéNonAccord coachOuiOnboardingTerminé',
     );
+  });
+
+  it('« Coût IA du mois : 1,23 $ » : le coût du mois de Paris, à 2 décimales, sans nombre de messages', async () => {
+    await renderMembers({ members: [{ ...BASTIEN, aiCostMonthUsd: 1.234 }, INES] });
+    expect(card('bastien').getByText('Coût IA du mois : 1,23 $')).toBeTruthy();
+    expect(card('ines.m').getByText('Coût IA du mois : 0,00 $')).toBeTruthy();
+    expect(screen.getByRole('article', { name: 'bastien' }).textContent).not.toMatch(/message/i);
   });
 
   it('dernière connexion relative à l’horloge injectée : « il y a 2 j », « à l’instant »', async () => {
@@ -202,11 +225,13 @@ describe('MembersPage : une carte par membre (02 §6, P-ADM-1, spec refonte §10
     },
   );
 
-  it('sous-navigation Membres · Invitations · Salles · Serveur ; titre « Administration » et Retour vers le Profil', async () => {
+  it('sous-navigation Membres · Invitations · Salles · Coach · Serveur ; titre « Administration » et Retour vers le Profil', async () => {
     const api = createFakeApi()
       .on('GET', '/api/admin/members', { status: 200, body: [BASTIEN] })
       .on('GET', '/api/admin/invitations', { status: 200, body: [] })
       .on('GET', '/api/gyms', { status: 200, body: [] })
+      .on('GET', '/api/admin/coach', { status: 200, body: COACH_VIEW })
+      .on('GET', '/api/admin/coach/reports', { status: 200, body: [] })
       .on('GET', '/api/admin/ops-status', { status: 200, body: { version: 'dev', opsStatus: null } });
     await renderApp({ path: '/admin/members', me: ADMIN, api });
     expect(await screen.findByRole('heading', { level: 2, name: 'Membres du cercle' })).toBeTruthy();
@@ -221,6 +246,7 @@ describe('MembersPage : une carte par membre (02 §6, P-ADM-1, spec refonte §10
       ['Membres', '/admin/members'],
       ['Invitations', '/admin/invitations'],
       ['Salles', '/admin/gyms'],
+      ['Coach', '/admin/coach'],
       ['Serveur', '/admin/health'],
     ]);
     expect(nav().getByRole('link', { name: 'Membres' }).getAttribute('aria-current')).toBe('page');
@@ -228,6 +254,7 @@ describe('MembersPage : une carte par membre (02 §6, P-ADM-1, spec refonte §10
     for (const [name, landmark] of [
       ['Invitations', 'Nouvelle invitation'],
       ['Salles', 'Salles'],
+      ['Coach', 'État'],
       ['Serveur', 'Résumé'],
       ['Membres', 'Membres du cercle'],
     ] as const) {

@@ -64,6 +64,9 @@ const inProgram = (path: string) => path.startsWith('features/program/');
 const COACH_SCREENS =
   /(^|\/)(coach\/(CoachPage|ConsentPage|ThreadsPage|ThreadPage|BriefPage)|public\/CoachHelpPage)$/;
 
+/** Administration du coach : chargée à la demande (route /admin/coach). */
+const ADMIN_COACH_PAGE = /(^|\/)admin\/AdminCoachPage$/;
+
 /** Cartes d'aide et feuille de signalement : dans le chunk de /coach, jamais dans le bundle initial. */
 const COACH_PARTS = /(^|\/)(HelpCard|ReportSheet)$/;
 
@@ -170,6 +173,16 @@ describe('architecture', () => {
     for (const file of files) {
       for (const spec of staticSpecifiers(readFileSync(file, 'utf8'))) {
         expect(spec, rel(file)).not.toMatch(COACH_SCREENS);
+      }
+    }
+  });
+
+  it('administration du coach (AdminCoachPage) : seulement par import() depuis App.tsx, jamais dans le bundle initial', () => {
+    const dynamic = files.filter((f) => imports(f).some((spec) => ADMIN_COACH_PAGE.test(spec)));
+    expect(dynamic.map(rel)).toEqual(['App.tsx']);
+    for (const file of files) {
+      for (const spec of staticSpecifiers(readFileSync(file, 'utf8'))) {
+        expect(spec, rel(file)).not.toMatch(ADMIN_COACH_PAGE);
       }
     }
   });

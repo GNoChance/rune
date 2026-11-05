@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactNode, useId, useMemo } from 'react';
-import { Redirect, useLocation } from 'wouter';
+import { Link, Redirect, useLocation } from 'wouter';
 import { useLive, useMe } from '../../app-services';
 import {
   useCatalog,
@@ -11,6 +11,7 @@ import {
 } from '../../repos';
 import { Button, CoachBubble, EmptyState, formatInt, Page, RankBadge, SystemPanel } from '../../ui';
 import { coachLine } from '../coach/coach-lines';
+import { ENTRY_TEXTS } from '../coach/coach-texts';
 import { sessionName, workStat } from '../history/history-format';
 import styles from './summary.module.css';
 import {
@@ -94,6 +95,11 @@ function Summary(p: { session: WorkoutSessionView }) {
           <CoachBubble coach={coach} label="Fin de séance">
             <p>{coachLine(coach, 'session_end', new Date(session.startedAt), me.username)}</p>
           </CoachBubble>
+        ) : null}
+        {me?.consents.aiCoach.active ? (
+          <Link href="/coach" className={styles.coachLink}>
+            {ENTRY_TEXTS.question}
+          </Link>
         ) : null}
         <Button block onClick={() => navigate('/')}>
           Terminé

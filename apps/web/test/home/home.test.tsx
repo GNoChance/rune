@@ -10,6 +10,7 @@ import { setMeta } from '../../src/local-db/meta';
 import { reposFor } from '../../src/repos';
 import { settle } from '../support/auth';
 import { parseCssBlocks } from '../support/css-blocks';
+import { createFakeApi, createFakeSyncEngine, type FakeApi, type FakeSyncEngine } from '../support/fake-api';
 import { createTestLocalDb } from '../support/local-db';
 import { seedPrimaryGym, seedProfile } from '../support/onboarding';
 import { DEFAULT_NOW, makeMe, renderApp } from '../support/render';
@@ -49,6 +50,8 @@ interface HomeOptions {
   /** Dernier pull réussi il y a… ; null : jamais (pas prêt hors ligne). */
   pullAgoMs?: number | null;
   me?: Partial<MeResponse>;
+  api?: FakeApi;
+  sync?: FakeSyncEngine;
 }
 
 /** Profil complet (objectif, niveau, 3 séances de 45 min) du coach demandé, lieu principal, catalogue à jour. */
@@ -69,7 +72,7 @@ async function openHome(o: HomeOptions = {}) {
   const db = createTestLocalDb();
   const now = o.now ?? DEFAULT_NOW;
   await seedHome(db, o, now);
-  const rendered = await renderApp({ db, now, me: makeMe(o.me) });
+  const rendered = await renderApp({ db, now, me: makeMe(o.me), api: o.api, sync: o.sync });
   await screen.findByRole('heading', { level: 1 });
   // La pile des cartes n'entre qu'une fois les lectures locales faites (profil, lieux, voyant).
   await until(() => cardStack() !== null);
@@ -436,6 +439,63 @@ describe('bandeaux existants, mêmes conditions et mêmes textes', () => {
     await until(() => screen.queryByTestId('offline-ready') !== null);
     expect(screen.queryByText(REMINDER)).toBeNull();
     expect(screen.queryByText(NOTICE)).toBeNull();
+  });
+});
+
+const COACH_VIEW = {
+  state: {
+    enabled: true,
+    suspendedUntil: null,
+    configured: true,
+    notConfiguredCause: null,
+    catalogChanged: false,
+  },
+  month: '2026-10',
+  totalUsd: 0,
+  workspaceLimitUsd: 20,
+  members: [],
+  counters: [],
+  openReports: 0,
+};
+const serveCoachAdmin = (patch: Record<string, unknown>, state: Record<string, unknown> = {}) =>
+  createFakeApi().on('GET', '/api/admin/coach', {
+    status: 200,
+    body: { ...COACH_VIEW, ...patch, state: { ...COACH_VIEW.state, ...state } },
+  });
+
+describe('accueil de l’admin : le coach (spec brique 4 §17.1)', () => {
+  it('en ligne : « Signalements du coach : 2 à lire »', async () => {
+    await openHome({ me: { role: 'admin' }, api: serveCoachAdmin({ openReports: 2 }) });
+    expect(await screen.findByText('Signalements du coach : 2 à lire')).toBeTruthy();
+    expect(screen.queryByText('Coach suspendu : limite de dépense atteinte')).toBeNull();
+  });
+
+  it('suspendu : « Coach suspendu : limite de dépense atteinte » ; aucun signalement, pas de ligne des signalements', async () => {
+    await openHome({
+      me: { role: 'admin' },
+      api: serveCoachAdmin({}, { suspendedUntil: '2026-10-31T23:00:00.000Z' }),
+    });
+    expect(await screen.findByText('Coach suspendu : limite de dépense atteinte')).toBeTruthy();
+    expect(screen.queryByText(/Signalements du coach/)).toBeNull();
+  });
+
+  it('hors ligne : aucune des deux lignes, aucune requête', async () => {
+    const api = serveCoachAdmin({ openReports: 2 }, { suspendedUntil: '2026-10-31T23:00:00.000Z' });
+    await openHome({
+      me: { role: 'admin' },
+      api,
+      sync: createFakeSyncEngine({ connection: 'offline' }),
+    });
+    expect(screen.queryByText(/Signalements du coach/)).toBeNull();
+    expect(screen.queryByText(/Coach suspendu/)).toBeNull();
+    expect(api.calls.filter((c) => c.path.startsWith('/api/admin'))).toEqual([]);
+  });
+
+  it('un membre : jamais de requête /api/admin, jamais ces lignes', async () => {
+    const api = serveCoachAdmin({ openReports: 2 });
+    await openHome({ api });
+    expect(screen.queryByText(/Signalements du coach/)).toBeNull();
+    expect(api.calls.filter((c) => c.path.startsWith('/api/admin'))).toEqual([]);
   });
 });
 

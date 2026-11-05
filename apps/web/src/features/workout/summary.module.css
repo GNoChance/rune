@@ -294,3 +294,13 @@
     animation: none;
   }
 }
+
+/* « Une question sur cette séance ? » : un lien de 48 px de haut sous la bulle du coach, vers /coach. */
+.coachLink {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+}

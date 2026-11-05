@@ -449,3 +449,41 @@ describe('ServerHealthPage (08 §9, maquette E05)', () => {
     expect(await screen.findByRole('region', { name: 'Résumé' })).toBeTruthy();
   });
 });
+
+describe('ServerHealthPage : état du coach (spec brique 4 §17.1)', () => {
+  const view = (state: Record<string, unknown>) => ({
+    state: {
+      enabled: true,
+      suspendedUntil: null,
+      configured: true,
+      notConfiguredCause: null,
+      catalogChanged: false,
+      ...state,
+    },
+    month: '2026-10',
+    totalUsd: 0,
+    workspaceLimitUsd: 20,
+    members: [],
+    counters: [],
+    openReports: 0,
+  });
+  const coachRegion = () => within(screen.getByRole('region', { name: 'Coach IA' }));
+
+  it.each([
+    [{}, 'Coach actif'],
+    [{ enabled: false }, 'Coach coupé'],
+    [{ suspendedUntil: '2026-10-31T23:00:00.000Z' }, "Coach suspendu jusqu'au 01/11/2026"],
+    [{ configured: false, notConfiguredCause: 'no_key' }, 'Non configuré : clé absente'],
+  ])('%j : « %s »', async (state, line) => {
+    const api = createFakeApi().on('GET', '/api/admin/coach', { status: 200, body: view(state) });
+    await renderHealth(HEALTHY, api);
+    await screen.findByRole('region', { name: 'Coach IA' });
+    expect(coachRegion().getByText(line)).toBeTruthy();
+  });
+
+  it('lecture du coach impossible : la page Serveur reste, sans la section', async () => {
+    await renderHealth(HEALTHY);
+    expect(screen.getByRole('region', { name: 'Résumé' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Coach IA' })).toBeNull();
+  });
+});

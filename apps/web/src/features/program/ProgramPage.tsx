@@ -1,6 +1,6 @@
 import { type ReactNode, useId, useMemo, useState } from 'react';
-import { Link } from 'wouter';
-import { useSyncState } from '../../app-services';
+import { Link, useLocation } from 'wouter';
+import { useServices, useSyncState } from '../../app-services';
 import {
   type ProgramEditContext,
   type ProgramView,
@@ -9,6 +9,8 @@ import {
   useRepos,
 } from '../../repos';
 import { Badge, Banner, Button, EmptyState, Page } from '../../ui';
+import { coachStoreFor } from '../coach/coach-store';
+import { ENTRY_TEXTS, PROGRAM_PREFILL } from '../coach/coach-texts';
 import { OfflineNotice } from './ActionError';
 import { ChangeLog } from './ChangeLog';
 import { EnrollSheet } from './EnrollSheet';
@@ -193,10 +195,17 @@ export function ProgramPage() {
   const ctx = useProgramEditContext();
   const repos = useRepos();
   const { connection } = useSyncState();
+  const services = useServices();
+  const [, navigate] = useLocation();
   const offline = connection === 'offline';
   const [sheet, setSheet] = useState<OpenSheet | null>(null);
   const names = useMemo(() => (view && ctx ? programNames(view, ctx) : null), [view, ctx]);
   const close = () => setSheet(null);
+  // Ne part rien : le début de message attend dans le champ du coach, que la personne complète et envoie.
+  const askCoach = () => {
+    coachStoreFor(services).setDraft(PROGRAM_PREFILL);
+    navigate('/coach');
+  };
 
   if (view === null) return <NoProgram />;
   if (view === undefined || ctx === undefined || names === null) {
@@ -263,6 +272,7 @@ export function ProgramPage() {
             <Link href="/program/choose" className={styles.row}>
               <span className={styles.rowName}>Changer de programme</span>
             </Link>
+            <ActionRow label={ENTRY_TEXTS.adjust} disabled={offline} onClick={askCoach} />
           </div>
         </Section>
         <ChangeLog changes={view.changes} names={names} />

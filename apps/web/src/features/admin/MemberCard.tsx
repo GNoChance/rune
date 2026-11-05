@@ -1,6 +1,7 @@
 import type { MemberSummary } from '@rune/contracts';
 import { type MouseEvent, type ReactNode, useId } from 'react';
 import { Badge, formatAge } from '../../ui';
+import { usd2 } from '../coach/coach-texts';
 import styles from './admin.module.css';
 import { CheckIcon, ClockIcon, DashIcon, MoreIcon } from './icons';
 
@@ -53,6 +54,7 @@ export function MemberCard(p: {
             {m.isMinor ? <Badge tone="warning">Mineur</Badge> : null}
           </div>
           <p className={styles.meta}>{lastLoginText(m.lastLoginAt, p.nowMs)}</p>
+          <p className={styles.meta}>{`Coût IA du mois : ${usd2(m.aiCostMonthUsd)}`}</p>
         </div>
         <button
           type="button"

@@ -1,8 +1,8 @@
-import { EXPERIENCE_LABELS, GOAL_LABELS } from '@rune/contracts';
+import { type CoachAdminView, EXPERIENCE_LABELS, GOAL_LABELS } from '@rune/contracts';
 import { isReviewer } from '@rune/domain';
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Link } from 'wouter';
-import { useLive, useMe } from '../../app-services';
+import { useLive, useMe, useSyncState } from '../../app-services';
 import {
   type PlannedSession,
   type ProgramView,
@@ -11,8 +11,19 @@ import {
   useProgramView,
   useRepos,
 } from '../../repos';
-import { Banner, Button, CoachBubble, CountUp, Page, plural, ReadErrorBoundary, SystemPanel } from '../../ui';
+import {
+  Banner,
+  Button,
+  CoachBubble,
+  CountUp,
+  NETWORK_REQUIRED_MESSAGE,
+  Page,
+  plural,
+  ReadErrorBoundary,
+  SystemPanel,
+} from '../../ui';
 import { coachLine } from '../coach/coach-lines';
+import { COACH_ADMIN_TEXTS, ENTRY_TEXTS } from '../coach/coach-texts';
 import { AwakeningQuests, awakeningQuests } from '../onboarding/AwakeningQuests';
 import { ReviewHomeCard } from '../review/ReviewHomeCard';
 import { OfflineReadyIndicator } from '../status/OfflineReadyIndicator';
@@ -91,6 +102,72 @@ function Chevron() {
     >
       <path d="m9 6 6 6-6 6" />
     </svg>
+  );
+}
+
+/**
+ * Entrée vers le coach, sous la bulle « Aujourd'hui » (spec brique 4 §16.1) : « Parler au coach » avec l'accord actif,
+ * « Découvrir le coach IA » (vers Mon coach) sans. Elle n'envoie rien. Hors ligne, grisée, avec « Nécessite le réseau ».
+ */
+function CoachEntry(p: { active: boolean; offline: boolean }) {
+  const noteId = useId();
+  const label = p.active ? ENTRY_TEXTS.talk : ENTRY_TEXTS.discover;
+  if (p.offline) {
+    return (
+      <div className={styles.coachEntry}>
+        <Button variant="secondary" disabled aria-describedby={noteId}>
+          {label}
+        </Button>
+        <p id={noteId} className={styles.cardMeta}>
+          {NETWORK_REQUIRED_MESSAGE}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className={styles.coachEntry}>
+      <Link href={p.active ? '/coach' : '/profile/coach'} className={styles.action}>
+        {label}
+      </Link>
+    </div>
+  );
+}
+
+/**
+ * Lignes de l'admin sur l'accueil (spec brique 4 §17.1), en ligne seulement : signalements du coach à lire, et la
+ * suspension du coach quand la limite de dépense est atteinte. Une lecture qui échoue n'affiche rien.
+ */
+function AdminCoachLines() {
+  const repos = useRepos();
+  const { connection } = useSyncState();
+  const offline = connection === 'offline';
+  const [view, setView] = useState<CoachAdminView | null>(null);
+  useEffect(() => {
+    if (offline) {
+      setView(null);
+      return;
+    }
+    let live = true;
+    repos.admin.coach().then(
+      (v) => live && setView(v),
+      () => live && setView(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [repos, offline]);
+  if (offline || view === null) return null;
+  return (
+    <>
+      {view.openReports > 0 ? (
+        <Banner tone="info">
+          <Link href="/admin/coach">{COACH_ADMIN_TEXTS.homeReports(view.openReports)}</Link>
+        </Banner>
+      ) : null}
+      {view.state.suspendedUntil !== null ? (
+        <Banner tone="warning">{COACH_ADMIN_TEXTS.homeSuspended}</Banner>
+      ) : null}
+    </>
   );
 }
 
@@ -184,6 +261,7 @@ export function HomePage() {
   const places = useLive(() => repos.places.list(), [repos]);
   const active = useActiveSession();
   const { readiness, loaded, retry } = useReadiness();
+  const { connection } = useSyncState();
   const [retrying, setRetrying] = useState(false);
   const resumeTitle = useId();
   if (!me) return null;
@@ -219,6 +297,7 @@ export function HomePage() {
         </Banner>
       ) : null}
       {isReviewer(me) ? <ReviewHomeCard me={me} /> : null}
+      {me.role === 'admin' ? <AdminCoachLines /> : null}
       {readsDone ? (
         <div className={`${styles.cards} stagger`}>
           {active ? (
@@ -247,6 +326,7 @@ export function HomePage() {
             <ReadErrorBoundary compact>
               <CoachBubble coach={coach} label="Aujourd'hui">
                 <p>{coachLine(coach, 'daily', new Date(now), me.username, days)}</p>
+                <CoachEntry active={me.consents.aiCoach.active} offline={connection === 'offline'} />
               </CoachBubble>
             </ReadErrorBoundary>
           ) : null}

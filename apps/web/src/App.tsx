@@ -56,6 +56,9 @@ const ChooseProgram = lazy(() =>
 /** Conversation avec le coach (brique 4) : hors du bundle initial, chargée à la première ouverture (fichier précaché par le SW). */
 const CoachPage = lazy(() => import('./features/coach/CoachPage').then((m) => ({ default: m.CoachPage })));
 /** Ce que le coach voit (/coach/brief) : même chunk paresseux que le coach. */
+const AdminCoachPage = lazy(() =>
+  import('./features/admin/AdminCoachPage').then((m) => ({ default: m.AdminCoachPage })),
+);
 const BriefPage = lazy(() => import('./features/coach/BriefPage').then((m) => ({ default: m.BriefPage })));
 /** « Bien utiliser le coach » : page publique, chargée à la demande. */
 const CoachHelpPage = lazy(() =>
@@ -218,6 +221,7 @@ function ConnectedRoutes() {
       <Route path="/admin/members" component={MembersPage} />
       <Route path="/admin/invitations" component={InvitationsPage} />
       <Route path="/admin/gyms" component={AdminGymsPage} />
+      <Route path="/admin/coach" component={AdminCoachPage} />
       <Route path="/admin/health" component={ServerHealthPage} />
       <Route path="/review">
         <Redirect to="/review/exercises" replace />

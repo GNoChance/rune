@@ -1,4 +1,7 @@
 import {
+  CoachAdminView,
+  CoachReportDetail,
+  CoachReportSummary,
   type CreateInvitationRequest,
   CreateInvitationResponse,
   GymSummary,
@@ -28,6 +31,14 @@ export interface AdminRepo {
   opsStatus(): Promise<OpsStatusResponse>;
   gyms(): Promise<GymSummary[]>;
   deleteGym(id: string): Promise<void>;
+  /** Administration du coach (spec brique 4 §17.2) : état, coûts, compteurs ; les signalements seuls portent du C3. */
+  coach(): Promise<CoachAdminView>;
+  setCoachEnabled(enabled: boolean): Promise<void>;
+  resumeCoach(): Promise<void>;
+  coachReports(): Promise<CoachReportSummary[]>;
+  coachReport(id: string): Promise<CoachReportDetail>;
+  /** Classer : supprime la ligne du signalement. */
+  classifyCoachReport(id: string): Promise<void>;
 }
 
 export function createAdminRepo(s: AppServices): AdminRepo {
@@ -52,6 +63,16 @@ export function createAdminRepo(s: AppServices): AdminRepo {
     revokeInvitation: (id) => post(`/api/admin/invitations/${encodeURIComponent(id)}/revoke`),
     opsStatus: () => api.get('/api/admin/ops-status', OpsStatusResponse),
     gyms: () => api.get('/api/gyms', z.array(GymSummary)),
+    coach: () => api.get('/api/admin/coach', CoachAdminView),
+    async setCoachEnabled(enabled) {
+      await sendThenPull(s, 'PUT', '/api/admin/coach/state', { body: { enabled } });
+    },
+    resumeCoach: () => post('/api/admin/coach/resume', {}),
+    coachReports: () => api.get('/api/admin/coach/reports', z.array(CoachReportSummary)),
+    coachReport: (id) => api.get(`/api/admin/coach/reports/${encodeURIComponent(id)}`, CoachReportDetail),
+    async classifyCoachReport(id) {
+      await sendThenPull(s, 'DELETE', `/api/admin/coach/reports/${encodeURIComponent(id)}`);
+    },
     async deleteGym(id) {
       await sendThenPull(s, 'DELETE', `/api/admin/gyms/${encodeURIComponent(id)}`);
     },

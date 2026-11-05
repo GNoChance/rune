@@ -212,3 +212,16 @@
     transform: none;
   }
 }
+
+/* Entrée vers le coach, sous la ligne du jour de la bulle (cible de 52 px : celle du lien et du bouton). */
+.coachEntry {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+}
+
+.coachEntry p {
+  margin: 0;
+}

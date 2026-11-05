@@ -1,4 +1,5 @@
-import type { ApiErrorCode, CoachStreamErrorCode, CoachToolName } from '@rune/contracts';
+import type { ApiErrorCode, CoachAdminView, CoachStreamErrorCode, CoachToolName } from '@rune/contracts';
+import { formatDate } from '../../ui/format';
 import { ANTHROPIC_RETENTION_TEXT } from '../privacy/messages';
 import type { CoachError } from './coach-store';
 
@@ -216,3 +217,81 @@ export const BRIEF_TEXTS = {
     'Tes réponses au questionnaire de santé.',
   ],
 } as const;
+
+/** Entrées vers le coach (§16.1) : accueil, Mon programme, fin de séance. Hors ligne : `NETWORK_REQUIRED_MESSAGE`. */
+export const ENTRY_TEXTS = {
+  talk: 'Parler au coach',
+  discover: 'Découvrir le coach IA',
+  adjust: 'Ajuster mon programme avec le coach',
+  question: 'Une question sur cette séance ?',
+} as const;
+
+/** `1,23 $` : dollars à 2 décimales, virgule française. */
+export const usd2 = (n: number) => `${n.toFixed(2).replace('.', ',')} $`;
+/** `20 $` ou `2,5 $` : un plafond, sans décimale inutile. */
+export const usdLimit = (n: number) => `${String(n).replace('.', ',')} $`;
+
+/** Administration du coach (§17.1), en français et tutoiement ; l'admin ne voit jamais d'autre contenu que les signalements. */
+export const COACH_ADMIN_TEXTS = {
+  switchLabel: 'Coach IA pour le cercle',
+  stateTitle: 'État',
+  active: 'Coach actif',
+  off: 'Coach coupé',
+  suspended: (date: string) => `Coach suspendu jusqu'au ${date}`,
+  notConfigured: (reason: string) => `Non configuré : ${reason}`,
+  reasons: {
+    no_key: 'clé absente',
+    model_not_allowed: 'modèle hors liste',
+    not_evaluated: 'combinaison non évaluée',
+  },
+  catalogChanged:
+    "Le catalogue a changé depuis l'évaluation : relance la campagne avant la prochaine mise en service.",
+  resume: 'Relancer le coach',
+  resumeHelp: "Relève d'abord la limite du workspace dans la Console Claude.",
+  costsTitle: 'Coûts du mois',
+  total: (usd: number) => `Total du mois : ${usd2(usd)}`,
+  limit: (usd: number) => `Limite du workspace : ${usdLimit(usd)}`,
+  memberCost: (cost: number, budget: number) => `${usd2(cost)} sur ${usdLimit(budget)}`,
+  reportsTitle: 'Signalements',
+  noReports: 'Aucun signalement à lire.',
+  minor: 'Mineur',
+  detailTitle: 'Signalement',
+  exchange: "L'échange signalé",
+  comment: 'Commentaire',
+  classify: 'Classer',
+  classifyTitle: 'Classer ce signalement',
+  classifyWarning: 'Le signalement sera supprimé pour de bon.',
+  cutAll: 'Couper le coach pour tous',
+  cutAllWarning: 'Plus personne ne pourra parler au coach tant que tu ne le rallumes pas.',
+  anthropicReminder:
+    "Si l'échange enfreint la politique d'Anthropic, signale-le à Anthropic avant de le classer.",
+  countersTitle: 'Compteurs anonymes',
+  month: 'Mois',
+  kinds: {
+    help_emergency: 'Urgence',
+    help_pain: 'Douleur',
+    help_eating_disorder: 'Alimentation',
+    help_doping: 'Dopage',
+    help_pregnancy: 'Grossesse',
+    help_distress: 'Détresse',
+    filter_block: 'Filtre',
+    refusal: 'Refus',
+  },
+  healthTitle: 'Coach IA',
+  homeReports: (n: number) => `Signalements du coach : ${n} à lire`,
+  homeSuspended: 'Coach suspendu : limite de dépense atteinte',
+} as const;
+
+/**
+ * Ligne d'état du coach pour l'admin (écran Coach et page Serveur) : coupé, non configuré avec sa raison,
+ * suspendu jusqu'à la date de Paris, sinon actif.
+ */
+export function coachStateLine(state: CoachAdminView['state']): string {
+  const t = COACH_ADMIN_TEXTS;
+  if (!state.enabled) return t.off;
+  if (!state.configured && state.notConfiguredCause !== null) {
+    return t.notConfigured(t.reasons[state.notConfiguredCause]);
+  }
+  if (state.suspendedUntil !== null) return t.suspended(formatDate(state.suspendedUntil));
+  return t.active;
+}

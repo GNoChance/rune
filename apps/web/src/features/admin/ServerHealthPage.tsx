@@ -1,8 +1,9 @@
-import type { OpsStatus, OpsStatusResponse } from '@rune/contracts';
+import type { CoachAdminView, OpsStatus, OpsStatusResponse } from '@rune/contracts';
 import { type CSSProperties, type ReactNode, useCallback, useId } from 'react';
 import { useServices } from '../../app-services';
 import { useRepos } from '../../repos';
 import { Badge, Banner, formatAge, formatDate, plural } from '../../ui';
+import { COACH_ADMIN_TEXTS, coachStateLine } from '../coach/coach-texts';
 import { AdminPage } from './AdminPage';
 import styles from './admin.module.css';
 import { LoadFailure, Loading, useServerData } from './admin-ui';
@@ -85,7 +86,23 @@ export function ServerHealthPage() {
       {loading ? <Loading /> : null}
       {error ? <LoadFailure message={error} onRetry={() => void reload()} /> : null}
       {data ? <HealthReport status={data} /> : null}
+      <CoachState />
     </AdminPage>
+  );
+}
+
+/** État du coach (spec brique 4 §17.1) : une ligne ; une lecture qui échoue n'enlève rien au reste de la page. */
+function CoachState() {
+  const repos = useRepos();
+  const load = useCallback((): Promise<CoachAdminView> => repos.admin.coach(), [repos]);
+  const { data } = useServerData(load);
+  const id = useId();
+  if (!data) return null;
+  return (
+    <section aria-labelledby={id} className={styles.section}>
+      <h2 id={id}>{COACH_ADMIN_TEXTS.healthTitle}</h2>
+      <p className={`${styles.card} ${styles.coachCard}`}>{coachStateLine(data.state)}</p>
+    </section>
   );
 }
 
