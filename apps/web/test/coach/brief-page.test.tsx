@@ -1,8 +1,9 @@
-import { type CoachBriefResponse, CoachBriefSchema } from '@rune/contracts';
+import { type CoachBriefResponse, CoachBriefSchema, EQUIPMENT_LABELS } from '@rune/contracts';
 import { sortedJson } from '@rune/domain';
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { BRIEF_TEXTS, STATE_TEXTS } from '../../src/features/coach/coach-texts';
+import { EFFORT_LABELS } from '../../src/features/workout/EffortSheet';
 import { coachStatus, serveCoach } from '../support/coach';
 import { createFakeApi, type FakeApi } from '../support/fake-api';
 import { renderApp } from '../support/render';
@@ -148,6 +149,34 @@ describe('BriefPage : Ce que le coach voit (spec brique 4 §16.5)', () => {
     await renderBrief(reply(BRIEF));
     await screen.findByRole('heading', { level: 2, name: 'Voir le JSON exact' });
     expect(jsonText()).toBe(JSON.stringify(BRIEF));
+  });
+
+  it('JSON exact : un dossier reçu dans le désordre (clés inversées) ressort trié', async () => {
+    const reversed = (v: unknown): unknown =>
+      Array.isArray(v)
+        ? v.map(reversed)
+        : v !== null && typeof v === 'object'
+          ? Object.fromEntries(
+              Object.entries(v)
+                .reverse()
+                .map(([k, x]) => [k, reversed(x)]),
+            )
+          : v;
+    const shuffled = reversed(BRIEF);
+    expect(Object.keys(shuffled as object)).not.toEqual(Object.keys(BRIEF));
+    await renderBrief(reply(shuffled));
+    await screen.findByRole('heading', { level: 2, name: 'Voir le JSON exact' });
+    expect(jsonText()).toBe(JSON.stringify(BRIEF));
+  });
+
+  it('matériel et effort en clair : « Haltères », « Encore 2 ou 3 », jamais les codes', async () => {
+    await renderBrief(reply(BRIEF));
+    const places = within(await screen.findByRole('region', { name: 'Lieux' }));
+    expect(places.getByText(/lieu_1/).closest('li')?.textContent).toContain(EQUIPMENT_LABELS.dumbbells);
+    expect(places.queryByText(/dumbbells/)).toBeNull();
+    const history = within(screen.getByRole('region', { name: 'Historique' }));
+    expect(history.getByText(/Squat/).closest('p')?.textContent).toContain(EFFORT_LABELS.ok);
+    expect(history.getByText(/Squat/).closest('p')?.textContent).not.toMatch(/· ok$/);
   });
 
   it('le bloc JSON défile (région au clavier) et porte la chasse fixe', async () => {

@@ -3,6 +3,7 @@ import {
   type CoachBrief,
   type CoachBriefResponse,
   CoachBriefSchema,
+  EQUIPMENT_LABELS,
   GOAL_LABELS,
   LIMITATION_SEVERITY_LABELS,
   LIMITATION_SIDE_LABELS,
@@ -13,6 +14,7 @@ import { useLocation } from 'wouter';
 import { ApiError } from '../../api/client';
 import { useRepos } from '../../repos';
 import { Banner, Button, errorMessage, Page, SystemPanel } from '../../ui';
+import { EFFORT_LABELS } from '../workout/EffortSheet';
 import styles from './brief.module.css';
 import { BRIEF_TEXTS, STATE_TEXTS } from './coach-texts';
 
@@ -64,7 +66,7 @@ function setLine([load, reps, duration, effort]: BriefSet): string {
     load === null ? null : `${load} kg`,
     reps === null ? null : `${reps} rép.`,
     duration === null ? null : `${duration} s`,
-    effort,
+    effort === null ? null : EFFORT_LABELS[effort],
   ].filter((part) => part !== null);
   return parts.length === 0 ? DASH : parts.join(' · ');
 }
@@ -101,7 +103,9 @@ function PlacesSection({ brief }: { brief: CoachBrief }) {
             <li key={place.name}>
               <span className={styles.name}>{place.name}</span>
               {place.primary ? ' (principal)' : ''} · {place.kind} ·{' '}
-              {place.equipment.length === 0 ? 'aucun matériel' : place.equipment.join(', ')}
+              {place.equipment.length === 0
+                ? 'aucun matériel'
+                : place.equipment.map((code) => EQUIPMENT_LABELS[code]).join(', ')}
               {place.load_settings
                 ? ` · barre ${place.load_settings.bar_kg} kg, plus petit disque ${place.load_settings.smallest_plate_kg} kg, pas de machine ${place.load_settings.machine_step_kg} kg`
                 : ''}
