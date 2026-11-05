@@ -119,7 +119,9 @@ function startWorker(): Promise<{ worker: ChildProcess; pids: number[]; dataDir:
     cwd: join(REPO_ROOT, 'apps', 'server'),
     stdio: ['pipe', 'pipe', 'pipe'],
   });
-  cleanups.push(() => worker.kill('SIGKILL'));
+  cleanups.push(() => {
+    worker.kill('SIGKILL');
+  });
   let stdout = '';
   let stderr = '';
   worker.stderr?.setEncoding('utf8').on('data', (chunk: string) => {
@@ -191,14 +193,18 @@ describe('serveur E2E : filet contre les orphelins', () => {
       '-e',
       'setInterval(() => {}, 1000)',
     ]);
-    cleanups.push(() => orphan.kill('SIGKILL'));
+    cleanups.push(() => {
+      orphan.kill('SIGKILL');
+    });
     const watched = spawn(process.execPath, [
       '--import',
       parentWatchImport(process.pid),
       '-e',
       'setInterval(() => {}, 1000)',
     ]);
-    cleanups.push(() => watched.kill('SIGKILL'));
+    cleanups.push(() => {
+      watched.kill('SIGKILL');
+    });
 
     const exited = new Promise<number | null>((done) => orphan.once('exit', (exitCode) => done(exitCode)));
     expect(await within(exited, 'sortie de l’orphelin')).toBe(1);
