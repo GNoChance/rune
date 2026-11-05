@@ -5,6 +5,7 @@ import { adminInvitationRoutes, invitationRoutes } from './auth/invitation-route
 import { meRoutes } from './auth/me-routes';
 import { authRoutes } from './auth/routes';
 import { catalogRoutes } from './catalog/routes';
+import { coachRoutes } from './coach/routes';
 import type { AppDeps } from './deps';
 import { healthRoutes } from './health/routes';
 import { gymRoutes } from './places/gym-routes';
@@ -32,6 +33,7 @@ export function mountRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
   app.route('/api/catalog', catalogRoutes(deps));
   app.route('/api/review', reviewRoutes(deps));
   app.route('/api/program', programRoutes(deps));
+  app.route('/api/coach', coachRoutes(deps));
   // En dernier : illustrations, fichiers de la PWA et repli SPA.
   mountWebApp(app, deps);
 }

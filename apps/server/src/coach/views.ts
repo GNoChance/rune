@@ -1,5 +1,4 @@
 import {
-  type CoachBrief,
   type CoachBriefResponse,
   CoachBriefSchema,
   type CoachMessageView,
@@ -233,11 +232,11 @@ export async function coachThread(db: DbExecutor, userId: string, id: string): P
  * Au schéma courant, il doit passer `CoachBriefSchema` (sinon erreur interne) ; celui d'un ancien `brief_schema` est
  * rendu brut, sans être validé par un schéma qui n'est pas le sien.
  */
-function storedBrief(deps: AppDeps, thread: ThreadRow): CoachBrief | null {
+function storedBrief(deps: AppDeps, thread: ThreadRow): CoachBriefResponse['brief'] {
   if (thread.brief === null) return null;
   const raw: unknown = JSON.parse(thread.brief);
   if (thread.briefSchema === deps.coachConfig.briefSchema) CoachBriefSchema.parse(raw);
-  return raw as CoachBrief;
+  return raw as CoachBriefResponse['brief'];
 }
 
 /**

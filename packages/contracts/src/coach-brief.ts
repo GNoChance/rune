@@ -188,7 +188,8 @@ export type CoachBrief = z.infer<typeof CoachBriefSchema>;
  * ou, sans fil, un aperçu calculé à l'instant (`preview: true`, `threadId` nul, rien d'écrit).
  */
 export const CoachBriefResponse = z.strictObject({
-  brief: CoachBriefSchema.nullable(),
+  // Le dossier est rendu tel que stocké : celui d'un ancien `brief_schema` n'est pas un `CoachBrief` courant.
+  brief: z.union([CoachBriefSchema, z.record(z.string(), z.unknown())]).nullable(),
   threadId: z.string().nullable(),
   day: z.iso.date(),
   preview: z.boolean(),
