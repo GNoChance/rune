@@ -10,6 +10,7 @@ const VOICE_CSS = resolve(import.meta.dirname, '../../src/ui/voice.module.css');
 const SHELL_CSS = resolve(import.meta.dirname, '../../src/ui/shell.module.css');
 const COACH_CSS = resolve(import.meta.dirname, '../../src/features/coach/coach.module.css');
 const COACH_PAGE_CSS = resolve(import.meta.dirname, '../../src/features/coach/coach-page.module.css');
+const PROGRAM_CSS = resolve(import.meta.dirname, '../../src/features/program/program.module.css');
 const EXERCISES_CSS = resolve(import.meta.dirname, '../../src/features/exercises/exercises.module.css');
 const DARK = '(prefers-color-scheme: dark)';
 
@@ -120,6 +121,21 @@ const COACH_PAGE_PAIRS: readonly (readonly [string, string, string])[] = [
 ];
 
 /**
+ * Textes secondaires et d'alerte de la conversation, posés directement sur la page (--bg) ou sur une carte
+ * (--surface) : [nom, règle].
+ */
+const COACH_PAGE_TEXTS: readonly (readonly [string, string])[] = [
+  ['réponse coupée', '.truncated'],
+  ['outil en cours', '.tool'],
+  ['signaler', '.report'],
+  ['note du compteur et du reste du jour', '.note, .counter'],
+  ['compteur dépassé', '.counterOver'],
+];
+
+/** Lien « Voir la conversation » de la carte de proposition : posé sur --surface, sans fond propre. */
+const PROGRAM_TEXTS: readonly (readonly [string, string])[] = [['lien de la carte', '.cardLink']];
+
+/**
  * Encadré « Sécurité » de la fiche d'un exercice (spec brique 2 §4.2) : texte d'avertissement (titre et entrées,
  * texte courant) sur le fond de l'encadré, lus dans la feuille de la fiche.
  */
@@ -176,6 +192,28 @@ function expectTintPairs(
     expect(ratio, `${name} ${fg} sur ${bg} (${palette}) : ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
       TEXT,
     );
+  }
+}
+
+/** Texte sans fond propre : sa couleur, calculée avec les jetons du rendu, atteint 4,5:1 sur --bg et --surface. */
+function expectTextOnPage(
+  sheet: readonly CssBlock[],
+  texts: readonly (readonly [string, string])[],
+  tokens: ReadonlyMap<string, string>,
+  palette: string,
+): void {
+  for (const [name, rule] of texts) {
+    const color = declarationsOf(sheet, rule)?.get('color');
+    const vars = new Map([...tokens, ['--pair-text', color ?? '']]);
+    const fg = resolveColor('--pair-text', vars);
+    expect(fg ?? '', `${name} : couleur ${color} (${palette})`).toMatch(HEX);
+    for (const bg of ['--bg', '--surface']) {
+      const b = tokens.get(bg) as string;
+      const ratio = contrastRatio(fg as string, b);
+      expect(ratio, `${name} ${fg} sur ${bg} ${b} (${palette}) : ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+        TEXT,
+      );
+    }
   }
 }
 
@@ -243,6 +281,7 @@ describe('contrastes des jetons, pour chaque thème', () => {
   const shell = parseCssBlocks(readFileSync(SHELL_CSS, 'utf8'));
   const coach = parseCssBlocks(readFileSync(COACH_CSS, 'utf8'));
   const coachPage = parseCssBlocks(readFileSync(COACH_PAGE_CSS, 'utf8'));
+  const program = parseCssBlocks(readFileSync(PROGRAM_CSS, 'utf8'));
   const exercises = parseCssBlocks(readFileSync(EXERCISES_CSS, 'utf8'));
   const root = declarationsOf(blocks, ':root');
   const own = (p: Palette) => declarationsOf(blocks, p.selector, p.media);
@@ -332,6 +371,18 @@ describe('contrastes des jetons, pour chaque thème', () => {
         const tokens = seen(p);
         expect(tokens, `bloc ${p.selector} absent de tokens.css`).not.toBeNull();
         expectTintPairs(coachPage, COACH_PAGE_PAIRS, tokens ?? new Map(), p.name);
+      });
+
+      it('conversation du coach : textes secondaires et d’alerte atteignent 4,5:1 sur la page et la carte', () => {
+        const tokens = seen(p);
+        expect(tokens, `bloc ${p.selector} absent de tokens.css`).not.toBeNull();
+        expectTextOnPage(coachPage, COACH_PAGE_TEXTS, tokens ?? new Map(), p.name);
+      });
+
+      it('carte de proposition : le lien « Voir la conversation » atteint 4,5:1 sur la carte', () => {
+        const tokens = seen(p);
+        expect(tokens, `bloc ${p.selector} absent de tokens.css`).not.toBeNull();
+        expectTextOnPage(program, PROGRAM_TEXTS, tokens ?? new Map(), p.name);
       });
 
       it('fiche d’exercice : le texte de l’encadré Sécurité atteint 4,5:1 sur son fond', () => {
