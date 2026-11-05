@@ -49,8 +49,21 @@ describe('GET /api/admin/members', () => {
       activeSessions: 2,
       catalogReviewer: false,
       healthProfessional: false,
+      aiCostMonthUsd: 0,
     });
     expect(list.map((x) => x.username)).toEqual(['lea', 'porteur']);
+  });
+
+  it("coût IA du mois de Paris : 1 230 000 micros du mois, ceux d'un autre mois écartés", async () => {
+    await setup();
+    const m = await createUser(ctx, { username: 'lea' });
+    const db = ctx.deps.db;
+    await insertFixtureRow(db, 'coach_call', { userId: m.id, day: '2026-10-06', costUsdMicros: 1_000_000 });
+    await insertFixtureRow(db, 'coach_call', { userId: m.id, day: '2026-10-01', costUsdMicros: 230_000 });
+    await insertFixtureRow(db, 'coach_call', { userId: m.id, day: '2026-09-30', costUsdMicros: 7_000_000 });
+    const list = await listMembers(db, ctx.deps);
+    expect(list.find((x) => x.username === 'lea')?.aiCostMonthUsd).toBe(1.23);
+    expect(list.find((x) => x.username === 'porteur')?.aiCostMonthUsd).toBe(0);
   });
 
   it('ne compte pas les sessions révoquées ni inactives depuis 90 jours', async () => {

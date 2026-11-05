@@ -10,7 +10,19 @@ const MIN_ID_ROUTES = 6;
 let ctx: TestContext;
 afterEach(() => ctx?.close());
 
-const WITNESSES = ['TEMOIN_TP', 'TEMOIN_HS', 'TEMOIN_LIM', 'TEMOIN_SEANCE', 'TEMOIN_EXO'];
+const WITNESSES = [
+  'TEMOIN_TP',
+  'TEMOIN_HS',
+  'TEMOIN_LIM',
+  'TEMOIN_SEANCE',
+  'TEMOIN_EXO',
+  'TEMOIN_FIL',
+  'TEMOIN_MSG',
+];
+// Copie de l'échange choisie par la personne : seule donnée C3 que l'admin lit (P-ADM-1, spec brique 4 §17.2).
+const REPORT_WITNESS = 'TEMOIN_SIGNALEMENT';
+const isReportRoute = (path: string) =>
+  path === '/api/admin/coach/reports' || path.startsWith('/api/admin/coach/reports/');
 
 const listRoutes = () => listAppRoutes(ctx.app);
 
@@ -30,6 +42,9 @@ async function setup() {
     limitation: { note: WITNESSES[2] },
     workout_session: { note: WITNESSES[3] },
     performed_exercise: { note: WITNESSES[4] },
+    coach_thread: { brief: JSON.stringify({ note: WITNESSES[5] }) },
+    coach_message: { displayText: WITNESSES[6] },
+    coach_report: { exchangeText: REPORT_WITNESS, comment: REPORT_WITNESS },
   };
   const rowIds: string[] = [];
   for (const [table, rule] of Object.entries(entityRules)) {
@@ -48,7 +63,8 @@ describe("isolation de l'administrateur (P-ADM-1, P-ADM-2, 02 §15 n°14)", () =
   it("les routes /api/admin/* ne renvoient aucune donnée C1 à C3 d'un membre", async () => {
     const { b, cookie } = await setup();
     const admin = listRoutes().filter(
-      (r) => r.path.startsWith('/api/admin/') && !r.path.endsWith('/members/:id/delete'),
+      (r) =>
+        r.path.startsWith('/api/admin/') && !r.path.endsWith('/members/:id/delete') && !isReportRoute(r.path),
     );
     expect(admin.length).toBeGreaterThanOrEqual(MIN_ADMIN_ROUTES);
     for (const r of admin) {
@@ -58,10 +74,26 @@ describe("isolation de l'administrateur (P-ADM-1, P-ADM-2, 02 §15 n°14)", () =
         ...(r.method === 'GET' ? {} : { json: {} }),
       });
       const body = await res.text();
-      for (const w of WITNESSES) expect(body, `${r.method} ${r.path}`).not.toContain(w);
+      for (const w of [...WITNESSES, REPORT_WITNESS]) expect(body, `${r.method} ${r.path}`).not.toContain(w);
       // Le coach est une valeur d'énumération, pas un témoin unique : c'est sa clé qui ne doit pas sortir.
       expect(body, `${r.method} ${r.path}`).not.toContain('"coach"');
     }
+  });
+
+  it("seules les routes des signalements du coach rendent une donnée C3 (la copie de l'échange)", async () => {
+    const { b, cookie } = await setup();
+    const reportRoutes = listRoutes().filter((r) => isReportRoute(r.path));
+    expect(reportRoutes.map((r) => `${r.method} ${r.path}`).sort()).toEqual([
+      'DELETE /api/admin/coach/reports/:id',
+      'GET /api/admin/coach/reports',
+      'GET /api/admin/coach/reports/:id',
+    ]);
+    const list = await ctx.request('/api/admin/coach/reports', { cookie });
+    const [first] = (await list.json()) as { id: string; username: string }[];
+    expect(first?.username).toBe(b.username);
+    const detail = await (await ctx.request(`/api/admin/coach/reports/${first?.id}`, { cookie })).text();
+    expect(detail).toContain(REPORT_WITNESS);
+    for (const w of WITNESSES) expect(detail).not.toContain(w);
   });
 
   it("chaque route à :id sous /api/me et /api/places répond 404 pour les lignes d'un autre membre", async () => {

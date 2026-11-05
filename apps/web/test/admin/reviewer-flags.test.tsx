@@ -25,6 +25,7 @@ const member = (o: Partial<MemberSummary>): MemberSummary => ({
   onboardingCompleted: true,
   consents: { health: false, aiCoach: false },
   activeSessions: 1,
+  aiCostMonthUsd: 0,
   catalogReviewer: false,
   healthProfessional: false,
   ...o,

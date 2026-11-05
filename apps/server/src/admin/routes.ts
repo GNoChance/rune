@@ -11,6 +11,7 @@ import type { AppEnv } from '../app-env';
 import { verifyUserPassword } from '../auth/me';
 import { createPasswordReset } from '../auth/password-reset';
 import { requireAdmin } from '../auth/session';
+import { adminCoachRoutes } from '../coach/admin-routes';
 import type { AppDeps } from '../deps';
 import { validClientIp } from '../http/client-ip';
 import { httpError } from '../http/errors';
@@ -117,6 +118,9 @@ export function adminRoutes(deps: AppDeps): Hono<AppEnv> {
 
   // Édition des fiches d'exercices, transitions et export (spec brique 2 §3.9).
   routes.route('/exercises', adminExerciseRoutes(deps));
+
+  // Administration du coach (spec brique 4 §17) : état, coûts, signalements.
+  routes.route('/coach', adminCoachRoutes(deps));
 
   return routes;
 }

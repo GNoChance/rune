@@ -116,6 +116,7 @@ const MEMBER: MemberSummary = {
   onboardingCompleted: true,
   consents: { health: false, aiCoach: false },
   activeSessions: 1,
+  aiCostMonthUsd: 0,
   catalogReviewer: true,
   healthProfessional: false,
 };

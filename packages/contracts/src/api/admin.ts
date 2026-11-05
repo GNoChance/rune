@@ -43,6 +43,8 @@ export const MemberSummary = z
     /** Drapeaux bruts de relecteur (spec brique 2 §3.1), vus de l'admin seulement. */
     catalogReviewer: z.boolean(),
     healthProfessional: z.boolean(),
+    /** Coût IA du mois de Paris en dollars (2 décimales, C0) ; aucun nombre de messages (spec brique 4 §17). */
+    aiCostMonthUsd: z.number().min(0),
   })
   .strict();
 export type MemberSummary = z.infer<typeof MemberSummary>;

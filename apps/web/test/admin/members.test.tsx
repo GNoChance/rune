@@ -23,6 +23,7 @@ const BASTIEN: MemberSummary = {
   onboardingCompleted: true,
   consents: { health: false, aiCoach: true },
   activeSessions: 2,
+  aiCostMonthUsd: 0,
   catalogReviewer: false,
   healthProfessional: false,
 };
@@ -37,6 +38,7 @@ const INES: MemberSummary = {
   onboardingCompleted: false,
   consents: { health: true, aiCoach: false },
   activeSessions: 1,
+  aiCostMonthUsd: 0,
   catalogReviewer: false,
   healthProfessional: false,
 };

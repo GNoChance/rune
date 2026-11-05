@@ -1,7 +1,8 @@
 import { type MemberSummary, MIN_AGE, type Role, SESSION_IDLE_DAYS, type UserStatus } from '@rune/contracts';
-import { ageBandOn, ageOn, parisDate } from '@rune/domain';
+import { ageBandOn, ageOn, parisDate, parisMonthOf } from '@rune/domain';
 import { logSecurityEvent } from '../auth/security-log';
 import { revokeSessions } from '../auth/session';
+import { microsToUsd, monthCostMicros } from '../coach/admin-routes';
 import { writeStamp } from '../db/rev';
 import type { DbExecutor } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -13,8 +14,9 @@ type AdminActor = { actorId: string; ip: string | null };
 const DAY_MS = 86_400_000;
 
 /**
- * Liste des membres (R-ADM-1) : aucune table C1 à C3, sauf `consent_event` (état des accords)
- * et `session` (comptage seul : non révoquées, non expirées, vues depuis moins de 90 jours).
+ * Liste des membres (R-ADM-1) : aucune table C1 à C3, sauf `consent_event` (état des accords),
+ * `session` (comptage seul : non révoquées, non expirées, vues depuis moins de 90 jours) et `coach_call`
+ * (somme des coûts du mois de Paris seule, C0 une fois agrégée ; jamais un nombre de messages).
  * `onlyId` : le seul membre de cet identifiant (liste vide s'il n'existe pas).
  */
 export async function listMembers(db: DbExecutor, deps: AppDeps, onlyId?: string): Promise<MemberSummary[]> {
@@ -46,6 +48,7 @@ export async function listMembers(db: DbExecutor, deps: AppDeps, onlyId?: string
   const counts = await countQuery.execute();
   const active = new Map(counts.map((c) => [c.userId, Number(c.n)]));
   const today = parisDate(now);
+  const costs = await monthCostMicros(db, parisMonthOf(today));
   const members: MemberSummary[] = [];
   for (const u of users) {
     const consents = await getConsentState(db, u.id);
@@ -61,6 +64,7 @@ export async function listMembers(db: DbExecutor, deps: AppDeps, onlyId?: string
       activeSessions: active.get(u.id) ?? 0,
       catalogReviewer: u.catalogReviewer === 1,
       healthProfessional: u.healthProfessional === 1,
+      aiCostMonthUsd: microsToUsd(costs.get(u.id) ?? 0),
     });
   }
   return members;
