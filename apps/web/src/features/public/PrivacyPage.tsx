@@ -21,6 +21,29 @@ export function PrivacyPage() {
               <li key={item}>{item}</li>
             ))}
           </ul>
+          {section.table ? (
+            <div className={`${styles.card} ${styles.tableWrap}`}>
+              <table className={styles.privacyTable}>
+                <thead>
+                  <tr>
+                    {section.table.head.map((cell) => (
+                      <th key={cell} scope="col">
+                        {cell}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {section.table.rows.map(([need, done]) => (
+                    <tr key={need}>
+                      <th scope="row">{need}</th>
+                      <td>{done}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </section>
       ))}
     </Page>

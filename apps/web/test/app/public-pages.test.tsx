@@ -177,6 +177,7 @@ describe('Aide (maquette A05, spec refonte §10.6)', () => {
     expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
       'Installer Rune',
       'Numéros utiles',
+      'Coach IA',
       'Crédits',
     ]);
     const install = screen.getByRole('region', { name: 'Installer Rune' });

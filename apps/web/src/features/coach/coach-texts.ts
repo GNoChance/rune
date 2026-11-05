@@ -194,3 +194,25 @@ const DAY_FORMAT = new Intl.DateTimeFormat('fr-FR', {
 export function dayLabel(day: string): string {
   return DAY_FORMAT.format(new Date(`${day}T12:00:00Z`));
 }
+
+/** Ce que le coach voit (spec §16.5) et la liste « Jamais envoyé » du §9. */
+export const BRIEF_TEXTS = {
+  title: 'Ce que le coach voit',
+  intro:
+    'Voici le dossier que le coach lit pour te répondre. Les sections te le présentent ; le JSON exact est ce qui part vraiment, rien de plus.',
+  preview: 'Aperçu : ton dossier sera figé à ton premier message du jour.',
+  gone: "Ce dossier n'est plus disponible : il a été effacé quand tu as retiré ton accord santé.",
+  legacy: "Ce dossier date d'une ancienne version du coach : voici son JSON exact.",
+  nutrition: "Nutrition : rien pour l'instant",
+  neverSentTitle: 'Jamais envoyé',
+  neverSent: [
+    'Ton pseudo.',
+    "Ta date de naissance : seule ta tranche d'âge est envoyée.",
+    'Tes identifiants internes (personne, lieu, salle, séance, instance).',
+    'Le nom de tes lieux et de ta salle, leur enseigne et leur ville.',
+    'Les autres membres du cercle et les invitations.',
+    'Ton appareil et ton adresse IP.',
+    'Tes pesées, ta taille et ton sexe.',
+    'Tes réponses au questionnaire de santé.',
+  ],
+} as const;

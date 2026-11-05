@@ -1068,6 +1068,25 @@ describe('registres de vie privée (03 §1, §14)', () => {
     expect(fiche).toContain('privacy-content.ts');
   });
 
+  it('fiche de traitement : le coach (brique 4) nomme ses tables, ses durées, Anthropic et les États-Unis', () => {
+    for (const table of ['coach_thread', 'coach_message', 'coach_call', 'coach_report']) {
+      expect(fiche, table).toContain(table);
+    }
+    for (const word of ['90 jours', '12 mois', 'Anthropic', 'États-Unis'])
+      expect(fiche, word).toContain(word);
+    expect(section(fiche, 'Catégories de données')).toContain('coach_thread');
+  });
+
+  it('03 §13.3 : le bandeau du coach est celui de 06 §14, repris mot pour mot', () => {
+    const privacy = read('docs/superpowers/specs/2026-10-06-appsport-design/03-vie-privee.md');
+    const banner = between(privacy, '3. **Coach.**', '4. **Fiches');
+    expect(banner).toContain('bandeau de 06 §14');
+    expect(banner).toContain(
+      "Tu échanges avec une intelligence artificielle (Claude, d'Anthropic), pas avec un humain.",
+    );
+    expect(banner).not.toContain('Vous échangez');
+  });
+
   it('séances, séries, programmes, CSV et profil prudent (C1) : nommés par la fiche et par la page Confidentialité (brique 3, §9)', () => {
     const body = section(fiche, 'Catégories de données');
     for (const needle of [

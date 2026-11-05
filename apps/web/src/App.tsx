@@ -55,6 +55,12 @@ const ChooseProgram = lazy(() =>
 
 /** Conversation avec le coach (brique 4) : hors du bundle initial, chargée à la première ouverture (fichier précaché par le SW). */
 const CoachPage = lazy(() => import('./features/coach/CoachPage').then((m) => ({ default: m.CoachPage })));
+/** Ce que le coach voit (/coach/brief) : même chunk paresseux que le coach. */
+const BriefPage = lazy(() => import('./features/coach/BriefPage').then((m) => ({ default: m.BriefPage })));
+/** « Bien utiliser le coach » : page publique, chargée à la demande. */
+const CoachHelpPage = lazy(() =>
+  import('./features/public/CoachHelpPage').then((m) => ({ default: m.CoachHelpPage })),
+);
 const ConsentPage = lazy(() =>
   import('./features/coach/ConsentPage').then((m) => ({ default: m.ConsentPage })),
 );
@@ -89,6 +95,7 @@ export const PUBLIC_PATHS: readonly string[] = [
   '/privacy',
   '/credits',
   '/help',
+  '/help/coach',
 ];
 
 export type GuardResult =
@@ -166,6 +173,7 @@ function PublicRoutes() {
       <Route path="/privacy" component={PrivacyPage} />
       <Route path="/credits" component={CreditsPage} />
       <Route path="/help" component={HelpPage} />
+      <Route path="/help/coach" component={CoachHelpPage} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -194,6 +202,7 @@ function ConnectedRoutes() {
       <Route path="/places/:id" component={PlaceDetail} />
       <Route path="/places/:id/load" component={PlaceLoadSettings} />
       <Route path="/coach" component={CoachPage} />
+      <Route path="/coach/brief" component={BriefPage} />
       <Route path="/coach/consent" component={ConsentPage} />
       <Route path="/coach/threads" component={ThreadsPage} />
       <Route path="/coach/threads/:id" component={ThreadPage} />
@@ -262,7 +271,9 @@ function AppRoutes() {
       if (PUBLIC_PATHS.includes(route)) {
         return (
           <PublicShell>
-            <PublicRoutes />
+            <Suspense fallback={null}>
+              <PublicRoutes />
+            </Suspense>
           </PublicShell>
         );
       }

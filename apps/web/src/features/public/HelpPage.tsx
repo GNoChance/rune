@@ -1,6 +1,7 @@
 import { HELP_RESOURCES, type HelpResource } from '@rune/contracts';
 import { isReviewer } from '@rune/domain';
 import { type ReactNode, useId, useState } from 'react';
+import { Link } from 'wouter';
 import { useMe } from '../../app-services';
 import { Button, formatDate, Page } from '../../ui';
 import { InstallSteps } from '../auth/InstallSteps';
@@ -108,6 +109,17 @@ function HelpSection(p: { title: string; children: ReactNode }) {
   );
 }
 
+/** Lien vers « Bien utiliser le coach » (spec brique 4 §16.9) : page publique, lisible sans session. */
+function CoachHelpLink() {
+  return (
+    <HelpSection title="Coach IA">
+      <div className={`${styles.card} ${styles.install}`}>
+        <Link href="/help/coach">Bien utiliser le coach</Link>
+      </div>
+    </HelpSection>
+  );
+}
+
 /** Rappel de « Comment relire » (spec brique 2 §4.4), pour un relecteur seulement. */
 function ReviewHelp() {
   const [open, setOpen] = useState(false);
@@ -146,6 +158,7 @@ export function HelpPage() {
           </div>
         </HelpSection>
         <UsefulNumbers resources={useful} verifiedOn={verifiedOn} />
+        <CoachHelpLink />
         {me && isReviewer(me) ? <ReviewHelp /> : null}
         <HelpSection title="Crédits">
           <CreditsContent headingLevel={3} />

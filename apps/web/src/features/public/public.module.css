@@ -72,8 +72,16 @@
   font-weight: 700;
 }
 
+/* Sous-titres des parties de l'aide du coach et de la rubrique « Coach et mineurs ». */
+.section h3 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
 /* Newsreader n'est embarqué qu'en 600 : pas de gras synthétisé dans le Carnet. */
-:global(:root[data-theme="carnet"]) .section h2 {
+:global(:root[data-theme="carnet"]) .section h2,
+:global(:root[data-theme="carnet"]) .section h3 {
   font-weight: 600;
 }
 
@@ -507,4 +515,32 @@
   .homeLink {
     border: 1px solid ButtonText;
   }
+}
+
+/* Tableau « Coach et mineurs » (06 §3) : deux colonnes, lisible en largeur de téléphone, défilement sinon. */
+.tableWrap {
+  overflow-x: auto;
+}
+
+.privacyTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.privacyTable th,
+.privacyTable td {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.privacyTable tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.privacyTable th {
+  font-weight: 700;
 }

@@ -230,7 +230,7 @@ Les pages Confidentialité, Crédits et Aide sont accessibles **sans connexion**
 1. **Premier écran de l'invitation :** « appsport est un outil de suivi entre proches, hébergé chez [prénom du porteur]. Ce n'est pas un service médical. » Il porte un lien vers Confidentialité.
 2. **Avertissement santé** (onboarding, nutrition, pied de chaque fiche d'exercice) : « appsport ne remplace pas un avis médical. Consultez un médecin avant de reprendre une activité si vous avez un problème de santé, et arrêtez en cas de douleur. » Le vocabulaire reste « repère » et « estimation », jamais « régime », « prescription » ni « traitement ».
 3. **Coach.**
-   - Un bandeau fixe en tête de chaque conversation : « Vous échangez avec une IA (Claude, d'Anthropic), pas avec un humain. Elle peut se tromper et ne remplace pas un professionnel de santé. En cas d'urgence : 15 ou 112. »
+   - Un bandeau fixe en tête de chaque conversation, non masquable, produit par l'appli : le bandeau de 06 §14, mot pour mot : « Tu échanges avec une intelligence artificielle (Claude, d'Anthropic), pas avec un humain. Ses conseils sont généraux et ne remplacent pas un professionnel de santé. En cas d'urgence : 15 ou 112. »
    - Une étiquette « IA » sur chaque message ; `ai_generated` et `effective_model` sont enregistrés et exportés.
    - Les propositions portent la mention « proposé par l'IA, vérifié par l'appli ».
 4. **Fiches d'exercices :** « Rédigé avec l'aide d'une IA, relu par l'administrateur ». Remplacé à la brique 2 par « rédigés avec l'aide d'une IA (Claude), relus par l'administrateur et des relectrices, dont une professionnelle de santé pour les exercices sensibles » ([spec de la brique 2](../2026-10-14-brique-2-exercices-design.md), §5).

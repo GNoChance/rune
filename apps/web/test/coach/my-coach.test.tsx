@@ -89,8 +89,18 @@ describe('Mon coach : section « Coach IA » (spec brique 4 §16.7)', () => {
     await screen.findByRole('link', { name: 'Activer le coach IA' });
     expect(screen.queryByRole('link', { name: 'Ouvrir la conversation' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Conversations précédentes' })).toBeTruthy();
+    // Transparence avant de redonner son accord : « Ce que le coach voit » reste lisible.
+    expect(screen.getByRole('link', { name: 'Ce que le coach voit' }).getAttribute('href')).toBe(
+      '/coach/brief',
+    );
     expect(screen.getByRole('button', { name: 'Supprimer mes conversations' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Désactiver le coach IA' })).toBeTruthy();
+  });
+
+  it('coach désactivé : pas de lien « Ce que le coach voit »', async () => {
+    await renderCoach(DISABLED);
+    await screen.findByText(MY_COACH_TEXTS.disabled);
+    expect(screen.queryByRole('link', { name: 'Ce que le coach voit' })).toBeNull();
   });
 
   it("coach en pause : l'état dit la pause du cercle", async () => {

@@ -158,7 +158,8 @@ function CoachSection() {
           ) : (
             <ListRow label={MY_COACH_TEXTS.activate} href="/coach/consent" />
           )}
-          {on ? <ListRow label={MY_COACH_TEXTS.brief} href="/coach/brief" /> : null}
+          {/* Transparence avant de redonner son accord : lisible dès que l'accord existe, même à renouveler. */}
+          {active ? <ListRow label={MY_COACH_TEXTS.brief} href="/coach/brief" /> : null}
           {active ? <ListRow label={STATE_TEXTS.previousThreads} href="/coach/threads" /> : null}
           <ListRow label={MY_COACH_TEXTS.usage} href="/help/coach" />
         </ListGroup>

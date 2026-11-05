@@ -12,6 +12,8 @@ export const OWNER_FIRST_NAME: string =
 export interface PrivacySection {
   title: string;
   items: readonly string[];
+  /** Tableau sous les phrases (« Coach et mineurs » : exigence, mise en œuvre). */
+  table?: { head: readonly [string, string]; rows: readonly (readonly [string, string])[] };
 }
 
 /**
@@ -44,7 +46,7 @@ export function buildPrivacySections(rawOwner: string | undefined): readonly Pri
         "Données personnelles : profil d'entraînement, lieux et matériel, mode prudent, programmes suivis, séances et séries (exercices, charges, répétitions, durées, effort ressenti), réglages, historique de tes accords. Elles servent à construire et suivre ton entraînement, et toi seul y accèdes.",
         "Le profil prudent d'une séance (adulte ou prudent) est gardé avec la séance, comme une donnée personnelle et non de santé : il ne dit pas si c'est ton âge, ton mode prudent ou le questionnaire qui l'a décidé, et il reste après un retrait de l'accord santé.",
         'Données de santé, seulement avec ton accord santé : indicateur de prudence issu du questionnaire, limitations et zones sensibles, douleurs signalées en séance, motifs de changement de programme, mesures et nutrition. Elles servent uniquement à adapter tes séances et tes repères.',
-        'Échanges avec le coach, seulement avec ton accord coach (brique 4) : conversations et signalements.',
+        'Échanges avec le coach, seulement avec ton accord coach : conversations et signalements.',
         "Relecture des exercices, seulement si tu l'acceptes : l'administrateur active pour toi la relecture des fiches et, si tu le déclares, ta qualification de professionnel de santé. Ce n'est pas une donnée de santé. Tes commentaires et tes validations servent à corriger et publier les fiches.",
         "Les membres qui ne relisent pas n'en voient rien ; les autres relecteurs voient tes commentaires, mais ne savent pas si tu es professionnel de santé.",
         "Commun au cercle : salles partagées et leur historique, pseudos rendus visibles, fiches d'exercices.",
@@ -55,7 +57,7 @@ export function buildPrivacySections(rawOwner: string | undefined): readonly Pri
       title: 'Où sont les données',
       items: [
         'Sur un serveur à domicile en France, chiffré au repos, joignable seulement par le réseau privé Tailscale du cercle, jamais depuis Internet.',
-        "Aux États-Unis pour le coach (brique 4) : avec ton accord coach seulement, tes messages et les informations utiles sont envoyés à Anthropic, qui fournit l'IA Claude.",
+        "Aux États-Unis pour le coach : avec ton accord coach seulement, tes messages et les informations utiles sont envoyés à Anthropic, qui fournit l'IA Claude.",
         `Dans des sauvegardes chiffrées hors du domicile (Backblaze), chiffrées avant de quitter le serveur ; au quotidien, seul ${owner} en détient les clés.`,
         `Une copie scellée des clés du serveur et des sauvegardes (l'enveloppe de secours) est confiée à une personne de confiance majeure. Elle n'est ouverte que si ${owner} est indisponible longtemps : cette personne remet alors le serveur en marche, sans consulter tes données, pour que tu puisses les exporter, puis les sauvegardes sont effacées et le service arrêté.`,
         "Sur ton téléphone : une copie de tes données, pour utiliser l'appli sans réseau.",
@@ -120,12 +122,38 @@ export function buildPrivacySections(rawOwner: string | undefined): readonly Pri
     {
       title: 'Coach et mineurs',
       items: [
-        "Le coach (brique 4) est une IA, annoncée au début de chaque conversation. Il est ouvert aux 16-17 ans avec des garde-fous : le mode mineur est décidé par le serveur d'après ta tranche d'âge.",
+        "Le coach est une IA, annoncée au début de chaque conversation. Il est ouvert aux 16-17 ans avec des garde-fous : le mode mineur est décidé par le serveur d'après ta date de naissance, jamais d'après ce que tu écris.",
         "Envoyés : ta tranche d'âge (jamais ton âge exact), ton niveau, ton objectif, ton matériel, ton programme et ton historique récent ; tes données de santé seulement si les accords santé et coach sont actifs.",
-        'Jamais envoyés : ton pseudo, ta date de naissance, ton identifiant, le nom de ta salle, les autres membres, ton adresse IP.',
-        "Pour un mineur : consignes dédiées, aucun chiffre nutritionnel, réponses contrôlées par l'appli.",
+        'Jamais envoyés : ton pseudo, ta date de naissance, ton identifiant, le nom de ta salle, les autres membres, ton adresse IP. Tu lis tout ce qui part dans Profil, Mon coach, « Ce que le coach voit ».',
         "Un bouton « Signaler » accompagne chaque réponse : l'échange signalé devient lisible par l'administrateur, puis il est supprimé à son classement ou au plus tard après 90 jours.",
+        'Les garde-fous pour les moins de 18 ans, exigence par exigence :',
       ],
+      table: {
+        head: ['Exigence', 'Mise en œuvre'],
+        rows: [
+          [
+            "Vérification de l'âge",
+            "Ta date de naissance est saisie par l'administrateur et tu ne peux pas la modifier. Le serveur décide du mode mineur à l'ouverture de la conversation, jamais ton téléphone.",
+          ],
+          [
+            'Consignes dédiées',
+            "Le coach suit des consignes propres aux mineurs, avec le guide de protection de l'enfance d'Anthropic dès sa publication.",
+          ],
+          [
+            'Modération et filtrage',
+            "Chaque phrase est contrôlée par l'appli avant de t'arriver : aucun chiffre de nutrition, une liste de mots écartés, aucun exercice déconseillé aux mineurs, des limites prudentes sur les changements de programme, pas de charge maximale estimée. Un refus du modèle reste un refus : l'appli ne change pas de modèle.",
+          ],
+          [
+            'Surveillance et signalement',
+            "Un bouton « Signaler » sur chaque réponse, des compteurs anonymes à l'échelle du cercle, et des cas « mineur » vérifiés avant chaque nouvelle version du coach.",
+          ],
+          [
+            'Ressources éducatives',
+            'La page « Bien utiliser le coach », partie « Tu as 16 ou 17 ans », lisible sans connexion et liée depuis ton accord.',
+          ],
+          ['Conformité affichée', 'Cette rubrique, lisible sans connexion, reprend ces exigences.'],
+        ],
+      },
     },
   ];
 }

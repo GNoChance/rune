@@ -61,7 +61,8 @@ const PROGRAM_SCREENS = /(^|\/)features\/program\/|^\.\.?\/program\//;
 const inProgram = (path: string) => path.startsWith('features/program/');
 
 /** Écrans du coach chargés à la demande : conversation, accord, conversations précédentes (routes /coach…). Les tâches 28 et 29 y ajoutent les leurs. */
-const COACH_SCREENS = /(^|\/)coach\/(CoachPage|ConsentPage|ThreadsPage|ThreadPage)$/;
+const COACH_SCREENS =
+  /(^|\/)(coach\/(CoachPage|ConsentPage|ThreadsPage|ThreadPage|BriefPage)|public\/CoachHelpPage)$/;
 
 /** Cartes d'aide et feuille de signalement : dans le chunk de /coach, jamais dans le bundle initial. */
 const COACH_PARTS = /(^|\/)(HelpCard|ReportSheet)$/;
@@ -163,7 +164,7 @@ describe('architecture', () => {
     }
   });
 
-  it('écrans du coach (CoachPage, ConsentPage, ThreadsPage, ThreadPage) : seulement par import() depuis App.tsx, jamais dans le bundle initial', () => {
+  it('écrans du coach (CoachPage, ConsentPage, ThreadsPage, ThreadPage, BriefPage, CoachHelpPage) : seulement par import() depuis App.tsx, jamais dans le bundle initial', () => {
     const dynamic = files.filter((f) => imports(f).some((spec) => COACH_SCREENS.test(spec)));
     expect(dynamic.map(rel)).toEqual(['App.tsx']);
     for (const file of files) {

@@ -9,6 +9,7 @@ import { type AllowedValues, type FilterContext, normalizeForTerms, outputFilter
 import { describe, expect, it } from 'vitest';
 import {
   AI_BANNER,
+  BRIEF_TEXTS,
   budgetText,
   CONSENT_TEXTS,
   callText,
@@ -36,6 +37,13 @@ import {
   PREPARING,
   SEE_CONVERSATION,
 } from '../../src/features/program/program-labels';
+import { COACH_HELP_TEXTS } from '../../src/features/public/CoachHelpPage';
+import { PRIVACY_SECTIONS } from '../../src/features/public/privacy-content';
+
+/** Cellules du tableau « Coach et mineurs » de Confidentialité (§15). */
+const MINORS_TABLE_TEXTS: string[] = PRIVACY_SECTIONS.flatMap((s) =>
+  s.title === 'Coach et mineurs' && s.table ? s.table.rows.flat() : [],
+);
 
 const allowed = (percent: string[] = [], mass: string[] = []): AllowedValues => ({
   mass: new Set(mass),
@@ -104,6 +112,12 @@ const TEXTS: [string, string, string[], string[]?][] = [
   ),
   ['threadLabel(2025-10-28, 6)', THREAD_TEXTS.label('2025-10-28', 6), []],
   ['threadLabel(2025-10-27, 1)', THREAD_TEXTS.label('2025-10-27', 1), []],
+  ...Object.entries(BRIEF_TEXTS).flatMap(([k, t]): [string, string, string[]][] =>
+    typeof t === 'string' ? [[`BRIEF_TEXTS.${k}`, t, []]] : [],
+  ),
+  ...BRIEF_TEXTS.neverSent.map((t, i): [string, string, string[]] => [`BRIEF_TEXTS.neverSent[${i}]`, t, []]),
+  ...COACH_HELP_TEXTS.map((t, i): [string, string, string[]] => [`COACH_HELP_TEXTS[${i}]`, t, []]),
+  ...MINORS_TABLE_TEXTS.map((t, i): [string, string, string[]] => [`minors table[${i}]`, t, []]),
   ['AI_NOTE', AI_NOTE, []],
   ['SEE_CONVERSATION', SEE_CONVERSATION, []],
   ['PREPARING', PREPARING, []],
