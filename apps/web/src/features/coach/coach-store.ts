@@ -34,6 +34,8 @@ export interface CoachState {
   pending: PendingExchange | null;
   phase: CoachPhase;
   error: CoachError | null;
+  /** Message neutre du serveur après un refus (`refused`), non enregistré ; nul sinon. */
+  refusalMessage: string | null;
 }
 
 export interface CoachStore {
@@ -61,6 +63,7 @@ const INITIAL: CoachState = {
   pending: null,
   phase: 'idle',
   error: null,
+  refusalMessage: null,
 };
 
 function errorOf(e: unknown): CoachError {
@@ -85,7 +88,8 @@ export function createCoachStore(s: AppServices): CoachStore {
   let state = INITIAL;
   // Change à la déconnexion et au changement d'utilisateur : un échange ou une relecture en cours s'arrête là.
   let generation = 0;
-  let polling = false;
+  // Génération du sondage en cours : un sondage d'un ancien compte ne bloque pas celui du nouveau.
+  let pollingGen: number | null = null;
   let watching = false;
 
   const set = (patch: Partial<CoachState>) => {
@@ -99,6 +103,7 @@ export function createCoachStore(s: AppServices): CoachStore {
 
   const reset = () => {
     generation += 1;
+    pollingGen = null;
     state = INITIAL;
     for (const fn of listeners) fn();
   };
@@ -133,15 +138,15 @@ export function createCoachStore(s: AppServices): CoachStore {
 
   async function run(pending: PendingExchange, firstOfDay: boolean): Promise<void> {
     const gen = generation;
-    set({ pending, phase: 'streaming', error: null });
+    set({ pending, phase: 'streaming', error: null, refusalMessage: null });
     if (firstOfDay) await flush();
     if (gen !== generation) return;
 
     const seen: {
       done: Extract<CoachStreamEvent, { type: 'done' }> | null;
       error: CoachStreamErrorCode | null;
-      refused: boolean;
-    } = { done: null, error: null, refused: false };
+      refused: string | null;
+    } = { done: null, error: null, refused: null };
     const onEvent = (e: CoachStreamEvent) => {
       if (gen !== generation) return;
       switch (e.type) {
@@ -164,7 +169,7 @@ export function createCoachStore(s: AppServices): CoachStore {
           seen.done = e;
           break;
         case 'refused':
-          seen.refused = true;
+          seen.refused = e.message;
           break;
         case 'error':
           seen.error = e.code;
@@ -189,15 +194,19 @@ export function createCoachStore(s: AppServices): CoachStore {
 
     const { done, error, refused } = seen;
     if (error !== null) return fail(gen, pending, error);
-    if (refused) {
-      set({ pending: null, draft: pending.text, phase: 'refused', error: null });
+    if (refused !== null) {
+      set({ pending: null, draft: pending.text, phase: 'refused', error: null, refusalMessage: refused });
       return;
     }
     // Un flux fermé sans `done` ni `error` : la réponse s'est peut-être enregistrée, `today` le dira.
     if (done === null) return fail(gen, pending, 'silence');
 
+    let todayError: unknown = null;
     const [today, status] = await Promise.all([
-      repo.today().catch(() => null),
+      repo.today().catch((e: unknown) => {
+        todayError = e;
+        return null;
+      }),
       repo.status().catch(() => null),
     ]);
     if (gen !== generation) return;
@@ -205,14 +214,14 @@ export function createCoachStore(s: AppServices): CoachStore {
       await s.sync.pullNow().catch(() => {});
       if (gen !== generation) return;
     }
+    // Sans la relecture, la bulle reste affichée et l'erreur est rendue.
     set({
       today: today ?? state.today,
       status: status ?? state.status,
       draft: '',
-      // Sans la relecture, la bulle reste affichée plutôt que de disparaître.
       pending: today ? null : state.pending,
-      phase: 'idle',
-      error: null,
+      phase: today ? 'idle' : 'error',
+      error: today ? null : errorOf(todayError),
     });
   }
 
@@ -236,7 +245,11 @@ export function createCoachStore(s: AppServices): CoachStore {
         const [status, today] = await Promise.all([repo.status(), repo.today()]);
         if (gen !== generation || isStreaming()) return;
         const keepFailure = state.pending !== null && (state.phase === 'error' || state.phase === 'refused');
-        set(keepFailure ? { status, today } : { status, today, phase: 'idle', error: null });
+        set(
+          keepFailure
+            ? { status, today, refusalMessage: null }
+            : { status, today, phase: 'idle', error: null, refusalMessage: null },
+        );
       } catch (e) {
         if (gen !== generation || isStreaming()) return;
         set({ phase: 'error', error: errorOf(e) });
@@ -265,29 +278,33 @@ export function createCoachStore(s: AppServices): CoachStore {
       await run(emptied(state.pending), false);
     },
     async pollInProgress() {
-      if (polling) return;
-      polling = true;
       const gen = generation;
+      if (pollingGen === gen) return;
+      pollingGen = gen;
+      const deadline = Date.now() + POLL_MAX_MS;
+      // Un envoi en cours est la source de vérité : le sondage ne l'écrase jamais.
+      const live = () => gen === generation && !isStreaming();
       try {
-        for (let elapsed = 0; elapsed < POLL_MAX_MS; elapsed += POLL_EVERY_MS) {
+        while (Date.now() < deadline) {
           await sleep(POLL_EVERY_MS);
           if (gen !== generation) return;
           try {
             const today = await repo.today();
-            if (gen !== generation) return;
+            if (!live()) continue;
             set({ today });
             if (!today.inProgress) {
               const status = await repo.status().catch(() => null);
-              if (gen === generation && status) set({ status });
+              if (live() && status) set({ status });
               return;
             }
           } catch (e) {
-            if (gen === generation) set({ phase: 'error', error: errorOf(e) });
+            if (!live()) continue;
+            set({ phase: 'error', error: errorOf(e) });
             return;
           }
         }
       } finally {
-        polling = false;
+        if (pollingGen === gen) pollingGen = null;
       }
     },
   };

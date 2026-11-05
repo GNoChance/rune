@@ -50,7 +50,11 @@ export interface CoachRepo {
 
 const MESSAGES_PATH = '/api/coach/messages';
 
-/** Les en-têtes arrivent dans le délai de la synchro ; ensuite le flux est surveillé par `readSse`. */
+/**
+ * Les en-têtes arrivent dans le délai de la synchro ; ensuite le flux est surveillé par `readSse` (silence de 30 s).
+ * `signal` n'agit que jusqu'à l'arrivée des en-têtes : il n'interrompt pas la lecture du corps (le magasin ne
+ * l'utilise pas, un échange va toujours à son terme).
+ */
 async function fetchStream(s: AppServices, init: RequestInit, signal?: AbortSignal): Promise<Response> {
   const controller = new AbortController();
   const abort = () => controller.abort();

@@ -227,7 +227,12 @@ describe('CoachStore', () => {
     await store.load();
     store.setDraft('Salut');
     await store.send();
-    expect(store.getState()).toMatchObject({ draft: 'Salut', phase: 'refused', pending: null });
+    expect(store.getState()).toMatchObject({
+      draft: 'Salut',
+      phase: 'refused',
+      pending: null,
+      refusalMessage: 'non',
+    });
   });
 
   it("erreur JSON avant le flux : code de l'API, texte gardé", async () => {
@@ -309,7 +314,8 @@ describe('CoachStore', () => {
   it('flushBefore(4000) par load et avant le premier message du jour seulement', async () => {
     const { store, api, sync } = await setup();
     api.on('POST', '/api/coach/messages', sse(`${TEXT('ok')}${DONE()}`));
-    const flushes = () => sync.triggers.filter((x) => x === 'coach').length;
+    const spy = vi.spyOn(sync, 'flushBefore');
+    const flushes = () => spy.mock.calls.length;
     await store.load();
     expect(flushes()).toBe(1);
     store.setDraft('Premier');
@@ -321,6 +327,7 @@ describe('CoachStore', () => {
     store.setDraft('Deuxième');
     await store.send();
     expect(flushes()).toBe(3);
+    expect(spy.mock.calls.every(([ms]) => ms === 4000)).toBe(true);
   });
 
   it("pollInProgress : today toutes les 2 s, s'arrête dès inProgress: false", async () => {
@@ -432,5 +439,63 @@ describe('CoachStore', () => {
     await setMeta(db, 'userId', 'autre-utilisateur');
     await until(() => store.getState().status === null);
     expect(store.getState().draft).toBe('');
+  });
+
+  it('done puis today illisible : erreur rendue, bulle gardée, champ vidé', async () => {
+    const { store, api } = await setup();
+    await store.load();
+    api.on('POST', '/api/coach/messages', sse(`${TEXT('Bonjour')}${DONE()}`));
+    api.on('GET', '/api/coach/today', { status: 500, body: { error: 'internal' } });
+    store.setDraft('Salut');
+    await store.send();
+    expect(store.getState()).toMatchObject({ draft: '', phase: 'error', error: 'internal' });
+    expect(store.getState().pending?.bubble).toBe('Bonjour');
+  });
+
+  it("pollInProgress n'écrit rien pendant un envoi", async () => {
+    const { store, api, calls } = await setup();
+    await store.load();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    api.on('POST', '/api/coach/messages', async () => {
+      await gate;
+      return sse(`${TEXT('ok')}${DONE()}`);
+    });
+    store.setDraft('Salut');
+    const sending = store.send();
+    await until(() => calls('POST', '/api/coach/messages').length === 1);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] });
+    const todayBefore = store.getState().today;
+    api.on('GET', '/api/coach/today', { status: 200, body: { ...TODAY_WITH_USER, inProgress: true } });
+    const reads = calls('GET', '/api/coach/today').length;
+    const polling = store.pollInProgress();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(calls('GET', '/api/coach/today').length).toBe(reads + 1);
+    expect(store.getState()).toMatchObject({ phase: 'streaming', error: null });
+    expect(store.getState().today).toBe(todayBefore);
+    api.on('GET', '/api/coach/today', { status: 200, body: TODAY_WITH_USER });
+    release();
+    await sending;
+    await vi.advanceTimersByTimeAsync(2000);
+    await polling;
+    expect(store.getState().phase).toBe('idle');
+  });
+
+  it('un nouveau compte peut sonder tout de suite', async () => {
+    const { store, db, services, calls } = await setup();
+    await store.load();
+    await userKnown(services);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] });
+    void store.pollInProgress();
+    await setMeta(db, 'userId', 'autre-utilisateur');
+    await until(() => store.getState().status === null);
+    const reads = calls('GET', '/api/coach/today').length;
+    const second = store.pollInProgress();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(calls('GET', '/api/coach/today').length).toBe(reads + 1);
+    await vi.advanceTimersByTimeAsync(180_000);
+    await second;
   });
 });
