@@ -1,5 +1,5 @@
 import type { InstanceChangeOperation } from '@rune/contracts';
-import { coachLoadGuard, currentRules } from '@rune/domain';
+import { coachLoadGuard, currentRules, UnknownRulesVersionError } from '@rune/domain';
 import { writeStamp } from '../db/rev';
 import type { DbExecutor } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -17,31 +17,39 @@ import type { PendingProposal } from './tools/types';
 const DAY_MS = 86_400_000;
 
 /**
- * Slots dont la charge prévue monterait si le changement `change` du coach était accepté à `now` (§12.2, étape 6,
- * C6), triés : `coachLoadGuard` sur le rejeu de l'instance active, dans chacun des lieux vivants (la liste que reçoit
- * `validateChange`) et au lieu principal de `planWorkout`, suspensions levées. Vide : aucune hausse. Lecture seule.
- * Appelée après le validateur : une instance active sans rejeu possible est une erreur interne, et une séance aux
- * règles inconnues du serveur lève `UnknownRulesVersionError`, comme le rejeu.
+ * Résultat de la garde de hausse : vérifiable, avec les slots dont la charge prévue monterait (triés, vide si aucun),
+ * ou non vérifiable, quand le rejeu est impossible.
  */
-export async function coachLoadIncreases(
+export type CoachLoadCheck = { verifiable: true; increases: string[] } | { verifiable: false };
+
+/**
+ * Garde de hausse du changement `change` du coach, comme s'il était accepté à `now` (§12.2, étape 6, C6) :
+ * `coachLoadGuard` sur le rejeu de l'instance active, dans chacun des lieux vivants (la liste que reçoit
+ * `validateChange`) et au lieu principal de `planWorkout`, suspensions levées. Lecture seule. Non vérifiable seulement
+ * sans rejeu possible : aucune entrée de rejeu (`loadReplayInput`, déjà journalisé), ou une séance aux règles inconnues
+ * du serveur (`UnknownRulesVersionError`), qu'une mise à jour du serveur lève ; toute autre erreur remonte.
+ */
+export async function checkCoachLoad(
   db: DbExecutor,
   deps: AppDeps,
   userId: string,
   change: { id: string; operations: readonly InstanceChangeOperation[] },
   now: Date,
-): Promise<string[]> {
+): Promise<CoachLoadCheck> {
   const replay = await loadReplayInput(db, deps, userId);
-  if (replay === null) throw new Error('replay_unavailable');
+  if (replay === null) return { verifiable: false };
   const places = [...(await placesOf(db, userId, { live: true })).values()];
-  return coachLoadGuard(
-    {
-      replay,
-      change: { ...change, author: 'coach' },
-      decidedAt: now.getTime(),
-      plan: await loadPlanContext(db, deps, userId, now),
-    },
-    places,
-  );
+  const plan = await loadPlanContext(db, deps, userId, now);
+  try {
+    const increases = coachLoadGuard(
+      { replay, change: { ...change, author: 'coach' }, decidedAt: now.getTime(), plan },
+      places,
+    );
+    return { verifiable: true, increases };
+  } catch (err) {
+    if (err instanceof UnknownRulesVersionError) return { verifiable: false };
+    throw err;
+  }
 }
 
 /**
@@ -50,7 +58,9 @@ export async function coachLoadIncreases(
  * chacune avec un rev neuf (C4 : celles du moteur restent) ; puis insertion de `p` sur son instance, `author` coach,
  * `reason_code` `COACH_PROPOSAL`, `reason` seulement avec l'accord santé (C7), `status` `proposed`, ou `expired` si
  * l'instance n'est plus active ou si sa révision n'est plus celle de la validation, `expires_at` = création + 7 jours,
- * `ai_generated`, `ai_model` (modèle de l'itération), `prompt_version` et `coach_thread_id` du fil.
+ * `ai_generated`, `ai_model` (modèle de l'itération), `prompt_version` et `coach_thread_id` du fil. Sans modèle
+ * (`p.model` nul : la tentative ne l'a pas posé), erreur `coach_proposal_model_missing` avant toute écriture : une
+ * ligne `ai_generated` sans `ai_model` ne s'écrit jamais.
  */
 export async function insertCoachProposal(
   trx: DbExecutor,
@@ -58,6 +68,7 @@ export async function insertCoachProposal(
   p: PendingProposal,
   ctx: { userId: string; threadId: string; promptVersion: string; now: Date; healthConsent: boolean },
 ): Promise<void> {
+  if (p.model === null) throw new Error('coach_proposal_model_missing');
   const { userId, now } = ctx;
   await expireProposals(trx, userId, now);
   const waiting = await trx

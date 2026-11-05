@@ -54,6 +54,7 @@ const GROUPS: Record<number, string[]> = {
     'days_out_of_range',
     'invalid_change',
     'coach_load_increase',
+    'coach_load_unverifiable',
   ],
   426: ['protocol_unsupported'],
   429: ['rate_limited', 'daily_limit_reached', 'monthly_budget_reached'],
@@ -62,12 +63,13 @@ const GROUPS: Record<number, string[]> = {
 };
 
 describe('ApiErrorCode et ERROR_STATUS', () => {
-  it('compte 53 codes', () => {
-    expect(ApiErrorCode.options).toHaveLength(53);
+  it('compte 54 codes', () => {
+    expect(ApiErrorCode.options).toHaveLength(54);
   });
 
-  it('refus de la garde de hausse à l’acceptation d’une proposition du coach : 422 (spec brique 4 §12.2)', () => {
+  it("refus de la garde de hausse à l'acceptation d'une proposition du coach : 422 (spec brique 4 §12.2)", () => {
     expect(ERROR_STATUS.coach_load_increase).toBe(422);
+    expect(ERROR_STATUS.coach_load_unverifiable).toBe(422);
   });
 
   it('porte les codes de la garde du coach et de son envoi avec leur statut (spec brique 4 §7.3)', () => {

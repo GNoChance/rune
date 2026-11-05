@@ -10,6 +10,7 @@ import {
 } from '../support';
 import { pressThenGoblet } from '../support/coach';
 import {
+  dayAt,
   enroll,
   programTemplate,
   type SessionSpec,
@@ -181,6 +182,16 @@ describe('insertCoachProposal (§12.3)', () => {
     await write(u.id, p);
     expect(rowOf(p.id)).toMatchObject({ status: 'expired', instance_id: instanceId });
   });
+
+  it("modèle de l'itération absent : erreur claire, rien d'écrit (pas d'ai_generated sans ai_model)", async () => {
+    const u = await setup();
+    const instanceId = await enroll(ctx, u.id, TEMPLATE);
+    const coach = await proposal(u, instanceId, { author: 'coach' });
+    const p = pending(instanceId, { model: null });
+    await expect(write(u.id, p)).rejects.toThrow('coach_proposal_model_missing');
+    expect(rowOf(p.id)).toBeUndefined();
+    expect(rowOf(coach)?.status).toBe('proposed');
+  });
 });
 
 describe("acceptation d'une proposition du coach : garde de hausse recalculée", () => {
@@ -220,5 +231,24 @@ describe("acceptation d'une proposition du coach : garde de hausse recalculée",
     await push(u, pressThenGoblet(instanceId));
     expect((await accept(u, id)).status).toBe(200);
     expect(rowOf(id)?.status).toBe('accepted');
+  });
+
+  it('séance aux règles inconnues du serveur : 422 coach_load_unverifiable, proposition intacte ; le moteur passe', async () => {
+    const u = await setup();
+    const instanceId = await enroll(ctx, u.id, TEMPLATE);
+    const coach = await proposal(u, instanceId, { author: 'coach', operations: [TO_PRESS] });
+    const engine = await proposal(u, instanceId, { operations: [TO_PRESS] });
+    await push(u, [{ instanceId, startedAt: dayAt(62), rulesVersion: '99', exercises: [{}] }]);
+    const before = rowOf(coach);
+
+    const res = await accept(u, coach);
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'coach_load_unverifiable' });
+    expect(rowOf(coach)).toEqual(before);
+    expect(instanceRow(instanceId).revision).toBe(0);
+
+    // Témoin : la proposition du moteur, sur la même instance, n'est pas concernée par la garde.
+    expect((await accept(u, engine)).status).toBe(200);
+    expect(rowOf(engine)?.status).toBe('accepted');
   });
 });

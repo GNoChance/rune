@@ -13,7 +13,8 @@ import {
 import { currentCatalog } from '../../catalog/bundle';
 import { changeValidationInput, instanceProgram } from '../../program/changes';
 import { activeInstance } from '../../program/enroll';
-import { coachLoadIncreases } from '../proposals';
+import { parseSnapshot } from '../../program/replay-service';
+import { checkCoachLoad } from '../proposals';
 import { frozenSlotAliases } from '../threads';
 import { defineTool, type ToolContext, type ToolOutcome } from './types';
 
@@ -32,13 +33,14 @@ export type ProposalErrorCode =
   | 'no_active_program'
   | 'stale_revision'
   | 'coach_load_increase'
+  | 'load_unverifiable'
   | 'reason_blocked'
   | 'corrections_exhausted';
 
 /**
  * Messages rendus au modèle, en français : chacun dit quoi corriger. `{revision}` : la révision courante ; `{slots}` :
- * les slots, sous leurs références du dossier. Aucun ne porte de nombre suivi d'une unité : les résultats d'outils du
- * fil alimentent les valeurs autorisées du filtre (C8).
+ * « (A1, A-x1) », les slots sous leurs références du dossier, ou rien si aucun n'en a. Aucun ne porte de nombre suivi
+ * d'une unité : les résultats d'outils du fil alimentent les valeurs autorisées du filtre (C8).
  */
 export const PROPOSAL_ERROR_MESSAGES: Record<ProposalErrorCode, string> = {
   slot_unknown:
@@ -79,7 +81,9 @@ export const PROPOSAL_ERROR_MESSAGES: Record<ProposalErrorCode, string> = {
   stale_revision:
     'Le programme a changé : sa révision est maintenant {revision}. Relis-le avec read_training, puis propose de nouveau avec base_revision {revision}.',
   coach_load_increase:
-    'Ce changement ferait monter la charge prévue de {slots}, à la prochaine séance ou à la reprise : le coach ne propose jamais de hausse de charge. Propose un changement qui la garde ou la baisse.',
+    'Ce changement ferait monter une charge prévue{slots}, à la prochaine séance ou à la reprise : le coach ne propose jamais de hausse de charge. Propose un changement qui la garde ou la baisse.',
+  load_unverifiable:
+    "L'appli ne peut pas vérifier les charges prévues pour le moment : ne propose pas de changement maintenant, et dis simplement à la personne de réessayer plus tard.",
   reason_blocked:
     "Le motif contient un chiffre, un numéro ou un mot que l'appli ne peut pas vérifier : reformule-le en une ou deux phrases simples, sans chiffre absent du dossier.",
   corrections_exhausted:
@@ -137,6 +141,37 @@ const resolved = (operations: readonly InstanceChangeOperation[], aliases: Reado
       'slot' in op ? { ...op, slot: resolveSlotAlias(op.slot, aliases) } : op,
   );
 
+/**
+ * Références du dossier des slots `slotIds`, pour un message au modèle : l'alias d'un slot ajouté (`aliases` : alias
+ * → identifiant réel), l'identifiant d'un slot du modèle (`modelSlots`). Un slot qui n'a ni l'un ni l'autre n'est pas
+ * nommé : jamais d'identifiant réel dans un résultat d'outil.
+ */
+export function slotRefs(
+  slotIds: readonly string[],
+  aliases: ReadonlyMap<string, string>,
+  modelSlots: ReadonlySet<string>,
+): string[] {
+  const sent = new Map([...aliases].map(([alias, slotId]) => [slotId, alias]));
+  return slotIds.flatMap((id) => {
+    const ref = sent.get(id) ?? (modelSlots.has(id) ? id : undefined);
+    return ref === undefined ? [] : [ref];
+  });
+}
+
+/**
+ * Référence d'une proposition rendue au modèle, `P-<n>` : n = 1 + propositions déjà écrites par le fil + propositions
+ * de la tentative. L'identifiant de la ligne à écrire (`PendingProposal.id`) n'entre jamais dans le fil.
+ */
+async function proposalRef(ctx: ToolContext): Promise<string> {
+  const written = await ctx.db
+    .selectFrom('instanceChange')
+    .select((eb) => eb.fn.countAll<number>().as('count'))
+    .where('ownerId', '=', ctx.userId)
+    .where('coachThreadId', '=', ctx.thread.id)
+    .executeTakeFirstOrThrow();
+  return `P-${1 + Number(written.count) + ctx.state.proposals.length}`;
+}
+
 export const proposeProgramChange = defineTool({
   name: 'propose_program_change',
   description: DESCRIPTION,
@@ -173,11 +208,16 @@ export const proposeProgramChange = defineTool({
         validation.errors.map((e) => ({ op: e.op, code: e.code, message: PROPOSAL_ERROR_MESSAGES[e.code] })),
       );
     }
-    // Étape 6 : aucune charge prévue ne monte, dans aucun lieu vivant, suspensions levées (C6).
-    const increases = await coachLoadIncreases(ctx.db, ctx.deps, ctx.userId, change, ctx.now);
-    if (increases.length > 0) {
-      const sent = new Map([...aliases].map(([alias, slotId]) => [slotId, alias]));
-      const slots = increases.map((slotId) => sent.get(slotId) ?? slotId).join(', ');
+    // Étape 6 : aucune charge prévue ne monte, dans aucun lieu vivant, suspensions levées (C6). Sans rejeu
+    // possible, la garde ne peut pas conclure : refus compté, sans faire échouer l'échange.
+    const check = await checkCoachLoad(ctx.db, ctx.deps, ctx.userId, change, ctx.now);
+    if (!check.verifiable) return refuse(ctx, [wholeChange('load_unverifiable')]);
+    if (check.increases.length > 0) {
+      const model = new Set(
+        parseSnapshot(instance.snapshot)?.workouts.flatMap((w) => w.slots.map((s) => s.id)),
+      );
+      const refs = slotRefs(check.increases, aliases, model);
+      const slots = refs.length === 0 ? '' : ` (${refs.join(', ')})`;
       return refuse(ctx, [wholeChange('coach_load_increase', { slots })]);
     }
     // Étape 7 : le motif, de plusieurs phrases s'il le faut, passe le filtre du flux.
@@ -188,6 +228,7 @@ export const proposeProgramChange = defineTool({
     });
     if (!verdict.ok) return refuse(ctx, [wholeChange('reason_blocked')]);
 
+    const ref = await proposalRef(ctx);
     ctx.state.proposals.push({
       id: change.id,
       instanceId: instance.id,
@@ -198,7 +239,7 @@ export const proposeProgramChange = defineTool({
     });
     return {
       isError: false,
-      result: { ok: true, change_id: change.id, expires_in_days: currentRules().proposalValidDays },
+      result: { ok: true, change_id: ref, expires_in_days: currentRules().proposalValidDays },
     };
   },
 });

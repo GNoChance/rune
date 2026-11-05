@@ -20,7 +20,7 @@ import {
 import type { Selectable, Transaction } from 'kysely';
 import { z } from 'zod';
 import { traitsOn } from '../auth/me';
-import { coachLoadIncreases } from '../coach/proposals';
+import { checkCoachLoad } from '../coach/proposals';
 import { writeStamp } from '../db/rev';
 import type { Database, DbExecutor, InstanceChangeTable } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -52,7 +52,9 @@ export type ChangeRow = Selectable<InstanceChangeTable>;
 export type ServedCatalog = Pick<CatalogBundle, 'exercises' | 'programTemplates'>;
 
 /** Refus qui laisse la transaction s'achever : l'expiration de la proposition est gardée. */
-export type Refusal = { refused: 'expired' | 'stale_revision' | 'not_proposed' | 'coach_load_increase' };
+export type Refusal = {
+  refused: 'expired' | 'stale_revision' | 'not_proposed' | 'coach_load_increase' | 'coach_load_unverifiable';
+};
 
 const Operations = z.array(InstanceChangeOperationSchema).min(1).max(MAX_CHANGE_OPERATIONS);
 
@@ -322,7 +324,8 @@ async function expire(trx: DbExecutor, deps: AppDeps, id: string): Promise<void>
  * client relit et recommence. 422 `invalid_change` si le programme résultant ne passe pas le validateur (la
  * proposition reste `proposed`). Proposition du coach : la garde de hausse (spec brique 4 §12.2, étape 6, choix C6)
  * est recalculée maintenant, sur tous les lieux vivants, car la charge prévue a pu changer depuis la proposition ; une
- * hausse → la proposition passe à `expired`, refus 422 `coach_load_increase` rendu après la transaction. Acceptée :
+ * hausse → la proposition passe à `expired`, refus 422 `coach_load_increase` rendu après la transaction ; rejeu
+ * impossible (séance aux règles inconnues du serveur) → 422 `coach_load_unverifiable`, proposition intacte. Acceptée :
  * `decided_at` maintenant, `revision` + 1, rejeu.
  */
 export async function acceptChange(
@@ -359,12 +362,14 @@ export async function acceptChange(
     { id, author: row.author, baseRevision: row.baseRevision, operations },
     catalog,
   );
-  if (
-    row.author === 'coach' &&
-    (await coachLoadIncreases(trx, deps, userId, { id, operations }, now)).length > 0
-  ) {
-    await expire(trx, deps, id);
-    return { refused: 'coach_load_increase' };
+  if (row.author === 'coach') {
+    const check = await checkCoachLoad(trx, deps, userId, { id, operations }, now);
+    // Refus transitoire : la proposition reste `proposed`, intacte ; une mise à jour du serveur le lève.
+    if (!check.verifiable) return { refused: 'coach_load_unverifiable' };
+    if (check.increases.length > 0) {
+      await expire(trx, deps, id);
+      return { refused: 'coach_load_increase' };
+    }
   }
   if (switchOf(operations)) await assertNoSessionInProgress(trx, instance);
   const stamp = await writeStamp(trx, deps, userId);

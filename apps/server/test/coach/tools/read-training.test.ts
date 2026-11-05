@@ -426,7 +426,8 @@ describe('read_training : programme et alias du fil', () => {
     const r = await result(u.id, { since_days: 28 }, thread);
     expect(slotIds(r)).not.toContain(`A-${FIRST_ADD}`);
     const decision = (r.decisions as Row[]).find((d) => d.exercise_id === 'leg-press');
-    expect(decision?.slot).toMatch(/^A-x\d+$/);
+    // Espace distinct des slots retirés (ruling de la tâche 18) : jamais un alias `A-x<n>` d'un slot ajouté.
+    expect(decision?.slot).toMatch(/^R-x\d+$/);
     expect(JSON.stringify(r)).not.toMatch(UUID_ANYWHERE);
 
     const found = await runTool(

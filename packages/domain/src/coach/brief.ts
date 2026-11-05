@@ -400,11 +400,17 @@ function aliasRank(alias: string, workout: string): number {
  * `frozen` amorce la table : c'est la table figée d'un fil (alias → identifiant réel, `slotAliases` du dossier). Un
  * slot qui y est garde son alias, sauf si cet alias est devenu l'identifiant d'un slot du modèle ; un slot ajouté
  * depuis le gel reçoit un alias au-delà du plus grand alias figé de sa séance, et aucun alias figé ne change de slot.
+ *
+ * `removedRefs` (slots retirés que citent les décisions du moteur, pour `read_training`) : après tout le reste, ceux qui
+ * n'ont encore aucun alias prennent `R-x1`, `R-x2`… dans leur ordre. Cet espace n'est jamais figé ni dans
+ * `extendSlotAliases` : un slot ajouté plus tard dans le fil ne peut pas le reprendre, et `resolveSlotAlias` ne le
+ * résout jamais (une proposition qui le cite est refusée, `slot_unknown`).
  */
 function assignAliases(
   program: EffectiveProgram,
   frozen: ReadonlyMap<string, string>,
   extraRefs: readonly string[],
+  removedRefs: readonly string[] = [],
 ): Map<string, string> {
   const workouts = program.template.workouts;
   const taken = new Set(workouts.flatMap((w) => w.slots.map((s) => s.id)));
@@ -433,6 +439,17 @@ function assignAliases(
   };
   for (const w of workouts) for (const s of w.slots) give(s.id);
   for (const ref of extraRefs) give(ref);
+  let removed = 0;
+  for (const ref of removedRefs) {
+    if (addedSlotWorkout(ref) === null || aliases.has(ref)) continue;
+    let alias: string;
+    do {
+      removed += 1;
+      alias = `R-x${removed}`;
+    } while (taken.has(alias));
+    taken.add(alias);
+    aliases.set(ref, alias);
+  }
   return aliases;
 }
 
@@ -442,14 +459,14 @@ const pendingRefsOf = (program: BriefProgramInput): string[] =>
 
 /**
  * Alias du dossier et des outils (identifiant réel → alias) : slots du programme, puis références en attente, puis
- * `extraRefs` (slots des décisions du moteur, pour `read_training`).
+ * `removedRefs` (slots des décisions du moteur, pour `read_training`), ceux-là dans l'espace distinct `R-x<n>`.
  */
 function slotAliasesOf(
   program: BriefProgramInput,
   frozen: ReadonlyMap<string, string>,
-  extraRefs: readonly string[] = [],
+  removedRefs: readonly string[] = [],
 ): Map<string, string> {
-  return assignAliases(program.program, frozen, [...pendingRefsOf(program), ...extraRefs]);
+  return assignAliases(program.program, frozen, pendingRefsOf(program), removedRefs);
 }
 
 /**
@@ -581,7 +598,8 @@ export function briefProgram(
  *
  * Le slot d'une décision peut ne plus être au programme (ajouté, travaillé, puis retiré) : les slots de toutes les
  * décisions du rejeu reçoivent aussi un alias, après les slots du programme et les références en attente, qui gardent
- * donc les leurs. Jamais l'identifiant d'un changement dans la sortie.
+ * donc les leurs ; un slot retiré sans alias figé ni en attente prend `R-x<n>`, un espace que la retraduction des
+ * propositions ne résout jamais. Jamais l'identifiant d'un changement dans la sortie.
  */
 export function briefDecisions(
   input: CoachBriefInput,

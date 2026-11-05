@@ -375,12 +375,35 @@ describe('briefDecisions (read_training)', () => {
       expect(i.program?.replay.decisions.map((d) => d.slotId)).toContain(ADDED_SLOT_ID);
 
       const decisions = briefDecisions(i, { days: 28 });
-      expect(decisions.find((d) => d.exercise_id === 'calf-raise')?.slot).toBe('A-x1');
+      expect(decisions.find((d) => d.exercise_id === 'calf-raise')?.slot).toBe('R-x1');
       expect(JSON.stringify(decisions)).not.toMatch(UUID_ANYWHERE);
+      // Figé avec le fil (le slot existait à son ouverture) : son alias figé.
       const frozen = new Map([['A-x2', ADDED_SLOT_ID]]);
       expect(briefDecisions(i, { days: 28 }, frozen).find((d) => d.exercise_id === 'calf-raise')?.slot).toBe(
         'A-x2',
       );
+    });
+
+    it('espace distinct R-x : un slot ajouté ensuite prend A-x1, la décision garde R-x1, extendSlotAliases ignore R-x', () => {
+      const i = input(false);
+      const slotOf = (x: typeof i) =>
+        briefDecisions(x, { days: 28 }).find((d) => d.exercise_id === 'calf-raise')?.slot;
+      expect(slotOf(i)).toBe('R-x1');
+      const later = '019a4b2c-3d4e-7f60-8a1b-2c3d4e5f6a80';
+      const grown = briefInput((x) => {
+        if (x.program === null || i.program === null) return;
+        x.program.program = effectiveProgram(GYM_AB, 3, [
+          addSlotChange(ADDED_CHANGE_ID, daysBefore(15)),
+          removed,
+          addSlotChange(later, daysBefore(1)),
+        ]);
+        x.program.pending = i.program.pending;
+      });
+      expect(slotOf(grown)).toBe('R-x1');
+      const program = grown.program?.program ?? fail('programme');
+      const table = extendSlotAliases(program, new Map());
+      expect([...table]).toEqual([['A-x1', `A-${later}`]]);
+      expect(resolveSlotAlias('R-x1', table)).toBe('R-x1');
     });
 
     it('référence en attente et décision du même slot retiré : le même alias', () => {

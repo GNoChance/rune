@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiError, NetworkRequiredError } from '../../src/api/client';
 import { createRepos } from '../../src/repos';
 import { changeErrorsOf, isExpired, isStaleRevision } from '../../src/repos/program-repo';
+import { errorMessage } from '../../src/ui/errors';
 import { dumpLocalDb } from '../support/local-db';
 import { createTestServices, makeMe } from '../support/render';
 import { seedMirror } from '../support/seed';
@@ -246,6 +247,20 @@ describe('repos.program', () => {
     expect((e as ApiError).code).toBe('coach_load_increase');
     expect(changeErrorsOf(e)).toBeNull();
     expect(sync.pullCount).toBe(1);
+  });
+
+  it('422 coach_load_unverifiable : refus transitoire, la proposition reste en attente, aucun pull', async () => {
+    const { repos, api, sync } = await setup();
+    api.on('POST', '/api/program/changes/:id/accept', {
+      status: 422,
+      body: { error: 'coach_load_unverifiable' },
+    });
+    const e = await repos.program.accept('c-1', 0).catch((err: unknown) => err);
+    expect((e as ApiError).code).toBe('coach_load_unverifiable');
+    expect(errorMessage(e)).toBe(
+      'Impossible de vérifier cette proposition pour le moment. Réessaie plus tard.',
+    );
+    expect(sync.pullCount).toBe(0);
   });
 
   it('hors ligne : « Nécessite le réseau », aucune écriture locale', async () => {

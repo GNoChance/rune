@@ -1,8 +1,9 @@
-import { defaultLoadSettings, type EquipmentCode } from '@rune/contracts';
+import { defaultLoadSettings, type EquipmentCode, FORBIDDEN_TERMS } from '@rune/contracts';
 import { allowedValues } from '@rune/domain';
 import { afterEach, describe, expect, it } from 'vitest';
+import { openTodayThread } from '../../../src/coach/threads';
 import { runTool } from '../../../src/coach/tools';
-import { PROPOSAL_ERROR_MESSAGES } from '../../../src/coach/tools/propose-program-change';
+import { PROPOSAL_ERROR_MESSAGES, slotRefs } from '../../../src/coach/tools/propose-program-change';
 import type { ToolContext } from '../../../src/coach/tools/types';
 import {
   createLogger,
@@ -12,8 +13,9 @@ import {
   syncPush,
   type TestContext,
 } from '../../support';
-import { pressThenGoblet, toolContext } from '../../support/coach';
+import { pressThenGoblet, setsAt, toolContext } from '../../support/coach';
 import {
+  dayAt,
   enroll,
   programTemplate,
   type SessionSpec,
@@ -39,6 +41,8 @@ const SECOND_ADD = '019a4b2c-3d4e-7f60-8a1b-2c3d4e5f6a02';
 const REST: Row = { op: 'set_rest', slot: 'A1', seconds: 90 };
 const TO_PRESS: Row = { op: 'replace_exercise', slot: 'A1', exercise: 'leg-press' };
 const REASON = 'Un repos plus court garde ta séance dans ton temps.';
+/** Toute forme d'UUID, n'importe où dans une chaîne (le canari du dossier). */
+const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 let ctx: TestContext;
 afterEach(() => ctx?.close());
@@ -132,17 +136,78 @@ describe('propose_program_change : succès', () => {
     const before = counter();
 
     const outcome = await propose(tc, input([REST]));
-    expect(outcome).toEqual({
-      isError: false,
-      result: { ok: true, change_id: expect.any(String), expires_in_days: 7 },
-    });
-    const { change_id } = outcome.result as { change_id: string };
+    expect(outcome).toEqual({ isError: false, result: { ok: true, change_id: 'P-1', expires_in_days: 7 } });
+    expect(JSON.stringify(outcome.result)).not.toMatch(UUID_ANYWHERE);
+    // L'identifiant de la ligne à écrire reste dans l'état, découplé de change_id.
     expect(tc.state.proposals).toEqual([
-      { id: change_id, instanceId, baseRevision: 0, operations: [REST], reason: REASON, model: null },
+      {
+        id: expect.stringMatching(UUID_ANYWHERE),
+        instanceId,
+        baseRevision: 0,
+        operations: [REST],
+        reason: REASON,
+        model: null,
+      },
     ]);
     expect(tc.state.invalidProposals).toBe(0);
     expect(changeRows()).toEqual([]);
     expect(counter()).toBe(before);
+  });
+
+  it('change_id suit les propositions déjà écrites par le fil : P-2 après une première', async () => {
+    const u = await setup();
+    const instanceId = await enroll(ctx, u.id, TEMPLATE);
+    const thread = await insertFixtureRow(ctx.deps.db, 'coach_thread', { userId: u.id, day: '2026-11-05' });
+    const other = await insertFixtureRow(ctx.deps.db, 'coach_thread', { userId: u.id, day: '2026-11-04' });
+    for (const coachThreadId of [thread.id, other.id]) {
+      await insertFixtureRow(ctx.deps.db, 'instance_change', {
+        ownerId: u.id,
+        instanceId,
+        author: 'coach',
+        reasonCode: 'COACH_PROPOSAL',
+        operations: JSON.stringify([REST]),
+        status: 'expired',
+        aiGenerated: 1,
+        aiModel: 'claude-opus-5-5',
+        coachThreadId,
+      });
+    }
+    const tc = toolContext(ctx, u.id, { thread: { id: thread.id as string } });
+    const outcome = await propose(tc, input([REST]));
+    expect(outcome.result).toMatchObject({ ok: true, change_id: 'P-2' });
+  });
+
+  it("hausse sur un slot ajouté : le message le nomme par son alias, jamais par l'identifiant réel", async () => {
+    const u = await setup();
+    const instanceId = await enroll(ctx, u.id, TEMPLATE, { revision: 1 });
+    const add = { op: 'add_slot', workout: 'A', movementPattern: 'squat', exercises: ['goblet-squat'] };
+    await accepted(u.id, instanceId, [add], '2026-10-30T10:00:00.000Z', FIRST_ADD);
+    const added = `A-${FIRST_ADD}`;
+    // Le slot ajouté (goblet squat) fait une fois à la presse à 60 kg, puis au goblet squat à 30 kg.
+    await push(u, [
+      {
+        instanceId,
+        startedAt: dayAt(60),
+        exercises: [{ slotId: added, exerciseId: 'leg-press', sets: setsAt(60_000) }],
+      },
+      { instanceId, startedAt: dayAt(62), exercises: [{ slotId: added, sets: setsAt(30_000) }] },
+    ]);
+    const tc = toolContext(ctx, u.id);
+    const outcome = await propose(tc, input([{ ...TO_PRESS, slot: 'A-x1' }], { base: 1 }));
+    const errors = (outcome.result as Refusal).errors;
+    expect(codes(errors)).toEqual([[-1, 'coach_load_increase']]);
+    expect(errors[0]?.message).toContain('(A-x1)');
+    expect(JSON.stringify(outcome.result)).not.toMatch(UUID_ANYWHERE);
+  });
+
+  it("slotRefs : alias d'un slot ajouté, identifiant d'un slot du modèle, rien pour un slot sans alias", () => {
+    const aliased = `A-${FIRST_ADD}`;
+    const bare = `A-${SECOND_ADD}`;
+    expect(slotRefs(['A1', aliased, bare], new Map([['A-x1', aliased]]), new Set(['A1']))).toEqual([
+      'A1',
+      'A-x1',
+    ]);
+    expect(slotRefs([bare], new Map(), new Set(['A1']))).toEqual([]);
   });
 
   it('seconde proposition valide dans la tentative : one_proposal_per_message, comptée', async () => {
@@ -266,6 +331,18 @@ describe("propose_program_change : refus, dans l'ordre du §12.2", () => {
     ]);
   });
 
+  it('séance aux règles inconnues du serveur : load_unverifiable, compté, aucune proposition', async () => {
+    const u = await setup();
+    const instanceId = await enroll(ctx, u.id, TEMPLATE);
+    await push(u, [{ instanceId, startedAt: dayAt(62), rulesVersion: '99', exercises: [{}] }]);
+    const tc = toolContext(ctx, u.id);
+    const errors = await refused(tc, input([REST]));
+    expect(codes(errors)).toEqual([[-1, 'load_unverifiable']]);
+    expect(errors[0]?.message).toBe(PROPOSAL_ERROR_MESSAGES.load_unverifiable);
+    expect(tc.state.invalidProposals).toBe(1);
+    expect(tc.state.proposals).toEqual([]);
+  });
+
   it('motif « Fais une sèche. » : reason_blocked, sans le terme dans le résultat', async () => {
     const u = await setup();
     await enroll(ctx, u.id, TEMPLATE);
@@ -283,6 +360,28 @@ describe("propose_program_change : refus, dans l'ordre du §12.2", () => {
     const tc = toolContext(ctx, u.id);
     const reason = 'Ton repos raccourcit. Passe à 25 kg la prochaine fois.';
     expect(codes(await refused(tc, input([REST], { reason })))).toEqual([[-1, 'reason_blocked']]);
+  });
+
+  it('motif avec un numéro hors HELP_RESOURCES : reason_blocked', async () => {
+    const u = await setup();
+    await enroll(ctx, u.id, TEMPLATE);
+    const reason = 'Si ça tire, appelle le 06 12 34 56 78.';
+    expect(codes(await refused(toolContext(ctx, u.id), input([REST], { reason })))).toEqual([
+      [-1, 'reason_blocked'],
+    ]);
+  });
+
+  it('terme interdit aux seuls mineurs : refusé dans un fil minor, accepté dans un fil adulte (témoin)', async () => {
+    const term = FORBIDDEN_TERMS.minor.find((t) => t.term === 'créatine');
+    expect(term).toBeDefined();
+    expect(FORBIDDEN_TERMS.all.some((t) => t.forms.includes('créatine'))).toBe(false);
+    const reason = 'Pas besoin de créatine pour progresser.';
+    const u = await setup();
+    await enroll(ctx, u.id, TEMPLATE);
+    const minor = toolContext(ctx, u.id, { thread: { audience: 'minor', promptVersion: 'coach-1/minor' } });
+    expect(codes(await refused(minor, input([REST], { reason })))).toEqual([[-1, 'reason_blocked']]);
+    const adult = toolContext(ctx, u.id);
+    expect((await propose(adult, input([REST], { reason }))).isError).toBe(false);
   });
 });
 
@@ -319,7 +418,9 @@ describe('propose_program_change : corrections', () => {
 
   it("aucun message d'erreur n'ajoute de valeur autorisée au filtre (résultats d'outils du fil, C8)", () => {
     const results = Object.values(PROPOSAL_ERROR_MESSAGES).map((message) => ({
-      errors: [{ op: -1, code: 'x', message: message.replace('{revision}', '3').replace('{slots}', 'A1') }],
+      errors: [
+        { op: -1, code: 'x', message: message.replace('{revision}', '3').replace('{slots}', ' (A1)') },
+      ],
     }));
     expect(allowedValues({ brief: {}, toolResults: results, constants: [], nutritionFull: false })).toEqual({
       mass: new Set(),
@@ -393,5 +494,54 @@ describe('propose_program_change : références de slot', () => {
       [0, 'slot_unknown'],
       [1, 'slot_unknown'],
     ]);
+  });
+
+  it('alias figé qui désigne un slot retiré depuis : slot_unknown', async () => {
+    const u = await setup();
+    const instanceId = await enroll(ctx, u.id, TEMPLATE, { revision: 2 });
+    await addSlot(u.id, instanceId, FIRST_ADD, '2026-11-01T10:00:00.000Z');
+    const thread = await insertFixtureRow(ctx.deps.db, 'coach_thread', {
+      userId: u.id,
+      day: '2026-11-05',
+      slotAliases: JSON.stringify({ 'A-x1': `A-${FIRST_ADD}` }),
+    });
+    await accepted(
+      u.id,
+      instanceId,
+      [{ op: 'remove_slot', slot: `A-${FIRST_ADD}` }],
+      '2026-11-05T09:00:00.000Z',
+    );
+    const tc = toolContext(ctx, u.id, { thread: { id: thread.id as string } });
+    const errors = await refused(tc, input([{ op: 'set_rest', slot: 'A-x1', seconds: 90 }], { base: 2 }));
+    expect(codes(errors)).toEqual([[0, 'slot_unknown']]);
+    expect(tc.state.proposals).toEqual([]);
+  });
+
+  it('slot retiré cité par une décision : R-x1, stable dans le fil, distinct du slot ajouté ensuite, jamais résolu', async () => {
+    const u = await setup();
+    const instanceId = await enroll(ctx, u.id, TEMPLATE, { revision: 3 });
+    const removed = `A-${FIRST_ADD}`;
+    await addSlot(u.id, instanceId, FIRST_ADD, '2026-10-30T10:00:00.000Z');
+    await push(u, [
+      { instanceId, startedAt: dayAt(60), exercises: [{ slotId: removed, exerciseId: 'leg-press' }] },
+    ]);
+    await accepted(u.id, instanceId, [{ op: 'remove_slot', slot: removed }], '2026-11-02T10:00:00.000Z');
+    const thread = await openTodayThread(ctx.deps, u.id, ctx.clock.now());
+    const tc = () => toolContext(ctx, u.id, { thread: { id: thread.id } });
+    const read = async () => (await runTool('read_training', { since_days: 28 }, tc())).result as Row;
+    const decisionSlot = (r: Row) => (r.decisions as Row[]).find((d) => d.exercise_id === 'leg-press')?.slot;
+
+    const before = await read();
+    expect(decisionSlot(before)).toBe('R-x1');
+    // Un slot ajouté dans le même fil prend A-x1 ; la décision garde R-x1.
+    await addSlot(u.id, instanceId, SECOND_ADD, '2026-11-05T09:30:00.000Z');
+    const after = await read();
+    expect(decisionSlot(after)).toBe('R-x1');
+    const slots = (after.program as { workouts: { slots: { id: string }[] }[] }).workouts[0]?.slots ?? [];
+    expect(slots.at(-1)?.id).toBe('A-x1');
+    expect(JSON.stringify(after)).not.toMatch(UUID_ANYWHERE);
+
+    const errors = await refused(tc(), input([{ op: 'set_rest', slot: 'R-x1', seconds: 90 }], { base: 3 }));
+    expect(codes(errors)).toEqual([[0, 'slot_unknown']]);
   });
 });
