@@ -295,10 +295,12 @@
   }
 }
 
-/* « Une question sur cette séance ? » : un lien de 48 px de haut sous la bulle du coach, vers /coach. */
+/* « Une question sur cette séance ? » : sous la bulle du coach, un lien de 48 px de haut (hors ligne, un bouton grisé et son texte). */
 .coachLink {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: var(--space-1) var(--space-3);
   min-height: 48px;
   color: var(--accent);
   font-weight: 600;
@@ -307,9 +309,4 @@
 
 .coachLink p {
   margin: 0;
-}
-
-.coachLink {
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
 }

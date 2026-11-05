@@ -169,6 +169,15 @@ describe('fin de séance : « Une question sur cette séance ? »', () => {
     expect(screen.getByText(OFFLINE)).toBeTruthy();
   });
 
+  it('hors ligne : le bouton est décrit par « Nécessite le réseau » sous un id généré, pas écrit en dur', async () => {
+    await openSummary(WITH_CONSENT, createFakeSyncEngine({ connection: 'offline' }));
+    const button = screen.getByRole('button', { name: 'Une question sur cette séance ?' });
+    const id = button.getAttribute('aria-describedby') ?? '';
+    expect(id).not.toBe('');
+    expect(id).not.toBe('coach-offline');
+    expect(document.getElementById(id)?.textContent).toBe(OFFLINE);
+  });
+
   it('sans l’accord : pas de lien', async () => {
     await openSummary(WITHOUT_CONSENT);
     expect(screen.getByText('Fin de séance')).toBeTruthy();

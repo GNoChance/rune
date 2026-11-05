@@ -75,6 +75,7 @@ function Summary(p: { session: WorkoutSessionView }) {
   const repos = useRepos();
   const me = useMe();
   const offline = useSyncState().connection === 'offline';
+  const offlineId = useId();
   const [, navigate] = useLocation();
   const history = useHistory();
   const catalog = useCatalog();
@@ -109,10 +110,10 @@ function Summary(p: { session: WorkoutSessionView }) {
         {me?.consents.aiCoach.active ? (
           offline ? (
             <div className={styles.coachLink}>
-              <Button variant="secondary" disabled aria-describedby="coach-offline">
+              <Button variant="secondary" disabled aria-describedby={offlineId}>
                 {ENTRY_TEXTS.question}
               </Button>
-              <p id="coach-offline">{NETWORK_REQUIRED_MESSAGE}</p>
+              <p id={offlineId}>{NETWORK_REQUIRED_MESSAGE}</p>
             </div>
           ) : (
             <Link href="/coach" className={styles.coachLink}>
