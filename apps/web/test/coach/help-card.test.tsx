@@ -48,4 +48,11 @@ describe('HelpCard (spec brique 4 §16.4)', () => {
     expect(HELP_NOTES.eating_disorder).toBe("Un médecin peut aussi t'aider.");
     expect(screen.getByText(HELP_NOTES.eating_disorder)).toBeTruthy();
   });
+
+  it('chaque lien porte la classe « action » (la cible de 48 px, vérifiée dans la feuille de style)', async () => {
+    await renderWithServices(<HelpCard resource="emergency" minor={false} />);
+    const links = screen.getAllByRole('link');
+    expect(links).toHaveLength(3);
+    for (const link of links) expect(link.className).toMatch(/action/);
+  });
 });

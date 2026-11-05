@@ -396,10 +396,14 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
     // Lu à chaque reconstruction, même sans proposition : l'événement `proposal` du fil du coach, « en préparation »,
     // n'a pas encore de ligne dans le miroir et montre déjà son aperçu ; ces lectures sont celles de `plannedWorkout`.
     const primary = (await places.list()).find((p) => p.isPrimary);
-    const plan =
+    // Dernières charges de toutes les séances (libres et anciennes instances comprises), comme la séance du jour ; le
+    // rejeu, lui, ne lit que celles de l'instance.
+    const history =
       primary === undefined
-        ? null
-        : await planningOf(primary, input.sessions, replay.program.template.context);
+        ? []
+        : await composeSessions(db, await db.mirror('workout_session').toArray(), ownerId, deviceId);
+    const plan =
+      primary === undefined ? null : await planningOf(primary, history, replay.program.template.context);
     const pending = (c: InstanceChangeView) =>
       c.status === 'proposed' && (c.expiresAt === null || Date.parse(c.expiresAt) > now);
     const byCreation = (a: InstanceChangeView, b: InstanceChangeView) =>
@@ -434,8 +438,8 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
       getMeta(db, 'deviceId'),
     ]);
     const history = await composeSessions(db, sessionRows, ownerId, deviceId ?? null);
+    const base = await planningOf(place, history, program.program.template.context);
     try {
-      const base = await planningOf(place, history, program.program.template.context);
       const plan = planWorkout({
         ...base,
         replay: program.replay,

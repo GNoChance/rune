@@ -209,6 +209,64 @@ const change = (id: string, o: Record<string, unknown>) => ({
 });
 
 describe('vue du programme', () => {
+  it('plan.lastLoadByExercise : les séances libres comptent, comme dans la séance du jour', async () => {
+    const { repos, db } = await setup();
+    await seedMirror(db, 'workout_session', [
+      {
+        id: 's-free',
+        ownerId: 'u-1',
+        instanceId: null,
+        workoutId: null,
+        placeId: 'p-1',
+        deviceId: 'dev-Z',
+        startedAt: '2026-10-03T08:00:00.000Z',
+        endedAt: '2026-10-03T09:00:00.000Z',
+        status: 'completed',
+        weekType: 'normal',
+        templateVersion: null,
+        rulesVersion: '1',
+        appVersion: 'dev',
+        profile: 'adult',
+        note: null,
+      },
+    ]);
+    await seedMirror(db, 'performed_exercise', [
+      {
+        id: 'pe-free',
+        ownerId: 'u-1',
+        sessionId: 's-free',
+        slotId: null,
+        plannedExerciseId: 'goblet-squat',
+        exerciseId: 'goblet-squat',
+        swapReason: null,
+        position: 1,
+        painLevel: null,
+        nextAdjustment: null,
+        note: null,
+      },
+    ]);
+    await seedMirror(db, 'performed_set', [
+      {
+        id: 'set-free-1',
+        ownerId: 'u-1',
+        performedExerciseId: 'pe-free',
+        position: 1,
+        kind: 'work',
+        loadMode: 'dumbbell',
+        loadG: 14_000,
+        reps: 10,
+        durationS: null,
+        side: null,
+        effort: 'ok',
+        loggedAt: '2026-10-03T08:10:00.000Z',
+      },
+    ]);
+    const view = await repos.programView.view();
+    expect(view?.plan?.lastLoadByExercise.get('goblet-squat')).toBe(14_000);
+    // Le rejeu, lui, ne lit que l'instance.
+    expect(view?.replayInput.sessions).toEqual([]);
+  });
+
   it('sans instance active : null', async () => {
     const { repos } = await setup({ instance: false });
     expect(await repos.programView.view()).toBeNull();
