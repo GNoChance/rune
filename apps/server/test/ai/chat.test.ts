@@ -546,6 +546,8 @@ describe('createAnthropicClient().chat (fetch injecté, flux rejoué)', () => {
   const knownInputUsd = (480 + 1200) / 1_000_000;
   /** Sortie estimée d'un texte relayé : un jeton pour 3 caractères, au prix de sortie d'Opus 5.5 (20 $). */
   const relayedOutputUsd = (text: string) => (Math.ceil(text.length / 3) * 20) / 1_000_000;
+  /** Sortie prudente quand le `message_delta` final n'est pas arrivé : `max_tokens` de la requête (16 000). */
+  const maxOutputUsd = (16_000 * 20) / 1_000_000;
 
   it('timeoutMs dépassé pendant le flux → AiError timeout, après les événements reçus, coût estimé', async () => {
     const { fetch } = stubFetch({ events: [messageStart(), ...textBlock(0, 'Je réfléchis')], stall: true });
@@ -556,10 +558,11 @@ describe('createAnthropicClient().chat (fetch injecté, flux rejoué)', () => {
     expect(error).toBeInstanceOf(AiError);
     expect(error).toMatchObject({ code: 'timeout', costPartial: true });
     expect(events).toContainEqual({ type: 'text_delta', text: 'Je réfléchis' });
-    expect((error as AiError).costUsd).toBeCloseTo(knownInputUsd + relayedOutputUsd('Je réfléchis'), 12);
+    expect(relayedOutputUsd('Je réfléchis')).toBeLessThan(maxOutputUsd);
+    expect((error as AiError).costUsd).toBeCloseTo(knownInputUsd + maxOutputUsd, 12);
   });
 
-  it('signal aborté après « Mets 65 kg. » relayé → aborted, plus aucun événement, sortie au moins le texte relayé', async () => {
+  it('signal aborté après « Mets 65 kg. » relayé, sans message_delta → aborted, plus aucun événement, sortie max_tokens', async () => {
     const { fetch } = stubFetch({ events: textStream('Mets ', '65 kg.', ' Puis ', 'repose-toi.') });
     const controller = new AbortController();
     const events: AiChatEvent[] = [];
@@ -572,8 +575,20 @@ describe('createAnthropicClient().chat (fetch injecté, flux rejoué)', () => {
     expect(error).toBeInstanceOf(AiError);
     expect(error).toMatchObject({ code: 'aborted', costPartial: true });
     expect(events.at(-1)).toEqual({ type: 'text_delta', text: '65 kg.' });
-    // message_start ne compte qu'un jeton de sortie : le texte relayé (11 caractères, 4 jetons) l'emporte.
-    expect((error as AiError).costUsd).toBeCloseTo(knownInputUsd + relayedOutputUsd('Mets 65 kg.'), 12);
+    // message_start ne compte qu'un jeton de sortie et le delta final n'est pas arrivé : `max_tokens` borne la sortie.
+    expect((error as AiError).costUsd).toBeCloseTo(knownInputUsd + maxOutputUsd, 12);
+  });
+
+  it('délai dépassé après le message_delta final → la sortie est celle du delta, pas max_tokens', async () => {
+    const { fetch } = stubFetch({
+      events: [messageStart(), ...textBlock(0, 'Oui.'), messageDelta('end_turn', { output_tokens: 500 })],
+      stall: true,
+    });
+    const error = await client(fetch)
+      .chat(request({ timeoutMs: 50 }), () => {})
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'timeout', costPartial: true });
+    expect((error as AiError).costUsd).toBeCloseTo(knownInputUsd + (500 * 20) / 1_000_000, 12);
   });
 
   it('signal aborté avant message_start → coût de la requête sérialisée estimé, jamais nul', async () => {
@@ -624,7 +639,7 @@ describe('createAnthropicClient().chat (fetch injecté, flux rejoué)', () => {
     await expect(client(fetch).chat(request(), () => {})).rejects.toMatchObject({
       code: 'overloaded',
       costPartial: true,
-      costUsd: expect.closeTo(knownInputUsd + relayedOutputUsd('Je'), 12),
+      costUsd: expect.closeTo(knownInputUsd + maxOutputUsd, 12),
     });
   });
 

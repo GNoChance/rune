@@ -282,8 +282,9 @@ const estimatedTokens = (chars: number): number => Math.ceil(chars / 3);
  * `timeout`, même avant `message_start`), en erreur après l'ouverture du flux, ou en erreur réseau après l'envoi.
  * Une erreur HTTP reçue avant tout flux n'est pas facturée et n'arrive pas ici (`streamChat`).
  * Entrée : l'usage de `message_start` s'il est arrivé, sinon la requête sérialisée (`estimatedTokens`) au prix
- * d'entrée du modèle demandé, sans remise du cache. Sortie : le plus grand de l'usage connu (un jeton à
- * `message_start`, le total au `message_delta` final) et du texte déjà relayé. La réflexion produite mais non
+ * d'entrée du modèle demandé, sans remise du cache. Sortie : si le `message_delta` final est arrivé, le plus
+ * grand de l'usage connu (le total qu'il porte) et du texte déjà relayé ; sinon l'usage ne vaut qu'un jeton (celui de
+ * `message_start`) et la sortie réelle est inconnue : `max_tokens` de la requête, plafond prudent. La réflexion produite mais non
  * relayée ne se mesure pas : elle manque à l'estimation, ce que `costPartial` signale.
  */
 function partialCost(
@@ -298,7 +299,11 @@ function partialCost(
     return chatCost(req.model, { input_tokens: input, output_tokens: relayedTokens }, null).costUsd;
   }
   const usage = tokenUsage(message.usage);
-  const output = Math.max(usage.output_tokens, relayedTokens);
+  // `stop_reason` n'est posé que par le `message_delta` final.
+  const deltaSeen = message.stop_reason != null;
+  const output = deltaSeen
+    ? Math.max(usage.output_tokens, relayedTokens)
+    : Math.max(usage.output_tokens, relayedTokens, req.maxTokens);
   return chatCost(message.model, { ...usage, output_tokens: output }, iterationsOf(message)).costUsd;
 }
 
