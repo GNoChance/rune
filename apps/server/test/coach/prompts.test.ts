@@ -46,6 +46,8 @@ import {
   TOOLS,
 } from '../../src/coach/prompts/coach-1-adult';
 import { MINOR_PHRASINGS } from '../../src/coach/prompts/coach-1-minor';
+import { TOOLS_1, toolDefinitions } from '../../src/coach/tools';
+import { PROPOSAL_ERROR_MESSAGES } from '../../src/coach/tools/propose-program-change';
 
 /*
  * Prompts `coach-1` (spec brique 4 §13) : deux variantes figées, trois voix, textes fixes de l'appli. Le prompt
@@ -353,6 +355,28 @@ describe('empreinte de coach-1', () => {
       'note/phone': sha256(regenerationNote('phone')),
       'note/unit': sha256(regenerationNote('unit')),
       'note/forbidden_term': sha256(regenerationNote('forbidden_term')),
+    });
+  });
+});
+
+/*
+ * Empreintes de `tools-1` (spec §10) : définitions envoyées au modèle (nom, description, schéma) et messages d'erreur
+ * de la proposition, que le modèle lit dans les `tool_result`. Même règle que les prompts : jamais d'empreinte mise à
+ * jour seule, toute modification crée `tools-2` et une nouvelle évaluation.
+ */
+const TOOLS_FINGERPRINTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  'tools-1': {
+    definitions: '81b3a40b8b1ab087de55fd4d5de68c8b837be6c471ee5ae788f0b2865b57fcfc',
+    proposal_error_messages: '239332d319819fd65cb4ad089c8f951f3d519f3500c23eb2e2e405e4ea49de5b',
+  },
+};
+
+describe('empreinte de tools-1', () => {
+  it('les définitions et les messages d’erreur de la version de la configuration sont ceux de leur empreinte', () => {
+    expect(COACH_CONFIG.toolsVersion).toBe('tools-1');
+    expect(TOOLS_FINGERPRINTS[COACH_CONFIG.toolsVersion]).toEqual({
+      definitions: sha256(JSON.stringify(toolDefinitions(TOOLS_1))),
+      proposal_error_messages: sha256(JSON.stringify(PROPOSAL_ERROR_MESSAGES)),
     });
   });
 });
