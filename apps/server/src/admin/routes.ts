@@ -106,6 +106,8 @@ export function adminRoutes(deps: AppDeps): Hono<AppEnv> {
       if (usernameKey(body.confirmUsername) !== target.usernameKey) throw httpError('validation');
       await deleteAccount(trx, deps, id, actor);
     });
+    // Après le commit : l'échange du coach du membre supprimé s'arrête.
+    deps.coach.exchanges.abortFor(id, 'consent_withdrawn');
     return c.body(null, 204);
   });
 

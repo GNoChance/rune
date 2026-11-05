@@ -115,6 +115,8 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
     const ip = validClientIp(c);
     await verifyUserPassword(deps.db, deps, user, body.password, ip);
     await deps.db.transaction().execute((trx) => deleteAccount(trx, deps, user.id, { actorId: user.id, ip }));
+    // Après le commit : l'échange du coach en cours s'arrête (spec brique 4 §8.7), il n'a plus de compte à servir.
+    deps.coach.exchanges.abortFor(user.id, 'consent_withdrawn');
     clearSessionCookie(c, deps);
     return c.body(null, 204);
   });

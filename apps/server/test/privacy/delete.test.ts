@@ -291,3 +291,47 @@ describe('dernier administrateur (R-SUP-4)', () => {
     ).rejects.toMatchObject({ code: 'not_found' });
   });
 });
+
+describe("suppression du compte : l'échange du coach en cours s'arrête (consent_withdrawn)", () => {
+  /** Échange inscrit au registre ; note si le compte existait encore à l'arrêt (l'arrêt doit suivre le commit). */
+  function exchange(userId: string) {
+    const lease = ctx.deps.coach.exchanges.begin(userId);
+    if (lease === null) throw new Error('échange déjà en cours');
+    const seen: { userStillThere: boolean | null; inTransaction: boolean | null } = {
+      userStillThere: null,
+      inTransaction: null,
+    };
+    lease.signal.addEventListener('abort', () => {
+      seen.inTransaction = ctx.deps.sqlite.isTransaction;
+      seen.userStillThere =
+        ctx.deps.sqlite.prepare('SELECT 1 AS x FROM user WHERE id = ?').get(userId) !== undefined;
+    });
+    return { lease, seen };
+  }
+
+  it('par /api/me/delete', async () => {
+    const { lea } = await setup();
+    const cookie = await login(ctx, 'Léa', lea.password);
+    const { lease, seen } = exchange(lea.id);
+    expect((await del(cookie, { password: lea.password })).status).toBe(204);
+    expect(lease.signal.aborted).toBe(true);
+    expect(lease.signal.reason).toBe('consent_withdrawn');
+    expect(seen).toEqual({ userStillThere: false, inTransaction: false });
+    lease.done();
+  });
+
+  it('par la suppression du membre côté admin ; un autre membre garde son échange', async () => {
+    const { admin, lea } = await setup();
+    const tom = await createUser(ctx, { username: 'tom' });
+    const cookie = await login(ctx, 'porteur', admin.password);
+    const { lease, seen } = exchange(lea.id);
+    const neighbour = exchange(tom.id);
+    const res = await adminDel(cookie, lea.id, { confirmUsername: 'Léa', password: admin.password });
+    expect(res.status).toBe(204);
+    expect(lease.signal.aborted).toBe(true);
+    expect(seen).toEqual({ userStillThere: false, inTransaction: false });
+    expect(neighbour.lease.signal.aborted).toBe(false);
+    lease.done();
+    neighbour.lease.done();
+  });
+});
