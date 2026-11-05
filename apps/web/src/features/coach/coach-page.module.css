@@ -1,0 +1,310 @@
+/*
+ * Conversation avec le coach (spec brique 4 §16.2) : en-tête du coach, fil de bulles, saisie. Couleurs prises dans
+ * les jetons ; cibles de 48 px ; sous mouvement réduit, bulles et cartes arrivent sans animation.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ---------- En-tête du coach : avatar, voix, menu « ⋯ » ---------- */
+
+.coachHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.coachInfo {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.menuButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.menuList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.menuLink {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.menuLink:hover,
+.menuLink:focus-visible {
+  background: var(--surface);
+}
+
+/* ---------- Fil ---------- */
+
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.coachRow {
+  justify-content: flex-start;
+}
+
+.mineRow {
+  justify-content: flex-end;
+}
+
+.coachBubble,
+.mineBubble {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: min(85%, 34rem);
+  min-width: 0;
+  padding: var(--space-3) 14px;
+  border-radius: var(--radius-card);
+  font-size: 1rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.coachBubble {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.mineBubble {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+/* Phrases du flux : un fondu à l'arrivée de la bulle, jamais d'indicateur « en train d'écrire ». */
+.arriving {
+  animation: bubble-in var(--dur-fast) var(--ease) backwards;
+}
+
+.text {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.aiBadge {
+  align-self: flex-start;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.truncated {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.tool {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.report {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0 var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.875rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.welcome {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.welcomeTitle {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.suggestion {
+  min-height: 48px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---------- Saisie, collée au-dessus de la barre d'onglets ---------- */
+
+.composer {
+  position: sticky;
+  bottom: calc(73px + 2.7rem + env(safe-area-inset-bottom, 0px));
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  background: var(--bg);
+}
+
+.inputRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.field {
+  flex: 1;
+  min-width: 0;
+  min-height: 52px;
+  max-height: 40vh;
+  padding: 13px var(--space-4);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-control);
+  background: var(--field-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.4;
+  resize: none;
+}
+
+.field:disabled {
+  opacity: 0.7;
+}
+
+.send {
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  color: var(--accent-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.note,
+.counter {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.counter {
+  align-self: flex-end;
+}
+
+.counterOver {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* Lu par les lecteurs d'écran, invisible à l'écran. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arriving {
+    animation: none;
+  }
+}

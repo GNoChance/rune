@@ -60,6 +60,9 @@ const inLazyFeature = (path: string) => /^features\/(workout|history|program)\//
 const PROGRAM_SCREENS = /(^|\/)features\/program\/|^\.\.?\/program\//;
 const inProgram = (path: string) => path.startsWith('features/program/');
 
+/** Conversation avec le coach (`features/coach/CoachPage`) : chargée à la demande (route /coach). Les tâches 26 à 29 y ajoutent leurs écrans. */
+const COACH_SCREENS = /(^|\/)coach\/CoachPage$/;
+
 describe('architecture', () => {
   const files = [...walk(SRC)].filter(code);
 
@@ -143,6 +146,16 @@ describe('architecture', () => {
     for (const file of outside) {
       for (const spec of staticSpecifiers(readFileSync(file, 'utf8'))) {
         expect(spec, rel(file)).not.toMatch(PROGRAM_SCREENS);
+      }
+    }
+  });
+
+  it('conversation du coach (features/coach/CoachPage) : seulement par import() depuis App.tsx, jamais dans le bundle initial', () => {
+    const dynamic = files.filter((f) => imports(f).some((spec) => COACH_SCREENS.test(spec)));
+    expect(dynamic.map(rel)).toEqual(['App.tsx']);
+    for (const file of files) {
+      for (const spec of staticSpecifiers(readFileSync(file, 'utf8'))) {
+        expect(spec, rel(file)).not.toMatch(COACH_SCREENS);
       }
     }
   });
