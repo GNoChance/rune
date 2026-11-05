@@ -105,10 +105,10 @@ async function consentsOf(db: DbExecutor, userId: string): Promise<CoachBriefInp
 
 /**
  * Lieux vivants, triés par identifiant (ordre binaire) : `lieu_2`… désigne le même lieu dans le dossier figé et dans
- * les outils. Matériel vivant déclaré, sans ses implications (le dossier les étend pour résoudre les slots), trié ;
- * réglages de charge résolus (lieu, salle, défaut), ceux du rejeu.
+ * les outils (`search_exercises`, par `namedPlaces`). Matériel vivant déclaré, sans ses implications (le dossier les
+ * étend pour résoudre les slots), trié ; réglages de charge résolus (lieu, salle, défaut), ceux du rejeu.
  */
-async function livePlaces(db: DbExecutor, userId: string): Promise<BriefPlaceInput[]> {
+export async function livePlaces(db: DbExecutor, userId: string): Promise<BriefPlaceInput[]> {
   const rows = new Map((await placeRowsOf(db, userId, { live: true })).map((p) => [p.id, p]));
   const places = await db
     .selectFrom('place')

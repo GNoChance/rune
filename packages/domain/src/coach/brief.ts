@@ -137,6 +137,9 @@ type HistorySession = CoachBrief['history']['sessions'][number];
 type HistorySet = HistorySession['exercises'][number]['sets'][number];
 type BriefRecord = CoachBrief['records'][number];
 
+/** Décision du moteur rendue par `read_training` : la `last_decision` d'un slot, avec ce slot et l'exercice fait. */
+export type BriefDecision = NonNullable<BriefSlot['last_decision']> & { slot: string; exercise_id: string };
+
 /** Textes libres : 200 caractères au plus (choix C24), la borne de `CoachBriefSchema`. */
 const FREE_TEXT_MAX = 200;
 /** Records gardés quand les séances retirées ne suffisent pas (15 au §9 ; 10, décision du contrôleur). */
@@ -161,6 +164,9 @@ const PAIN_REASONS: Partial<Record<ReasonCode, ReasonCode>> = {
   PAIN_HOLD: PAIN_CODE_REWRITES.PAIN_HOLD,
   PAIN_LIGHTEN: PAIN_CODE_REWRITES.PAIN_LIGHTEN,
 };
+
+/** Table des alias figée avec un fil (alias → identifiant réel, la forme de `slotAliases`) : aucune. */
+const NO_ALIASES: ReadonlyMap<string, string> = new Map();
 
 // ---------------------------------------------------------------------------------------------------------------
 // Outils
@@ -217,7 +223,14 @@ const oneOf = <T extends number>(allowed: readonly T[], value: number | null): T
 
 const healthAllowed = (input: CoachBriefInput): boolean => input.consents.health && input.consents.coach;
 
-const primaryOf = (input: CoachBriefInput): BriefPlaceInput | undefined =>
+/** `RangeError` si `audience` et `ageBand` se contredisent (`minor` ⇔ `16-17`). */
+function checkAge(input: CoachBriefInput): void {
+  if ((input.audience === 'minor') !== (input.ageBand === '16-17')) {
+    throw new RangeError(`audience ${input.audience} et tranche ${input.ageBand} incompatibles`);
+  }
+}
+
+const primaryOf = (input: Pick<CoachBriefInput, 'places'>): BriefPlaceInput | undefined =>
   input.places.find((p) => p.primary);
 
 /** Nom d'une fiche ; son identifiant si le catalogue ne la connaît pas. */
@@ -230,15 +243,17 @@ function sheetNames(input: CoachBriefInput): (id: string) => string {
  * Lieux vivants sous leur nom neutre : le principal `lieu_1`, puis les autres `lieu_2`… dans l'ordre reçu ; les mêmes
  * noms dans le dossier et dans les outils (`feasible_at` de `search_exercises`).
  */
-export function namedPlaces(input: CoachBriefInput): { place: BriefPlaceInput; name: string }[] {
+export function namedPlaces(
+  input: Pick<CoachBriefInput, 'places'>,
+): { place: BriefPlaceInput; name: string }[] {
   const primary = primaryOf(input);
   const ordered =
     primary === undefined ? input.places : [primary, ...input.places.filter((p) => p !== primary)];
   return ordered.map((place, i) => ({ place, name: `lieu_${i + 1}` }));
 }
 
-/** Séances des `days` derniers jours (bornes comprises), la plus récente d'abord. */
-function sessionsWithin(input: CoachBriefInput, days: number): BriefSession[] {
+/** Séances des `days` derniers jours (bornes comprises), la plus récente d'abord ; `read_training` y prend ses records. */
+export function sessionsWithin(input: CoachBriefInput, days: number): BriefSession[] {
   return input.sessions
     .filter((s) => parisDaysUntil(s.endedAt, input.today) <= days)
     .sort((a, b) => b.endedAt - a.endedAt);
@@ -334,6 +349,18 @@ function resolvedWorkouts(
   }));
 }
 
+/** Une décision du moteur, terminée à `at` : jours écoulés, résultat, code (de douleur réécrit sans l'accord C2). */
+function decisionOf(
+  decision: EngineDecision,
+  at: number,
+  input: CoachBriefInput,
+): NonNullable<BriefSlot['last_decision']> {
+  const code = healthAllowed(input)
+    ? decision.reasonCode
+    : (PAIN_REASONS[decision.reasonCode] ?? decision.reasonCode);
+  return { days_ago: daysAgo(at, input.today), result: decision.result, reason_code: code };
+}
+
 /** Dernière décision d'un slot ; aucune sans décision, ou si sa séance n'est pas connue. */
 function lastDecision(
   decision: EngineDecision | undefined,
@@ -342,10 +369,7 @@ function lastDecision(
 ): BriefSlot['last_decision'] {
   const at = decision === undefined ? undefined : program.decisionEndedAt.get(decision.id);
   if (decision === undefined || at === undefined) return undefined;
-  const code = healthAllowed(input)
-    ? decision.reasonCode
-    : (PAIN_REASONS[decision.reasonCode] ?? decision.reasonCode);
-  return { days_ago: daysAgo(at, input.today), result: decision.result, reason_code: code };
+  return decisionOf(decision, at, input);
 }
 
 /** Suffixe d'un slot créé par `add_slot` (`addedSlotId`) : l'identifiant du changement, un UUID. */
@@ -359,17 +383,36 @@ function addedSlotWorkout(slotId: string): string | null {
   return slotId.slice(0, dash);
 }
 
+/** Rang `n` de l'alias `${workout}-x${n}` ; 0 pour un alias d'une autre forme. */
+function aliasRank(alias: string, workout: string): number {
+  const prefix = `${workout}-x`;
+  const n = alias.startsWith(prefix) ? Number(alias.slice(prefix.length)) : 0;
+  return Number.isSafeInteger(n) && n > 0 ? n : 0;
+}
+
 /**
  * Alias des slots créés par `add_slot` (identifiant réel → alias) : leur identifiant porte celui d'un changement, un
  * UUIDv7 avec son instant, qui ne part jamais au modèle. `${workoutId}-x1`, `-x2`… par séance, dans l'ordre du
  * programme effectif, puis des références des propositions en attente à un slot qui n'y est plus ; jamais
  * l'identifiant d'un slot du modèle. Les slots du modèle gardent le leur.
+ *
+ * `frozen` amorce la table : c'est la table figée d'un fil (alias → identifiant réel, `slotAliases` du dossier). Un
+ * slot qui y est garde son alias, sauf si cet alias est devenu l'identifiant d'un slot du modèle ; un slot ajouté
+ * depuis le gel reçoit un alias au-delà du plus grand alias figé de sa séance, et aucun alias figé ne change de slot.
  */
-function slotAliasesOf(program: BriefProgramInput): Map<string, string> {
+function slotAliasesOf(program: BriefProgramInput, frozen: ReadonlyMap<string, string>): Map<string, string> {
   const workouts = program.program.template.workouts;
   const taken = new Set(workouts.flatMap((w) => w.slots.map((s) => s.id)));
   const counts = new Map<string, number>();
   const aliases = new Map<string, string>();
+  for (const [alias, slotId] of frozen) {
+    const workout = addedSlotWorkout(slotId);
+    if (workout === null) continue;
+    counts.set(workout, Math.max(counts.get(workout) ?? 0, aliasRank(alias, workout)));
+    if (taken.has(alias) || aliases.has(slotId)) continue;
+    taken.add(alias);
+    aliases.set(slotId, alias);
+  }
   const give = (slotId: string): void => {
     const workout = addedSlotWorkout(slotId);
     if (workout === null || aliases.has(slotId)) return;
@@ -447,16 +490,20 @@ function briefSlot(
  * Programme en cours (forme du dossier, aussi rendue par `read_training`) : modèle, révision, semaine, séance
  * suivante, slots, propositions en attente (jours restants), modèles disponibles et compatibles (06 §5 : ceux du
  * contexte du profil, `context.kind` ; un modèle ne porte pas de code de sport) ; null sans programme. Un slot créé
- * par `add_slot` y porte son alias, dans les slots comme dans les opérations en attente.
+ * par `add_slot` y porte son alias, dans les slots comme dans les opérations en attente ; `frozen` (table figée du
+ * fil, alias → identifiant réel) y garde les alias du dossier du fil (`read_training`).
  */
-export function briefProgram(input: CoachBriefInput): CoachBrief['program'] {
+export function briefProgram(
+  input: CoachBriefInput,
+  frozen: ReadonlyMap<string, string> = NO_ALIASES,
+): CoachBrief['program'] {
   const program = input.program;
   if (program === null) return null;
   const { template, daysPerWeek } = program.program;
   const { state, decisions } = program.replay;
   // Les décisions sont dans l'ordre du rejeu : la dernière d'un slot remplace les précédentes.
   const latest = new Map(decisions.map((d) => [d.slotId, d]));
-  const aliases = slotAliasesOf(program);
+  const aliases = slotAliasesOf(program, frozen);
   const sent = (slotId: string): string => aliases.get(slotId) ?? slotId;
   const context = contextKind(input);
   return {
@@ -490,6 +537,34 @@ export function briefProgram(input: CoachBriefInput): CoachBrief['program'] {
         days_max: t.daysPerWeek.max,
       })),
   };
+}
+
+/**
+ * Décisions du moteur des `days` derniers jours (`read_training`), la plus récente d'abord, dans l'ordre du rejeu pour
+ * une même séance : la forme de `last_decision`, avec le slot (son alias pour un slot ajouté, `frozen` comme pour
+ * `briefProgram`) et l'exercice fait. `exerciseId` : celles de cet exercice. Aucune sans programme.
+ */
+export function briefDecisions(
+  input: CoachBriefInput,
+  opts: { days: number; exerciseId?: string },
+  frozen: ReadonlyMap<string, string> = NO_ALIASES,
+): BriefDecision[] {
+  const program = input.program;
+  if (program === null) return [];
+  const aliases = slotAliasesOf(program, frozen);
+  return program.replay.decisions
+    .flatMap((d) => {
+      const at = program.decisionEndedAt.get(d.id);
+      if (at === undefined || parisDaysUntil(at, input.today) > opts.days) return [];
+      if (opts.exerciseId !== undefined && d.exerciseId !== opts.exerciseId) return [];
+      return [{ at, decision: d }];
+    })
+    .sort((a, b) => b.at - a.at)
+    .map(({ at, decision: d }) => ({
+      ...decisionOf(d, at, input),
+      slot: aliases.get(d.slotId) ?? d.slotId,
+      exercise_id: d.exerciseId,
+    }));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -529,12 +604,13 @@ function userNotes(
  * Séances terminées des `days` derniers jours, la plus récente d'abord : jours écoulés, nom (« Séance libre » hors
  * programme), lieu (`lieu_n`, null s'il n'est plus vivant ou absent), exercices et séries de travail faites, notes.
  * `pain` : douleur par exercice, rendue seulement si l'entrée a aussi l'accord santé et l'accord coach (C2).
- * `exerciseId` : seules les séances de cet exercice, réduites à lui.
+ * `exerciseId` : seules les séances de cet exercice, réduites à lui. `RangeError` comme `buildCoachBrief`.
  */
 export function briefHistory(
   input: CoachBriefInput,
   opts: { days: number; exerciseId?: string; pain: boolean },
 ): HistorySession[] {
+  checkAge(input);
   const places = new Map(namedPlaces(input).map(({ place, name }) => [place.id, name]));
   const nameOf = sheetNames(input);
   const pain = opts.pain && healthAllowed(input);
@@ -592,9 +668,10 @@ function asSessionRecord(s: BriefSession): SessionRecord {
 /**
  * Records sur `sessions` (meilleure série, plus de répétitions, plus longue durée ; `e1rm_kg` pour un adulte
  * seulement, brique 3 D9), un par exercice qui en a : ceux des slots du programme d'abord, dans son ordre, puis les
- * autres, de la séance la plus récente à la plus ancienne.
+ * autres, de la séance la plus récente à la plus ancienne. `RangeError` comme `buildCoachBrief`.
  */
 export function briefRecords(input: CoachBriefInput, sessions: readonly BriefSession[]): BriefRecord[] {
+  checkAge(input);
   const history = sessions.map(asSessionRecord);
   const programIds =
     input.program === null
@@ -678,9 +755,7 @@ export function buildCoachBrief(input: CoachBriefInput): {
   oversize: boolean;
   slotAliases: ReadonlyMap<string, string>;
 } {
-  if ((input.audience === 'minor') !== (input.ageBand === '16-17')) {
-    throw new RangeError(`audience ${input.audience} et tranche ${input.ageBand} incompatibles`);
-  }
+  checkAge(input);
   const health = healthAllowed(input);
   const days = COACH_CONFIG.limits.readTrainingMaxDays;
   const draft: CoachBrief = {
@@ -711,7 +786,7 @@ export function buildCoachBrief(input: CoachBriefInput): {
   const brief = CoachBriefSchema.parse(fit(draft, max));
   const json = sortedJson(brief);
   const estimatedTokens = estimateTokens(json);
-  const aliases = input.program === null ? [] : [...slotAliasesOf(input.program)];
+  const aliases = input.program === null ? [] : [...slotAliasesOf(input.program, NO_ALIASES)];
   const slotAliases = new Map(aliases.map(([slotId, alias]) => [alias, slotId]));
   return { brief, json, estimatedTokens, oversize: estimatedTokens > max, slotAliases };
 }

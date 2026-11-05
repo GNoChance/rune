@@ -6,7 +6,10 @@ import { CoachBriefSchema, REASON_TEXTS } from '@rune/contracts';
 import { describe, expect, it } from 'vitest';
 import {
   type BriefSession,
+  briefDecisions,
   briefHistory,
+  briefProgram,
+  briefRecords,
   buildCoachBrief,
   type CoachBriefInput,
   cleanFreeText,
@@ -170,6 +173,123 @@ describe("alias des slots ajoutés (identifiant d'un changement)", () => {
 
   it('sans programme : aucun alias', () => {
     expect(build((i) => (i.program = null)).slotAliases.size).toBe(0);
+  });
+});
+
+describe('briefProgram amorcé par la table figée du fil (read_training)', () => {
+  const later = '019a4b2c-3d4e-7f60-8a1b-2c3d4e5f6a7c';
+  const inB = '019a4b2c-3d4e-7f60-8a1b-2c3d4e5f6a7d';
+  const gone = '019a4b2c-3d4e-7f60-8a1b-2c3d4e5f6a7e';
+
+  it('table du dossier, rien de changé : le programme du dossier, alias compris', () => {
+    const input = briefInput();
+    const built = buildCoachBrief(input);
+    expect(briefProgram(input, built.slotAliases)).toEqual(built.brief.program);
+    expect(briefProgram(input)).toEqual(built.brief.program);
+  });
+
+  it('un slot de la table figée garde son alias, dans les slots et les propositions en attente', () => {
+    const program = briefProgram(briefInput(), new Map([['A-x4', ADDED_SLOT_ID]]));
+    expect(program?.workouts[0]?.slots.map((s) => s.id).at(-1)).toBe('A-x4');
+    expect(program?.pending_proposals[1]?.operations).toEqual([
+      { op: 'set_rest', slot: 'A-x4', seconds: 45 },
+    ]);
+  });
+
+  it('slot ajouté après le gel : alias au-delà du plus grand de sa séance, slot disparu compris', () => {
+    const input = briefInput((i) => {
+      if (i.program === null) return;
+      i.program.program = effectiveProgram(GYM_AB, 3, [
+        addSlotChange(ADDED_CHANGE_ID, daysBefore(15)),
+        addSlotChange(later, daysBefore(1)),
+        addSlotChange(inB, daysBefore(1), 'B'),
+      ]);
+    });
+    // `gone` (A-x5) n'est plus au programme : son alias n'est pas repris pour un autre slot.
+    const frozen = new Map([
+      ['A-x2', ADDED_SLOT_ID],
+      ['A-x5', addedSlotId('A', gone)],
+    ]);
+    const program = briefProgram(input, frozen);
+    expect(program?.workouts.map((w) => w.slots.map((s) => s.id).slice(-2))).toEqual([
+      ['A-x2', 'A-x6'],
+      ['B4', 'B-x1'],
+    ]);
+    expect(JSON.stringify(program)).not.toMatch(UUID_ANYWHERE);
+  });
+
+  it("un alias figé devenu l'identifiant d'un slot du modèle n'est pas repris", () => {
+    const input = briefInput((i) => {
+      if (i.program === null) return;
+      const template = gymAb((t) => {
+        const a5 = t.workouts[0]?.slots[4];
+        if (a5) a5.id = 'A-x3';
+      });
+      i.program.program = effectiveProgram(template, 3, [addSlotChange(ADDED_CHANGE_ID, daysBefore(15))]);
+    });
+    const ids = briefProgram(input, new Map([['A-x3', ADDED_SLOT_ID]]))?.workouts[0]?.slots.map((s) => s.id);
+    expect(ids?.slice(-2)).toEqual(['A-x3', 'A-x4']);
+  });
+});
+
+describe('briefDecisions (read_training)', () => {
+  const decision = (
+    days_ago: number,
+    slot: string,
+    exercise_id: string,
+    result: string,
+    reason_code: string,
+  ) => ({
+    days_ago,
+    slot,
+    exercise_id,
+    result,
+    reason_code,
+  });
+
+  it('décisions de la période, la plus récente d’abord, slot ajouté sous son alias', () => {
+    expect(briefDecisions(briefInput(), { days: 7 })).toEqual([
+      decision(3, 'B2', 'overhead-press', 'CALIBRATION', 'CALIBRATION_DONE'),
+      decision(3, 'B3', 'lat-pulldown', 'CALIBRATION', 'CALIBRATION_DONE'),
+      decision(7, 'A1', 'back-squat', 'PROGRESS', 'LOAD_UP'),
+      decision(7, 'A2', 'bench-press', 'ADJUSTED_HOLD', 'PAIN_HOLD'),
+      decision(7, 'A5', 'front-plank', 'CALIBRATION', 'CALIBRATION_DONE'),
+      decision(7, 'A-x1', 'calf-raise', 'CALIBRATION', 'CALIBRATION_DONE'),
+    ]);
+    expect(briefDecisions(briefInput(), { days: 28 })).toHaveLength(10);
+  });
+
+  it('un exercice : ses décisions seulement ; table figée : son alias', () => {
+    expect(briefDecisions(briefInput(), { days: 28, exerciseId: 'back-squat' })).toEqual([
+      decision(7, 'A1', 'back-squat', 'PROGRESS', 'LOAD_UP'),
+      decision(12, 'A1', 'back-squat', 'CALIBRATION', 'CALIBRATION_DONE'),
+    ]);
+    const frozen = new Map([['A-x4', ADDED_SLOT_ID]]);
+    expect(briefDecisions(briefInput(), { days: 28, exerciseId: 'calf-raise' }, frozen)).toEqual([
+      decision(7, 'A-x4', 'calf-raise', 'CALIBRATION', 'CALIBRATION_DONE'),
+    ]);
+  });
+
+  it("sans l'accord santé ou l'accord coach : code de douleur réécrit (C2)", () => {
+    for (const consents of [
+      { health: false, coach: true },
+      { health: true, coach: false },
+    ]) {
+      const input = briefInput((i) => (i.consents = consents));
+      expect(briefDecisions(input, { days: 28, exerciseId: 'bench-press' })[0]).toMatchObject({
+        result: 'ADJUSTED_HOLD',
+        reason_code: 'USER_HOLD',
+      });
+    }
+  });
+
+  it('sans programme : aucune', () => {
+    expect(
+      briefDecisions(
+        briefInput((i) => (i.program = null)),
+        { days: 28 },
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -510,6 +630,21 @@ describe('public et tranche', () => {
       }),
     ).toThrow(RangeError);
   });
+
+  it.each([
+    ['adult', '16-17'],
+    ['minor', '18-29'],
+  ] as const)(
+    'briefHistory et briefRecords (read_training) aussi : %s et %s → RangeError',
+    (audience, ageBand) => {
+      const input = briefInput((i) => {
+        i.audience = audience;
+        i.ageBand = ageBand;
+      });
+      expect(() => briefHistory(input, { days: 28, pain: true })).toThrow(RangeError);
+      expect(() => briefRecords(input, input.sessions)).toThrow(RangeError);
+    },
+  );
 });
 
 describe('records et mineurs', () => {
