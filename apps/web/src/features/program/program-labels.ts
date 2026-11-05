@@ -6,8 +6,8 @@ import type {
   ProgramTemplate,
   SlotSpec,
 } from '@rune/contracts';
-import { type ProgramState, workSetCount } from '@rune/domain';
-import { formatDate } from '../../ui';
+import { type PlannedLoad, type ProgramState, workSetCount } from '@rune/domain';
+import { formatDate, formatKg } from '../../ui';
 
 /*
  * Textes de Mon programme et de « Choisir un programme » (spec brique 3 §7.7, §7.8) : tutoiement, apostrophe
@@ -166,3 +166,25 @@ export function operationSummary(op: InstanceChangeOperation, names: ProgramName
 
 export const changeSummary = (ops: readonly InstanceChangeOperation[], names: ProgramNames): string =>
   ops.map((op) => operationSummary(op, names)).join(' ; ');
+
+/** Proposition du coach IA (spec brique 4 §16.5) : mention sous le titre, lien, états de la carte compacte. */
+export const AI_NOTE = "Proposé par l'IA, vérifié par l'appli";
+export const SEE_CONVERSATION = 'Voir la conversation';
+/** Carte du flux dont la ligne n'est pas encore arrivée par le pull : rien à accepter. */
+export const PREPARING = 'en préparation';
+export const DECIDED_LABELS = { accepted: 'Acceptée', rejected: 'Refusée', expired: 'Expirée' } as const;
+
+/** Un remplacement ne préremplit jamais de charge : la personne choisira la sienne (spec brique 4 §12.4). */
+export const CALIBRATION_LINE = 'Calibration : tu choisiras ta charge';
+
+/**
+ * Ligne « Charge » d'une proposition, de la charge prévue avant et après (`changePreview`) : « 40 kg → 35 kg » ; une
+ * calibration le dit ; une charge qui apparaît sans avoir été visée avant est annoncée « Charge prévue ». Rien quand
+ * la charge ne bouge pas, quand le slot disparaît ou n'a pas de charge.
+ */
+export function loadLine(before: PlannedLoad | null, after: PlannedLoad | null): string | null {
+  if (after?.kind === 'calibration') return CALIBRATION_LINE;
+  if (after?.kind !== 'load') return null;
+  if (before?.kind !== 'load') return `Charge prévue : ${formatKg(after.loadG)}`;
+  return before.loadG === after.loadG ? null : `${formatKg(before.loadG)} → ${formatKg(after.loadG)}`;
+}

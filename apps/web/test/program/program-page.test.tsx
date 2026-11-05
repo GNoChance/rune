@@ -62,6 +62,69 @@ async function openSlot(name: string): Promise<HTMLElement> {
   return dialog(name);
 }
 
+/** Une séance A faite, le squat barre à 40 kg (3 × 6, calibration finie à 40 kg). */
+async function seedBackSquat40(db: AppDb): Promise<void> {
+  // Faite deux jours avant « maintenant » : pas de reprise après un écart (05 §10.4), la charge reste 40 kg.
+  await seedMirror(db, 'workout_session', [
+    {
+      id: 's-1',
+      ownerId: 'u-1',
+      instanceId: 'i-1',
+      workoutId: 'A',
+      placeId: 'p-1',
+      deviceId: 'dev-Z',
+      startedAt: '2026-10-04T08:00:00.000Z',
+      endedAt: '2026-10-04T09:00:00.000Z',
+      status: 'completed',
+      weekType: 'normal',
+      templateVersion: 1,
+      rulesVersion: '1',
+      appVersion: 'dev',
+      profile: 'adult',
+      note: null,
+    },
+  ]);
+  await seedMirror(db, 'performed_exercise', [
+    {
+      id: 'pe-1',
+      ownerId: 'u-1',
+      sessionId: 's-1',
+      slotId: 'A1',
+      plannedExerciseId: 'back-squat',
+      exerciseId: 'back-squat',
+      swapReason: null,
+      position: 1,
+      painLevel: null,
+      nextAdjustment: null,
+      note: null,
+    },
+  ]);
+  await seedMirror(
+    db,
+    'performed_set',
+    [1, 2, 3].map((position) => ({
+      id: `set-1-${position}`,
+      ownerId: 'u-1',
+      performedExerciseId: 'pe-1',
+      position,
+      kind: 'work',
+      loadMode: 'barbell',
+      loadG: 40_000,
+      reps: 6,
+      durationS: null,
+      side: null,
+      effort: position === 3 ? 'ok' : null,
+      targetRepsMin: 6,
+      targetRepsMax: 6,
+      targetDurationS: null,
+      targetLoadG: null,
+      targetRir: 2,
+      targetVariant: null,
+      loggedAt: `2026-10-04T08:1${position}:00.000Z`,
+    })),
+  );
+}
+
 const PROPOSAL = changeRow('c-prop', {
   author: 'engine',
   operations: [{ op: 'replace_exercise', slot: 'A1', exercise: 'goblet-squat' }],
@@ -125,6 +188,39 @@ describe('Mon programme (/program, spec §7.7)', () => {
     fireEvent.click(button('Accepter', proposals));
     await until(() => api.calls.some((c) => c.path === `${CHANGES}/c-prop/accept`));
     expect(api.calls.find((c) => c.path === `${CHANGES}/c-prop/accept`)?.body).toEqual({ baseRevision: 4 });
+  });
+
+  it('aperçu des charges : « 40 kg → 35 kg » pour un allègement proposé par le coach', async () => {
+    const lighten = changeRow('c-light', {
+      ...PROPOSAL,
+      id: 'c-light',
+      author: 'coach',
+      operations: [{ op: 'lighten_exercise', slot: 'A1' }],
+      reasonCode: 'COACH_PROPOSAL',
+      reason: 'Tu as mal dormi.',
+      aiGenerated: true,
+      coachThreadId: 't1',
+    });
+    await openProgram({
+      seed: async (db) => {
+        await seedBackSquat40(db);
+        await seedMirror(db, 'instance_change', [lighten]);
+      },
+    });
+    const proposals = region('Propositions en attente');
+    expect(within(proposals).getByText('40 kg → 35 kg')).toBeTruthy();
+  });
+
+  it('aperçu des charges : un remplacement du moteur reste « Calibration : tu choisiras ta charge », sans charge préremplie', async () => {
+    await openProgram({
+      seed: async (db) => {
+        await seedBackSquat40(db);
+        await seedMirror(db, 'instance_change', [PROPOSAL]);
+      },
+    });
+    const proposals = region('Propositions en attente');
+    expect(within(proposals).getByText('Calibration : tu choisiras ta charge')).toBeTruthy();
+    expect(within(proposals).queryByText(/\d kg/)).toBeNull();
   });
 
   it('proposition que le téléphone refuse : avertissement, « Accepter » reste actif et le serveur décide (R41)', async () => {

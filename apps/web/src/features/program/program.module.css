@@ -350,3 +350,33 @@
     transition: none;
   }
 }
+
+/* Carte d'une proposition du coach IA (spec brique 4 §16.5). */
+.aiBadge {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+.decided {
+  margin: 0;
+  font-weight: 700;
+}
+
+.cardLink {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: 48px;
+  color: var(--accent-text);
+  font-weight: 600;
+  text-decoration: underline;
+}

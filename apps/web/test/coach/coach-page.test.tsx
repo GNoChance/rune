@@ -1,14 +1,18 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { CoachTodayResponse } from '@rune/contracts';
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import type { CoachProposalEvent, CoachTodayResponse } from '@rune/contracts';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useSyncExternalStore } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CoachPage } from '../../src/features/coach/CoachPage';
 import type { CoachState, CoachStore } from '../../src/features/coach/coach-store';
-import { counterText, STATE_TEXTS, TOOL_LABELS } from '../../src/features/coach/coach-texts';
+import { counterText, PARENT_LINE, STATE_TEXTS, TOOL_LABELS } from '../../src/features/coach/coach-texts';
 import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
+import { createFakeApi } from '../support/fake-api';
+import { createTestLocalDb } from '../support/local-db';
+import { changeRow, seedProgram } from '../support/program';
 import { renderWithServices } from '../support/render';
+import { seedMirror } from '../support/seed';
 
 // Faux dépôt : le magasin est remplacé par un état que le test pilote.
 const fake = vi.hoisted(() => ({
@@ -483,5 +487,126 @@ describe('coach-page.module.css', () => {
 
   it('aucune couleur écrite en dur', () => {
     expect(css.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/#[0-9a-f]{3,8}\b|\brgba?\(/i);
+  });
+});
+
+describe('CoachPage : cartes d’aide et de proposition, signalement', () => {
+  const ROW = changeRow('c-coach', {
+    author: 'coach',
+    operations: [{ op: 'replace_exercise', slot: 'A1', exercise: 'goblet-squat' }],
+    reasonCode: 'COACH_PROPOSAL',
+    reason: 'Ton genou te gêne sur la barre.',
+    status: 'proposed',
+    baseRevision: 4,
+    createdAt: '2026-10-05T08:00:00.000Z',
+    expiresAt: '2026-10-12T08:00:00.000Z',
+    decidedAt: null,
+    aiGenerated: true,
+    aiModel: 'claude-opus-5-5',
+    coachThreadId: 't1',
+  });
+  const EVENT: CoachProposalEvent = {
+    type: 'proposal',
+    id: 'c-coach',
+    baseRevision: 4,
+    operations: [{ op: 'replace_exercise', slot: 'A1', exercise: 'goblet-squat' }],
+    reasonCode: 'COACH_PROPOSAL',
+    reason: 'Ton genou te gêne sur la barre.',
+    expiresAt: '2026-10-12T08:00:00.000Z',
+  };
+  const URGENCE = 'Urgence vitale (SAMU 15, numéro européen 112)';
+  const LAZY = { timeout: 10_000 };
+
+  async function open(rows: Record<string, unknown>[] = []) {
+    const db = createTestLocalDb();
+    await seedProgram(db);
+    if (rows.length > 0) await seedMirror(db, 'instance_change', rows);
+    const api = createFakeApi();
+    api.on('POST', '/api/coach/reports', { status: 201, body: { id: 'r-1' } });
+    const rendered = await renderWithServices(<CoachPage />, { path: '/coach', db, api });
+    return { ...rendered, db, api };
+  }
+
+  it('flux en cours : les cartes arrivent après le texte de la bulle, la proposition « en préparation »', async () => {
+    init({
+      phase: 'streaming',
+      pending: {
+        ...PENDING,
+        bubble: 'Voici ce que je te propose.',
+        helpCards: ['emergency'],
+        proposals: [EVENT],
+      },
+    });
+    await open();
+    await screen.findByText('en préparation', {}, LAZY);
+    const bubble = screen.getByText('Voici ce que je te propose.');
+    const help = screen.getByRole('region', { name: URGENCE });
+    const proposal = screen.getByRole('article');
+    expect(bubble.compareDocumentPosition(help) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(help.compareDocumentPosition(proposal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect((within(proposal).getByRole('button', { name: 'Accepter' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it('la ligne arrivée par le pull (même id) rend la carte active, sans doublon', async () => {
+    init({ phase: 'streaming', pending: { ...PENDING, bubble: 'Voici.', proposals: [EVENT] } });
+    const { db } = await open();
+    await screen.findByText('en préparation', {}, LAZY);
+    await act(async () => seedMirror(db, 'instance_change', [ROW]));
+    await waitFor(
+      () =>
+        expect((screen.getByRole('button', { name: 'Accepter' }) as HTMLButtonElement).disabled).toBe(false),
+      LAZY,
+    );
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+  });
+
+  it('après done : les cartes relues depuis today remplacent celles du flux', async () => {
+    init({
+      today: {
+        ...TODAY,
+        messages: [
+          message(1, 'user', 'Salut'),
+          message(2, 'assistant', 'Bonjour.', { helpCards: ['distress'], proposalIds: ['c-coach'] }),
+        ],
+      } as CoachTodayResponse,
+    });
+    await open([ROW]);
+    await screen.findByRole('article', {}, LAZY);
+    expect(screen.getByRole('region', { name: 'Prévention du suicide' })).toBeTruthy();
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(screen.getAllByRole('region', { name: /Urgence|Prévention/ })).toHaveLength(1);
+    expect((screen.getByRole('button', { name: 'Accepter' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('mineur : la carte d’aide porte la ligne « parle à un adulte »', async () => {
+    init({
+      status: status({ audience: 'minor' }),
+      today: {
+        ...TODAY,
+        thread: { ...THREAD, audience: 'minor' },
+        messages: [
+          message(1, 'user', 'Salut'),
+          message(2, 'assistant', 'Bonjour.', { helpCards: ['distress'] }),
+        ],
+      } as CoachTodayResponse,
+    });
+    await open();
+    expect(await screen.findByText(PARENT_LINE)).toBeTruthy();
+  });
+
+  it('« Signaler » ouvre la feuille avec le fil et le numéro du message', async () => {
+    const { api } = await open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Signaler' }));
+    const sheet = screen.getByRole('dialog');
+    fireEvent.click(within(sheet).getByRole('radio', { name: 'Inexact' }));
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Envoyer' }));
+    await screen.findByText("Merci, l'admin le lira.");
+    expect(api.calls.find((c) => c.path === '/api/coach/reports')?.body).toEqual({
+      threadId: 't1',
+      messageSeq: 2,
+      category: 'inaccurate',
+    });
   });
 });

@@ -63,6 +63,15 @@ const inProgram = (path: string) => path.startsWith('features/program/');
 /** Conversation avec le coach (`features/coach/CoachPage`) : chargée à la demande (route /coach). Les tâches 26 à 29 y ajoutent leurs écrans. */
 const COACH_SCREENS = /(^|\/)coach\/CoachPage$/;
 
+/** Cartes d'aide et feuille de signalement : dans le chunk de /coach, jamais dans le bundle initial. */
+const COACH_PARTS = /(^|\/)(HelpCard|ReportSheet)$/;
+
+/**
+ * La conversation (chargée à la demande) est le seul écran hors du programme qui en importe une carte
+ * (`ProposalCard`) : le code du programme reste dans le chunk de /coach, jamais dans le bundle initial.
+ */
+const COACH_PAGE = 'features/coach/CoachPage.tsx';
+
 describe('architecture', () => {
   const files = [...walk(SRC)].filter(code);
 
@@ -128,11 +137,12 @@ describe('architecture', () => {
 
   it('séance, historique et programme (features/workout, history, program) : seulement par import() depuis App.tsx, jamais dans le bundle initial', () => {
     const dynamic = files.filter(
-      (f) => imports(f).some((spec) => LAZY_FEATURE.test(spec)) && !inLazyFeature(rel(f)),
+      (f) =>
+        imports(f).some((spec) => LAZY_FEATURE.test(spec)) && !inLazyFeature(rel(f)) && rel(f) !== COACH_PAGE,
     );
     expect(dynamic.map(rel)).toEqual(['App.tsx']);
     for (const file of files) {
-      if (inLazyFeature(rel(file))) continue;
+      if (inLazyFeature(rel(file)) || rel(file) === COACH_PAGE) continue;
       for (const spec of staticSpecifiers(readFileSync(file, 'utf8'))) {
         expect(spec, rel(file)).not.toMatch(LAZY_FEATURE);
       }
@@ -140,7 +150,7 @@ describe('architecture', () => {
   });
 
   it('écrans du programme (features/program) : seulement par import() depuis App.tsx, jamais dans le bundle initial', () => {
-    const outside = files.filter((f) => !inProgram(rel(f)));
+    const outside = files.filter((f) => !inProgram(rel(f)) && rel(f) !== COACH_PAGE);
     const dynamic = outside.filter((f) => imports(f).some((spec) => PROGRAM_SCREENS.test(spec)));
     expect(dynamic.map(rel)).toEqual(['App.tsx']);
     for (const file of outside) {
@@ -158,6 +168,16 @@ describe('architecture', () => {
         expect(spec, rel(file)).not.toMatch(COACH_SCREENS);
       }
     }
+  });
+
+  it("cartes d'aide et signalement (features/coach/HelpCard, ReportSheet) : seulement importées par CoachPage, jamais dans le bundle initial", () => {
+    const importers = files.filter((f) => imports(f).some((spec) => COACH_PARTS.test(spec)));
+    expect(importers.map(rel)).toEqual([COACH_PAGE]);
+    // CoachPage est lui-même chargé par import() depuis App.tsx (test ci-dessus).
+    expect(imports(resolve(SRC, COACH_PAGE)).some((spec) => COACH_PARTS.test(spec))).toBe(true);
+    for (const spec of ['./HelpCard', './ReportSheet', '../coach/HelpCard'])
+      expect(spec).toMatch(COACH_PARTS);
+    for (const spec of ['./ChatBubble', '../program/ProposalCard']) expect(spec).not.toMatch(COACH_PARTS);
   });
 
   it('le motif des écrans du programme voit leurs chemins depuis App.tsx et depuis un autre écran', () => {

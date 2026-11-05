@@ -8,11 +8,14 @@ import type {
 import {
   applyOperation,
   type ChangeValidation,
+  changePreview,
   type EffectiveProgram,
   findSlot,
   profileChain,
   resolveSlot,
+  type SlotLoadPreview,
   slotCandidates,
+  UnknownRulesVersionError,
   validateChange,
 } from '@rune/domain';
 import type { ProgramEditContext, ProgramView } from '../../repos';
@@ -21,6 +24,7 @@ import {
   CHANGE_ERROR_MESSAGES,
   daysLabel,
   formatRest,
+  loadLine,
   type ProgramNames,
   repsInReserve,
   setsSummary,
@@ -188,6 +192,8 @@ export function programNames(view: ProgramView, ctx: ProgramEditContext): Progra
 export interface ChangeLine {
   before: string;
   after: string;
+  /** Charges prévues que l'opération change (`previewLines`) ; absent pour `changeLines`. */
+  loads?: string[];
 }
 
 /** Facette d'un slot que l'opération change, dans un état du programme. */
@@ -257,5 +263,52 @@ export function changeLines(
     }
     state = next;
     return line;
+  });
+}
+
+/**
+ * `changeLines` complétées par l'aperçu des charges (spec brique 4 §12.4) : pour les slots que `changePreview` dit
+ * touchés, « 40 kg → 35 kg » ou « Calibration : tu choisiras ta charge », sous l'opération qui nomme le slot ; ce
+ * que le changement fait aux autres slots (une semaine allégée, un exercice ajouté) se range sous la première
+ * opération qui ne nomme pas de slot, avec le nom de l'exercice. Sans lieu principal, ou quand l'appli ne connaît pas
+ * les règles d'une séance déjà faite (`UnknownRulesVersionError`), le téléphone n'affiche pas d'aperçu : il ne reste
+ * que les lignes de `changeLines`, et rien ne lève.
+ */
+export function previewLines(
+  change: Pick<InstanceChangeView, 'id' | 'author' | 'operations'>,
+  view: ProgramView,
+  ctx: ProgramEditContext,
+  names: ProgramNames,
+  now: number = Date.now(),
+): ChangeLine[] {
+  const lines = changeLines(change, view, ctx, names);
+  if (view.plan === null) return lines;
+  let previews: SlotLoadPreview[];
+  try {
+    previews = changePreview({ replay: view.replayInput, change, decidedAt: now, plan: view.plan });
+  } catch (error) {
+    if (error instanceof UnknownRulesVersionError) return lines;
+    throw error;
+  }
+  const touched = previews.filter((p) => p.touched);
+  const named = new Set(change.operations.flatMap((op) => ('slot' in op ? [op.slot] : [])));
+  const firstUnnamed = change.operations.findIndex((op) => !('slot' in op));
+  return lines.map((line, i) => {
+    const op = change.operations[i];
+    const own =
+      op !== undefined && 'slot' in op
+        ? touched.filter((p) => p.slotId === op.slot).map((p) => loadLine(p.before, p.after))
+        : [];
+    const others =
+      i === firstUnnamed
+        ? touched
+            .filter((p) => !named.has(p.slotId))
+            .map((p) => {
+              const text = loadLine(p.before, p.after);
+              return text === null ? null : `${names.slot(p.slotId)} : ${text}`;
+            })
+        : [];
+    const loads = [...own, ...others].filter((t): t is string => t !== null);
+    return loads.length > 0 ? { ...line, loads } : line;
   });
 }

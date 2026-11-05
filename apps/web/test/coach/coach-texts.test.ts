@@ -1,35 +1,54 @@
-import { COACH_STREAM_ERROR_CODES, FORBIDDEN_TERMS, HELP_PHONE_DIGITS } from '@rune/contracts';
+import {
+  COACH_STREAM_ERROR_CODES,
+  FORBIDDEN_TERMS,
+  HELP_PHONE_DIGITS,
+  HELP_RESOURCES,
+  helpPhones,
+} from '@rune/contracts';
 import { type AllowedValues, type FilterContext, normalizeForTerms, outputFilterText } from '@rune/domain';
 import { describe, expect, it } from 'vitest';
 import {
   AI_BANNER,
   budgetText,
+  callText,
   counterText,
   DEV_BANNER,
   ERROR_TEXTS,
+  HELP_NOTES,
+  HELP_OPEN,
+  PARENT_LINE,
   PROGRAM_PREFILL,
+  REPORT_TEXTS,
   remainingText,
   STATE_TEXTS,
   SUGGESTIONS,
   TOOL_LABELS,
   WELCOME,
 } from '../../src/features/coach/coach-texts';
+import {
+  AI_NOTE,
+  CALIBRATION_LINE,
+  DECIDED_LABELS,
+  loadLine,
+  PREPARING,
+  SEE_CONVERSATION,
+} from '../../src/features/program/program-labels';
 
-const allowed = (percent: string[] = []): AllowedValues => ({
-  mass: new Set(),
+const allowed = (percent: string[] = [], mass: string[] = []): AllowedValues => ({
+  mass: new Set(mass),
   percent: new Set(percent),
   nutrition: new Set(),
 });
 
-const contexts = (percent: string[] = []): FilterContext[] =>
+const contexts = (percent: string[] = [], mass: string[] = []): FilterContext[] =>
   (['adult', 'minor'] as const).map((audience) => ({
     audience,
     nutritionMode: 'none',
-    allowed: allowed(percent),
+    allowed: allowed(percent, mass),
   }));
 
 /** Chaque texte de l'appli, avec les valeurs qu'il cite déclarées autorisées. */
-const TEXTS: [string, string, string[]][] = [
+const TEXTS: [string, string, string[], string[]?][] = [
   ['AI_BANNER', AI_BANNER, []],
   ['WELCOME', WELCOME, []],
   ['PROGRAM_PREFILL', PROGRAM_PREFILL, []],
@@ -42,6 +61,46 @@ const TEXTS: [string, string, string[]][] = [
   ['remainingText(1)', remainingText(1), []],
   ['remainingText(5)', remainingText(5), []],
   ['counterText(1950)', counterText(1950), []],
+  ['PARENT_LINE', PARENT_LINE, []],
+  ['HELP_OPEN', HELP_OPEN, []],
+  ...Object.entries(HELP_NOTES).map(([k, t]): [string, string, string[]] => [`HELP_NOTES.${k}`, t, []]),
+  ...HELP_RESOURCES.flatMap((r) =>
+    helpPhones(r).map((p): [string, string, string[]] => [
+      `callText(${r.id}, ${p.label})`,
+      callText(p.label),
+      [],
+    ]),
+  ),
+  ...HELP_RESOURCES.map((r): [string, string, string[]] => [`HELP_RESOURCES.${r.id}.label`, r.label, []]),
+  ['REPORT_TEXTS.warning', REPORT_TEXTS.warning, []],
+  ['REPORT_TEXTS.thanks', REPORT_TEXTS.thanks, []],
+  ['REPORT_TEXTS.tooLong', REPORT_TEXTS.tooLong, []],
+  ['REPORT_TEXTS.failed', REPORT_TEXTS.failed, []],
+  ['REPORT_TEXTS.title', REPORT_TEXTS.title, []],
+  ['REPORT_TEXTS.categoryLegend', REPORT_TEXTS.categoryLegend, []],
+  ['REPORT_TEXTS.send', REPORT_TEXTS.send, []],
+  ['REPORT_TEXTS.commentLabel', REPORT_TEXTS.commentLabel, []],
+  ...Object.entries(REPORT_TEXTS.categories).map(([k, t]): [string, string, string[]] => [
+    `REPORT_TEXTS.categories.${k}`,
+    t,
+    [],
+  ]),
+  ['AI_NOTE', AI_NOTE, []],
+  ['SEE_CONVERSATION', SEE_CONVERSATION, []],
+  ['PREPARING', PREPARING, []],
+  ...Object.entries(DECIDED_LABELS).map(([k, t]): [string, string, string[]] => [
+    `DECIDED_LABELS.${k}`,
+    t,
+    [],
+  ]),
+  ['CALIBRATION_LINE', CALIBRATION_LINE, []],
+  [
+    'loadLine(40 kg → 35 kg)',
+    loadLine({ kind: 'load', loadG: 40_000 }, { kind: 'load', loadG: 35_000 }) ?? '',
+    [],
+    ['40', '35'],
+  ],
+  ['loadLine(→ 45 kg)', loadLine({ kind: 'calibration' }, { kind: 'load', loadG: 45_000 }) ?? '', [], ['45']],
 ];
 
 describe('coach-texts', () => {
@@ -104,8 +163,9 @@ describe('coach-texts', () => {
 
   it.each(TEXTS)(
     '%s passe le filtre de sortie (adulte et mineur) et les termes interdits',
-    (_name, text, percent) => {
-      for (const ctx of contexts(percent)) {
+    (_name, text, percent, mass) => {
+      expect(text).not.toBe('');
+      for (const ctx of contexts(percent, mass)) {
         expect(outputFilterText(text, ctx), `${ctx.audience} : ${text}`).toEqual({ ok: true });
       }
       const haystack = ` ${normalizeForTerms(text)} `;
@@ -118,6 +178,37 @@ describe('coach-texts', () => {
       }
     },
   );
+
+  it('textes des cartes et de la feuille, mot pour mot', () => {
+    expect(HELP_OPEN).toBe("Ouvrir l'aide");
+    expect(callText('15')).toBe('Appeler le 15');
+    expect(REPORT_TEXTS.categories).toEqual({
+      inaccurate: 'Inexact',
+      unsafe: 'Dangereux',
+      inappropriate: 'Inapproprié',
+      other: 'Autre',
+    });
+    expect(REPORT_TEXTS.warning).toBe(
+      "L'admin pourra lire cet échange (ton message et la réponse) et saura qu'il vient de toi.",
+    );
+    expect(REPORT_TEXTS.thanks).toBe("Merci, l'admin le lira.");
+    expect(AI_NOTE).toBe("Proposé par l'IA, vérifié par l'appli");
+    expect(SEE_CONVERSATION).toBe('Voir la conversation');
+    expect(PREPARING).toBe('en préparation');
+    expect(DECIDED_LABELS).toEqual({ accepted: 'Acceptée', rejected: 'Refusée', expired: 'Expirée' });
+    expect(CALIBRATION_LINE).toBe('Calibration : tu choisiras ta charge');
+    expect(loadLine({ kind: 'load', loadG: 40_000 }, { kind: 'load', loadG: 35_000 })).toBe('40 kg → 35 kg');
+  });
+
+  it('loadLine : jamais de charge préremplie sans le dire, rien quand la charge ne bouge pas', () => {
+    expect(loadLine({ kind: 'load', loadG: 40_000 }, { kind: 'calibration' })).toBe(CALIBRATION_LINE);
+    expect(loadLine({ kind: 'calibration' }, { kind: 'calibration' })).toBe(CALIBRATION_LINE);
+    expect(loadLine({ kind: 'load', loadG: 40_000 }, { kind: 'load', loadG: 40_000 })).toBeNull();
+    expect(loadLine({ kind: 'load', loadG: 40_000 }, { kind: 'none' })).toBeNull();
+    expect(loadLine({ kind: 'load', loadG: 40_000 }, null)).toBeNull();
+    expect(loadLine(null, { kind: 'load', loadG: 45_000 })).toBe('Charge prévue : 45 kg');
+    expect(loadLine({ kind: 'none' }, { kind: 'load', loadG: 45_000 })).toBe('Charge prévue : 45 kg');
+  });
 
   it('le filtre refuse un pourcentage non déclaré (le test de budgetText a donc un sens)', () => {
     const [adult] = contexts([]);

@@ -1,7 +1,11 @@
-import type { CoachId, CoachMessageView } from '@rune/contracts';
-import { useEffect, useRef, useState } from 'react';
+import type { CoachId, CoachMessageView, CoachProposalEvent, HelpResourceId } from '@rune/contracts';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'wouter';
+import { useSyncState } from '../../app-services';
+import { useProgramEditContext, useProgramView } from '../../repos';
 import { Banner, BottomSheet, Button, CoachAvatar, Page, SystemPanel } from '../../ui';
+import { ProposalCard } from '../program/ProposalCard';
+import { programNames } from '../program/program-model';
 import { ChatBubble } from './ChatBubble';
 import { Composer } from './Composer';
 import styles from './coach-page.module.css';
@@ -19,6 +23,8 @@ import {
   TOOL_LABELS,
   WELCOME,
 } from './coach-texts';
+import { HelpCard } from './HelpCard';
+import { ReportSheet } from './ReportSheet';
 
 /** « Voix : le Skald » (spec §16.2). */
 const VOICES: Readonly<Record<CoachId, string>> = {
@@ -99,7 +105,9 @@ function useAnswerAnnounced(phase: CoachState['phase']): boolean {
 /**
  * Conversation avec le coach (spec brique 4 §16.2) : en-tête, bandeau IA fixe, fil, saisie, et les états (accord,
  * pause, limites, fil fermé, réponse ailleurs, hors ligne, erreur, refus). Tout vient du magasin en mémoire : rien
- * n'est gardé sur l'appareil (C17). Les cartes d'aide et de proposition arrivent avec la Task 26.
+ * n'est gardé sur l'appareil (C17). Les cartes d'aide et de proposition suivent le texte de la bulle : celles du flux
+ * en cours (la proposition « en préparation » jusqu'à ce que sa ligne arrive par le pull, appariée par `id`), puis,
+ * après `done`, celles que `today` relit, qui les remplacent. « Signaler » ouvre la feuille du message.
  */
 export function CoachPage() {
   const { state, store } = useCoachStore();
@@ -107,6 +115,10 @@ export function CoachPage() {
   const { status, today, draft, pending, phase, error, refusalMessage } = state;
   const announced = useAnswerAnnounced(phase);
   const end = useRef<HTMLDivElement>(null);
+  const [report, setReport] = useState<{ threadId: string; messageSeq: number } | null>(null);
+  const program = useProgramView();
+  const ctx = useProgramEditContext();
+  const { connection } = useSyncState();
 
   useEffect(() => {
     void store.load();
@@ -136,6 +148,46 @@ export function CoachPage() {
   const dailyLimit = status !== null && status.today.remaining === 0;
   const monthlyLimit = status !== null && status.budgetUsedPct >= 100;
   const blocked = offline || inProgress || dailyLimit || monthlyLimit;
+
+  const names = useMemo(() => (program && ctx ? programNames(program, ctx) : null), [program, ctx]);
+  const minor = (today?.thread?.audience ?? status?.audience) === 'minor';
+  const threadId = today?.thread?.id ?? null;
+
+  /**
+   * Cartes d'une réponse : aide, puis propositions. Une proposition dont la ligne est dans le miroir se lit depuis
+   * elle ; sinon l'événement du flux, s'il y en a un, tient la place (« en préparation »).
+   */
+  const cardsOf = (
+    helpCards: readonly HelpResourceId[],
+    proposals: readonly { id: string; event?: CoachProposalEvent }[],
+  ) => {
+    const rows = new Map([...(program?.proposals ?? []), ...(program?.changes ?? [])].map((c) => [c.id, c]));
+    const shown = proposals.flatMap(({ id, event }) => {
+      const proposal = rows.get(id) ?? event;
+      return proposal ? [{ id, proposal }] : [];
+    });
+    if (helpCards.length === 0 && shown.length === 0) return null;
+    return (
+      <div className={styles.cards}>
+        {helpCards.map((resource) => (
+          <HelpCard key={resource} resource={resource} minor={minor} />
+        ))}
+        {program && ctx && names
+          ? shown.map(({ id, proposal }) => (
+              <ProposalCard
+                key={id}
+                proposal={proposal}
+                view={program}
+                ctx={ctx}
+                names={names}
+                offline={connection === 'offline'}
+                compact
+              />
+            ))
+          : null}
+      </div>
+    );
+  };
 
   const retry = () => void (pending !== null ? store.retry() : store.load());
 
@@ -222,13 +274,19 @@ export function CoachPage() {
             m.role === 'user' ? (
               <ChatBubble key={m.seq} author="user" text={m.text} />
             ) : (
-              <ChatBubble
-                key={m.seq}
-                author="assistant"
-                coach={coach}
-                text={m.text}
-                truncated={m.truncated}
-              />
+              <Fragment key={m.seq}>
+                <ChatBubble
+                  author="assistant"
+                  coach={coach}
+                  text={m.text}
+                  truncated={m.truncated}
+                  onReport={threadId === null ? undefined : () => setReport({ threadId, messageSeq: m.seq })}
+                />
+                {cardsOf(
+                  m.helpCards,
+                  m.proposalIds.map((id) => ({ id })),
+                )}
+              </Fragment>
             ),
           )}
           {showPending && pending ? (
@@ -243,6 +301,10 @@ export function CoachPage() {
                   toolLabel={pending.tool ? TOOL_LABELS[pending.tool] : null}
                 />
               ) : null}
+              {cardsOf(
+                pending.helpCards,
+                pending.proposals.map((event) => ({ id: event.id, event })),
+              )}
             </>
           ) : null}
           <div ref={end} />
@@ -285,6 +347,7 @@ export function CoachPage() {
       {header}
       <Banner tone="info">{AI_BANNER}</Banner>
       {body}
+      {report ? <ReportSheet {...report} onClose={() => setReport(null)} /> : null}
       <p role="status" className={styles.srOnly}>
         {announced ? 'Le coach a répondu' : ''}
       </p>

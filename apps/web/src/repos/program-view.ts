@@ -18,6 +18,7 @@ import {
   findSlot,
   lastLoadsOf,
   type PlaceContext,
+  type PlanInput,
   type PlannedWorkout,
   parisDate,
   planWorkout,
@@ -57,6 +58,13 @@ export interface ProgramView {
   /** Programme effectif : `snapshot` plus les changements acceptés (D5). */
   program: EffectiveProgram;
   replay: ReplayResult;
+  /** Entrée du rejeu local de l'instance : l'aperçu des charges d'une proposition en rejoue une variante. */
+  replayInput: ReplayInput;
+  /**
+   * Contexte de `planWorkout` au lieu principal (comme `plannedWorkout`) pour l'aperçu des charges ; null sans lieu
+   * principal : l'aperçu est alors omis.
+   */
+  plan: Omit<PlanInput, 'replay' | 'workoutId'> | null;
   /** États des slots : ceux du rejeu local, ou ceux du serveur (`source: 'server'`). */
   slotStates: SlotState[];
   /**
@@ -308,6 +316,28 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
     return instance === null || snapshot === null ? null : { instance, snapshot };
   }
 
+  /** Contexte de `planWorkout` au lieu principal, le même que celui de `plannedWorkout` ; null sans lieu principal. */
+  async function planContext(
+    input: ReplayInput,
+    context: ProgramTemplate['context'],
+    now: number,
+  ): Promise<ProgramView['plan']> {
+    const primary = (await places.list()).find((p) => p.isPrimary);
+    if (primary === undefined) return null;
+    const [member, sheets, me] = await Promise.all([catalog.context(), catalog.sheets(), getMeta(db, 'me')]);
+    return {
+      place: placeContext(primary),
+      catalog: sheets,
+      profile: member.cautious ? 'cautious' : 'adult',
+      // Faute de savoir, le message aux mineurs s'affiche (comme le profil prudent par défaut).
+      ageBand: me?.ageBand ?? 'minor',
+      context,
+      today: parisDate(new Date(now)),
+      lastLoadByExercise: lastLoadsOf(input.sessions),
+      maxLevel: member.maxLevel,
+    };
+  }
+
   async function view(): Promise<ProgramView | null> {
     const ownerId = await currentUserId(db);
     if (ownerId === null) return null;
@@ -361,6 +391,7 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
     }
 
     const now = s.now();
+    const plan = await planContext(input, replay.program.template.context, now);
     const pending = (c: InstanceChangeView) =>
       c.status === 'proposed' && (c.expiresAt === null || Date.parse(c.expiresAt) > now);
     const byCreation = (a: InstanceChangeView, b: InstanceChangeView) =>
@@ -370,6 +401,8 @@ export function createProgramViewRepo(s: AppServices): ProgramViewRepo {
       template: await servedTemplate(instance.templateId),
       program: replay.program,
       replay,
+      replayInput: input,
+      plan,
       slotStates: replay.slotStates,
       source,
       proposals: changeViews.filter(pending).sort(byCreation),

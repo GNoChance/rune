@@ -99,3 +99,30 @@ export const remainingText = (n: number) =>
 export const budgetText = (pct: number) => `Tu as utilisé ${pct} % de ton budget du mois`;
 
 export const counterText = (n: number) => `${thousands(n)} / ${thousands(MESSAGE_CHARS)}`;
+
+/** Carte d'aide (spec §16.4). */
+export const HELP_OPEN = "Ouvrir l'aide";
+/** Ligne ajoutée aux cartes d'aide d'un mineur (C39). */
+export const PARENT_LINE = 'Parles-en aussi à un parent ou à un adulte de confiance.';
+/** Note d'une ressource, sous ses numéros (à relire par le propriétaire). */
+export const HELP_NOTES = { eating_disorder: "Un médecin peut aussi t'aider." } as const;
+/** Libellé d'un lien `tel:` ; `label` est le numéro tel que `helpPhones` le rend. */
+export const callText = (label: string) => `Appeler le ${label}`;
+
+/** Feuille « Signaler » (spec §16.6). */
+export const REPORT_TEXTS = {
+  title: 'Signaler cette réponse',
+  categoryLegend: "Qu'est-ce qui ne va pas ?",
+  categories: {
+    inaccurate: 'Inexact',
+    unsafe: 'Dangereux',
+    inappropriate: 'Inapproprié',
+    other: 'Autre',
+  },
+  commentLabel: 'Un commentaire (facultatif)',
+  warning: "L'admin pourra lire cet échange (ton message et la réponse) et saura qu'il vient de toi.",
+  send: 'Envoyer',
+  thanks: "Merci, l'admin le lira.",
+  tooLong: '500 caractères au plus.',
+  failed: "Le signalement n'est pas parti. Réessaie.",
+} as const;
