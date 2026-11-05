@@ -13,6 +13,7 @@ import type { DbExecutor } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { httpError } from '../http/errors';
 import { parseJson } from '../http/validate';
+import { microsToUsd, monthCostMicros } from './costs';
 import { catalogChangedSinceEvaluation, readCoachState, resumeCoach, setCoachEnabled } from './state';
 
 /*
@@ -21,21 +22,6 @@ import { catalogChangedSinceEvaluation, readCoachState, resumeCoach, setCoachEna
  * journaux ne portent ni texte, ni commentaire, ni pseudo (P-LOG-2). Un signalement dont le fil a été supprimé
  * reste lisible : il garde sa copie de l'échange et n'a pas de lien vers le fil.
  */
-
-/** Dollars à 2 décimales d'une somme en micros de dollar. */
-export const microsToUsd = (micros: number): number => Math.round(micros / 10_000) / 100;
-
-/** Coût du mois de Paris `month` ('YYYY-MM') par personne, en micros de dollar ; `coach_call.day` est un jour de Paris. */
-export async function monthCostMicros(db: DbExecutor, month: string): Promise<Map<string, number>> {
-  const rows = await db
-    .selectFrom('coachCall')
-    .select(['userId', (eb) => eb.fn.sum<number>('costUsdMicros').as('micros')])
-    .where('day', '>=', `${month}-01`)
-    .where('day', '<=', `${month}-31`)
-    .groupBy('userId')
-    .execute();
-  return new Map(rows.map((r) => [r.userId, Number(r.micros)]));
-}
 
 /** Les 12 derniers mois de Paris, du plus ancien au courant (`month` compris). */
 function lastTwelveMonths(month: string): string[] {

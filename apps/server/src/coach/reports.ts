@@ -15,7 +15,8 @@ import { parseJson } from '../http/validate';
 
 /**
  * Enregistre un signalement de `userId` et rend son identifiant. 404 si `(threadId, messageSeq)` n'est pas une
- * réponse du coach dans un fil de la personne, ou si le message de la personne qui la précède manque.
+ * réponse du coach (à texte : un tour d'outil intermédiaire n'en est pas une) dans un fil de la personne, ou si la
+ * question de la personne qui la précède (à texte aussi, pas un résultat d'outil) manque. Idempotent par message.
  * `exchange_text` = `Toi : <message qui précède>` + ligne vide + `Coach IA : <réponse>`.
  */
 export async function createReport(
@@ -31,6 +32,7 @@ export async function createReport(
     .where('userId', '=', userId)
     .where('seq', '=', req.messageSeq)
     .where('role', '=', 'assistant')
+    .where('displayText', 'is not', null)
     .executeTakeFirst();
   if (answer === undefined) throw httpError('not_found');
   const question = await trx
@@ -39,10 +41,20 @@ export async function createReport(
     .where('threadId', '=', req.threadId)
     .where('userId', '=', userId)
     .where('role', '=', 'user')
+    .where('displayText', 'is not', null)
     .where('seq', '<', req.messageSeq)
     .orderBy('seq', 'desc')
     .executeTakeFirst();
   if (question === undefined) throw httpError('not_found');
+  // Un second signalement du même message rend le premier (idempotent).
+  const existing = await trx
+    .selectFrom('coachReport')
+    .select('id')
+    .where('userId', '=', userId)
+    .where('threadId', '=', req.threadId)
+    .where('messageSeq', '=', req.messageSeq)
+    .executeTakeFirst();
+  if (existing !== undefined) return existing.id;
   const id = deps.ids.uuidv7();
   await trx
     .insertInto('coachReport')
@@ -53,7 +65,7 @@ export async function createReport(
       messageSeq: req.messageSeq,
       category: req.category,
       comment: req.comment ?? null,
-      exchangeText: `Toi : ${question.displayText ?? ''}\n\nCoach IA : ${answer.displayText ?? ''}`,
+      exchangeText: `Toi : ${question.displayText}\n\nCoach IA : ${answer.displayText}`,
       createdAt: deps.clock.now().toISOString(),
     })
     .execute();

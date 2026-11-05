@@ -2,7 +2,7 @@ import { type MemberSummary, MIN_AGE, type Role, SESSION_IDLE_DAYS, type UserSta
 import { ageBandOn, ageOn, parisDate, parisMonthOf } from '@rune/domain';
 import { logSecurityEvent } from '../auth/security-log';
 import { revokeSessions } from '../auth/session';
-import { microsToUsd, monthCostMicros } from '../coach/admin-routes';
+import { microsToUsd, monthCostMicros } from '../coach/costs';
 import { writeStamp } from '../db/rev';
 import type { DbExecutor } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -48,7 +48,7 @@ export async function listMembers(db: DbExecutor, deps: AppDeps, onlyId?: string
   const counts = await countQuery.execute();
   const active = new Map(counts.map((c) => [c.userId, Number(c.n)]));
   const today = parisDate(now);
-  const costs = await monthCostMicros(db, parisMonthOf(today));
+  const costs = await monthCostMicros(db, parisMonthOf(today), onlyId);
   const members: MemberSummary[] = [];
   for (const u of users) {
     const consents = await getConsentState(db, u.id);

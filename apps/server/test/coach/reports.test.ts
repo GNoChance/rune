@@ -119,3 +119,63 @@ describe('POST /api/coach/reports', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('tours intermédiaires des outils', () => {
+  async function withTools() {
+    const base = await setup();
+    const { user, threadId } = base;
+    // Après le seq 2 : appel d'outil (assistant sans texte), résultat (user sans texte), réponse finale.
+    await insertFixtureRow(ctx.deps.db, 'coach_message', {
+      threadId,
+      userId: user.id,
+      seq: 3,
+      role: 'assistant',
+      displayText: null,
+    });
+    await insertFixtureRow(ctx.deps.db, 'coach_message', {
+      threadId,
+      userId: user.id,
+      seq: 4,
+      role: 'user',
+      displayText: null,
+    });
+    await insertFixtureRow(ctx.deps.db, 'coach_message', {
+      threadId,
+      userId: user.id,
+      seq: 5,
+      role: 'assistant',
+      displayText: 'Voici ma réponse finale.',
+    });
+    return base;
+  }
+
+  it("l'échange cite la vraie question, pas le tour de résultat d'outil", async () => {
+    const { cookie, threadId } = await withTools();
+    const res = await report(cookie, { threadId, messageSeq: 5, category: 'other' });
+    expect(res.status).toBe(201);
+    const { id } = (await res.json()) as { id: string };
+    const row = await ctx.deps.db
+      .selectFrom('coachReport')
+      .select('exchangeText')
+      .where('id', '=', id)
+      .executeTakeFirstOrThrow();
+    expect(row.exchangeText).toBe('Toi : Je peux monter ma charge ?\n\nCoach IA : Voici ma réponse finale.');
+  });
+
+  it('signaler un tour intermédiaire (sans texte) : 404', async () => {
+    const { cookie, threadId } = await withTools();
+    const res = await report(cookie, { threadId, messageSeq: 3, category: 'other' });
+    expect(res.status).toBe(404);
+  });
+
+  it('un second signalement du même message rend le même id, sans nouvelle ligne', async () => {
+    const { cookie, threadId } = await setup();
+    const first = (await (await report(cookie, { threadId, messageSeq: 2, category: 'other' })).json()) as {
+      id: string;
+    };
+    const second = await report(cookie, { threadId, messageSeq: 2, category: 'unsafe' });
+    expect(second.status).toBe(201);
+    expect(((await second.json()) as { id: string }).id).toBe(first.id);
+    expect(await ctx.deps.db.selectFrom('coachReport').select('id').execute()).toHaveLength(1);
+  });
+});
