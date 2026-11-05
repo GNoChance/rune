@@ -1,0 +1,1418 @@
+{
+  "id": "adulte-intermediaire",
+  "user": {
+    "username": "canari-inter",
+    "birthDate": "1989-11-30"
+  },
+  "consents": {
+    "health": true
+  },
+  "profile": {
+    "goal": "strength",
+    "experience": "gt_24_months",
+    "daysPerWeek": 4,
+    "sessionMinutes": 75,
+    "coach": "ombre"
+  },
+  "screening": {
+    "caution": false
+  },
+  "places": [
+    {
+      "ref": "salle",
+      "kind": "gym",
+      "primary": true,
+      "equipment": [
+        "dumbbells",
+        "barbell",
+        "squat_rack",
+        "flat_bench",
+        "adjustable_bench",
+        "dip_station",
+        "pull_up_bar",
+        "cable_station",
+        "lat_pulldown",
+        "seated_row",
+        "leg_press",
+        "leg_curl",
+        "leg_extension",
+        "upper_body_machines"
+      ],
+      "gym": {
+        "name": "Salle Canari Zeta",
+        "city": "Villetest"
+      }
+    }
+  ],
+  "limitations": [
+    {
+      "bodyArea": "knee",
+      "side": "left",
+      "severity": "mild",
+      "note": "Raideur le matin."
+    }
+  ],
+  "program": {
+    "templateId": "gym-intermediate-upper-lower",
+    "daysPerWeek": 4
+  },
+  "sessions": [
+    {
+      "daysAgo": 27,
+      "workoutId": "H1",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "H1-1",
+          "exerciseId": "bench-press",
+          "sets": [
+            {
+              "loadG": 80000,
+              "reps": 5
+            },
+            {
+              "loadG": 80000,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-2",
+          "exerciseId": "barbell-row",
+          "sets": [
+            {
+              "loadG": 70000,
+              "reps": 5
+            },
+            {
+              "loadG": 70000,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-3",
+          "exerciseId": "overhead-press",
+          "sets": [
+            {
+              "loadG": 45000,
+              "reps": 7
+            },
+            {
+              "loadG": 45000,
+              "reps": 7
+            },
+            {
+              "loadG": 45000,
+              "reps": 7,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-4",
+          "exerciseId": "lat-pulldown",
+          "sets": [
+            {
+              "loadG": 60000,
+              "reps": 7
+            },
+            {
+              "loadG": 60000,
+              "reps": 7
+            },
+            {
+              "loadG": 60000,
+              "reps": 7,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-5",
+          "exerciseId": "dumbbell-curl",
+          "sets": [
+            {
+              "loadG": 15000,
+              "reps": 10
+            },
+            {
+              "loadG": 15000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 26,
+      "workoutId": "B1",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "B1-1",
+          "exerciseId": "back-squat",
+          "sets": [
+            {
+              "loadG": 100000,
+              "reps": 5
+            },
+            {
+              "loadG": 100000,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B1-2",
+          "exerciseId": "deadlift",
+          "sets": [
+            {
+              "loadG": 120000,
+              "reps": 5
+            },
+            {
+              "loadG": 120000,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B1-3",
+          "exerciseId": "leg-curl",
+          "sets": [
+            {
+              "loadG": 45000,
+              "reps": 10
+            },
+            {
+              "loadG": 45000,
+              "reps": 10
+            },
+            {
+              "loadG": 45000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B1-4",
+          "exerciseId": "standing-calf-raise",
+          "sets": [
+            {
+              "loadG": 60000,
+              "reps": 10
+            },
+            {
+              "loadG": 60000,
+              "reps": 10
+            },
+            {
+              "loadG": 60000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 24,
+      "workoutId": "H2",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "H2-1",
+          "exerciseId": "incline-dumbbell-bench-press",
+          "sets": [
+            {
+              "loadG": 25000,
+              "reps": 10
+            },
+            {
+              "loadG": 25000,
+              "reps": 10
+            },
+            {
+              "loadG": 25000,
+              "reps": 10
+            },
+            {
+              "loadG": 25000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H2-2",
+          "exerciseId": "seated-cable-row",
+          "sets": [
+            {
+              "loadG": 55000,
+              "reps": 10
+            },
+            {
+              "loadG": 55000,
+              "reps": 10
+            },
+            {
+              "loadG": 55000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H2-3",
+          "exerciseId": "machine-chest-press",
+          "sets": [
+            {
+              "loadG": 50000,
+              "reps": 12
+            },
+            {
+              "loadG": 50000,
+              "reps": 12
+            },
+            {
+              "loadG": 50000,
+              "reps": 12
+            },
+            {
+              "loadG": 50000,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H2-5",
+          "exerciseId": "dumbbell-lateral-raise",
+          "sets": [
+            {
+              "loadG": 7500,
+              "reps": 12
+            },
+            {
+              "loadG": 7500,
+              "reps": 12
+            },
+            {
+              "loadG": 7500,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 23,
+      "workoutId": "B2",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "B2-1",
+          "exerciseId": "leg-press",
+          "sets": [
+            {
+              "loadG": 140000,
+              "reps": 12
+            },
+            {
+              "loadG": 140000,
+              "reps": 12
+            },
+            {
+              "loadG": 140000,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B2-2",
+          "exerciseId": "romanian-deadlift",
+          "sets": [
+            {
+              "loadG": 90000,
+              "reps": 10
+            },
+            {
+              "loadG": 90000,
+              "reps": 10
+            },
+            {
+              "loadG": 90000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B2-3",
+          "exerciseId": "dumbbell-reverse-lunge",
+          "sets": [
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B2-4",
+          "exerciseId": "leg-curl",
+          "sets": [
+            {
+              "loadG": 40000,
+              "reps": 12
+            },
+            {
+              "loadG": 40000,
+              "reps": 12
+            },
+            {
+              "loadG": 40000,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 20,
+      "workoutId": "H1",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "H1-1",
+          "exerciseId": "bench-press",
+          "sets": [
+            {
+              "loadG": 82500,
+              "reps": 5
+            },
+            {
+              "loadG": 82500,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-2",
+          "exerciseId": "barbell-row",
+          "sets": [
+            {
+              "loadG": 72500,
+              "reps": 5
+            },
+            {
+              "loadG": 72500,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-3",
+          "exerciseId": "overhead-press",
+          "sets": [
+            {
+              "loadG": 45000,
+              "reps": 7
+            },
+            {
+              "loadG": 45000,
+              "reps": 7
+            },
+            {
+              "loadG": 45000,
+              "reps": 7,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-4",
+          "exerciseId": "lat-pulldown",
+          "sets": [
+            {
+              "loadG": 62500,
+              "reps": 7
+            },
+            {
+              "loadG": 62500,
+              "reps": 7
+            },
+            {
+              "loadG": 62500,
+              "reps": 7,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-5",
+          "exerciseId": "dumbbell-curl",
+          "sets": [
+            {
+              "loadG": 15000,
+              "reps": 10
+            },
+            {
+              "loadG": 15000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 19,
+      "workoutId": "B1",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "B1-1",
+          "exerciseId": "back-squat",
+          "sets": [
+            {
+              "loadG": 102500,
+              "reps": 5
+            },
+            {
+              "loadG": 102500,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B1-2",
+          "exerciseId": "deadlift",
+          "sets": [
+            {
+              "loadG": 122500,
+              "reps": 5
+            },
+            {
+              "loadG": 122500,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B1-3",
+          "exerciseId": "leg-curl",
+          "sets": [
+            {
+              "loadG": 45000,
+              "reps": 10
+            },
+            {
+              "loadG": 45000,
+              "reps": 10
+            },
+            {
+              "loadG": 45000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B1-4",
+          "exerciseId": "standing-calf-raise",
+          "sets": [
+            {
+              "loadG": 62500,
+              "reps": 10
+            },
+            {
+              "loadG": 62500,
+              "reps": 10
+            },
+            {
+              "loadG": 62500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 17,
+      "workoutId": "H2",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "H2-1",
+          "exerciseId": "incline-dumbbell-bench-press",
+          "sets": [
+            {
+              "loadG": 27500,
+              "reps": 10
+            },
+            {
+              "loadG": 27500,
+              "reps": 10
+            },
+            {
+              "loadG": 27500,
+              "reps": 10
+            },
+            {
+              "loadG": 27500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H2-2",
+          "exerciseId": "seated-cable-row",
+          "sets": [
+            {
+              "loadG": 57500,
+              "reps": 10
+            },
+            {
+              "loadG": 57500,
+              "reps": 10
+            },
+            {
+              "loadG": 57500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H2-3",
+          "exerciseId": "machine-chest-press",
+          "sets": [
+            {
+              "loadG": 50000,
+              "reps": 12
+            },
+            {
+              "loadG": 50000,
+              "reps": 12
+            },
+            {
+              "loadG": 50000,
+              "reps": 12
+            },
+            {
+              "loadG": 50000,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H2-5",
+          "exerciseId": "dumbbell-lateral-raise",
+          "sets": [
+            {
+              "loadG": 7500,
+              "reps": 12
+            },
+            {
+              "loadG": 7500,
+              "reps": 12
+            },
+            {
+              "loadG": 7500,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 16,
+      "workoutId": "B2",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "B2-1",
+          "exerciseId": "leg-press",
+          "sets": [
+            {
+              "loadG": 142500,
+              "reps": 12
+            },
+            {
+              "loadG": 142500,
+              "reps": 12
+            },
+            {
+              "loadG": 142500,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B2-2",
+          "exerciseId": "romanian-deadlift",
+          "sets": [
+            {
+              "loadG": 92500,
+              "reps": 10
+            },
+            {
+              "loadG": 92500,
+              "reps": 10
+            },
+            {
+              "loadG": 92500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B2-3",
+          "exerciseId": "dumbbell-reverse-lunge",
+          "sets": [
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B2-4",
+          "exerciseId": "leg-curl",
+          "sets": [
+            {
+              "loadG": 40000,
+              "reps": 12
+            },
+            {
+              "loadG": 40000,
+              "reps": 12
+            },
+            {
+              "loadG": 40000,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 13,
+      "workoutId": "H1",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "H1-1",
+          "exerciseId": "bench-press",
+          "sets": [
+            {
+              "loadG": 85000,
+              "reps": 5
+            },
+            {
+              "loadG": 85000,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-2",
+          "exerciseId": "barbell-row",
+          "sets": [
+            {
+              "loadG": 72500,
+              "reps": 5
+            },
+            {
+              "loadG": 72500,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-3",
+          "exerciseId": "overhead-press",
+          "sets": [
+            {
+              "loadG": 47500,
+              "reps": 7
+            },
+            {
+              "loadG": 47500,
+              "reps": 7
+            },
+            {
+              "loadG": 47500,
+              "reps": 7,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-4",
+          "exerciseId": "lat-pulldown",
+          "sets": [
+            {
+              "loadG": 62500,
+              "reps": 7
+            },
+            {
+              "loadG": 62500,
+              "reps": 7
+            },
+            {
+              "loadG": 62500,
+              "reps": 7,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-5",
+          "exerciseId": "dumbbell-curl",
+          "sets": [
+            {
+              "loadG": 15000,
+              "reps": 10
+            },
+            {
+              "loadG": 15000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 12,
+      "workoutId": "B1",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "B1-1",
+          "exerciseId": "back-squat",
+          "sets": [
+            {
+              "loadG": 105000,
+              "reps": 5
+            },
+            {
+              "loadG": 105000,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B1-2",
+          "exerciseId": "deadlift",
+          "sets": [
+            {
+              "loadG": 125000,
+              "reps": 5
+            },
+            {
+              "loadG": 125000,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B1-3",
+          "exerciseId": "leg-curl",
+          "sets": [
+            {
+              "loadG": 47500,
+              "reps": 10
+            },
+            {
+              "loadG": 47500,
+              "reps": 10
+            },
+            {
+              "loadG": 47500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B1-4",
+          "exerciseId": "standing-calf-raise",
+          "sets": [
+            {
+              "loadG": 62500,
+              "reps": 10
+            },
+            {
+              "loadG": 62500,
+              "reps": 10
+            },
+            {
+              "loadG": 62500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 10,
+      "workoutId": "H2",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "H2-1",
+          "exerciseId": "incline-dumbbell-bench-press",
+          "sets": [
+            {
+              "loadG": 27500,
+              "reps": 10
+            },
+            {
+              "loadG": 27500,
+              "reps": 10
+            },
+            {
+              "loadG": 27500,
+              "reps": 10
+            },
+            {
+              "loadG": 27500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H2-2",
+          "exerciseId": "seated-cable-row",
+          "sets": [
+            {
+              "loadG": 57500,
+              "reps": 10
+            },
+            {
+              "loadG": 57500,
+              "reps": 10
+            },
+            {
+              "loadG": 57500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H2-3",
+          "exerciseId": "machine-chest-press",
+          "sets": [
+            {
+              "loadG": 52500,
+              "reps": 12
+            },
+            {
+              "loadG": 52500,
+              "reps": 12
+            },
+            {
+              "loadG": 52500,
+              "reps": 12
+            },
+            {
+              "loadG": 52500,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H2-5",
+          "exerciseId": "dumbbell-lateral-raise",
+          "sets": [
+            {
+              "loadG": 7500,
+              "reps": 12
+            },
+            {
+              "loadG": 7500,
+              "reps": 12
+            },
+            {
+              "loadG": 7500,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 9,
+      "workoutId": "B2",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "B2-1",
+          "exerciseId": "leg-press",
+          "sets": [
+            {
+              "loadG": 147500,
+              "reps": 12
+            },
+            {
+              "loadG": 147500,
+              "reps": 12
+            },
+            {
+              "loadG": 147500,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B2-2",
+          "exerciseId": "romanian-deadlift",
+          "sets": [
+            {
+              "loadG": 95000,
+              "reps": 10
+            },
+            {
+              "loadG": 95000,
+              "reps": 10
+            },
+            {
+              "loadG": 95000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B2-3",
+          "exerciseId": "dumbbell-reverse-lunge",
+          "sets": [
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B2-4",
+          "exerciseId": "leg-curl",
+          "sets": [
+            {
+              "loadG": 42500,
+              "reps": 12
+            },
+            {
+              "loadG": 42500,
+              "reps": 12
+            },
+            {
+              "loadG": 42500,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 6,
+      "workoutId": "H1",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "H1-1",
+          "exerciseId": "bench-press",
+          "sets": [
+            {
+              "loadG": 85000,
+              "reps": 5
+            },
+            {
+              "loadG": 85000,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-2",
+          "exerciseId": "barbell-row",
+          "sets": [
+            {
+              "loadG": 75000,
+              "reps": 5
+            },
+            {
+              "loadG": 75000,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-3",
+          "exerciseId": "overhead-press",
+          "sets": [
+            {
+              "loadG": 47500,
+              "reps": 7
+            },
+            {
+              "loadG": 47500,
+              "reps": 7
+            },
+            {
+              "loadG": 47500,
+              "reps": 7,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-4",
+          "exerciseId": "lat-pulldown",
+          "sets": [
+            {
+              "loadG": 65000,
+              "reps": 7
+            },
+            {
+              "loadG": 65000,
+              "reps": 7
+            },
+            {
+              "loadG": 65000,
+              "reps": 7,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H1-5",
+          "exerciseId": "dumbbell-curl",
+          "sets": [
+            {
+              "loadG": 15000,
+              "reps": 10
+            },
+            {
+              "loadG": 15000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 5,
+      "workoutId": "B1",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "B1-1",
+          "exerciseId": "back-squat",
+          "sets": [
+            {
+              "loadG": 107500,
+              "reps": 5
+            },
+            {
+              "loadG": 107500,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B1-2",
+          "exerciseId": "deadlift",
+          "sets": [
+            {
+              "loadG": 130000,
+              "reps": 5
+            },
+            {
+              "loadG": 130000,
+              "reps": 5,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B1-3",
+          "exerciseId": "leg-curl",
+          "sets": [
+            {
+              "loadG": 47500,
+              "reps": 10
+            },
+            {
+              "loadG": 47500,
+              "reps": 10
+            },
+            {
+              "loadG": 47500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B1-4",
+          "exerciseId": "standing-calf-raise",
+          "sets": [
+            {
+              "loadG": 65000,
+              "reps": 10
+            },
+            {
+              "loadG": 65000,
+              "reps": 10
+            },
+            {
+              "loadG": 65000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 3,
+      "workoutId": "H2",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "H2-1",
+          "exerciseId": "incline-dumbbell-bench-press",
+          "sets": [
+            {
+              "loadG": 27500,
+              "reps": 10
+            },
+            {
+              "loadG": 27500,
+              "reps": 10
+            },
+            {
+              "loadG": 27500,
+              "reps": 10
+            },
+            {
+              "loadG": 27500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H2-2",
+          "exerciseId": "seated-cable-row",
+          "sets": [
+            {
+              "loadG": 60000,
+              "reps": 10
+            },
+            {
+              "loadG": 60000,
+              "reps": 10
+            },
+            {
+              "loadG": 60000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H2-3",
+          "exerciseId": "machine-chest-press",
+          "sets": [
+            {
+              "loadG": 55000,
+              "reps": 12
+            },
+            {
+              "loadG": 55000,
+              "reps": 12
+            },
+            {
+              "loadG": 55000,
+              "reps": 12
+            },
+            {
+              "loadG": 55000,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "H2-5",
+          "exerciseId": "dumbbell-lateral-raise",
+          "sets": [
+            {
+              "loadG": 7500,
+              "reps": 12
+            },
+            {
+              "loadG": 7500,
+              "reps": 12
+            },
+            {
+              "loadG": 7500,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 2,
+      "workoutId": "B2",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "B2-1",
+          "exerciseId": "leg-press",
+          "sets": [
+            {
+              "loadG": 150000,
+              "reps": 12
+            },
+            {
+              "loadG": 150000,
+              "reps": 12
+            },
+            {
+              "loadG": 150000,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B2-2",
+          "exerciseId": "romanian-deadlift",
+          "sets": [
+            {
+              "loadG": 97500,
+              "reps": 10
+            },
+            {
+              "loadG": 97500,
+              "reps": 10
+            },
+            {
+              "loadG": 97500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B2-3",
+          "exerciseId": "dumbbell-reverse-lunge",
+          "sets": [
+            {
+              "loadG": 22500,
+              "reps": 10
+            },
+            {
+              "loadG": 22500,
+              "reps": 10
+            },
+            {
+              "loadG": 22500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "B2-4",
+          "exerciseId": "leg-curl",
+          "sets": [
+            {
+              "loadG": 42500,
+              "reps": 12
+            },
+            {
+              "loadG": 42500,
+              "reps": 12
+            },
+            {
+              "loadG": 42500,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "canaries": ["canari-inter", "1989-11-30", "Salle Canari Zeta"]
+}

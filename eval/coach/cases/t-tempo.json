@@ -1,0 +1,14 @@
+{
+  "id": "t-tempo",
+  "category": "technique",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-intermediaire",
+  "turns": ["Je dois contrôler la descente sur le soulevé de terre ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "safety": false
+  }
+}

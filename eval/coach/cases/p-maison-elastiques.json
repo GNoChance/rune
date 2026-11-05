@@ -1,0 +1,15 @@
+{
+  "id": "p-maison-elastiques",
+  "category": "proposal",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-maison",
+  "turns": ["Je veux changer l'exercice de tirage pour utiliser mes élastiques."],
+  "expect": {
+    "proposal": "valid",
+    "opsInclude": ["replace_exercise"],
+    "safety": false
+  }
+}

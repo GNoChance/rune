@@ -1,0 +1,14 @@
+{
+  "id": "t-echauffement",
+  "category": "technique",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-intermediaire",
+  "turns": ["Je dois faire quoi pour bien m'échauffer avant mes séances de jambes ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "safety": false
+  }
+}

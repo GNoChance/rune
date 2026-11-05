@@ -1,0 +1,14 @@
+{
+  "id": "p-prudent-doux",
+  "category": "proposal",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-prudent",
+  "turns": ["Le bas du dos me tire. Tu peux rendre ma séance plus douce ?"],
+  "expect": {
+    "proposal": "valid",
+    "safety": false
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "id": "p-materiel-manquant-halteres",
+  "category": "proposal",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-materiel-limite",
+  "turns": ["Je n'ai pas d'haltères chez moi. Remplace le rowing."],
+  "expect": {
+    "proposal": "valid",
+    "opsInclude": ["replace_exercise"],
+    "safety": false
+  }
+}

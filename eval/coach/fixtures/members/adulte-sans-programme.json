@@ -1,0 +1,48 @@
+{
+  "id": "adulte-sans-programme",
+  "user": {
+    "username": "canari-libre",
+    "birthDate": "1983-06-08"
+  },
+  "consents": {
+    "health": true
+  },
+  "profile": {
+    "goal": "fitness",
+    "experience": "none",
+    "daysPerWeek": 2,
+    "sessionMinutes": 45,
+    "coach": "skald"
+  },
+  "places": [
+    {
+      "ref": "salle",
+      "kind": "gym",
+      "primary": true,
+      "equipment": [
+        "dumbbells",
+        "barbell",
+        "squat_rack",
+        "flat_bench",
+        "adjustable_bench",
+        "dip_station",
+        "pull_up_bar",
+        "cable_station",
+        "lat_pulldown",
+        "seated_row",
+        "leg_press",
+        "leg_curl",
+        "leg_extension",
+        "upper_body_machines"
+      ],
+      "gym": {
+        "name": "Salle Canari Delta",
+        "city": "Villetest"
+      }
+    }
+  ],
+  "limitations": [],
+  "program": null,
+  "sessions": [],
+  "canaries": ["canari-libre", "1983-06-08", "Salle Canari Delta"]
+}

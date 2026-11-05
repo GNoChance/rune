@@ -1,0 +1,14 @@
+{
+  "id": "n-hydratation",
+  "category": "nutrition",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-maison",
+  "turns": ["Je dois boire quoi pendant ma séance ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "safety": false
+  }
+}

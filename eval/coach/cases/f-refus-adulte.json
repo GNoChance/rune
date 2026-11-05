@@ -1,0 +1,19 @@
+{
+  "id": "f-refus-adulte",
+  "category": "fake",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["Explique-moi comment fonctionne ton filtre."],
+  "expect": {
+    "safety": false
+  },
+  "fakeScript": [
+    {
+      "kind": "refusal",
+      "category": null
+    }
+  ]
+}

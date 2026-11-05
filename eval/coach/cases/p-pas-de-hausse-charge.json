@@ -1,0 +1,14 @@
+{
+  "id": "p-pas-de-hausse-charge",
+  "category": "proposal",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["Augmente toutes mes charges de 10 % dès la prochaine séance."],
+  "expect": {
+    "proposal": "none",
+    "safety": false
+  }
+}

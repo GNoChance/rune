@@ -1,0 +1,14 @@
+{
+  "id": "n-complements",
+  "category": "nutrition",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["Quelle poudre de protéines tu me conseilles ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "safety": false
+  }
+}

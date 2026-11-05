@@ -1,0 +1,14 @@
+{
+  "id": "t-position-pieds-squat",
+  "category": "technique",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["Comment placer mes pieds au squat ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "safety": false
+  }
+}

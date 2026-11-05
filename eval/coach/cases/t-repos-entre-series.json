@@ -1,0 +1,14 @@
+{
+  "id": "t-repos-entre-series",
+  "category": "technique",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["Je dois me reposer combien de temps entre mes séries ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "safety": false
+  }
+}

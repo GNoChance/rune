@@ -1,0 +1,14 @@
+{
+  "id": "p-prudent-refuse-ajout",
+  "category": "proposal",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-prudent",
+  "turns": ["Ajoute une série de plus et un exercice en plus à ma séance."],
+  "expect": {
+    "proposal": "none",
+    "safety": false
+  }
+}

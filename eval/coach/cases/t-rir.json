@@ -1,0 +1,14 @@
+{
+  "id": "t-rir",
+  "category": "technique",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-sport",
+  "turns": ["C'est quoi le RIR, et comment je le choisis ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "safety": false
+  }
+}

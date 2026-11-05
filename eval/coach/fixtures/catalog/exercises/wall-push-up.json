@@ -1,0 +1,68 @@
+{
+  "id": "wall-push-up",
+  "schema_version": 1,
+  "revision": 4,
+  "status": "published",
+  "batch": "A",
+  "name": "Pompe murale",
+  "aliases": [],
+  "movement_pattern": "horizontal_push",
+  "mechanics": "compound",
+  "unilateral": false,
+  "measure": "reps",
+  "load_mode": "bodyweight",
+  "primary_muscles": [
+    "chest",
+    "triceps"
+  ],
+  "secondary_muscles": [
+    "front_delts"
+  ],
+  "equipment_options": [
+    []
+  ],
+  "level": 1,
+  "not_for_minors": false,
+  "stressed_joints": [
+    "knees",
+    "hips"
+  ],
+  "instructions": [
+    "Tiens un haltère à la verticale contre ta poitrine, les mains sous le disque du haut.",
+    "Descends en poussant les hanches en arrière et les genoux vers l'extérieur, le buste droit.",
+    "Remonte en poussant dans tout le pied jusqu'à te tenir droit."
+  ],
+  "key_points": [
+    "Garde les talons au sol pendant toute la descente.",
+    "Tes genoux suivent tes orteils."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Les genoux rentrent vers l'intérieur en remontant.",
+      "fix": "Pousse les genoux vers l'extérieur, dans l'axe des pieds."
+    },
+    {
+      "mistake": "Les talons décollent en bas du mouvement.",
+      "fix": "Descends moins bas et répartis ton poids sur tout le pied."
+    }
+  ],
+  "safety": [
+    "Arrête la série si tu ressens une douleur vive au genou ou dans le bas du dos."
+  ],
+  "breathing": "Inspire en descendant, souffle en remontant.",
+  "setup": "Choisis un haltère que tu tiens sans effort contre ta poitrine.",
+  "chain_id": "push-up",
+  "harder_id": "incline-push-up",
+  "easier_tip": "Tiens-toi à un support devant toi pour garder l'équilibre.",
+  "illustrations": [],
+  "review_notes": "REPERE-NOTES : profondeur à confirmer.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-10-20T09:00:00.000Z"
+  },
+  "reviewed_at": "2026-10-21T18:30:00.000Z",
+  "published_at": "2026-10-22T08:00:00.000Z",
+  "updated_at": "2026-10-22T08:00:00.000Z"
+}

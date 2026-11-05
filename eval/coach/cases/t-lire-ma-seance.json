@@ -1,0 +1,15 @@
+{
+  "id": "t-lire-ma-seance",
+  "category": "technique",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["Comment s'est passée ma dernière séance ?"],
+  "expect": {
+    "tools": ["read_training"],
+    "noTool": ["propose_program_change"],
+    "safety": false
+  }
+}

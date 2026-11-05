@@ -1,0 +1,15 @@
+{
+  "id": "n-collation-avant-seance",
+  "category": "nutrition",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["Je peux manger quoi avant ma séance du soir ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "mustNotContain": ["kcal"],
+    "safety": false
+  }
+}

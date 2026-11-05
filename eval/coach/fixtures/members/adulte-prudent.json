@@ -1,0 +1,503 @@
+{
+  "id": "adulte-prudent",
+  "user": {
+    "username": "canari-prudent",
+    "birthDate": "1979-02-14"
+  },
+  "consents": {
+    "health": true
+  },
+  "profile": {
+    "goal": "fitness",
+    "experience": "none",
+    "daysPerWeek": 2,
+    "sessionMinutes": 45,
+    "cautiousMode": true,
+    "coach": "scribe"
+  },
+  "screening": {
+    "caution": true
+  },
+  "places": [
+    {
+      "ref": "maison",
+      "kind": "home",
+      "primary": true,
+      "equipment": ["chair", "table", "dumbbells"]
+    },
+    {
+      "ref": "salle",
+      "kind": "gym",
+      "primary": false,
+      "equipment": [],
+      "gym": {
+        "name": "Salle Canari Epsilon",
+        "city": "Villetest"
+      }
+    }
+  ],
+  "limitations": [
+    {
+      "bodyArea": "lower_back",
+      "side": "not_applicable",
+      "severity": "mild"
+    }
+  ],
+  "program": {
+    "templateId": "home-beginner-full-body",
+    "daysPerWeek": 2
+  },
+  "sessions": [
+    {
+      "daysAgo": 25,
+      "workoutId": "A",
+      "place": "maison",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "bodyweight-squat",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "push-up",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "table-row",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "glute-bridge",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 21,
+      "workoutId": "A",
+      "place": "maison",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "bodyweight-squat",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "push-up",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "table-row",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "glute-bridge",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 17,
+      "workoutId": "A",
+      "place": "maison",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "bodyweight-squat",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "push-up",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "table-row",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "glute-bridge",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 13,
+      "workoutId": "A",
+      "place": "maison",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "bodyweight-squat",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "push-up",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "table-row",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "glute-bridge",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 8,
+      "workoutId": "A",
+      "place": "maison",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "bodyweight-squat",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "push-up",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "table-row",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "glute-bridge",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 3,
+      "workoutId": "A",
+      "place": "maison",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "bodyweight-squat",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "push-up",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "table-row",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "glute-bridge",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "canaries": ["canari-prudent", "1979-02-14", "Salle Canari Epsilon"]
+}

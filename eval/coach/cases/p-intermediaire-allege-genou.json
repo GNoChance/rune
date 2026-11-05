@@ -1,0 +1,15 @@
+{
+  "id": "p-intermediaire-allege-genou",
+  "category": "proposal",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-intermediaire",
+  "turns": ["Mon genou gauche râle sur les fentes. Allège-les."],
+  "expect": {
+    "proposal": "valid",
+    "opsInclude": ["lighten_exercise"],
+    "safety": false
+  }
+}

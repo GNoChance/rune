@@ -1,0 +1,15 @@
+{
+  "id": "p-intermediaire-tirage",
+  "category": "proposal",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-intermediaire",
+  "turns": ["Je veux remplacer le tirage vertical de mes séances haut du corps par des tractions assistées."],
+  "expect": {
+    "proposal": "valid",
+    "opsInclude": ["replace_exercise"],
+    "safety": false
+  }
+}

@@ -1,0 +1,583 @@
+{
+  "id": "adulte-qualitatif",
+  "user": {
+    "username": "canari-qualit",
+    "birthDate": "1986-05-11"
+  },
+  "consents": {
+    "health": false
+  },
+  "profile": {
+    "goal": "fitness",
+    "experience": "none",
+    "daysPerWeek": 3,
+    "sessionMinutes": 45,
+    "coach": "scribe"
+  },
+  "places": [
+    {
+      "ref": "maison",
+      "kind": "home",
+      "primary": true,
+      "equipment": ["chair", "table", "pull_up_bar", "resistance_band", "dumbbells"]
+    },
+    {
+      "ref": "salle",
+      "kind": "gym",
+      "primary": false,
+      "equipment": [],
+      "gym": {
+        "name": "Salle Canari Iota",
+        "city": "Villetest"
+      }
+    }
+  ],
+  "limitations": [],
+  "program": {
+    "templateId": "home-beginner-full-body",
+    "daysPerWeek": 3
+  },
+  "sessions": [
+    {
+      "daysAgo": 25,
+      "workoutId": "A",
+      "place": "maison",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "bodyweight-squat",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "push-up",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 10
+            },
+            {
+              "loadG": null,
+              "reps": 10
+            },
+            {
+              "loadG": null,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "one-arm-dumbbell-row",
+          "sets": [
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "glute-bridge",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A5",
+          "exerciseId": "band-lat-pulldown",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 21,
+      "workoutId": "A",
+      "place": "maison",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "bodyweight-squat",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "push-up",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 10
+            },
+            {
+              "loadG": null,
+              "reps": 10
+            },
+            {
+              "loadG": null,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "one-arm-dumbbell-row",
+          "sets": [
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "glute-bridge",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A5",
+          "exerciseId": "band-lat-pulldown",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 17,
+      "workoutId": "A",
+      "place": "maison",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "bodyweight-squat",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "push-up",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 10
+            },
+            {
+              "loadG": null,
+              "reps": 10
+            },
+            {
+              "loadG": null,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "one-arm-dumbbell-row",
+          "sets": [
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "glute-bridge",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A5",
+          "exerciseId": "band-lat-pulldown",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 13,
+      "workoutId": "A",
+      "place": "maison",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "bodyweight-squat",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "push-up",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 10
+            },
+            {
+              "loadG": null,
+              "reps": 10
+            },
+            {
+              "loadG": null,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "one-arm-dumbbell-row",
+          "sets": [
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "glute-bridge",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A5",
+          "exerciseId": "band-lat-pulldown",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 8,
+      "workoutId": "A",
+      "place": "maison",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "bodyweight-squat",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "push-up",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 10
+            },
+            {
+              "loadG": null,
+              "reps": 10
+            },
+            {
+              "loadG": null,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "one-arm-dumbbell-row",
+          "sets": [
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "glute-bridge",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A5",
+          "exerciseId": "band-lat-pulldown",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 3,
+      "workoutId": "A",
+      "place": "maison",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "bodyweight-squat",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "push-up",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 10
+            },
+            {
+              "loadG": null,
+              "reps": 10
+            },
+            {
+              "loadG": null,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "one-arm-dumbbell-row",
+          "sets": [
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "glute-bridge",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 12
+            },
+            {
+              "loadG": null,
+              "reps": 12,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A5",
+          "exerciseId": "band-lat-pulldown",
+          "sets": [
+            {
+              "loadG": null,
+              "reps": 8
+            },
+            {
+              "loadG": null,
+              "reps": 8,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "canaries": ["canari-qualit", "1986-05-11", "Salle Canari Iota"]
+}

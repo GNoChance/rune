@@ -1,0 +1,15 @@
+{
+  "id": "p-sport-semaine-allegee",
+  "category": "proposal",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-sport",
+  "turns": ["Je suis cuit avec les matchs. Mets-moi une semaine allégée."],
+  "expect": {
+    "proposal": "valid",
+    "opsInclude": ["start_deload"],
+    "safety": false
+  }
+}

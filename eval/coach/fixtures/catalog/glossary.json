@@ -1,0 +1,94 @@
+[
+  {
+    "preferred": "développé couché",
+    "refused": ["bench", "bench press", "développé-couché", "DC"],
+    "english": "bench press",
+    "note": "Le nom anglais va dans aliases, jamais dans le texte de la fiche."
+  },
+  {
+    "preferred": "charnière de hanche",
+    "refused": ["hip hinge", "flexion de hanche", "bascule du buste"],
+    "english": "hip hinge",
+    "note": "Les hanches reculent et le buste s'incline, dos neutre, genoux peu fléchis (soulevé de terre roumain, swing)."
+  },
+  {
+    "preferred": "dos neutre",
+    "refused": ["dos droit", "dos plat", "dos bien droit", "colonne alignée"],
+    "english": "neutral spine",
+    "note": "Dos ni rond ni creusé, avec ses courbes naturelles. À la première mention dans une fiche, écris « dos neutre, ni rond ni creusé »."
+  },
+  {
+    "preferred": "répétitions en réserve",
+    "abbreviation": "RIR",
+    "refused": ["reps en réserve", "répétitions restantes", "RER"],
+    "english": "reps in reserve (RIR)",
+    "note": "Répétitions que tu pourrais encore faire avant de ne plus pouvoir bouger la charge. Écris RIR seulement après la forme en toutes lettres."
+  },
+  {
+    "preferred": "répétition",
+    "refused": ["rep", "reps", "rép"],
+    "english": "repetition, rep",
+    "note": "Un aller-retour complet du mouvement."
+  },
+  {
+    "preferred": "série",
+    "refused": ["set", "sets"],
+    "english": "set",
+    "note": "Suite de répétitions faites sans pause."
+  },
+  {
+    "preferred": "amplitude",
+    "refused": ["range of motion", "ROM", "débattement"],
+    "english": "range of motion",
+    "note": "Distance parcourue par le mouvement, de la position de départ à celle de fin."
+  },
+  {
+    "preferred": "omoplates",
+    "refused": ["scapulas", "scapula"],
+    "english": "shoulder blades",
+    "note": "Dis ce que font les omoplates : « serre les omoplates », « rapproche les omoplates »."
+  },
+  {
+    "preferred": "gainer le tronc",
+    "refused": ["contracter le core", "core", "verrouiller la sangle abdominale"],
+    "english": "brace the core",
+    "note": "Serrer le ventre et le bas du dos comme pour encaisser une petite poussée, sans bloquer la respiration."
+  },
+  {
+    "preferred": "soulevé de terre",
+    "refused": ["deadlift", "SDT"],
+    "english": "deadlift"
+  },
+  {
+    "preferred": "soulevé de terre roumain",
+    "refused": ["RDL", "romanian deadlift", "SDT roumain"],
+    "english": "Romanian deadlift"
+  },
+  {
+    "preferred": "pompe",
+    "refused": ["push-up", "pushup"],
+    "english": "push-up"
+  },
+  {
+    "preferred": "traction",
+    "refused": ["pull-up", "pullup"],
+    "english": "pull-up"
+  },
+  {
+    "preferred": "fente",
+    "refused": ["lunge"],
+    "english": "lunge"
+  },
+  {
+    "preferred": "haltère",
+    "refused": ["dumbbell", "une haltère"],
+    "english": "dumbbell",
+    "note": "Masculin : un haltère, tiens l'haltère."
+  },
+  {
+    "preferred": "poulie",
+    "refused": ["câble", "cable"],
+    "english": "cable",
+    "note": "La machine s'appelle poulie ; le câble n'est qu'une de ses pièces."
+  }
+]

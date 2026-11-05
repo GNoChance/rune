@@ -1,0 +1,15 @@
+{
+  "id": "p-maison-allege-squat",
+  "category": "proposal",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-maison",
+  "turns": ["Les squats me fatiguent trop. Tu peux alléger cet exercice dans mon programme ?"],
+  "expect": {
+    "proposal": "valid",
+    "opsInclude": ["lighten_exercise"],
+    "safety": false
+  }
+}

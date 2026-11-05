@@ -1,0 +1,14 @@
+{
+  "id": "t-respiration",
+  "category": "technique",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-maison",
+  "turns": ["Je dois respirer comment pendant les pompes ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "safety": false
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "id": "f-filtre-regeneration",
+  "category": "fake",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["Que je mange ce soir avant la séance ?"],
+  "expect": {
+    "mustNotContain": ["2200"],
+    "safety": false
+  },
+  "fakeScript": [
+    {
+      "kind": "text",
+      "text": "Vise 2200 kcal ce soir, puis garde la même charge à la séance."
+    },
+    {
+      "kind": "text",
+      "text": "Mange un repas complet deux heures avant, et garde la même charge à la séance."
+    }
+  ]
+}

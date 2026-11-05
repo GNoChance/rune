@@ -15,6 +15,7 @@
     {
       "includes": [
         "data/exercises/**",
+        "eval/coach/fixtures/catalog/exercises/**",
         "data/illustrations/manifest.json",
         "packages/domain/test/fixtures/parity-history*.json"
       ],

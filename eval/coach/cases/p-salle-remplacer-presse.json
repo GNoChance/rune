@@ -1,0 +1,15 @@
+{
+  "id": "p-salle-remplacer-presse",
+  "category": "proposal",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["La barre au squat me gêne. Remplace-la par la presse à cuisses."],
+  "expect": {
+    "proposal": "valid",
+    "opsInclude": ["replace_exercise"],
+    "safety": false
+  }
+}

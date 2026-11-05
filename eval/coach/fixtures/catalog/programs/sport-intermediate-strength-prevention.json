@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "id": "sport-intermediate-strength-prevention",
+  "version": 1,
+  "name": "Complément sport · Intermédiaire · Force et prévention",
+  "description": "Deux séances de 30 à 40 minutes par semaine, en complément de ton sport : jambes en séries lourdes, réceptions de sauts, prévention (ischio-jambiers, adducteurs, mollets, épaules) et gainage. La plupart des exercices se font aussi sans matériel ; les autres sont remplacés ou sautés sans lui.",
+  "context": "sport",
+  "level": "intermediate",
+  "daysPerWeek": { "min": 2, "max": 2, "default": 2 },
+  "estimatedMinutes": 40,
+  "block": { "mode": "reactive" },
+  "workouts": [
+    {
+      "id": "A",
+      "name": "Séance A",
+      "slots": [
+        {
+          "id": "A1",
+          "movementPattern": "plyometrics",
+          "role": "secondary",
+          "chain": "jump-landing",
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 5, "max": 8 }, "targetRir": 3, "restS": 90 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "A2",
+          "movementPattern": "squat",
+          "role": "main",
+          "exercises": ["back-squat", "leg-press", "goblet-squat"],
+          "sets": [
+            { "kind": "warmup", "count": 2, "reps": { "min": 5, "max": 5 }, "pctWorkLoad": 50 },
+            { "kind": "work", "count": 3, "reps": { "min": 4, "max": 6 }, "targetRir": 2, "restS": 150 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "A3",
+          "movementPattern": "knee_flexion",
+          "role": "secondary",
+          "chain": "nordic-curl",
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 5, "max": 8 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "A4",
+          "movementPattern": "hip_adduction_abduction",
+          "role": "accessory",
+          "chain": "copenhagen-plank",
+          "sets": [
+            { "kind": "work", "count": 2, "durationS": { "min": 20, "max": 40 }, "targetRir": 2, "restS": 60 }
+          ],
+          "progression": { "type": "duration", "stepS": 5 }
+        },
+        {
+          "id": "A5",
+          "movementPattern": "horizontal_push",
+          "role": "secondary",
+          "exercises": ["dumbbell-bench-press", "bench-press", "push-up"],
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 6, "max": 10 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "A6",
+          "movementPattern": "horizontal_pull",
+          "role": "secondary",
+          "exercises": ["seated-cable-row", "one-arm-dumbbell-row", "band-row", "table-row"],
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 6, "max": 10 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "A7",
+          "movementPattern": "core_anti_rotation",
+          "role": "accessory",
+          "exercises": ["side-plank"],
+          "sets": [
+            { "kind": "work", "count": 2, "durationS": { "min": 20, "max": 45 }, "targetRir": 2, "restS": 60 }
+          ],
+          "progression": { "type": "duration", "stepS": 5 }
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "name": "Séance B",
+      "slots": [
+        {
+          "id": "B1",
+          "movementPattern": "hip_hinge",
+          "role": "main",
+          "exercises": [
+            "deadlift",
+            "romanian-deadlift",
+            "dumbbell-romanian-deadlift",
+            "single-leg-romanian-deadlift"
+          ],
+          "sets": [
+            { "kind": "warmup", "count": 2, "reps": { "min": 5, "max": 5 }, "pctWorkLoad": 50 },
+            { "kind": "work", "count": 3, "reps": { "min": 4, "max": 6 }, "targetRir": 2, "restS": 150 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "B2",
+          "movementPattern": "lunge",
+          "role": "secondary",
+          "exercises": ["dumbbell-step-up", "step-up"],
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 6, "max": 10 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "B3",
+          "movementPattern": "calf_raise",
+          "role": "accessory",
+          "chain": "standing-calf-raise",
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 8, "max": 15 }, "targetRir": 2, "restS": 60 }
+          ],
+          "progression": { "type": "chain" }
+        },
+        {
+          "id": "B4",
+          "movementPattern": "horizontal_push",
+          "role": "secondary",
+          "exercises": ["dumbbell-bench-press", "push-up"],
+          "sets": [
+            { "kind": "work", "count": 3, "reps": { "min": 8, "max": 12 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "B5",
+          "movementPattern": "horizontal_pull",
+          "role": "secondary",
+          "exercises": ["one-arm-dumbbell-row", "band-row", "table-row"],
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 8, "max": 12 }, "targetRir": 2, "restS": 90 }
+          ],
+          "progression": { "type": "double" }
+        },
+        {
+          "id": "B6",
+          "movementPattern": "shoulder_isolation",
+          "role": "accessory",
+          "exercises": ["band-external-rotation"],
+          "sets": [
+            { "kind": "work", "count": 2, "reps": { "min": 12, "max": 15 }, "targetRir": 2, "restS": 60 }
+          ],
+          "progression": { "type": "double" }
+        }
+      ]
+    }
+  ]
+}

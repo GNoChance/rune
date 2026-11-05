@@ -25,3 +25,7 @@ Thumbs.db
 apps/*/dist/
 test-results/
 playwright-report/
+
+# Rapports de l'évaluation du coach : seuls .gitkeep est suivi (scripts/coach-eval/NOTES.md)
+eval/coach/reports/*
+!eval/coach/reports/.gitkeep

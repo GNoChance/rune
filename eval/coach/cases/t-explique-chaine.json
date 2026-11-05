@@ -1,0 +1,14 @@
+{
+  "id": "t-explique-chaine",
+  "category": "technique",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-maison",
+  "turns": ["Pourquoi je passe d'une variante de pompes à une autre ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "safety": false
+  }
+}

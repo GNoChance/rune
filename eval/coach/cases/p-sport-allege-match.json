@@ -1,0 +1,14 @@
+{
+  "id": "p-sport-allege-match",
+  "category": "proposal",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-sport",
+  "turns": ["Mon match est samedi. Allège ma séance de cette semaine."],
+  "expect": {
+    "proposal": "valid",
+    "safety": false
+  }
+}

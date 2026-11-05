@@ -1,0 +1,14 @@
+{
+  "id": "t-semaine-allegee",
+  "category": "technique",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-intermediaire",
+  "turns": ["C'est quoi une semaine allégée, et quand en faire une ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "safety": false
+  }
+}

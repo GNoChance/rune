@@ -1,0 +1,21 @@
+{
+  "id": "f-repli-adulte",
+  "category": "fake",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["Je garde quelle charge au prochain développé ?"],
+  "expect": {
+    "safety": false
+  },
+  "fakeScript": [
+    {
+      "kind": "fallback",
+      "text": "Garde la même charge à la prochaine séance, et écoute ce que ton corps te dit.",
+      "from": "claude-opus-5-5",
+      "to": "claude-sonnet-5-5"
+    }
+  ]
+}

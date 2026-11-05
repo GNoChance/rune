@@ -19,7 +19,8 @@
     "data:pull": "node --import tsx scripts/data/pull.ts",
     "exercises:draft": "node --import tsx scripts/exercises/draft.ts",
     "illustrations:import": "node --import tsx scripts/exercises/import-illustrations.ts",
-    "svg:check": "node --import tsx scripts/svg/check.ts"
+    "svg:check": "node --import tsx scripts/svg/check.ts",
+    "coach:eval": "node --import tsx scripts/coach-eval/run.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2",
@@ -29,6 +30,7 @@
     "bats": "^1.13.0",
     "tsx": "4.23.15",
     "typescript": "^7",
-    "vitest": "^5"
+    "vitest": "^5",
+    "zod": "^4.6.5"
   }
 }

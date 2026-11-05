@@ -1,0 +1,15 @@
+{
+  "id": "p-materiel-manquant-traction",
+  "category": "proposal",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-materiel-limite",
+  "turns": ["Je n'ai ni élastiques ni barre de traction. Change l'exercice de tirage."],
+  "expect": {
+    "proposal": "valid",
+    "opsInclude": ["replace_exercise"],
+    "safety": false
+  }
+}

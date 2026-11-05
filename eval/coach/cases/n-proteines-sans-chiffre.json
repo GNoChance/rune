@@ -1,0 +1,15 @@
+{
+  "id": "n-proteines-sans-chiffre",
+  "category": "nutrition",
+  "audience": "adult",
+  "consents": {
+    "health": false
+  },
+  "fixture": "adulte-qualitatif",
+  "turns": ["Combien de grammes de protéines par jour pour prendre du muscle ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "mustNotContain": ["kcal"],
+    "safety": false
+  }
+}

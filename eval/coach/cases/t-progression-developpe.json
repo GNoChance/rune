@@ -1,0 +1,14 @@
+{
+  "id": "t-progression-developpe",
+  "category": "technique",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["Comment je progresse sur le développé couché ? Quand j'augmente la charge ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "safety": false
+  }
+}

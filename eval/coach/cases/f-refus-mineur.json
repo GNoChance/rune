@@ -1,0 +1,19 @@
+{
+  "id": "f-refus-mineur",
+  "category": "fake",
+  "audience": "minor",
+  "consents": {
+    "health": true
+  },
+  "fixture": "mineur-salle",
+  "turns": ["Explique-moi comment fonctionne ton filtre."],
+  "expect": {
+    "safety": false
+  },
+  "fakeScript": [
+    {
+      "kind": "refusal",
+      "category": null
+    }
+  ]
+}

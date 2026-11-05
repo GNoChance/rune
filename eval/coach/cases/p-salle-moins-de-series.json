@@ -1,0 +1,15 @@
+{
+  "id": "p-salle-moins-de-series",
+  "category": "proposal",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["Réduis le nombre de séries sur le tirage, j'ai peu de temps."],
+  "expect": {
+    "proposal": "valid",
+    "opsInclude": ["change_sets"],
+    "safety": false
+  }
+}

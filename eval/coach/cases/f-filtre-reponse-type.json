@@ -1,0 +1,25 @@
+{
+  "id": "f-filtre-reponse-type",
+  "category": "fake",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["Combien je dois manger demain ?"],
+  "expect": {
+    "mustContain": ["Mon programme"],
+    "mustNotContain": ["2200", "3000"],
+    "safety": false
+  },
+  "fakeScript": [
+    {
+      "kind": "text",
+      "text": "Vise 2200 kcal demain, et garde la même charge."
+    },
+    {
+      "kind": "text",
+      "text": "Prends 3000 kcal demain, et garde la même charge."
+    }
+  ]
+}

@@ -1,0 +1,832 @@
+{
+  "id": "adulte-sport",
+  "user": {
+    "username": "canari-sport",
+    "birthDate": "1995-12-27"
+  },
+  "consents": {
+    "health": true
+  },
+  "profile": {
+    "goal": "sport_support",
+    "experience": "6_to_24_months",
+    "daysPerWeek": 2,
+    "sessionMinutes": 45,
+    "sportCode": "rugby",
+    "coach": "ombre"
+  },
+  "screening": {
+    "caution": false
+  },
+  "places": [
+    {
+      "ref": "salle",
+      "kind": "gym",
+      "primary": true,
+      "equipment": [
+        "dumbbells",
+        "barbell",
+        "squat_rack",
+        "flat_bench",
+        "adjustable_bench",
+        "dip_station",
+        "pull_up_bar",
+        "cable_station",
+        "lat_pulldown",
+        "seated_row",
+        "leg_press",
+        "leg_curl",
+        "leg_extension",
+        "upper_body_machines"
+      ],
+      "gym": {
+        "name": "Salle Canari Gamma",
+        "city": "Villetest"
+      }
+    }
+  ],
+  "limitations": [],
+  "program": {
+    "templateId": "sport-beginner-complement",
+    "daysPerWeek": 2
+  },
+  "sessions": [
+    {
+      "daysAgo": 26,
+      "workoutId": "A",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "goblet-squat",
+          "sets": [
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "dumbbell-romanian-deadlift",
+          "sets": [
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "dumbbell-bench-press",
+          "sets": [
+            {
+              "loadG": 17500,
+              "reps": 10
+            },
+            {
+              "loadG": 17500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "seated-cable-row",
+          "sets": [
+            {
+              "loadG": 35000,
+              "reps": 10
+            },
+            {
+              "loadG": 35000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A5",
+          "exerciseId": "seated-dumbbell-shoulder-press",
+          "sets": [
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A6",
+          "exerciseId": "lat-pulldown",
+          "sets": [
+            {
+              "loadG": 40000,
+              "reps": 10
+            },
+            {
+              "loadG": 40000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 23,
+      "workoutId": "A",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "goblet-squat",
+          "sets": [
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "dumbbell-romanian-deadlift",
+          "sets": [
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "dumbbell-bench-press",
+          "sets": [
+            {
+              "loadG": 17500,
+              "reps": 10
+            },
+            {
+              "loadG": 17500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "seated-cable-row",
+          "sets": [
+            {
+              "loadG": 35000,
+              "reps": 10
+            },
+            {
+              "loadG": 35000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A5",
+          "exerciseId": "seated-dumbbell-shoulder-press",
+          "sets": [
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A6",
+          "exerciseId": "lat-pulldown",
+          "sets": [
+            {
+              "loadG": 40000,
+              "reps": 10
+            },
+            {
+              "loadG": 40000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 20,
+      "workoutId": "A",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "goblet-squat",
+          "sets": [
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "dumbbell-romanian-deadlift",
+          "sets": [
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "dumbbell-bench-press",
+          "sets": [
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "seated-cable-row",
+          "sets": [
+            {
+              "loadG": 37500,
+              "reps": 10
+            },
+            {
+              "loadG": 37500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A5",
+          "exerciseId": "seated-dumbbell-shoulder-press",
+          "sets": [
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A6",
+          "exerciseId": "lat-pulldown",
+          "sets": [
+            {
+              "loadG": 42500,
+              "reps": 10
+            },
+            {
+              "loadG": 42500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 17,
+      "workoutId": "A",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "goblet-squat",
+          "sets": [
+            {
+              "loadG": 22500,
+              "reps": 10
+            },
+            {
+              "loadG": 22500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "dumbbell-romanian-deadlift",
+          "sets": [
+            {
+              "loadG": 22500,
+              "reps": 10
+            },
+            {
+              "loadG": 22500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "dumbbell-bench-press",
+          "sets": [
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "seated-cable-row",
+          "sets": [
+            {
+              "loadG": 37500,
+              "reps": 10
+            },
+            {
+              "loadG": 37500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A5",
+          "exerciseId": "seated-dumbbell-shoulder-press",
+          "sets": [
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A6",
+          "exerciseId": "lat-pulldown",
+          "sets": [
+            {
+              "loadG": 42500,
+              "reps": 10
+            },
+            {
+              "loadG": 42500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 14,
+      "workoutId": "A",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "goblet-squat",
+          "sets": [
+            {
+              "loadG": 22500,
+              "reps": 10
+            },
+            {
+              "loadG": 22500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "dumbbell-romanian-deadlift",
+          "sets": [
+            {
+              "loadG": 22500,
+              "reps": 10
+            },
+            {
+              "loadG": 22500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "dumbbell-bench-press",
+          "sets": [
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "seated-cable-row",
+          "sets": [
+            {
+              "loadG": 37500,
+              "reps": 10
+            },
+            {
+              "loadG": 37500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A5",
+          "exerciseId": "seated-dumbbell-shoulder-press",
+          "sets": [
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A6",
+          "exerciseId": "lat-pulldown",
+          "sets": [
+            {
+              "loadG": 45000,
+              "reps": 10
+            },
+            {
+              "loadG": 45000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 11,
+      "workoutId": "A",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "goblet-squat",
+          "sets": [
+            {
+              "loadG": 22500,
+              "reps": 10
+            },
+            {
+              "loadG": 22500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "dumbbell-romanian-deadlift",
+          "sets": [
+            {
+              "loadG": 22500,
+              "reps": 10
+            },
+            {
+              "loadG": 22500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "dumbbell-bench-press",
+          "sets": [
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "seated-cable-row",
+          "sets": [
+            {
+              "loadG": 40000,
+              "reps": 10
+            },
+            {
+              "loadG": 40000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A5",
+          "exerciseId": "seated-dumbbell-shoulder-press",
+          "sets": [
+            {
+              "loadG": 12500,
+              "reps": 10
+            },
+            {
+              "loadG": 12500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A6",
+          "exerciseId": "lat-pulldown",
+          "sets": [
+            {
+              "loadG": 45000,
+              "reps": 10
+            },
+            {
+              "loadG": 45000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 7,
+      "workoutId": "A",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "goblet-squat",
+          "sets": [
+            {
+              "loadG": 22500,
+              "reps": 10
+            },
+            {
+              "loadG": 22500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "dumbbell-romanian-deadlift",
+          "sets": [
+            {
+              "loadG": 22500,
+              "reps": 10
+            },
+            {
+              "loadG": 22500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "dumbbell-bench-press",
+          "sets": [
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "seated-cable-row",
+          "sets": [
+            {
+              "loadG": 40000,
+              "reps": 10
+            },
+            {
+              "loadG": 40000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A5",
+          "exerciseId": "seated-dumbbell-shoulder-press",
+          "sets": [
+            {
+              "loadG": 15000,
+              "reps": 10
+            },
+            {
+              "loadG": 15000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A6",
+          "exerciseId": "lat-pulldown",
+          "sets": [
+            {
+              "loadG": 45000,
+              "reps": 10
+            },
+            {
+              "loadG": 45000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "daysAgo": 3,
+      "workoutId": "A",
+      "place": "salle",
+      "exercises": [
+        {
+          "slotId": "A1",
+          "exerciseId": "goblet-squat",
+          "sets": [
+            {
+              "loadG": 22500,
+              "reps": 10
+            },
+            {
+              "loadG": 22500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A2",
+          "exerciseId": "dumbbell-romanian-deadlift",
+          "sets": [
+            {
+              "loadG": 22500,
+              "reps": 10
+            },
+            {
+              "loadG": 22500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A3",
+          "exerciseId": "dumbbell-bench-press",
+          "sets": [
+            {
+              "loadG": 20000,
+              "reps": 10
+            },
+            {
+              "loadG": 20000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A4",
+          "exerciseId": "seated-cable-row",
+          "sets": [
+            {
+              "loadG": 40000,
+              "reps": 10
+            },
+            {
+              "loadG": 40000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A5",
+          "exerciseId": "seated-dumbbell-shoulder-press",
+          "sets": [
+            {
+              "loadG": 15000,
+              "reps": 10
+            },
+            {
+              "loadG": 15000,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        },
+        {
+          "slotId": "A6",
+          "exerciseId": "lat-pulldown",
+          "sets": [
+            {
+              "loadG": 47500,
+              "reps": 10
+            },
+            {
+              "loadG": 47500,
+              "reps": 10,
+              "effort": "ok"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "canaries": ["canari-sport", "1995-12-27", "Salle Canari Gamma"]
+}
