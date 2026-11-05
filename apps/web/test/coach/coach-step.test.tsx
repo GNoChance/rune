@@ -42,7 +42,7 @@ const TEXTS: Record<
     temper: 'Froid et laconique. Exigeant, jamais humiliant.',
     sample: 'Quête acceptée. Rang E. Montre-moi ta discipline.',
     intro:
-      "Je suis L'Ombre. Je fixe tes quêtes, tu les accomplis. Le dialogue viendra plus tard : d'ici là, avance.",
+      "Je suis L'Ombre. Je fixe tes quêtes, tu les accomplis. Active le coach IA dans Mon coach : je répondrai à tes questions, sans détour.",
     nutri: "Bois régulièrement. Après l'effort, un vrai repas. La récupération fait partie de la quête.",
     ready: 'Éveil validé. Rang E. Le reste se gagne en séance.',
     daily: [
@@ -56,7 +56,7 @@ const TEXTS: Record<
     temper: 'Mentor chaleureux. Il raconte, il explique.',
     sample: 'Chaque saga commence par un premier pas, {pseudo}. Je serai là pour la raconter.',
     intro:
-      "Je suis le Skald. Je raconterai ta saga, séance après séance, et je t'expliquerai chaque étape. Nos vraies conversations viendront plus tard : pour l'instant, je pose les premiers vers.",
+      "Je suis le Skald. Je raconterai ta saga, séance après séance, et je t'expliquerai chaque étape. Active le coach IA dans Mon coach : nous pourrons parler de ton programme.",
     nutri: "À table aussi, la saga s'écrit, {pseudo}. Un vrai repas après ta séance t'aidera à récupérer.",
     ready: 'Le prologue est écrit, {pseudo}. La saga commence.',
     daily: [
@@ -70,7 +70,7 @@ const TEXTS: Record<
     temper: 'Calme et précis. Il aime les plans clairs et les bilans.',
     sample: "Trois séances par semaine : c'est un rythme tenable. Je note tout.",
     intro:
-      "Je suis le Scribe. Je prépare un plan clair et je note chaque série pour faire le point avec toi. Nos échanges viendront plus tard : pour l'instant, je consigne.",
+      'Je suis le Scribe. Je prépare un plan clair et je note chaque série pour faire le point avec toi. Active le coach IA dans Mon coach : je répondrai à tes questions.',
     nutri: 'Note du jour : bois régulièrement, et prévois un vrai repas après ta séance.',
     ready: 'Profil complet, lieu noté. Le plan arrivera ici.',
     daily: [

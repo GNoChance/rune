@@ -60,8 +60,8 @@ const inLazyFeature = (path: string) => /^features\/(workout|history|program)\//
 const PROGRAM_SCREENS = /(^|\/)features\/program\/|^\.\.?\/program\//;
 const inProgram = (path: string) => path.startsWith('features/program/');
 
-/** Conversation avec le coach (`features/coach/CoachPage`) : chargée à la demande (route /coach). Les tâches 26 à 29 y ajoutent leurs écrans. */
-const COACH_SCREENS = /(^|\/)coach\/CoachPage$/;
+/** Écrans du coach chargés à la demande : conversation, accord, conversations précédentes (routes /coach…). Les tâches 28 et 29 y ajoutent les leurs. */
+const COACH_SCREENS = /(^|\/)coach\/(CoachPage|ConsentPage|ThreadsPage|ThreadPage)$/;
 
 /** Cartes d'aide et feuille de signalement : dans le chunk de /coach, jamais dans le bundle initial. */
 const COACH_PARTS = /(^|\/)(HelpCard|ReportSheet)$/;
@@ -71,6 +71,9 @@ const COACH_PARTS = /(^|\/)(HelpCard|ReportSheet)$/;
  * (`ProposalCard`) : le code du programme reste dans le chunk de /coach, jamais dans le bundle initial.
  */
 const COACH_PAGE = 'features/coach/CoachPage.tsx';
+/** Un fil lu en lecture seule garde les cartes d'aide et de proposition à leur place : même chunk que la conversation. */
+const COACH_THREAD = 'features/coach/ThreadPage.tsx';
+const inCoachChunk = (path: string) => path === COACH_PAGE || path === COACH_THREAD;
 
 describe('architecture', () => {
   const files = [...walk(SRC)].filter(code);
@@ -138,11 +141,11 @@ describe('architecture', () => {
   it('séance, historique et programme (features/workout, history, program) : seulement par import() depuis App.tsx, jamais dans le bundle initial', () => {
     const dynamic = files.filter(
       (f) =>
-        imports(f).some((spec) => LAZY_FEATURE.test(spec)) && !inLazyFeature(rel(f)) && rel(f) !== COACH_PAGE,
+        imports(f).some((spec) => LAZY_FEATURE.test(spec)) && !inLazyFeature(rel(f)) && !inCoachChunk(rel(f)),
     );
     expect(dynamic.map(rel)).toEqual(['App.tsx']);
     for (const file of files) {
-      if (inLazyFeature(rel(file)) || rel(file) === COACH_PAGE) continue;
+      if (inLazyFeature(rel(file)) || inCoachChunk(rel(file))) continue;
       for (const spec of staticSpecifiers(readFileSync(file, 'utf8'))) {
         expect(spec, rel(file)).not.toMatch(LAZY_FEATURE);
       }
@@ -150,7 +153,7 @@ describe('architecture', () => {
   });
 
   it('écrans du programme (features/program) : seulement par import() depuis App.tsx, jamais dans le bundle initial', () => {
-    const outside = files.filter((f) => !inProgram(rel(f)) && rel(f) !== COACH_PAGE);
+    const outside = files.filter((f) => !inProgram(rel(f)) && !inCoachChunk(rel(f)));
     const dynamic = outside.filter((f) => imports(f).some((spec) => PROGRAM_SCREENS.test(spec)));
     expect(dynamic.map(rel)).toEqual(['App.tsx']);
     for (const file of outside) {
@@ -160,7 +163,7 @@ describe('architecture', () => {
     }
   });
 
-  it('conversation du coach (features/coach/CoachPage) : seulement par import() depuis App.tsx, jamais dans le bundle initial', () => {
+  it('écrans du coach (CoachPage, ConsentPage, ThreadsPage, ThreadPage) : seulement par import() depuis App.tsx, jamais dans le bundle initial', () => {
     const dynamic = files.filter((f) => imports(f).some((spec) => COACH_SCREENS.test(spec)));
     expect(dynamic.map(rel)).toEqual(['App.tsx']);
     for (const file of files) {
@@ -170,10 +173,10 @@ describe('architecture', () => {
     }
   });
 
-  it("cartes d'aide et signalement (features/coach/HelpCard, ReportSheet) : seulement importées par CoachPage, jamais dans le bundle initial", () => {
+  it("cartes d'aide et signalement (features/coach/HelpCard, ReportSheet) : seulement importées par CoachPage et ThreadPage, jamais dans le bundle initial", () => {
     const importers = files.filter((f) => imports(f).some((spec) => COACH_PARTS.test(spec)));
-    expect(importers.map(rel)).toEqual([COACH_PAGE]);
-    // CoachPage est lui-même chargé par import() depuis App.tsx (test ci-dessus).
+    expect(importers.map(rel)).toEqual([COACH_PAGE, COACH_THREAD]);
+    // Les deux sont eux-mêmes chargés par import() depuis App.tsx (test ci-dessus).
     expect(imports(resolve(SRC, COACH_PAGE)).some((spec) => COACH_PARTS.test(spec))).toBe(true);
     for (const spec of ['./HelpCard', './ReportSheet', '../coach/HelpCard'])
       expect(spec).toMatch(COACH_PARTS);

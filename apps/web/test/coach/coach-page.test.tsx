@@ -39,6 +39,8 @@ const fakeStore: CoachStore = {
   getState: () => fake.state,
   subscribe: () => () => {},
   load: spies.load,
+  grant: async () => {},
+  withdraw: async () => {},
   send: spies.send,
   retry: spies.retry,
   pollInProgress: spies.pollInProgress,
@@ -289,6 +291,20 @@ describe('CoachPage : états du §16.2', () => {
     expect(screen.getByText(STATE_TEXTS.consentMissing)).toBeTruthy();
     expect(screen.getByText('SYSTÈME', { exact: false })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Activer le coach' })).toBeTruthy();
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it("accord retiré pendant l'échange (consent_withdrawn) : le panneau « Activer le coach », pas de bannière sans issue", async () => {
+    init({
+      status: status({ consent: { ...STATUS.consent, active: false, textVersion: null } }),
+      pending: PENDING,
+      draft: PENDING.text,
+      phase: 'error',
+      error: 'consent_withdrawn',
+    });
+    await renderPage();
+    expect(screen.getByRole('button', { name: 'Activer le coach' })).toBeTruthy();
+    expect(screen.getAllByText(STATE_TEXTS.consentMissing)).toHaveLength(1);
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 

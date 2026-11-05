@@ -396,7 +396,7 @@ describe('HealthSection avec accord (E7, P-DRT-2)', () => {
 
 describe('HealthSection › accord, mode prudent et retrait (spec refonte §10.4, maquette C04)', () => {
   const WITHDRAW_LIST =
-    "Seront effacés : ton indicateur de prudence (questionnaire), tes limitations et zones sensibles, et toute donnée de santé enregistrée par l'appli (douleurs, pesées, suivi nutritionnel). Le mode prudent est conservé.";
+    "Seront effacés : ton indicateur de prudence (questionnaire), tes limitations et zones sensibles, et toute donnée de santé enregistrée par l'appli (douleurs, pesées, suivi nutritionnel). Le mode prudent est conservé. Ta conversation du jour avec le coach sera close (tu pourras en ouvrir une demain) et le coach ne recevra plus tes données de santé.";
 
   it('accord donné : sa date et « Actif » en tête de page', async () => {
     await renderHealth();

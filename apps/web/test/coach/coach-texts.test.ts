@@ -10,18 +10,21 @@ import { describe, expect, it } from 'vitest';
 import {
   AI_BANNER,
   budgetText,
+  CONSENT_TEXTS,
   callText,
   counterText,
   DEV_BANNER,
   ERROR_TEXTS,
   HELP_NOTES,
   HELP_OPEN,
+  MY_COACH_TEXTS,
   PARENT_LINE,
   PROGRAM_PREFILL,
   REPORT_TEXTS,
   remainingText,
   STATE_TEXTS,
   SUGGESTIONS,
+  THREAD_TEXTS,
   TOOL_LABELS,
   WELCOME,
 } from '../../src/features/coach/coach-texts';
@@ -86,6 +89,21 @@ const TEXTS: [string, string, string[], string[]?][] = [
     t,
     [],
   ]),
+  // Écrans de la tâche 27 : chaque texte, ceux de plusieurs phrases compris.
+  ...Object.entries(CONSENT_TEXTS).map(([k, t]): [string, string, string[]] => [`CONSENT_TEXTS.${k}`, t, []]),
+  ...Object.entries(MY_COACH_TEXTS).flatMap(([k, t]): [string, string, string[]][] =>
+    typeof t === 'string' ? [[`MY_COACH_TEXTS.${k}`, t, []]] : [],
+  ),
+  ...MY_COACH_TEXTS.deactivateItems.map((t, i): [string, string, string[]] => [
+    `MY_COACH_TEXTS.deactivateItems[${i}]`,
+    t,
+    [],
+  ]),
+  ...Object.entries(THREAD_TEXTS).flatMap(([k, t]): [string, string, string[]][] =>
+    typeof t === 'string' ? [[`THREAD_TEXTS.${k}`, t, []]] : [],
+  ),
+  ['threadLabel(2025-10-28, 6)', THREAD_TEXTS.label('2025-10-28', 6), []],
+  ['threadLabel(2025-10-27, 1)', THREAD_TEXTS.label('2025-10-27', 1), []],
   ['AI_NOTE', AI_NOTE, []],
   ['SEE_CONVERSATION', SEE_CONVERSATION, []],
   ['PREPARING', PREPARING, []],
@@ -154,6 +172,17 @@ describe('coach-texts', () => {
       retry: 'Réessayer',
       refusal: 'Le coach ne peut pas répondre à cette demande.',
     });
+  });
+
+  it("textes de l'accord, de Mon coach et des conversations précédentes, mot pour mot", () => {
+    expect(MY_COACH_TEXTS.deactivateItems).toEqual([
+      'Tes conversations avec le coach.',
+      'Tes signalements.',
+      'Les propositions du coach encore en attente.',
+    ]);
+    expect(THREAD_TEXTS.label('2025-10-28', 6)).toBe('mar. 28 oct. · 6 messages');
+    expect(THREAD_TEXTS.label('2025-10-27', 1)).toBe('lun. 27 oct. · 1 message');
+    expect(MY_COACH_TEXTS.nextTone).toBe("Le nouveau ton s'appliquera à ta conversation de demain.");
   });
 
   it('ERROR_TEXTS couvre chaque code du flux, thread_closed compris', () => {

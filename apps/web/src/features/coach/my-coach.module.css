@@ -1,6 +1,6 @@
 /*
  * Profil › Mon coach (prototype « Mon coach ») : carte forte du coach (deux avatars légendés, nom, tempérament,
- * aperçu), mention de la conversation à venir, feuille du changement. Couleurs prises dans les jetons ;
+ * aperçu), feuille du changement. Couleurs prises dans les jetons ;
  * mouvement sur la courbe et les durées communes (motion.css), un fondu sous mouvement réduit.
  */
 
@@ -97,26 +97,6 @@
   font-size: 0.875rem;
   line-height: 1.4;
   color: var(--text-muted);
-}
-
-/* Mention de la conversation à venir : encadré d'information (icône d'accent, teinte d'accent). */
-.later {
-  margin: 0;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: var(--space-3) 14px;
-  border-radius: var(--radius-control);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
-  font-size: 0.875rem;
-  line-height: 1.4;
-}
-
-.later svg {
-  flex: none;
-  margin-top: 1px;
-  color: var(--accent);
 }
 
 .sheetBody {

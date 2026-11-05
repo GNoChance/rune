@@ -10,7 +10,7 @@ import { bootstrapAdmin } from './support/server';
 const SCRIBE = {
   name: 'Le Scribe',
   intro:
-    "Je suis le Scribe. Je prépare un plan clair et je note chaque série pour faire le point avec toi. Nos échanges viendront plus tard : pour l'instant, je consigne.",
+    'Je suis le Scribe. Je prépare un plan clair et je note chaque série pour faire le point avec toi. Active le coach IA dans Mon coach : je répondrai à tes questions.',
   ready: 'Profil complet, lieu noté. Le plan arrivera ici.',
   /** Lignes du jour de l'accueil, une par jour de Paris à tour de rôle ; `{jours}` = 2 (rythme choisi ici). */
   daily: [

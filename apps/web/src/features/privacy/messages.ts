@@ -11,7 +11,7 @@ export function consentLabel(c: ConsentStatus): string {
 
 /** Ce que le retrait de l'accord santé efface (R-CST-5, P-CST-3 étape 2). */
 export const WITHDRAW_LIST_TEXT =
-  "Seront effacés : ton indicateur de prudence (questionnaire), tes limitations et zones sensibles, et toute donnée de santé enregistrée par l'appli (douleurs, pesées, suivi nutritionnel). Le mode prudent est conservé.";
+  "Seront effacés : ton indicateur de prudence (questionnaire), tes limitations et zones sensibles, et toute donnée de santé enregistrée par l'appli (douleurs, pesées, suivi nutritionnel). Le mode prudent est conservé. Ta conversation du jour avec le coach sera close (tu pourras en ouvrir une demain) et le coach ne recevra plus tes données de santé.";
 
 export const WITHDRAWN_TEXT = 'Accord retiré. Tes données de santé ont été effacées.';
 

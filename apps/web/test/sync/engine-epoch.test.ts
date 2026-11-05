@@ -46,9 +46,9 @@ function makeEngine(extra: Partial<Parameters<typeof createSyncEngine>[0]> = {})
   return engine;
 }
 
-const consentEvent = (action: 'grant' | 'withdraw', createdAt: string) =>
+const consentEvent = (action: 'grant' | 'withdraw', createdAt: string, type = 'health') =>
   mirrorRow(newId(), createdAt, {
-    type: 'health',
+    type,
     action,
     textVersion: 'v1',
     createdAt,
@@ -307,6 +307,44 @@ describe('nouvelle époque (Review Focus 2)', () => {
     await makeEngine().syncNow('manual');
     expect(server.paths()).toContain('GET /api/me');
     expect(server.paths()).not.toContain('POST /api/me/consents/health/replay-withdraw');
+  });
+
+  it('R-SYN-28 (C35) : retrait ai_coach local, accord actif sur le serveur → un seul replay-withdraw ai_coach', async () => {
+    const W = ago(3);
+    await db.mirror('consent_event').put(consentEvent('grant', ago(20), 'ai_coach'));
+    await db.mirror('consent_event').put(consentEvent('withdraw', W, 'ai_coach'));
+    server.aiCoachConsentActive = true;
+    await makeEngine().syncNow('manual');
+    const replays = server.log.filter((r) => r.path === '/api/me/consents/ai_coach/replay-withdraw');
+    expect(replays).toHaveLength(1);
+    expect(replays[0]?.method).toBe('POST');
+    expect(replays[0]?.body).toEqual({ withdrawnAt: W });
+    // Le dernier événement santé est un accord : rien pour health.
+    expect(server.paths()).not.toContain('POST /api/me/consents/health/replay-withdraw');
+    const paths = server.paths();
+    expect(paths.indexOf('POST /api/me/consents/ai_coach/replay-withdraw')).toBeLessThan(
+      paths.indexOf('GET /api/sync/pull'),
+    );
+    expect(await getMeta(db, 'serverEpoch')).toBe('E2');
+  });
+
+  it('R-SYN-28 (C35) : retrait ai_coach, accord déjà inactif sur le serveur → pas de renvoi', async () => {
+    await db.mirror('consent_event').put(consentEvent('withdraw', ago(3), 'ai_coach'));
+    await makeEngine().syncNow('manual');
+    expect(server.paths()).not.toContain('POST /api/me/consents/ai_coach/replay-withdraw');
+  });
+
+  it('R-SYN-28 (C35) : 409 conflict sur ai_coach ignoré ; santé et coach retirés → deux renvois', async () => {
+    await db.mirror('consent_event').put(consentEvent('withdraw', ago(3), 'ai_coach'));
+    await db.mirror('consent_event').put(consentEvent('withdraw', ago(2)));
+    server.aiCoachConsentActive = true;
+    server.on('POST /api/me/consents/ai_coach/replay-withdraw', () =>
+      server.json(409, { error: 'conflict' }),
+    );
+    await makeEngine().syncNow('manual');
+    expect(server.paths()).toContain('POST /api/me/consents/health/replay-withdraw');
+    expect(server.paths()).toContain('POST /api/me/consents/ai_coach/replay-withdraw');
+    expect(await getMeta(db, 'serverEpoch')).toBe('E2');
   });
 
   it('R-SYN-28 : dernier événement grant → ni /api/me ni renvoi', async () => {

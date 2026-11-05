@@ -1,12 +1,13 @@
-import type {
-  ApiErrorCode,
-  CoachProposalEvent,
-  CoachStatusView,
-  CoachStreamErrorCode,
-  CoachStreamEvent,
-  CoachTodayResponse,
-  CoachToolName,
-  HelpResourceId,
+import {
+  AI_COACH_CONSENT_TEXT,
+  type ApiErrorCode,
+  type CoachProposalEvent,
+  type CoachStatusView,
+  type CoachStreamErrorCode,
+  type CoachStreamEvent,
+  type CoachTodayResponse,
+  type CoachToolName,
+  type HelpResourceId,
 } from '@rune/contracts';
 import { useMemo, useSyncExternalStore } from 'react';
 import { ApiError, NetworkRequiredError } from '../../api/client';
@@ -50,6 +51,13 @@ export interface CoachStore {
   retry(): Promise<void>;
   /** Relit `today` toutes les 2 s tant qu'une réponse se termine ailleurs, 3 minutes au plus. */
   pollInProgress(): Promise<void>;
+  /** Accord `ai_coach` pour le texte en vigueur, puis `status` relu. */
+  grant(): Promise<void>;
+  /**
+   * Retrait de l'accord (mot de passe). Après l'appel réussi, l'état du magasin est vidé (fil, brouillon, échange :
+   * rien n'en reste en mémoire), puis `status` relu. Une erreur de l'appel remonte et l'état reste.
+   */
+  withdraw(password: string): Promise<void>;
 }
 
 const FLUSH_MS = 4000;
@@ -137,6 +145,9 @@ export function createCoachStore(s: AppServices): CoachStore {
   async function fail(gen: number, pending: PendingExchange, code: CoachError): Promise<void> {
     set({ pending: emptied(pending), draft: pending.text, phase: 'error', error: code });
     if (code !== 'offline') await reloadToday(gen);
+    // Accord retiré pendant l'échange (ailleurs, ou par une restauration) : `status` le dit et l'écran propose de le
+    // redonner, au lieu d'une bannière sans issue.
+    if (code === 'consent_withdrawn' && gen === generation) await store.load();
   }
 
   async function run(pending: PendingExchange, firstOfDay: boolean): Promise<void> {
@@ -232,7 +243,7 @@ export function createCoachStore(s: AppServices): CoachStore {
 
   const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-  return {
+  const store: CoachStore = {
     getState: () => state,
     subscribe(onChange) {
       watchUser();
@@ -249,8 +260,16 @@ export function createCoachStore(s: AppServices): CoachStore {
         await flush();
         const [status, today] = await Promise.all([repo.status(), repo.today()]);
         if (gen !== generation || isStreaming()) return;
+        // Un accord redonné depuis : l'échec « accord retiré » n'a plus lieu d'être.
+        const consentBack =
+          (state.error === 'consent_withdrawn' || state.error === 'consent_required') &&
+          status.consent.active &&
+          !status.consent.needsRenewal;
         const keepFailure =
-          !answerRecorded && state.pending !== null && (state.phase === 'error' || state.phase === 'refused');
+          !answerRecorded &&
+          state.pending !== null &&
+          (state.phase === 'error' || state.phase === 'refused') &&
+          !consentBack;
         const wasRecorded = answerRecorded;
         answerRecorded = false;
         set(
@@ -292,6 +311,15 @@ export function createCoachStore(s: AppServices): CoachStore {
       if (state.phase === 'streaming' || state.pending === null) return;
       await run(emptied(state.pending), false);
     },
+    async grant() {
+      await repo.grant(AI_COACH_CONSENT_TEXT.version);
+      await store.load();
+    },
+    async withdraw(password) {
+      await repo.withdraw(password);
+      reset();
+      await store.load();
+    },
     async pollInProgress() {
       const gen = generation;
       if (pollingGen === gen) return;
@@ -323,6 +351,7 @@ export function createCoachStore(s: AppServices): CoachStore {
       }
     },
   };
+  return store;
 }
 
 const stores = new WeakMap<AppServices, CoachStore>();

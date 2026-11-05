@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type CoachState, coachStoreFor } from '../../src/features/coach/coach-store';
 import { deleteMeta, setMeta } from '../../src/local-db/meta';
 import { coachRepoFor } from '../../src/repos/coach-repo';
-import { createTestServices } from '../support/render';
+import { createTestServices, makeMe } from '../support/render';
 import { until } from '../support/wait';
 
 const STATUS = {
@@ -206,7 +206,7 @@ describe('CoachStore', () => {
     expect(sync.pullCount).toBe(1);
   });
 
-  it.each(['api_unavailable', 'timeout', 'thread_closed', 'consent_withdrawn'])(
+  it.each(['api_unavailable', 'timeout', 'thread_closed'])(
     'error %s : le texte revient au champ, today est relu',
     async (code) => {
       const { store, api, calls } = await setup();
@@ -220,6 +220,84 @@ describe('CoachStore', () => {
       expect(calls('GET', '/api/coach/today').length).toBe(reads + 1);
     },
   );
+
+  it("error consent_withdrawn : status relu, l'accord absent s'y lit (le panneau « Activer le coach » en sort)", async () => {
+    const { store, api, calls } = await setup();
+    api.on('POST', '/api/coach/messages', sse(`${TEXT('Début')}${ERROR('consent_withdrawn')}`));
+    await store.load();
+    const reads = calls('GET', '/api/coach/status').length;
+    api.on('GET', '/api/coach/status', {
+      status: 200,
+      body: { ...STATUS, consent: { ...STATUS.consent, active: false, textVersion: null } },
+    });
+    store.setDraft('Mon texte');
+    await store.send();
+    expect(calls('GET', '/api/coach/status').length).toBe(reads + 1);
+    expect(store.getState().status?.consent.active).toBe(false);
+    expect(store.getState()).toMatchObject({
+      draft: 'Mon texte',
+      phase: 'error',
+      error: 'consent_withdrawn',
+    });
+  });
+
+  it("accord redonné : le load suivant efface l'erreur consent_withdrawn", async () => {
+    const { store, api } = await setup();
+    api.on('POST', '/api/coach/messages', sse(ERROR('consent_withdrawn')));
+    api.on('GET', '/api/coach/status', {
+      status: 200,
+      body: { ...STATUS, consent: { ...STATUS.consent, active: false, textVersion: null } },
+    });
+    await store.load();
+    store.setDraft('Mon texte');
+    await store.send();
+    expect(store.getState().error).toBe('consent_withdrawn');
+    api.on('GET', '/api/coach/status', { status: 200, body: STATUS });
+    await store.load();
+    expect(store.getState()).toMatchObject({ draft: 'Mon texte', phase: 'idle', error: null });
+  });
+
+  it("withdraw : l'appel, puis plus rien du fil en mémoire (fil, brouillon, échange), statut relu", async () => {
+    const { store, api, calls } = await setup({ today: TODAY_WITH_USER });
+    api.on('POST', '/api/me/consents/withdraw', { status: 200, body: makeMe() });
+    await store.load();
+    store.setDraft('brouillon');
+    expect(store.getState().today?.messages).toHaveLength(2);
+    api.on('GET', '/api/coach/today', { status: 200, body: EMPTY_TODAY });
+    api.on('GET', '/api/coach/status', {
+      status: 200,
+      body: { ...STATUS, consent: { ...STATUS.consent, active: false, textVersion: null } },
+    });
+    await store.withdraw('le bon');
+    expect(calls('POST', '/api/me/consents/withdraw').map((c) => c.body)).toEqual([
+      { type: 'ai_coach', password: 'le bon' },
+    ]);
+    expect(store.getState()).toMatchObject({ draft: '', pending: null, phase: 'idle', error: null });
+    expect(store.getState().today?.messages ?? []).toEqual([]);
+    expect(store.getState().status?.consent.active).toBe(false);
+  });
+
+  it("withdraw refusé (mot de passe) : l'erreur remonte, l'état du fil reste", async () => {
+    const { store, api } = await setup({ today: TODAY_WITH_USER });
+    api.on('POST', '/api/me/consents/withdraw', { status: 401, body: { error: 'invalid_credentials' } });
+    await store.load();
+    store.setDraft('brouillon');
+    await expect(store.withdraw('faux')).rejects.toMatchObject({ code: 'invalid_credentials' });
+    expect(store.getState().draft).toBe('brouillon');
+    expect(store.getState().today?.messages).toHaveLength(2);
+  });
+
+  it('grant : le texte en vigueur est envoyé, puis le statut est relu', async () => {
+    const { store, api, calls } = await setup();
+    api.on('POST', '/api/me/consents', { status: 200, body: makeMe() });
+    await store.load();
+    const reads = calls('GET', '/api/coach/status').length;
+    await store.grant();
+    expect(calls('POST', '/api/me/consents').map((c) => c.body)).toEqual([
+      { type: 'ai_coach', textVersion: '1.0' },
+    ]);
+    expect(calls('GET', '/api/coach/status').length).toBe(reads + 1);
+  });
 
   it('refused : bulle effacée, texte gardé au champ, rien de réessayable', async () => {
     const { store, api } = await setup();

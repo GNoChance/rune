@@ -127,3 +127,69 @@ export const REPORT_TEXTS = {
   tooLong: '500 caractères au plus.',
   failed: "Le signalement n'est pas parti. Réessaie.",
 } as const;
+
+/** Accord du coach (spec §14.1) : `/coach/consent`. */
+export const CONSENT_TEXTS = {
+  title: 'Accord pour le coach IA',
+  intro:
+    'Lis ce que tu acceptes avant de parler au coach. Tu peux retirer ton accord à tout moment, depuis Mon coach.',
+  checkbox: "J'ai lu ce texte et j'accepte.",
+  adultLink: 'Bien utiliser le coach',
+  minorLink: 'Tu as 16 ou 17 ans',
+} as const;
+
+/** Mon coach › Coach IA (spec §16.7) et désactivation (§14.2). */
+export const MY_COACH_TEXTS = {
+  title: 'Coach IA',
+  intro:
+    'Le coach IA répond à tes questions sur ton programme, ta technique et ta récupération. Ses conseils sont généraux : il ne remplace pas un professionnel de santé.',
+  disabled: 'Le coach IA est désactivé.',
+  active: 'Le coach IA est actif.',
+  paused: 'Le coach IA est en pause.',
+  unknown: 'Le coach IA est indisponible pour le moment.',
+  activate: 'Activer le coach IA',
+  open: 'Ouvrir la conversation',
+  brief: 'Ce que le coach voit',
+  usage: 'Bien utiliser le coach',
+  deleteAll: 'Supprimer mes conversations',
+  deleteAllBody: 'Toutes tes conversations avec le coach seront supprimées. Tu ne pourras pas les retrouver.',
+  deactivate: 'Désactiver le coach IA',
+  deactivateIntro: 'Seront supprimés :',
+  deactivateItems: [
+    'Tes conversations avec le coach.',
+    'Tes signalements.',
+    'Les propositions du coach encore en attente.',
+  ],
+  deactivateKept: 'Les propositions que tu as acceptées restent dans ton programme.',
+  deactivateAnthropic: "Ce qu'Anthropic a déjà reçu suit sa propre durée de conservation.",
+  deactivateExport: "Télécharger mes données d'abord",
+  nextTone: "Le nouveau ton s'appliquera à ta conversation de demain.",
+  delete: 'Supprimer',
+  cancel: 'Annuler',
+} as const;
+
+/** Conversations précédentes (spec §16.3). */
+export const THREAD_TEXTS = {
+  title: STATE_TEXTS.previousThreads,
+  empty: 'Aucune conversation pour le moment.',
+  deleteAll: 'Supprimer toutes mes conversations',
+  deleteAllBody: 'Toutes tes conversations avec le coach seront supprimées. Tu ne pourras pas les retrouver.',
+  deleteOne: 'Supprimer cette conversation',
+  deleteOneBody: 'Cette conversation sera supprimée. Tu ne pourras pas la retrouver.',
+  unavailable: "Cette conversation n'existe plus.",
+  /** « mar. 28 oct. · 6 messages » : le jour de Paris du fil et le nombre de messages envoyés. */
+  label: (day: string, userMessages: number) =>
+    `${dayLabel(day)} · ${userMessages} ${userMessages < 2 ? 'message' : 'messages'}`,
+} as const;
+
+const DAY_FORMAT = new Intl.DateTimeFormat('fr-FR', {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'UTC',
+});
+
+/** « 2025-10-28 » → « mar. 28 oct. » : le jour de Paris du fil, lu comme une date civile. */
+export function dayLabel(day: string): string {
+  return DAY_FORMAT.format(new Date(`${day}T12:00:00Z`));
+}

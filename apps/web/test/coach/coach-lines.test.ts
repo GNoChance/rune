@@ -1,6 +1,7 @@
-import { COACH_IDS, type CoachId } from '@rune/contracts';
+import { COACH_IDS, type CoachId, FORBIDDEN_TERMS } from '@rune/contracts';
+import { type FilterContext, normalizeForTerms, outputFilterText } from '@rune/domain';
 import { describe, expect, it } from 'vitest';
-import { COACHES, coachLine } from '../../src/features/coach/coach-lines';
+import { COACHES, coachLine, coachText } from '../../src/features/coach/coach-lines';
 
 // Moment `session_end` (spec brique 3 §7.4) : la bulle de la fin de séance, trois textes écrits à l'avance par coach
 // (spec refonte §8), relus par le propriétaire. Ce ne sont pas des réponses d'IA.
@@ -65,6 +66,54 @@ describe('moment session_end (coach-lines)', () => {
       expect(line).not.toMatch(/record|charge|lourd|échec|douleur|forcer|prescri/i);
       expect(line).not.toMatch(/[{}]/);
       expect(line).not.toMatch(/[’‘]/);
+    }
+  });
+});
+
+// Présentation de chaque coach (« Message d'accueil ») : le coach IA existe, l'intro n'annonce plus qu'il viendra.
+const INTROS: Record<CoachId, string> = {
+  ombre:
+    "Je suis L'Ombre. Je fixe tes quêtes, tu les accomplis. Active le coach IA dans Mon coach : je répondrai à tes questions, sans détour.",
+  skald:
+    "Je suis le Skald. Je raconterai ta saga, séance après séance, et je t'expliquerai chaque étape. Active le coach IA dans Mon coach : nous pourrons parler de ton programme.",
+  scribe:
+    'Je suis le Scribe. Je prépare un plan clair et je note chaque série pour faire le point avec toi. Active le coach IA dans Mon coach : je répondrai à tes questions.',
+};
+
+describe('intros des coachs (tâche 27)', () => {
+  it('trois textes, mot pour mot', () => {
+    for (const id of COACH_IDS) expect(COACHES[id].intro).toBe(INTROS[id]);
+  });
+
+  it("n'annoncent plus une conversation à venir et n'ont aucun chiffre", () => {
+    for (const id of COACH_IDS) {
+      const intro = coachText(id, 'intro', 'lea');
+      expect(intro).not.toMatch(/plus tard|viendr|d'ici là|pour l'instant/i);
+      expect(intro).not.toMatch(/[0-9]/);
+      expect(intro).not.toMatch(/[{}]/);
+      expect(intro).not.toMatch(/[’‘]/);
+    }
+  });
+
+  it('passent le filtre de sortie (adulte et mineur) et les termes interdits', () => {
+    for (const id of COACH_IDS) {
+      const text = COACHES[id].intro;
+      for (const audience of ['adult', 'minor'] as const) {
+        const ctx: FilterContext = {
+          audience,
+          nutritionMode: 'none',
+          allowed: { mass: new Set(), percent: new Set(), nutrition: new Set() },
+        };
+        expect(outputFilterText(text, ctx), `${audience} : ${text}`).toEqual({ ok: true });
+      }
+      const haystack = ` ${normalizeForTerms(text)} `;
+      for (const t of [...FORBIDDEN_TERMS.all, ...FORBIDDEN_TERMS.minor]) {
+        for (const form of [t.term, ...t.forms]) {
+          expect(haystack, `terme « ${form} » dans « ${text} »`).not.toContain(
+            ` ${normalizeForTerms(form)} `,
+          );
+        }
+      }
     }
   });
 });

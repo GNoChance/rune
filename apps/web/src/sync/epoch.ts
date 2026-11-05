@@ -18,9 +18,16 @@ import { httpErrorOf, type JsonReply } from './transport';
 
 const DAY_MS = 86_400_000;
 
+const Active = z.looseObject({ active: z.boolean() });
 const MeConsents = z.looseObject({
-  consents: z.looseObject({ health: z.looseObject({ active: z.boolean() }) }),
+  consents: z.looseObject({ health: Active, aiCoach: Active }),
 });
+
+/** Accords dont un retrait perdu se renvoie (R-SYN-28, C35) : type du miroir et clé de `/api/me`. */
+const REPLAYED = [
+  { type: 'health', key: 'health' },
+  { type: 'ai_coach', key: 'aiCoach' },
+] as const;
 
 /** Ce dont l'étape « époque » a besoin du cycle en cours. */
 export interface EpochIo {
@@ -103,25 +110,31 @@ export async function resendJournal(io: EpochIo): Promise<void> {
   }
 }
 
-/** b. R-SYN-28 : renvoi d'un retrait d'accord santé perdu par une restauration. */
+/**
+ * b. R-SYN-28 : renvoi d'un retrait d'accord perdu par une restauration, pour l'accord santé puis pour l'accord du
+ * coach (C35). Par type : dernier événement du miroir = `withdraw` et accord encore actif sur le serveur →
+ * `POST /api/me/consents/<type>/replay-withdraw` ; un 409 `conflict` est ignoré.
+ */
 export async function replayWithdrawal(io: EpochIo): Promise<void> {
   const { db } = io;
   if (!db.mirrorNames.includes('consent_event')) return;
-  const last = await db
-    .mirror('consent_event')
-    .where('[type+createdAt]')
-    .between(['health', Dexie.minKey], ['health', Dexie.maxKey])
-    .last();
-  if (last?.action !== 'withdraw' || typeof last.createdAt !== 'string') return;
-  const me = await io.request('GET', '/api/me');
-  if (!me.res.ok) throw httpErrorOf(me);
-  if (!MeConsents.parse(me.body).consents.health.active) return;
-  const reply = await io.request('POST', '/api/me/consents/health/replay-withdraw', {
-    withdrawnAt: last.createdAt,
-  });
-  if (reply.res.ok) return;
-  const error = httpErrorOf(reply);
-  if (error.code !== 'conflict') throw error;
+  for (const { type, key } of REPLAYED) {
+    const last = await db
+      .mirror('consent_event')
+      .where('[type+createdAt]')
+      .between([type, Dexie.minKey], [type, Dexie.maxKey])
+      .last();
+    if (last?.action !== 'withdraw' || typeof last.createdAt !== 'string') continue;
+    const me = await io.request('GET', '/api/me');
+    if (!me.res.ok) throw httpErrorOf(me);
+    if (!MeConsents.parse(me.body).consents[key].active) continue;
+    const reply = await io.request('POST', `/api/me/consents/${type}/replay-withdraw`, {
+      withdrawnAt: last.createdAt,
+    });
+    if (reply.res.ok) continue;
+    const error = httpErrorOf(reply);
+    if (error.code !== 'conflict') throw error;
+  }
 }
 
 /**

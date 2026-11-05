@@ -17,7 +17,8 @@ import { liveQuery } from 'dexie';
 import { z } from 'zod';
 import { ApiError, NetworkRequiredError } from '../api/client';
 import type { AppServices } from '../app-services';
-import { getMeta } from '../local-db/meta';
+import { getMeta, setMeta } from '../local-db/meta';
+import { sendThenPull } from './rows';
 import { readSse } from './sse-reader';
 
 const CreatedReport = z.object({ id: z.string() });
@@ -40,9 +41,12 @@ export interface CoachRepo {
   deleteAllThreads(): Promise<void>;
   brief(): Promise<CoachBriefResponse>;
   report(req: CoachReportRequest): Promise<{ id: string }>;
-  /** Accord `ai_coach` pour la version exacte du texte en vigueur. */
+  /** Accord `ai_coach` pour la version exacte du texte en vigueur ; `meta.me` à jour, puis pull (l'événement d'accord). */
   grant(textVersion: string): Promise<MeResponse>;
-  /** Retrait de l'accord `ai_coach` : l'appel HTTP seulement, le retrait local relève de l'écran (R-SYN-28). */
+  /**
+   * Retrait de l'accord `ai_coach` : l'appel HTTP, `meta.me` à jour, puis pull (l'événement `withdraw` que R-SYN-28
+   * renvoie après une restauration). Rien du coach n'est local : vider le magasin relève de l'appelant.
+   */
   withdraw(password: string): Promise<MeResponse>;
   /** Appelle `fn` avec l'utilisateur de l'appareil, à l'abonnement puis à chaque changement (`null` : déconnecté). */
   watchUser(fn: (userId: string | null) => void): () => void;
@@ -94,6 +98,7 @@ async function apiErrorOf(res: Response): Promise<ApiError> {
 }
 
 export function createCoachRepo(s: AppServices): CoachRepo {
+  const saveMe = (me: MeResponse) => setMeta(s.db, 'me', me);
   return {
     status: () => s.api.get('/api/coach/status', CoachStatusView),
     today: () => s.api.get('/api/coach/today', CoachTodayResponse),
@@ -137,9 +142,17 @@ export function createCoachRepo(s: AppServices): CoachRepo {
     brief: () => s.api.get('/api/coach/brief', CoachBriefResponse),
     report: (req) => s.api.send('POST', '/api/coach/reports', req, CreatedReport),
     grant: (textVersion) =>
-      s.api.send('POST', '/api/me/consents', { type: 'ai_coach', textVersion }, MeResponse),
+      sendThenPull(s, 'POST', '/api/me/consents', {
+        body: { type: 'ai_coach', textVersion },
+        schema: MeResponse,
+        apply: saveMe,
+      }),
     withdraw: (password) =>
-      s.api.send('POST', '/api/me/consents/withdraw', { type: 'ai_coach', password }, MeResponse),
+      sendThenPull(s, 'POST', '/api/me/consents/withdraw', {
+        body: { type: 'ai_coach', password },
+        schema: MeResponse,
+        apply: saveMe,
+      }),
     watchUser(fn) {
       const subscription = liveQuery(async () => (await getMeta(s.db, 'userId')) ?? null).subscribe({
         next: fn,

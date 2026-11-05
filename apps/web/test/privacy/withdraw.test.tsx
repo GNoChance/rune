@@ -180,7 +180,7 @@ describe('ConsentWithdrawDialog dans Santé (R-CST-5, P-CST-3, P-AUT-5)', () => 
     expect(text).toContain('Le mode prudent est conservé.');
     expect(
       dialog.getByText(
-        "Seront effacés : ton indicateur de prudence (questionnaire), tes limitations et zones sensibles, et toute donnée de santé enregistrée par l'appli (douleurs, pesées, suivi nutritionnel). Le mode prudent est conservé.",
+        "Seront effacés : ton indicateur de prudence (questionnaire), tes limitations et zones sensibles, et toute donnée de santé enregistrée par l'appli (douleurs, pesées, suivi nutritionnel). Le mode prudent est conservé. Ta conversation du jour avec le coach sera close (tu pourras en ouvrir une demain) et le coach ne recevra plus tes données de santé.",
       ),
     ).toBeTruthy();
     expect(dialog.getByRole('button', { name: "Télécharger mes données d'abord" })).toBeTruthy();

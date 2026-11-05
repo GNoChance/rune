@@ -10,17 +10,19 @@ import {
   COACH_NAMES,
   CoachAvatar,
   CoachBubble,
+  ListGroup,
+  ListRow,
   Page,
   useAction,
 } from '../../ui';
 import { useFocusAfterClose } from '../profile/use-focus-after-close';
 import { CoachChoices } from './CoachStep';
+import accountStyles from './coach-account.module.css';
 import { COACHES, coachText } from './coach-lines';
+import { useCoachStore } from './coach-store';
+import { MY_COACH_TEXTS, STATE_TEXTS } from './coach-texts';
+import { ConfirmDeleteSheet, DeactivateSheet } from './DeactivateSheet';
 import styles from './my-coach.module.css';
-
-/** Mon coach dit que la vraie conversation viendra plus tard (spec refonte §8, prototype). */
-export const COACH_LATER_TEXT =
-  "Pour l'instant, ton coach parle avec des messages préparés à l'avance. La vraie conversation arrivera plus tard.";
 
 /** Bouton de confirmation de la feuille, le nom du coach en complément (prototype). */
 const CHOOSE_LABELS: Readonly<Record<CoachId, string>> = {
@@ -34,10 +36,10 @@ const ignore = () => {};
 /**
  * Profil › Mon coach (spec refonte §8, prototype « Mon coach ») : le coach choisi, ses deux avatars
  * (entraînement et nutrition), son nom, son tempérament et un aperçu de sa voix étiqueté, puis la mention que
- * la vraie conversation viendra plus tard. « Changer de coach » ouvre une feuille avec les trois choix ;
+ * la section du coach IA. « Changer de coach » ouvre une feuille avec les trois choix ;
  * confirmer l'enregistre sur le serveur (`setCoach`, classe E). Le coach confirmé s'affiche tout de suite,
  * jusqu'à la relecture du profil (pull après l'envoi), avec « <coach> est ton nouveau coach. », qui reste tant
- * qu'une relecture ne le contredit pas. Sur un nouvel appareil avant le premier pull, le miroir vide ne dit pas
+ * qu'une relecture ne le contredit pas. La section « Coach IA » (spec brique 4 §16.7) vient en dessous. Sur un nouvel appareil avant le premier pull, le miroir vide ne dit pas
  * « pas de coach » : ni coach ni « Changer de coach » tant que le profil n'est pas connu.
  */
 export function MyCoachPage() {
@@ -73,23 +75,6 @@ export function MyCoachPage() {
     <Page title="Mon coach" back="/profile">
       {notice ? <Banner tone="info">{`${COACH_NAMES[notice]} est ton nouveau coach.`}</Banner> : null}
       {known && coach ? <CoachHero key={coach} coach={coach} pseudo={me.username} /> : null}
-      <p className={styles.later}>
-        <svg
-          aria-hidden="true"
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 11v5M12 8h.01" />
-        </svg>
-        <span>{COACH_LATER_TEXT}</span>
-      </p>
       {known ? (
         <>
           <Button
@@ -112,7 +97,90 @@ export function MyCoachPage() {
           />
         </>
       ) : null}
+      <CoachSection />
     </Page>
+  );
+}
+
+/**
+ * Section « Coach IA » (spec brique 4 §16.7) : l'état (désactivé, actif ou en pause) d'après `status`, « Activer le
+ * coach IA » ou « Ouvrir la conversation », puis les liens du coach, « Supprimer mes conversations » (confirmation,
+ * sans mot de passe) et, isolé en bas, « Désactiver le coach IA » (mot de passe). Désactivé, il n'y a ni
+ * conversation à supprimer ni accord à retirer.
+ */
+function CoachSection() {
+  const repos = useRepos();
+  const { state, store } = useCoachStore();
+  const titleId = useId();
+  const [confirming, setConfirming] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
+  const closeConfirm = useCallback(() => setConfirming(false), []);
+  const closeDeactivate = useCallback(() => setDeactivating(false), []);
+
+  useEffect(() => {
+    void store.load();
+  }, [store]);
+
+  const { status } = state;
+  const on = status?.consent.active === true && !status.consent.needsRenewal;
+  const stateText =
+    status === null
+      ? state.error === null
+        ? null
+        : MY_COACH_TEXTS.unknown
+      : !on
+        ? status.consent.needsRenewal
+          ? STATE_TEXTS.consentChanged
+          : MY_COACH_TEXTS.disabled
+        : status.available
+          ? MY_COACH_TEXTS.active
+          : MY_COACH_TEXTS.paused;
+
+  async function deleteAll() {
+    await repos.coach.deleteAllThreads();
+    await store.load();
+  }
+
+  return (
+    <section aria-labelledby={titleId} className={accountStyles.section}>
+      <h2 id={titleId} className={accountStyles.title}>
+        {MY_COACH_TEXTS.title}
+      </h2>
+      <p className={accountStyles.lead}>{MY_COACH_TEXTS.intro}</p>
+      {stateText === null ? null : <p className={accountStyles.state}>{stateText}</p>}
+      {status === null ? null : (
+        <ListGroup>
+          {on ? (
+            <ListRow label={MY_COACH_TEXTS.open} href="/coach" />
+          ) : (
+            <ListRow label={MY_COACH_TEXTS.activate} href="/coach/consent" />
+          )}
+          {on ? <ListRow label={MY_COACH_TEXTS.brief} href="/coach/brief" /> : null}
+          {on ? <ListRow label={STATE_TEXTS.previousThreads} href="/coach/threads" /> : null}
+          <ListRow label={MY_COACH_TEXTS.usage} href="/help/coach" />
+        </ListGroup>
+      )}
+      {on ? (
+        <>
+          <Button variant="secondary" block onClick={() => setConfirming(true)}>
+            {MY_COACH_TEXTS.deleteAll}
+          </Button>
+          <div className={accountStyles.isolated}>
+            <Button variant="danger" block onClick={() => setDeactivating(true)}>
+              {MY_COACH_TEXTS.deactivate}
+            </Button>
+          </div>
+        </>
+      ) : null}
+      <ConfirmDeleteSheet
+        open={confirming}
+        title={MY_COACH_TEXTS.deleteAll}
+        body={MY_COACH_TEXTS.deleteAllBody}
+        onConfirm={deleteAll}
+        onClose={closeConfirm}
+      />
+      <DeactivateSheet open={deactivating} onClose={closeDeactivate} />
+    </section>
   );
 }
 
@@ -225,6 +293,7 @@ function OpenCoachSheet(p: SheetProps) {
             save.reset();
           }}
         />
+        <p className={accountStyles.muted}>{MY_COACH_TEXTS.nextTone}</p>
         {save.error ? <Banner tone="error">{save.error}</Banner> : null}
       </div>
     </BottomSheet>

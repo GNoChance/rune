@@ -9,8 +9,6 @@ import { PROFILE_PATH, seedProfile, serveProfile } from '../support/onboarding';
 import { makeMe, renderApp } from '../support/render';
 import { until } from '../support/wait';
 
-const LATER =
-  "Pour l'instant, ton coach parle avec des messages préparés à l'avance. La vraie conversation arrivera plus tard.";
 const TRAINING = { goal: 'muscle', experience: 'none', daysPerWeek: 3, sessionMinutes: 45 } as const;
 const NEW_SCRIBE = 'Le Scribe est ton nouveau coach.';
 
@@ -57,11 +55,6 @@ describe('MyCoachPage (spec refonte §8, prototype « Mon coach »)', () => {
     expect(screen.getByText(COACHES.skald.temper)).toBeTruthy();
     expect(screen.getByText(coachText('skald', 'sample', 'lea'))).toBeTruthy();
     expect(screen.getByText('Aperçu')).toBeTruthy();
-  });
-
-  it('dit que la vraie conversation arrivera plus tard', async () => {
-    await renderCoach();
-    expect(await screen.findByText(LATER)).toBeTruthy();
   });
 
   it('« Changer de coach » ouvre une feuille avec les 3 choix, le coach actuel coché', async () => {
@@ -220,7 +213,7 @@ describe('MyCoachPage › coach relu après un pull', () => {
     // Un miroir vide ne dit pas « pas de coach » : rien n'est proposé sur cette base.
     expect(screen.queryByRole('button', { name: 'Changer de coach' })).toBeNull();
     expect(screen.queryByText('Choisis un coach')).toBeNull();
-    expect(screen.queryByRole('heading', { level: 2 })).toBeNull();
+    expect(screen.queryByRole('heading', { level: 2, name: 'Le Skald' })).toBeNull();
     // Le premier pull apporte le profil (Le Skald) et réussit.
     await seedProfile(db);
     act(() => sync.set({ lastPullOkAt: '2026-10-15T08:00:00.000Z' }));

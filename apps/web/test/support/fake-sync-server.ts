@@ -18,6 +18,7 @@ export interface FakeSyncServer extends SyncTransport {
   rows: PulledRow[];
   catalogVersion: string | null;
   healthConsentActive: boolean;
+  aiCoachConsentActive: boolean;
   /** Ops reçues par push, lot par lot. */
   sent: SyncOp[][];
   log: FakeRequest[];
@@ -40,6 +41,7 @@ export function createFakeSyncServer(epoch = 'E1'): FakeSyncServer {
     rows: [],
     catalogVersion: null,
     healthConsentActive: true,
+    aiCoachConsentActive: false,
     sent: [],
     log: [],
     fault: null,
@@ -111,10 +113,11 @@ export function createFakeSyncServer(epoch = 'E1'): FakeSyncServer {
       server.json(200, {
         consents: {
           health: { active: server.healthConsentActive, textVersion: 'v1', at: null },
-          aiCoach: { active: false, textVersion: null, at: null },
+          aiCoach: { active: server.aiCoachConsentActive, textVersion: 'v1', at: null },
         },
       }),
     'POST /api/me/consents/health/replay-withdraw': () => server.json(200, {}),
+    'POST /api/me/consents/ai_coach/replay-withdraw': () => server.json(200, {}),
     'GET /api/catalog': () => server.json(304, null),
   };
   return server;

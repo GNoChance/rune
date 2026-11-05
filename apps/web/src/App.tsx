@@ -55,6 +55,13 @@ const ChooseProgram = lazy(() =>
 
 /** Conversation avec le coach (brique 4) : hors du bundle initial, chargée à la première ouverture (fichier précaché par le SW). */
 const CoachPage = lazy(() => import('./features/coach/CoachPage').then((m) => ({ default: m.CoachPage })));
+const ConsentPage = lazy(() =>
+  import('./features/coach/ConsentPage').then((m) => ({ default: m.ConsentPage })),
+);
+const ThreadsPage = lazy(() =>
+  import('./features/coach/ThreadsPage').then((m) => ({ default: m.ThreadsPage })),
+);
+const ThreadPage = lazy(() => import('./features/coach/ThreadPage').then((m) => ({ default: m.ThreadPage })));
 
 /** Historique des séances : hors du bundle initial, chargé à la première ouverture (fichiers précachés par le SW). */
 const HistoryList = lazy(() =>
@@ -187,6 +194,9 @@ function ConnectedRoutes() {
       <Route path="/places/:id" component={PlaceDetail} />
       <Route path="/places/:id/load" component={PlaceLoadSettings} />
       <Route path="/coach" component={CoachPage} />
+      <Route path="/coach/consent" component={ConsentPage} />
+      <Route path="/coach/threads" component={ThreadsPage} />
+      <Route path="/coach/threads/:id" component={ThreadPage} />
       <Route path="/profile" component={ProfileHub} />
       <Route path="/profile/edit" component={ProfilePage} />
       <Route path="/profile/coach" component={MyCoachPage} />
