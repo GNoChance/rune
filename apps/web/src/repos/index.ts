@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { type AppServices, useServices } from '../app-services';
 import { type AdminRepo, createAdminRepo } from './admin-repo';
 import { type CatalogRepo, catalogRepoFor } from './catalog-repo';
+import { type CoachRepo, coachRepoFor } from './coach-repo';
 import { type ConsentRepo, createConsentRepo } from './consent-repo';
 import { type CreditsRepo, createCreditsRepo } from './credits-repo';
 import { createGymsRepo, type GymsRepo } from './gyms-repo';
@@ -32,6 +33,7 @@ export {
   useCatalog,
   useExerciseView,
 } from './catalog-repo';
+export type { CoachRepo } from './coach-repo';
 export type { ConsentRepo, LimitationView } from './consent-repo';
 export type { CreditsRepo, CreditsView } from './credits-repo';
 export { type DeviceSettings, useDeviceSettings } from './device-settings';
@@ -112,6 +114,8 @@ export interface Repos {
   workouts: WorkoutsRepo;
   /** Programme actif, rejeu local et séance du jour (spec brique 3 §4.4.8). */
   programView: ProgramViewRepo;
+  /** Coach IA : API en ligne et flux SSE, rien d'écrit sur l'appareil (spec brique 4 C17). */
+  coach: CoachRepo;
 }
 
 export function createRepos(s: AppServices): Repos {
@@ -133,6 +137,8 @@ export function createRepos(s: AppServices): Repos {
     // Les mêmes que ceux des hooks (`useActiveSession`, `useProgramView`…).
     workouts: workoutRepoFor(s),
     programView: programViewFor(s),
+    // Le même que celui du magasin du coach.
+    coach: coachRepoFor(s),
   };
 }
 
