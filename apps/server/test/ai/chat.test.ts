@@ -591,14 +591,14 @@ describe('createAnthropicClient().chat (fetch injecté, flux rejoué)', () => {
     expect((error as AiError).costUsd).toBeCloseTo((inputTokens * 4) / 1_000_000, 12);
   });
 
-  it('signal déjà aborté → AiError aborted, sans requête ni coût', async () => {
+  it('signal déjà aborté → AiError aborted, sans requête, coût nul et exact (costPartial faux)', async () => {
     const { fetch } = stubFetch({ events: textStream('Oui.') });
     const controller = new AbortController();
     controller.abort();
     await expect(client(fetch).chat(request({ signal: controller.signal }), () => {})).rejects.toMatchObject({
       code: 'aborted',
       costUsd: 0,
-      costPartial: true,
+      costPartial: false,
     });
     expect(fetch).not.toHaveBeenCalled();
   });

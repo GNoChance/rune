@@ -57,6 +57,26 @@ describe('historyForApi', () => {
       expect(out).toEqual([{ role: 'assistant', content: [b('fallback'), b('text')] }]);
     });
 
+    it("message user écarté entre deux messages assistant : ceux-ci n'en font qu'un, jamais deux de suite", () => {
+      const input: StoredApiMessage[] = [
+        { role: 'user', blocks: [b('text', { text: 'Salut.' })] },
+        { role: 'assistant', blocks: [use('A'), b('fallback'), b('text', { text: 'Je regarde.' })] },
+        { role: 'user', blocks: [result('A')] },
+        { role: 'assistant', blocks: [b('text', { text: 'Voilà.' })] },
+        { role: 'user', blocks: [b('text', { text: 'Merci.' })] },
+      ];
+      const snapshot = structuredClone(input);
+      expect(historyForApi(input)).toEqual([
+        { role: 'user', content: [b('text', { text: 'Salut.' })] },
+        {
+          role: 'assistant',
+          content: [b('fallback'), b('text', { text: 'Je regarde.' }), b('text', { text: 'Voilà.' })],
+        },
+        { role: 'user', content: [b('text', { text: 'Merci.' })] },
+      ]);
+      expect(input).toEqual(snapshot);
+    });
+
     it('ne garde que le résultat du tool_use conservé', () => {
       const out = historyForApi([
         { role: 'assistant', blocks: [use('A'), b('fallback'), use('B')] },

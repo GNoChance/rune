@@ -40,7 +40,10 @@ export type FakeAiResponses =
  * Tour scripté de `chat()` : des événements puis le message final, complété par défaut (modèle de la requête,
  * usage nul, coût par `chatCost`, repli par `usedFallback`) ; `gate` retient le dernier événement et le final.
  * Ou une erreur, levée après `afterEvents`. `abortCostUsd` : coût de l'`AiError('aborted')` si `req.signal`
- * interrompt le tour ; à défaut `final.costUsd`, sinon 0 ; toujours avec `costPartial`, comme le vrai client.
+ * interrompt le tour en cours ; à défaut le coût du final complété (`final.costUsd`, sinon `chatCost` de son usage
+ * et de ses itérations), sinon 0 ; toujours avec `costPartial`, comme le vrai client. Un `req.signal` déjà aborté
+ * avant l'appel ne joue aucun tour, comme le vrai client qui n'envoie rien : `AiError('aborted')` au coût nul et
+ * exact (`costPartial` faux), rien d'enregistré.
  */
 export type FakeChatTurn =
   | {
@@ -154,6 +157,8 @@ export function createFakeAiClient(
         const message = error instanceof Error ? error.message : String(error);
         throw new AiError('bad_request', `Requête invalide, non envoyée : ${message}`, { cause: error });
       }
+      // Comme le vrai client : rien n'est envoyé, donc rien n'est enregistré ni joué, et le coût nul est exact.
+      if (req.signal.aborted) throw new AiError('aborted', 'Appel interrompu.');
       const call = chatCalls.length;
       chatCalls.push(req);
       chatParams.push(params);
@@ -162,7 +167,8 @@ export function createFakeAiClient(
         // Erreur du script du test, pas de l'appel : elle reste une `Error` simple, bien visible.
         throw new Error(`Faux client IA : aucun tour prévu pour l'appel ${call + 1} de chat().`);
       }
-      const finalCost = 'final' in turn ? turn.final.costUsd : undefined;
+      // Tour scripté par son usage ou ses itérations : l'abandon coûte ce que son final aurait coûté.
+      const finalCost = 'final' in turn ? completeFinal(turn.final, req).costUsd : undefined;
       const abort: Abort = { signal: req.signal, costUsd: turn.abortCostUsd ?? finalCost ?? 0 };
       if ('error' in turn) {
         replay(turn.afterEvents ?? [], abort, onEvent);

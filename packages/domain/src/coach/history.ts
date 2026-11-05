@@ -17,8 +17,10 @@ const DROPPED_BEFORE_FALLBACK = new Set(['thinking', 'redacted_thinking', 'tool_
  * situés avant le dernier bloc `fallback` (règle de l'API après un repli en cours de sortie, spec §8.6).
  *
  * Sécurité : un `tool_use` retiré emporte les `tool_result` des messages suivants qui le citent (sinon l'API répond
- * 400), et un message laissé sans bloc est écarté. Règle de fond (tâche 20) : un `tool_use` avant le dernier
- * `fallback` appartient à la réponse refusée et n'est jamais exécuté, donc n'a pas de `tool_result`.
+ * 400), et un message laissé sans bloc est écarté ; les deux messages `assistant` qu'il séparait n'en font alors
+ * qu'un, leurs blocs à la suite : deux messages `assistant` ne se suivent jamais. Règle de fond (tâche 20) : un
+ * `tool_use` avant le dernier `fallback` appartient à la réponse refusée et n'est jamais exécuté, donc n'a pas de
+ * `tool_result`.
  */
 export function historyForApi(messages: readonly StoredApiMessage[]): ApiMessage[] {
   const removedToolUses = new Set<unknown>();
@@ -33,7 +35,11 @@ export function historyForApi(messages: readonly StoredApiMessage[]): ApiMessage
       }
       return true;
     });
-    if (content.length > 0 || m.blocks.length === 0) out.push({ role: m.role, content });
+    if (content.length === 0 && m.blocks.length > 0) continue;
+    const previous = out.at(-1);
+    // `previous.content` vient d'un `filter` : un tableau neuf, l'allonger ne touche pas les messages reçus.
+    if (m.role === 'assistant' && previous?.role === 'assistant') previous.content.push(...content);
+    else out.push({ role: m.role, content });
   }
   return out;
 }

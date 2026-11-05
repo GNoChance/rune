@@ -152,8 +152,8 @@ export type AiErrorCode =
  * de continuer. `costUsd` : ce que l'appel a coûté malgré l'échec ; exact pour `complete()` (sortie coupée, refus,
  * lus dans `usage`). `costPartial` : `costUsd` n'est qu'une estimation prudente, pour un appel de `chat()` que
  * l'API a pu traiter : interrompu (`aborted`, `timeout`), en erreur après l'ouverture du flux, ou en erreur réseau
- * après l'envoi ; la réflexion non relayée ne s'y mesure pas. Une erreur HTTP reçue avant tout flux, non
- * facturée, a un coût nul et `costPartial` faux.
+ * après l'envoi ; la réflexion non relayée ne s'y mesure pas. Un appel arrêté avant l'envoi (requête invalide,
+ * signal déjà aborté) et une erreur HTTP reçue avant tout flux, non facturés, ont un coût nul et `costPartial` faux.
  */
 export class AiError extends Error {
   readonly code: AiErrorCode;

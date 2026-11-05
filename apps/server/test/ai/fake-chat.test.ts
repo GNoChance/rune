@@ -4,6 +4,7 @@ import {
   type AiChatRequest,
   AiError,
   buildChatParams,
+  chatCost,
   createFakeAiClient,
   fakeFallbackText,
   fakeRefusal,
@@ -181,20 +182,21 @@ describe('createFakeAiClient : chat()', () => {
   it('respecte req.signal : déjà aborté, aborté pendant gate, aborté par un événement', async () => {
     const never = new Promise<void>(() => {});
     const fake = createFakeAiClient([], {
-      chat: [
-        fakeText('Oui.'),
-        fakeText('Bonjour.', { gate: never }),
-        fakeText('Mets 65 kg. Puis repose-toi.'),
-      ],
+      chat: [fakeText('Bonjour.', { gate: never }), fakeText('Mets 65 kg. Puis repose-toi.')],
     });
 
+    // Comme le vrai client : rien n'est envoyé, donc ni coût, ni estimation, ni requête enregistrée, ni tour joué.
     const before = new AbortController();
     before.abort();
     const none = collect();
-    await expect(fake.chat(request({ signal: before.signal }), none.onEvent)).rejects.toMatchObject({
-      code: 'aborted',
-    });
+    const refused = await fake
+      .chat(request({ signal: before.signal }), none.onEvent)
+      .catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(AiError);
+    expect(refused).toMatchObject({ code: 'aborted', costUsd: 0, costPartial: false });
     expect(none.events).toEqual([]);
+    expect(fake.chatCalls).toEqual([]);
+    expect(fake.chatParams).toEqual([]);
 
     const during = new AbortController();
     const waiting = fake.chat(request({ signal: during.signal }), () => {});
@@ -212,14 +214,17 @@ describe('createFakeAiClient : chat()', () => {
     expect(error).toBeInstanceOf(AiError);
     expect(error).toMatchObject({ code: 'aborted' });
     expect(relayed.events.at(-1)).toEqual({ type: 'text_delta', text: ' kg. Pu' });
-    expect(fake.chatCalls).toHaveLength(3);
+    expect(fake.chatCalls).toHaveLength(2);
   });
 
-  it('coût d’un appel interrompu : abortCostUsd, sinon final.costUsd, sinon 0, toujours costPartial', async () => {
+  it('coût d’un appel interrompu : abortCostUsd, sinon coût du final complété, sinon 0, toujours costPartial', async () => {
+    const usage = { input_tokens: 2000, output_tokens: 300 };
     const fake = createFakeAiClient([], {
       chat: [
         { ...fakeText('Mets 65 kg. Puis repose-toi.', { costUsd: 0.04 }), abortCostUsd: 0.01 },
         fakeText('Mets 65 kg. Puis repose-toi.', { costUsd: 0.04 }),
+        // Tour scripté par son usage, sans coût : l'abandon coûte ce que le final complété aurait coûté.
+        fakeText('Mets 65 kg. Puis repose-toi.', { usage }),
         fakeText('Mets 65 kg. Puis repose-toi.'),
         {
           error: new AiError('server', 'Panne.'),
@@ -235,7 +240,9 @@ describe('createFakeAiClient : chat()', () => {
       };
       return { signal: controller.signal, onEvent };
     };
-    for (const expected of [0.01, 0.04, 0]) {
+    const byUsage = chatCost('claude-opus-5-5', usage, null).costUsd;
+    expect(byUsage).toBeGreaterThan(0);
+    for (const expected of [0.01, 0.04, byUsage, 0]) {
       const { signal, onEvent } = abortOn('kg');
       await expect(fake.chat(request({ signal }), onEvent)).rejects.toMatchObject({
         code: 'aborted',

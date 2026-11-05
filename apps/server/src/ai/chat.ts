@@ -335,8 +335,8 @@ function readFinal(message: SdkMessage): AiChatFinal {
  * que le délai du SDK ne couvre pas) ; `req.signal` l'interrompt. Après une interruption, plus aucun événement
  * n'est rendu, même déjà reçu. Ne rejette qu'avec une `AiError` du code classé. Coût de l'erreur : nul et exact
  * (`costPartial` faux) si rien n'a pu être facturé, soit une requête qui ne se construit pas (`bad_request`, rien
- * n'est envoyé) ou une erreur HTTP reçue avant tout flux (429, 5xx, 529…, que le SDK a déjà réessayée) ; sinon
- * estimé par excès (`partialCost`, `costPartial` vrai).
+ * n'est envoyé), un `req.signal` déjà aborté (`aborted`, rien n'est envoyé) ou une erreur HTTP reçue avant tout
+ * flux (429, 5xx, 529…, que le SDK a déjà réessayée) ; sinon estimé par excès (`partialCost`, `costPartial` vrai).
  */
 export async function streamChat(
   sdk: Anthropic,
@@ -349,8 +349,8 @@ export async function streamChat(
   } catch (error) {
     throw new AiError('bad_request', `Requête invalide, non envoyée : ${messageOf(error)}`, { cause: error });
   }
-  // Rien n'est encore envoyé : aucun coût.
-  if (req.signal.aborted) throw new AiError('aborted', 'Appel interrompu.', { costPartial: true });
+  // Rien n'est encore envoyé : aucun coût, et ce coût nul est exact.
+  if (req.signal.aborted) throw new AiError('aborted', 'Appel interrompu.');
   const { body, betas } = built;
   const controller = new AbortController();
   let timedOut = false;
