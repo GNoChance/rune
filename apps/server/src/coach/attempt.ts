@@ -125,9 +125,26 @@ function abortCode(signal: AbortSignal): CoachStreamErrorCode {
 const streamError = (error: AiError, signal: AbortSignal): CoachStreamErrorCode =>
   error.code === 'aborted' ? abortCode(signal) : (STREAM_ERRORS[error.code] ?? 'internal');
 
+/**
+ * Jetons d'un appel servi : la somme des essais (`iterations`, repli compris) quand ils existent, comme le coût ;
+ * sinon l'usage de tête.
+ */
+function servedUsage(final: AiChatFinal): TokenUsage {
+  const parts = final.iterations ?? [];
+  if (parts.length === 0) return final.usage;
+  const sum = (pick: (u: TokenUsage) => number | null | undefined): number =>
+    parts.reduce((total, part) => total + (pick(part.usage) ?? 0), 0);
+  return {
+    input_tokens: sum((u) => u.input_tokens),
+    output_tokens: sum((u) => u.output_tokens),
+    cache_creation_input_tokens: sum((u) => u.cache_creation_input_tokens),
+    cache_read_input_tokens: sum((u) => u.cache_read_input_tokens),
+  };
+}
+
 const servedCall = (final: AiChatFinal): CallRecord => ({
   model: final.model,
-  usage: final.usage,
+  usage: servedUsage(final),
   costUsd: final.costUsd,
   priceUnknown: final.priceUnknown,
   // Calculé une seule fois, par `chat()` (P26).

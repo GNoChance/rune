@@ -756,7 +756,20 @@ describe('runAttempt : replis et coûts', () => {
     expect(outcome).toMatchObject({
       kind: 'answered',
       effectiveModel: 'claude-opus-5',
-      calls: [record({ model: 'claude-opus-5', usage: second, fallbackUsed: true, costUsd: cost })],
+      // Jetons sommés sur les essais, comme le coût.
+      calls: [
+        record({
+          model: 'claude-opus-5',
+          usage: {
+            input_tokens: 6100,
+            output_tokens: 80,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+          },
+          fallbackUsed: true,
+          costUsd: cost,
+        }),
+      ],
     });
     expect(cost).toBeGreaterThan(costUsd('claude-opus-5', second));
   });
