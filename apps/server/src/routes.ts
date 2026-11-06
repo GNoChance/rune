@@ -9,6 +9,7 @@ import { coachReportRoutes } from './coach/reports';
 import { coachRoutes } from './coach/routes';
 import type { AppDeps } from './deps';
 import { healthRoutes } from './health/routes';
+import { nutritionRoutes } from './nutrition/routes';
 import { gymRoutes } from './places/gym-routes';
 import { placeRoutes } from './places/place-routes';
 import { consentRoutes } from './privacy/consent-routes';
@@ -36,6 +37,7 @@ export function mountRoutes(app: Hono<AppEnv>, deps: AppDeps): void {
   app.route('/api/program', programRoutes(deps));
   app.route('/api/coach/reports', coachReportRoutes(deps));
   app.route('/api/coach', coachRoutes(deps));
+  app.route('/api/nutrition', nutritionRoutes(deps));
   // En dernier : illustrations, fichiers de la PWA et repli SPA.
   mountWebApp(app, deps);
 }

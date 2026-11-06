@@ -10,7 +10,7 @@ import {
 } from '@rune/contracts';
 import { type RawBuilder, sql, type Transaction } from 'kysely';
 import type { SessionUser } from '../app-env';
-import type { Database } from '../db/schema';
+import type { Database, DbExecutor } from '../db/schema';
 import { getServerMeta } from '../db/server-meta';
 import type { AppDeps } from '../deps';
 import { httpError } from '../http/errors';
@@ -66,7 +66,7 @@ function toPulled(source: Source, raw: Raw): PulledRow {
 }
 
 async function selectRows(
-  trx: Transaction<Database>,
+  trx: DbExecutor,
   source: Source,
   revFilter: RawBuilder<unknown>,
   limit?: number,
@@ -76,6 +76,18 @@ async function selectRows(
   const result = await sql<Raw>`select ${columns} from ${sql.table(source.entity)}
     where ${source.scope} and ${revFilter} order by rev ${tail}`.execute(trx);
   return result.rows.map((r) => toPulled(source, r));
+}
+
+/** Lignes vivantes d'une table miroir de l'utilisateur, au format du pull (lecture complète, hors flux). */
+export async function liveRowsOf(
+  db: DbExecutor,
+  deps: AppDeps,
+  userId: string,
+  entity: string,
+): Promise<PulledRow[]> {
+  const source = sourcesFor(deps, userId).find((s) => s.entity === entity);
+  if (!source) throw new Error(`table miroir inconnue : ${entity}`);
+  return selectRows(db, source, sql`deleted_at is null`);
 }
 
 async function hasRowsAfter(trx: Transaction<Database>, sources: Source[], rev: number): Promise<boolean> {
