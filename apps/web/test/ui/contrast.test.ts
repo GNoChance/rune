@@ -118,6 +118,7 @@ const COACH_PAGE_PAIRS: readonly (readonly [string, string, string])[] = [
   ['bulle du coach', '.coachBubble', '.coachBubble'],
   ['bulle de la personne', '.mineBubble', '.mineBubble'],
   ['badge « IA »', '.aiBadge', '.aiBadge'],
+  ['puce de parcours', '.guidedChip', '.guidedChip'],
 ];
 
 /**
@@ -128,6 +129,10 @@ const COACH_PAGE_TEXTS: readonly (readonly [string, string])[] = [
   ['réponse coupée', '.truncated'],
   ['outil en cours', '.tool'],
   ['signaler', '.report'],
+  ["question d'une étape de parcours", '.guidedPrompt'],
+  ['mention sous une puce grisée', '.guidedHint'],
+  ["Retour et Annuler d'un parcours", '.guidedLink'],
+  ['Parcours guidés', '.guidedToggle'],
   ['note du compteur et du reste du jour', '.note, .counter'],
   ['compteur dépassé', '.counterOver'],
 ];

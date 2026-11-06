@@ -14,8 +14,8 @@ import { until } from '../support/wait';
 
 const THREADS = {
   threads: [
-    { id: 't2', day: '2025-10-28', userMessageCount: 6, open: false },
-    { id: 't1', day: '2025-10-27', userMessageCount: 1, open: false },
+    { id: 't2', day: '2025-10-28', persona: 'skald', userMessageCount: 6, open: false },
+    { id: 't1', day: '2025-10-27', persona: 'ombre', userMessageCount: 1, open: false },
   ],
 };
 
@@ -60,24 +60,30 @@ async function renderThreads(body: unknown = THREADS) {
 describe('ThreadsPage : conversations précédentes (spec brique 4 §16.3)', () => {
   it('une ligne par jour : « mar. 28 oct. · 6 messages », lien vers le fil', async () => {
     await renderThreads();
-    const row = await screen.findByRole('link', { name: 'mar. 28 oct. · 6 messages' });
+    const row = await screen.findByRole('link', {
+      name: 'Conversation avec le Skald, du mar. 28 oct. · 6 messages',
+    });
     expect(row.getAttribute('href')).toBe('/coach/threads/t2');
-    expect(screen.getByRole('link', { name: 'lun. 27 oct. · 1 message' }).getAttribute('href')).toBe(
-      '/coach/threads/t1',
-    );
+    expect(
+      screen
+        .getByRole('link', { name: "Conversation avec l'Ombre, du lun. 27 oct. · 1 message" })
+        .getAttribute('href'),
+    ).toBe('/coach/threads/t1');
   });
 
   it('lecture seule : aucun champ de saisie', async () => {
     await renderThreads();
-    await screen.findByRole('link', { name: 'mar. 28 oct. · 6 messages' });
+    await screen.findByRole('link', { name: 'Conversation avec le Skald, du mar. 28 oct. · 6 messages' });
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
   it('« Supprimer toutes mes conversations » en tête, confirmation sans mot de passe, DELETE /api/coach/threads', async () => {
     const { api } = await renderThreads();
-    await screen.findByRole('link', { name: 'mar. 28 oct. · 6 messages' });
+    await screen.findByRole('link', { name: 'Conversation avec le Skald, du mar. 28 oct. · 6 messages' });
     const all = screen.getByRole('button', { name: 'Supprimer toutes mes conversations' });
-    const first = screen.getByRole('link', { name: 'mar. 28 oct. · 6 messages' });
+    const first = screen.getByRole('link', {
+      name: 'Conversation avec le Skald, du mar. 28 oct. · 6 messages',
+    });
     expect(all.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     api.on('GET', '/api/coach/threads', { status: 200, body: { threads: [] } });
     fireEvent.click(all);

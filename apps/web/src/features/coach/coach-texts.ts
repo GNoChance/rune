@@ -1,4 +1,10 @@
-import type { ApiErrorCode, CoachAdminView, CoachStreamErrorCode, CoachToolName } from '@rune/contracts';
+import type {
+  ApiErrorCode,
+  CoachAdminView,
+  CoachId,
+  CoachStreamErrorCode,
+  CoachToolName,
+} from '@rune/contracts';
 import { COACH_CONFIG } from '@rune/domain';
 import { formatDate } from '../../ui/format';
 import { ANTHROPIC_RETENTION_TEXT } from '../privacy/messages';
@@ -16,11 +22,22 @@ export const AI_BANNER =
 
 export const WELCOME = 'Pose-moi une question sur ton programme, ta technique ou ta récupération.';
 
-export const SUGGESTIONS = [
-  'Explique ma prochaine séance',
-  'Pourquoi ma charge ne monte pas ?',
-  'Ajuster mon programme',
-] as const;
+/** Voix du coach, avec l'article : « Voix : le Skald », « Conversation avec l'Ombre » (spec 4.1 §4.4). */
+export const VOICES: Readonly<Record<CoachId, string>> = {
+  ombre: "l'Ombre",
+  skald: 'le Skald',
+  scribe: 'le Scribe',
+};
+
+/** Parcours guidés (spec brique 4.1 §2) : les libellés des parcours et des puces viennent de `contracts`. */
+export const GUIDED_TEXTS = {
+  open: 'Parcours guidés',
+  /** Mention sous un message de la personne venu d'un parcours. */
+  chosen: 'Choisi dans un parcours',
+  back: 'Retour',
+  cancel: 'Annuler',
+  noProgram: "Choisis d'abord un programme",
+} as const;
 
 /** Début de message proposé par « Ajuster mon programme avec le coach » (§16.1). */
 export const PROGRAM_PREFILL = 'Je voudrais ajuster mon programme : ';
@@ -166,7 +183,8 @@ export const MY_COACH_TEXTS = {
   deactivateKept: 'Les propositions que tu as acceptées restent dans ton programme.',
   deactivateAnthropic: ANTHROPIC_RETENTION_TEXT,
   deactivateExport: "Télécharger mes données d'abord",
-  nextTone: "Le nouveau ton s'appliquera à ta conversation de demain.",
+  nextTone:
+    "Le nouveau ton s'applique dès ton prochain message. Ta conversation de ce jour restera dans Conversations précédentes.",
   delete: 'Supprimer',
   cancel: 'Annuler',
 } as const;
@@ -180,9 +198,9 @@ export const THREAD_TEXTS = {
   deleteOne: 'Supprimer cette conversation',
   deleteOneBody: 'Cette conversation sera supprimée. Tu ne pourras pas la retrouver.',
   unavailable: "Cette conversation n'existe plus.",
-  /** « mar. 28 oct. · 6 messages » : le jour de Paris du fil et le nombre de messages envoyés. */
-  label: (day: string, userMessages: number) =>
-    `${dayLabel(day)} · ${userMessages} ${userMessages < 2 ? 'message' : 'messages'}`,
+  /** « Conversation avec le Skald, du mar. 28 oct. · 6 messages » : la voix du fil, son jour de Paris, les messages envoyés. */
+  label: (day: string, userMessages: number, persona: CoachId) =>
+    `Conversation avec ${VOICES[persona]}, du ${dayLabel(day)} · ${userMessages} ${userMessages < 2 ? 'message' : 'messages'}`,
 } as const;
 
 const DAY_FORMAT = new Intl.DateTimeFormat('fr-FR', {

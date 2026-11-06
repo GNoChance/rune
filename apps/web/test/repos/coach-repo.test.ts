@@ -81,7 +81,9 @@ describe('coachRepo', () => {
       .on('GET', '/api/coach/today', { status: 200, body: { thread: null, messages: [], inProgress: false } })
       .on('GET', '/api/coach/threads', {
         status: 200,
-        body: { threads: [{ id: 't1', day: '2026-10-06', userMessageCount: 1, open: true }] },
+        body: {
+          threads: [{ id: 't1', day: '2026-10-06', persona: 'skald', userMessageCount: 1, open: true }],
+        },
       })
       .on('GET', '/api/coach/threads/:id', { status: 200, body: { thread, messages: [] } })
       .on('GET', '/api/coach/brief', {

@@ -92,6 +92,7 @@ export function messageView(row: MessageRow): CoachMessageView | null {
     helpCards: extras.helpCards,
     proposalIds: extras.proposalIds,
     links: extras.links,
+    ...(extras.guided === undefined ? {} : { guided: extras.guided }),
   };
 }
 
@@ -201,7 +202,7 @@ export async function coachThreads(
   const since = daysBefore(parisDate(now), deps.coachConfig.retention.threadDays);
   const rows = await db
     .selectFrom('coachThread')
-    .select(['id', 'day', 'userMessageCount', 'isOpen'])
+    .select(['id', 'day', 'persona', 'userMessageCount', 'isOpen'])
     .where('userId', '=', userId)
     .where('day', '>=', since)
     .orderBy('day', 'desc')
@@ -212,6 +213,7 @@ export async function coachThreads(
     threads: rows.map((r) => ({
       id: r.id,
       day: r.day,
+      persona: r.persona,
       userMessageCount: r.userMessageCount,
       open: r.isOpen === 1,
     })),

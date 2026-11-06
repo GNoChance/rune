@@ -337,6 +337,11 @@ describe('vues et requêtes (§7.1, §17.2)', () => {
   it("CoachMessageView : jamais de message système ; CoachTodayResponse : le fil du jour, s'il existe", () => {
     expect(CoachMessageView.parse(MESSAGE)).toEqual(MESSAGE);
     expect(CoachMessageView.safeParse({ ...MESSAGE, role: 'system' }).success).toBe(false);
+    const guided = { flow: 'loads', choices: ['goblet-squat', 'why'] };
+    expect(CoachMessageView.parse({ ...MESSAGE, role: 'user', guided }).guided).toEqual(guided);
+    expect(CoachMessageView.safeParse({ ...MESSAGE, guided: { flow: 'nope', choices: [] } }).success).toBe(
+      false,
+    );
     const thread = {
       id: THREAD_ID,
       day: '2026-11-03',

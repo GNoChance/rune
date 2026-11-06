@@ -7,6 +7,8 @@ import {
   type CoachStreamEvent,
   type CoachTodayResponse,
   type CoachToolName,
+  composeGuidedMessage,
+  type GuidedRequest,
   type HelpResourceId,
 } from '@rune/contracts';
 import { useMemo, useSyncExternalStore } from 'react';
@@ -14,6 +16,7 @@ import { ApiError, NetworkRequiredError } from '../../api/client';
 import { type AppServices, useServices } from '../../app-services';
 import { coachRepoFor } from '../../repos/coach-repo';
 import { SseSilenceError } from '../../repos/sse-reader';
+import { liveToday } from './coach-thread';
 
 /** Réponse en cours : ce que le flux a déjà apporté, avant que `today` ne la contienne. */
 export interface PendingExchange {
@@ -23,6 +26,10 @@ export interface PendingExchange {
   tool: CoachToolName | null;
   helpCards: HelpResourceId[];
   proposals: CoachProposalEvent[];
+  /** Parcours guidé d'où vient le message (spec brique 4.1) : le serveur recompose le texte à partir de lui. */
+  guided?: GuidedRequest;
+  /** Message venu d'une puce (parcours ou suite), non du champ : le brouillon de la personne n'y est pas touché. */
+  chip?: true;
 }
 
 export type CoachPhase = 'idle' | 'loading' | 'streaming' | 'error' | 'refused';
@@ -47,6 +54,14 @@ export interface CoachStore {
   setDraft(text: string): void;
   /** Envoie le texte du champ avec un identifiant neuf. Sans effet pendant un échange. */
   send(): Promise<void>;
+  /**
+   * Envoie le message composé d'un parcours (spec brique 4.1 §4.1) : texte composé ici avec la table de `contracts`
+   * (affichage immédiat, le serveur fait foi), puis le chemin de `send()`. `names` rend le nom d'un exercice du
+   * programme. Sans effet pendant un échange, ou si les choix ne composent rien. Le brouillon n'est pas touché.
+   */
+  sendGuided(guided: GuidedRequest, names: (exerciseId: string) => string | null): Promise<void>;
+  /** Envoie un texte tel quel, hors du champ (puce de suite d'un parcours). Sans effet pendant un échange. */
+  sendText(text: string): Promise<void>;
   /** Renvoie le dernier message avec le même identifiant (« Réessayer »). */
   retry(): Promise<void>;
   /** Relit `today` toutes les 2 s tant qu'une réponse se termine ailleurs, 3 minutes au plus. */
@@ -143,7 +158,8 @@ export function createCoachStore(s: AppServices): CoachStore {
   }
 
   /** Le texte envoyé revient au champ seulement si la personne n'y a rien tapé depuis. */
-  const given = (pending: PendingExchange) => (state.draft === '' ? pending.text : state.draft);
+  const given = (pending: PendingExchange) =>
+    pending.chip || state.draft !== '' ? state.draft : pending.text;
 
   async function fail(gen: number, pending: PendingExchange, code: CoachError): Promise<void> {
     set({ pending: emptied(pending), draft: given(pending), phase: 'error', error: code });
@@ -157,7 +173,7 @@ export function createCoachStore(s: AppServices): CoachStore {
     const gen = generation;
     answerRecorded = false;
     // Le champ est libre dès l'envoi : ce qui y est tapé pendant le flux est à la personne.
-    const draft = state.draft === pending.text ? '' : state.draft;
+    const draft = !pending.chip && state.draft === pending.text ? '' : state.draft;
     set({ pending, draft, phase: 'streaming', error: null, refusalMessage: null });
     if (firstOfDay) await flush();
     if (gen !== generation) return;
@@ -198,7 +214,14 @@ export function createCoachStore(s: AppServices): CoachStore {
     };
 
     try {
-      await repo.send({ clientMessageId: pending.clientMessageId, text: pending.text }, onEvent);
+      await repo.send(
+        {
+          clientMessageId: pending.clientMessageId,
+          text: pending.text,
+          ...(pending.guided === undefined ? {} : { guided: pending.guided }),
+        },
+        onEvent,
+      );
     } catch (e) {
       if (gen !== generation) return;
       if (e instanceof ApiError && e.code === 'duplicate_message') {
@@ -243,6 +266,25 @@ export function createCoachStore(s: AppServices): CoachStore {
       phase: today ? 'idle' : 'error',
       error: today ? null : errorOf(todayError),
     });
+  }
+
+  /** Un message neuf : identifiant neuf, premier du jour si le fil du jour (périmé exclu) n'a rien de la personne. */
+  async function submit(m: { text: string; guided?: GuidedRequest; chip?: true }): Promise<void> {
+    if (state.phase === 'streaming') return;
+    const firstOfDay = !liveToday(state.today)?.messages.some((x) => x.role === 'user');
+    await run(
+      {
+        clientMessageId: s.newOpId(),
+        text: m.text,
+        bubble: '',
+        tool: null,
+        helpCards: [],
+        proposals: [],
+        ...(m.guided === undefined ? {} : { guided: m.guided }),
+        ...(m.chip ? { chip: true as const } : {}),
+      },
+      firstOfDay,
+    );
   }
 
   const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -297,19 +339,24 @@ export function createCoachStore(s: AppServices): CoachStore {
       set({ draft: text });
     },
     async send() {
-      if (state.phase === 'streaming' || state.draft.trim() === '') return;
-      const firstOfDay = !state.today?.messages.some((m) => m.role === 'user');
-      await run(
-        {
-          clientMessageId: s.newOpId(),
-          text: state.draft,
-          bubble: '',
-          tool: null,
-          helpCards: [],
-          proposals: [],
-        },
-        firstOfDay,
-      );
+      if (state.draft.trim() === '') return;
+      await submit({ text: state.draft });
+    },
+    async sendGuided(guided, names) {
+      if (state.phase === 'streaming') return;
+      // Public du fil du jour : le parcours de nutrition d'un mineur n'est pas celui d'un adulte.
+      const audience = liveToday(state.today)?.thread?.audience ?? state.status?.audience ?? 'adult';
+      let text: string;
+      try {
+        text = composeGuidedMessage(guided.flow, guided.choices, names, audience);
+      } catch {
+        return;
+      }
+      await submit({ text, guided, chip: true });
+    },
+    async sendText(text) {
+      if (text.trim() === '') return;
+      await submit({ text, chip: true });
     },
     async retry() {
       if (state.phase === 'streaming' || state.pending === null) return;

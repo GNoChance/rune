@@ -1,4 +1,11 @@
-import type { CoachId, CoachMessageView, CoachProposalEvent, HelpResourceId } from '@rune/contracts';
+import {
+  type CoachId,
+  type CoachMessageView,
+  type CoachProposalEvent,
+  type GuidedRequest,
+  guidedFlowsFor,
+  type HelpResourceId,
+} from '@rune/contracts';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import { useSyncState } from '../../app-services';
@@ -16,22 +23,19 @@ import {
   budgetText,
   DEV_BANNER,
   errorText,
+  GUIDED_TEXTS,
   REMAINING_FROM,
   remainingText,
   STATE_TEXTS,
-  SUGGESTIONS,
   TOOL_LABELS,
+  VOICES,
   WELCOME,
 } from './coach-texts';
+import { liveToday } from './coach-thread';
+import { GuidedFlow } from './GuidedFlow';
+import { programExercises } from './guided-exercises';
 import { HelpCard } from './HelpCard';
 import { ReportSheet } from './ReportSheet';
-
-/** « Voix : le Skald » (spec §16.2). */
-const VOICES: Readonly<Record<CoachId, string>> = {
-  ombre: "l'Ombre",
-  skald: 'le Skald',
-  scribe: 'le Scribe',
-};
 
 /** Erreurs qu'un second essai ne change pas : pas de « Réessayer ». */
 const FINAL_ERRORS: ReadonlySet<string> = new Set([
@@ -112,7 +116,10 @@ function useAnswerAnnounced(phase: CoachState['phase']): boolean {
 export function CoachPage() {
   const { state, store } = useCoachStore();
   const [, navigate] = useLocation();
-  const { status, today, draft, pending, phase, error, refusalMessage } = state;
+  const { status, draft, pending, phase, error, refusalMessage } = state;
+  // Un fil fermé par un changement de coach ou de version n'est plus la conversation du jour (spec 4.1 §4.4).
+  const today = liveToday(state.today);
+  const [guidedOpen, setGuidedOpen] = useState(false);
   const announced = useAnswerAnnounced(phase);
   const end = useRef<HTMLDivElement>(null);
   const [report, setReport] = useState<{ threadId: string; messageSeq: number } | null>(null);
@@ -152,7 +159,27 @@ export function CoachPage() {
   const blocked = noNetwork || inProgress || dailyLimit || monthlyLimit;
 
   const names = useMemo(() => (program && ctx ? programNames(program, ctx) : null), [program, ctx]);
-  const minor = (today?.thread?.audience ?? status?.audience) === 'minor';
+  const audience = today?.thread?.audience ?? status?.audience ?? 'adult';
+  const minor = audience === 'minor';
+  const flows = useMemo(() => guidedFlowsFor(audience), [audience]);
+  const exercises = useMemo(() => (program && ctx ? programExercises(program, ctx) : []), [program, ctx]);
+  const exerciseName = (id: string) => exercises.find((e) => e.id === id)?.name ?? null;
+  const chooseGuided = (guided: GuidedRequest) => {
+    setGuidedOpen(false);
+    void store.sendGuided(guided, exerciseName);
+  };
+  // Puces de suite : sous la dernière réponse, si elle est finie, d'un message venu d'un parcours, et seulement alors.
+  const lastReply = messages.at(-1);
+  const asked = messages.at(-2);
+  const followUps =
+    phase === 'idle' &&
+    pending === null &&
+    lastReply?.role === 'assistant' &&
+    !lastReply.replaced &&
+    asked?.role === 'user' &&
+    asked.guided !== undefined
+      ? (flows.find((f) => f.id === asked.guided?.flow)?.followUps ?? [])
+      : [];
   const threadId = today?.thread?.id ?? null;
 
   /**
@@ -261,24 +288,12 @@ export function CoachPage() {
             <div className={styles.welcome}>
               <p className={styles.welcomeTitle}>Message d'accueil</p>
               <ChatBubble author="assistant" coach={coach} text={WELCOME} streaming />
-              <div className={styles.suggestions}>
-                {SUGGESTIONS.map((text) => (
-                  <button
-                    key={text}
-                    type="button"
-                    className={styles.suggestion}
-                    disabled={blocked}
-                    onClick={() => store.setDraft(text)}
-                  >
-                    {text}
-                  </button>
-                ))}
-              </div>
+              <GuidedFlow flows={flows} exercises={exercises} disabled={blocked} onChoose={chooseGuided} />
             </div>
           ) : null}
           {messages.map((m) =>
             m.role === 'user' ? (
-              <ChatBubble key={m.seq} author="user" text={m.text} />
+              <ChatBubble key={m.seq} author="user" text={m.text} guided={m.guided !== undefined} />
             ) : (
               <Fragment key={m.seq}>
                 <ChatBubble
@@ -297,7 +312,7 @@ export function CoachPage() {
           )}
           {showPending && pending ? (
             <>
-              <ChatBubble author="user" text={pending.text} />
+              <ChatBubble author="user" text={pending.text} guided={pending.guided !== undefined} />
               {pending.bubble !== '' || pending.tool !== null ? (
                 <ChatBubble
                   author="assistant"
@@ -335,6 +350,44 @@ export function CoachPage() {
             {status.budgetUsedPct >= BUDGET_FROM_PCT && !monthlyLimit ? (
               <p className={styles.note}>{budgetText(status.budgetUsedPct)}</p>
             ) : null}
+            {followUps.length > 0 ? (
+              <div className={styles.followUps}>
+                <div className={styles.guidedChips}>
+                  {followUps.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      className={styles.guidedChip}
+                      disabled={blocked}
+                      onClick={() => void store.sendText(u.text)}
+                    >
+                      {u.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {empty ? null : (
+              <>
+                <button
+                  type="button"
+                  className={styles.guidedToggle}
+                  aria-expanded={guidedOpen}
+                  onClick={() => setGuidedOpen((open) => !open)}
+                >
+                  {GUIDED_TEXTS.open}
+                </button>
+                {guidedOpen ? (
+                  <GuidedFlow
+                    flows={flows}
+                    exercises={exercises}
+                    disabled={blocked}
+                    onChoose={chooseGuided}
+                    onCancel={() => setGuidedOpen(false)}
+                  />
+                ) : null}
+              </>
+            )}
             <Composer
               value={draft}
               onChange={store.setDraft}

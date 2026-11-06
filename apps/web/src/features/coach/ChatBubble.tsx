@@ -1,6 +1,7 @@
 import type { CoachId } from '@rune/contracts';
 import { CoachAvatar } from '../../ui';
 import styles from './coach-page.module.css';
+import { GUIDED_TEXTS } from './coach-texts';
 
 /**
  * Bulle du fil (spec brique 4 §16.2) : la personne à droite ; le coach à gauche, avec son avatar, le badge « IA »
@@ -10,7 +11,7 @@ import styles from './coach-page.module.css';
  */
 export function ChatBubble(
   p:
-    | { author: 'user'; text: string; arriving?: boolean }
+    | { author: 'user'; text: string; arriving?: boolean; guided?: boolean }
     | {
         author: 'assistant';
         coach: CoachId;
@@ -26,6 +27,7 @@ export function ChatBubble(
       <div className={`${styles.row} ${styles.mineRow}`} data-role="user">
         <div className={`${styles.mineBubble} ${p.arriving ? styles.arriving : ''}`}>
           <p className={styles.text}>{p.text}</p>
+          {p.guided ? <p className={styles.guidedNote}>{GUIDED_TEXTS.chosen}</p> : null}
         </div>
       </div>
     );

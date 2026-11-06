@@ -1,4 +1,4 @@
-import type { CoachProposalEvent, CoachTodayResponse } from '@rune/contracts';
+import type { CoachProposalEvent, CoachTodayResponse, GuidedRequest } from '@rune/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type CoachState, coachStoreFor } from '../../src/features/coach/coach-store';
 import { deleteMeta, setMeta } from '../../src/local-db/meta';
@@ -702,5 +702,87 @@ describe('CoachStore', () => {
     expect(calls('GET', '/api/coach/today').length).toBe(reads + 1);
     await vi.advanceTimersByTimeAsync(180_000);
     await second;
+  });
+
+  describe('parcours guidés et fil renouvelé (spec brique 4.1)', () => {
+    const GUIDED: GuidedRequest = { flow: 'recovery', choices: ['sleep'] };
+    const posted = (calls: (m: string, p: string) => { body: unknown }[]) =>
+      calls('POST', '/api/coach/messages');
+
+    it('sendGuided : texte composé et parcours dans le corps, brouillon intact, un seul POST', async () => {
+      const { store, api, calls } = await setup();
+      api.on('POST', '/api/coach/messages', sse(`${TEXT('Bonjour')}${DONE()}`));
+      await store.load();
+      store.setDraft('Ma question en cours');
+      await store.sendGuided(GUIDED, () => null);
+      expect(posted(calls)).toHaveLength(1);
+      expect(posted(calls)[0]?.body).toEqual({
+        clientMessageId: expect.any(String),
+        text: 'Conseille-moi sur mon sommeil.',
+        guided: GUIDED,
+      });
+      expect(store.getState().draft).toBe('Ma question en cours');
+    });
+
+    it('sendGuided : des choix qui ne composent rien (exercice inconnu) ne partent pas', async () => {
+      const { store, calls } = await setup();
+      await store.load();
+      await store.sendGuided({ flow: 'loads', choices: ['goblet-squat', 'why'] }, () => null);
+      expect(posted(calls)).toHaveLength(0);
+      expect(store.getState().phase).toBe('idle');
+    });
+
+    it('sendGuided : le public du fil compose (un mineur a son parcours de nutrition)', async () => {
+      const { store, api, calls } = await setup();
+      api.on('GET', '/api/coach/status', { status: 200, body: { ...STATUS, audience: 'minor' } });
+      api.on('POST', '/api/coach/messages', sse(DONE()));
+      await store.load();
+      await store.sendGuided({ flow: 'nutrition', choices: [] }, () => null);
+      expect(posted(calls)[0]?.body).toMatchObject({
+        text: 'Donne-moi des conseils généraux pour bien manger quand on fait du sport.',
+      });
+    });
+
+    it('sendText : le texte tel quel, sans parcours, le brouillon intact', async () => {
+      const { store, api, calls } = await setup();
+      api.on('POST', '/api/coach/messages', sse(DONE()));
+      await store.load();
+      store.setDraft('Autre chose');
+      await store.sendText('Ajoute cette séance à mon programme.');
+      expect(posted(calls)[0]?.body).toEqual({
+        clientMessageId: expect.any(String),
+        text: 'Ajoute cette séance à mon programme.',
+      });
+      expect(store.getState().draft).toBe('Autre chose');
+    });
+
+    it("échec d'un envoi guidé : le texte composé n'écrase pas le champ, « Réessayer » renvoie le parcours", async () => {
+      const { store, api, calls } = await setup();
+      api.on('POST', '/api/coach/messages', { status: 500, body: { error: 'internal' } });
+      await store.load();
+      await store.sendGuided(GUIDED, () => null);
+      expect(store.getState()).toMatchObject({ phase: 'error', draft: '' });
+      api.on('POST', '/api/coach/messages', sse(DONE()));
+      await store.retry();
+      const bodies = posted(calls).map((c) => c.body as { clientMessageId: string; guided?: unknown });
+      expect(bodies).toHaveLength(2);
+      expect(bodies[1]?.guided).toEqual(GUIDED);
+      expect(bodies[1]?.clientMessageId).toBe(bodies[0]?.clientMessageId);
+    });
+
+    it('un fil fermé par un changement de coach ne compte pas : le premier message du jour passe par flushBefore', async () => {
+      const stale = {
+        thread: { ...THREAD, open: false, closedReason: 'persona_change' },
+        messages: TODAY_WITH_USER.messages,
+        inProgress: false,
+      };
+      const { store, api, sync } = await setup({ today: stale });
+      api.on('POST', '/api/coach/messages', sse(DONE()));
+      await store.load();
+      const before = sync.triggers.filter((x) => x === 'coach').length;
+      store.setDraft('Salut');
+      await store.send();
+      expect(sync.triggers.filter((x) => x === 'coach').length).toBe(before + 1);
+    });
   });
 });

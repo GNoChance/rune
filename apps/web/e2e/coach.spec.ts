@@ -208,7 +208,8 @@ test('coach : accord, phrases, proposition acceptée, aide, signalement classé,
   });
 
   await test.step('premier message : les phrases arrivent une à une, badge « IA »', async () => {
-    await button(page, SUGGESTION).click();
+    // Les suggestions ont laissé la place aux parcours guidés (brique 4.1) : le message se tape.
+    await page.getByLabel('Ton message au coach', { exact: true }).fill(SUGGESTION);
     await expect(page.getByLabel('Ton message au coach', { exact: true })).toHaveValue(SUGGESTION);
     await button(page, 'Envoyer').click();
     const bubble = coachBubbles(page).last();

@@ -1,6 +1,7 @@
 import {
   COACH_STREAM_ERROR_CODES,
   FORBIDDEN_TERMS,
+  GUIDED_FLOWS,
   HELP_PHONE_DIGITS,
   HELP_RESOURCES,
   helpPhones,
@@ -16,6 +17,7 @@ import {
   counterText,
   DEV_BANNER,
   ERROR_TEXTS,
+  GUIDED_TEXTS,
   HELP_NOTES,
   HELP_OPEN,
   MY_COACH_TEXTS,
@@ -24,7 +26,6 @@ import {
   REPORT_TEXTS,
   remainingText,
   STATE_TEXTS,
-  SUGGESTIONS,
   THREAD_TEXTS,
   TOOL_LABELS,
   WELCOME,
@@ -64,7 +65,6 @@ const TEXTS: [string, string, string[], string[]?][] = [
   ['WELCOME', WELCOME, []],
   ['PROGRAM_PREFILL', PROGRAM_PREFILL, []],
   ['DEV_BANNER', DEV_BANNER, []],
-  ...SUGGESTIONS.map((t, i): [string, string, string[]] => [`SUGGESTIONS[${i}]`, t, []]),
   ...Object.entries(STATE_TEXTS).map(([k, t]): [string, string, string[]] => [`STATE_TEXTS.${k}`, t, []]),
   ...Object.entries(TOOL_LABELS).map(([k, t]): [string, string, string[]] => [`TOOL_LABELS.${k}`, t, []]),
   ['budgetText(80)', budgetText(80), ['80']],
@@ -110,8 +110,30 @@ const TEXTS: [string, string, string[], string[]?][] = [
   ...Object.entries(THREAD_TEXTS).flatMap(([k, t]): [string, string, string[]][] =>
     typeof t === 'string' ? [[`THREAD_TEXTS.${k}`, t, []]] : [],
   ),
-  ['threadLabel(2025-10-28, 6)', THREAD_TEXTS.label('2025-10-28', 6), []],
-  ['threadLabel(2025-10-27, 1)', THREAD_TEXTS.label('2025-10-27', 1), []],
+  ['threadLabel(2025-10-28, 6)', THREAD_TEXTS.label('2025-10-28', 6, 'skald'), []],
+  ['threadLabel(2025-10-27, 1)', THREAD_TEXTS.label('2025-10-27', 1, 'ombre'), []],
+  ['threadLabel(2025-10-26, 2)', THREAD_TEXTS.label('2025-10-26', 2, 'scribe'), []],
+  ...Object.entries(GUIDED_TEXTS).flatMap(([k, t]): [string, string, string[]][] =>
+    typeof t === 'string' ? [[`GUIDED_TEXTS.${k}`, t, []]] : [],
+  ),
+  ...GUIDED_FLOWS.flatMap((f) => [
+    [`GUIDED_FLOWS.${f.id}.${f.audience}.label`, f.label, []] as [string, string, string[]],
+    ...f.steps.map((st): [string, string, string[]] => [
+      `GUIDED_FLOWS.${f.id}.${st.id}.prompt`,
+      st.prompt,
+      [],
+    ]),
+    ...f.steps.flatMap((st) =>
+      typeof st.chips === 'string'
+        ? []
+        : st.chips.map((c): [string, string, string[]] => [
+            `GUIDED_FLOWS.${f.id}.${st.id}.${c.id}`,
+            c.label,
+            [],
+          ]),
+    ),
+    ...f.followUps.map((u): [string, string, string[]] => [`GUIDED_FLOWS.${f.id}.${u.id}`, u.label, []]),
+  ]),
   ...Object.entries(BRIEF_TEXTS).flatMap(([k, t]): [string, string, string[]][] =>
     typeof t === 'string' ? [[`BRIEF_TEXTS.${k}`, t, []]] : [],
   ),
@@ -147,13 +169,18 @@ describe('coach-texts', () => {
     expect(HELP_PHONE_DIGITS).toEqual(expect.arrayContaining(['15', '112']));
   });
 
+  it('textes des parcours guidés, mot pour mot', () => {
+    expect(GUIDED_TEXTS).toEqual({
+      open: 'Parcours guidés',
+      chosen: 'Choisi dans un parcours',
+      back: 'Retour',
+      cancel: 'Annuler',
+      noProgram: "Choisis d'abord un programme",
+    });
+  });
+
   it('textes fixes et formats', () => {
     expect(WELCOME).toBe('Pose-moi une question sur ton programme, ta technique ou ta récupération.');
-    expect(SUGGESTIONS).toEqual([
-      'Explique ma prochaine séance',
-      'Pourquoi ma charge ne monte pas ?',
-      'Ajuster mon programme',
-    ]);
     expect(PROGRAM_PREFILL).toBe('Je voudrais ajuster mon programme : ');
     expect(DEV_BANNER).toBe('Mode dev : combinaison non évaluée');
     expect(TOOL_LABELS).toEqual({
@@ -194,9 +221,18 @@ describe('coach-texts', () => {
       'Tes signalements.',
       'Les propositions du coach encore en attente.',
     ]);
-    expect(THREAD_TEXTS.label('2025-10-28', 6)).toBe('mar. 28 oct. · 6 messages');
-    expect(THREAD_TEXTS.label('2025-10-27', 1)).toBe('lun. 27 oct. · 1 message');
-    expect(MY_COACH_TEXTS.nextTone).toBe("Le nouveau ton s'appliquera à ta conversation de demain.");
+    expect(THREAD_TEXTS.label('2025-10-28', 6, 'skald')).toBe(
+      'Conversation avec le Skald, du mar. 28 oct. · 6 messages',
+    );
+    expect(THREAD_TEXTS.label('2025-10-26', 2, 'scribe')).toBe(
+      'Conversation avec le Scribe, du dim. 26 oct. · 2 messages',
+    );
+    expect(THREAD_TEXTS.label('2025-10-27', 1, 'ombre')).toBe(
+      "Conversation avec l'Ombre, du lun. 27 oct. · 1 message",
+    );
+    expect(MY_COACH_TEXTS.nextTone).toBe(
+      "Le nouveau ton s'applique dès ton prochain message. Ta conversation de ce jour restera dans Conversations précédentes.",
+    );
   });
 
   it('ERROR_TEXTS couvre chaque code du flux, thread_closed compris', () => {

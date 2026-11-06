@@ -180,6 +180,31 @@ describe('messages et fils', () => {
     expect((await coachToday(ctx.deps.db, ctx.deps, user.id, ctx.clock.now())).messages).toEqual(messages);
   });
 
+  it('messageView : le parcours guidé d’un message de la personne est rendu, sans parcours rien', async () => {
+    await setup();
+    const guided = { flow: 'new_session', choices: ['legs', 'medium'] };
+    const withGuided = await message({
+      role: 'user',
+      displayText: 'Une séance',
+      displayExtras: extras({ guided }),
+    });
+    expect(messageView(withGuided as never)?.guided).toEqual(guided);
+    const plain = await message({ role: 'user', displayText: 'Salut' });
+    expect(messageView(plain as never)).not.toHaveProperty('guided');
+  });
+
+  it('coachThreads : la voix de chaque fil', async () => {
+    await setup();
+    const user = await createUser(ctx);
+    const skald = await insertFixtureRow(ctx.deps.db, 'coach_thread', {
+      userId: user.id,
+      day: '2026-11-05',
+      persona: 'skald',
+    });
+    const res = await coachThreads(ctx.deps.db, ctx.deps, user.id, ctx.clock.now());
+    expect(res.threads).toEqual([expect.objectContaining({ id: skald.id, persona: 'skald' })]);
+  });
+
   it('messageView : null pour un message système même avec un texte', async () => {
     await setup();
     const row = await message({ role: 'system', displayText: 'Règle rappelée.' });
@@ -209,8 +234,8 @@ describe('messages et fils', () => {
 
     expect(await coachThreads(ctx.deps.db, ctx.deps, user.id, ctx.clock.now())).toEqual({
       threads: [
-        { id: today.id, day: '2026-11-05', userMessageCount: 4, open: true },
-        { id: limit.id, day: '2026-08-07', userMessageCount: 0, open: false },
+        { id: today.id, day: '2026-11-05', persona: expect.any(String), userMessageCount: 4, open: true },
+        { id: limit.id, day: '2026-08-07', persona: expect.any(String), userMessageCount: 0, open: false },
       ],
     });
   });

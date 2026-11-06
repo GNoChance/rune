@@ -237,6 +237,8 @@ export const CoachMessageView = z.strictObject({
   helpCards: z.array(HelpResourceIdSchema),
   proposalIds: z.array(z.string()),
   links: z.array(CoachLinkSchema),
+  /** Message de la personne venu d'un parcours guidé : la mention et les puces de suite (spec 4.1 §2.3). */
+  guided: GuidedRequestSchema.optional(),
 });
 export type CoachMessageView = z.infer<typeof CoachMessageView>;
 
@@ -262,7 +264,14 @@ export type CoachTodayResponse = z.infer<typeof CoachTodayResponse>;
 /** Fils des 90 derniers jours. */
 export const CoachThreadsResponse = z.strictObject({
   threads: z.array(
-    z.strictObject({ id: z.string(), day: ParisDay, userMessageCount: Count, open: z.boolean() }),
+    z.strictObject({
+      id: z.string(),
+      day: ParisDay,
+      /** Voix du fil : « Conversation avec le Skald » (spec 4.1 §4.4). */
+      persona: CoachIdSchema,
+      userMessageCount: Count,
+      open: z.boolean(),
+    }),
   ),
 });
 export type CoachThreadsResponse = z.infer<typeof CoachThreadsResponse>;

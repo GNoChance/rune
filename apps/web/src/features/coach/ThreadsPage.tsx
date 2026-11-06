@@ -58,7 +58,7 @@ export function ThreadsPage() {
               {threads.map((t) => (
                 <li key={t.id}>
                   <Link href={`/coach/threads/${encodeURIComponent(t.id)}`} className={styles.day}>
-                    {THREAD_TEXTS.label(t.day, t.userMessageCount)}
+                    {THREAD_TEXTS.label(t.day, t.userMessageCount, t.persona)}
                   </Link>
                 </li>
               ))}

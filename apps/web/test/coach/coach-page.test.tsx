@@ -6,13 +6,7 @@ import { useSyncExternalStore } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CoachPage } from '../../src/features/coach/CoachPage';
 import type { CoachState, CoachStore } from '../../src/features/coach/coach-store';
-import {
-  counterText,
-  PARENT_LINE,
-  STATE_TEXTS,
-  SUGGESTIONS,
-  TOOL_LABELS,
-} from '../../src/features/coach/coach-texts';
+import { counterText, PARENT_LINE, STATE_TEXTS, TOOL_LABELS } from '../../src/features/coach/coach-texts';
 import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
 import { createFakeApi, createFakeSyncEngine } from '../support/fake-api';
 import { createTestLocalDb } from '../support/local-db';
@@ -30,6 +24,8 @@ const spies = vi.hoisted(() => ({
   load: vi.fn(async () => {}),
   send: vi.fn(async () => {}),
   retry: vi.fn(async () => {}),
+  sendGuided: vi.fn(async () => {}),
+  sendText: vi.fn(async () => {}),
   pollInProgress: vi.fn(async () => {}),
   setDraft: vi.fn(),
 }));
@@ -49,6 +45,8 @@ const fakeStore: CoachStore = {
   withdraw: async () => {},
   send: spies.send,
   retry: spies.retry,
+  sendGuided: spies.sendGuided,
+  sendText: spies.sendText,
   pollInProgress: spies.pollInProgress,
   setDraft: (text: string) => {
     spies.setDraft(text);
@@ -191,7 +189,7 @@ describe('CoachPage : en-tête, bandeau, fil', () => {
     expect(within(box).queryByRole('button')).toBeNull();
   });
 
-  it('fil vide : message d’accueil et 3 suggestions qui remplissent le champ sans envoyer', async () => {
+  it('fil vide : message d’accueil et les parcours guidés à la place des suggestions', async () => {
     init({ today: EMPTY_TODAY, status: status({}, { threadId: null, open: false, userMessageCount: 0 }) });
     await renderPage();
     expect(screen.getByText("Message d'accueil")).toBeTruthy();
@@ -199,15 +197,16 @@ describe('CoachPage : en-tête, bandeau, fil', () => {
       screen.getByText('Pose-moi une question sur ton programme, ta technique ou ta récupération.'),
     ).toBeTruthy();
     for (const name of [
-      'Explique ma prochaine séance',
-      'Pourquoi ma charge ne monte pas ?',
+      'Ma prochaine séance',
+      'Nouvelle séance',
+      'Mes charges',
+      'Récupération',
+      'Nutrition',
       'Ajuster mon programme',
     ]) {
-      expect(screen.getByRole('button', { name })).toBeTruthy();
+      expect(screen.getByRole('button', { name: new RegExp(name) })).toBeTruthy();
     }
-    fireEvent.click(screen.getByRole('button', { name: 'Explique ma prochaine séance' }));
-    expect(spies.setDraft).toHaveBeenCalledWith('Explique ma prochaine séance');
-    expect(field().value).toBe('Explique ma prochaine séance');
+    expect(screen.queryByRole('button', { name: 'Pourquoi ma charge ne monte pas ?' })).toBeNull();
     expect(spies.send).not.toHaveBeenCalled();
   });
 
@@ -410,17 +409,19 @@ describe('CoachPage : états du §16.2', () => {
     expect(field().disabled).toBe(false);
   });
 
-  it('hors ligne, fil vide : les suggestions sont inactives comme le champ', async () => {
+  it('hors ligne, fil vide : les parcours sont inactifs comme le champ', async () => {
     init({ today: EMPTY_TODAY, status: status({}, { threadId: null, userMessageCount: 0 }) });
     await renderWithServices(<CoachPage />, {
       path: '/coach',
       sync: createFakeSyncEngine({ connection: 'offline' }),
     });
-    const suggestions = SUGGESTIONS.map((text) => screen.getByRole('button', { name: text }));
-    expect(suggestions.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+    const flows = ['Ma prochaine séance', 'Nouvelle séance', 'Récupération'].map((name) =>
+      screen.getByRole('button', { name }),
+    );
+    expect(flows.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
   });
 
-  it('fil fermé et vide : ni accueil ni suggestions, la saisie étant retirée', async () => {
+  it('fil fermé et vide : ni accueil ni parcours, la saisie étant retirée', async () => {
     init({
       status: status({}, { open: false, closedReason: 'day' }),
       today: { ...EMPTY_TODAY, thread: { ...THREAD, open: false } } as CoachTodayResponse,
@@ -428,7 +429,7 @@ describe('CoachPage : états du §16.2', () => {
     await renderPage();
     expect(screen.getByText(STATE_TEXTS.threadClosed)).toBeTruthy();
     expect(screen.queryByText("Message d'accueil")).toBeNull();
-    expect(screen.queryByRole('button', { name: SUGGESTIONS[0] as string })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Nouvelle séance' })).toBeNull();
   });
 
   it('hors ligne sans fil chargé', async () => {
@@ -716,5 +717,57 @@ describe('CoachPage : cartes d’aide et de proposition, signalement', () => {
       messageSeq: 2,
       category: 'inaccurate',
     });
+  });
+});
+
+describe('CoachPage : changement de coach ou de version (spec brique 4.1 §4.4)', () => {
+  const STALE_TODAY = {
+    thread: { ...THREAD, persona: 'skald', open: false, closedReason: 'persona_change' },
+    messages: [
+      message(1, 'user', 'Ancienne question'),
+      message(2, 'assistant', 'Ancienne réponse du Skald.'),
+    ],
+    inProgress: false,
+  } as CoachTodayResponse;
+
+  for (const reason of ['persona_change', 'version_change'] as const) {
+    it(`fil fermé « ${reason} » : la conversation repart vide, la saisie reste, l'accueil revient`, async () => {
+      init({
+        status: status({ persona: 'scribe' }, { open: true, closedReason: reason }),
+        today: {
+          ...STALE_TODAY,
+          thread: { ...STALE_TODAY.thread, closedReason: reason },
+        } as CoachTodayResponse,
+      });
+      await renderPage();
+      expect(screen.queryByText('Ancienne réponse du Skald.')).toBeNull();
+      expect(screen.queryByText('Ancienne question')).toBeNull();
+      expect(screen.getByText("Message d'accueil")).toBeTruthy();
+      expect(screen.queryByText(STATE_TEXTS.threadClosed)).toBeNull();
+      expect(field().disabled).toBe(false);
+    });
+  }
+
+  it('l’en-tête montre la voix du nouveau coach', async () => {
+    init({
+      status: status({ persona: 'scribe' }, { open: true, closedReason: 'persona_change' }),
+      today: STALE_TODAY,
+    });
+    await renderPage();
+    expect(screen.getByText('Voix : le Scribe')).toBeTruthy();
+    expect(screen.queryByText('Voix : le Skald')).toBeNull();
+  });
+
+  it('un fil fermé par la fin du jour garde sa voix et ses messages', async () => {
+    init({
+      status: status({}, { open: false, closedReason: 'day_over' }),
+      today: {
+        ...STALE_TODAY,
+        thread: { ...STALE_TODAY.thread, closedReason: 'day_over' },
+      } as CoachTodayResponse,
+    });
+    await renderPage();
+    expect(screen.getByText('Ancienne réponse du Skald.')).toBeTruthy();
+    expect(screen.getByText('Voix : le Skald')).toBeTruthy();
   });
 });
