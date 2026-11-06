@@ -2,6 +2,7 @@ import { parisDate } from '@rune/domain';
 import { useMemo } from 'react';
 import { type AppServices, useLive, useServices } from '../app-services';
 import { healthConsentCached } from '../local-db/consent';
+import { localNutritionMode } from '../local-db/nutrition';
 import { type LocalChange, writeLocal } from '../sync/outbox';
 import { currentUserId, isLive, ownedRows } from './rows';
 
@@ -20,6 +21,8 @@ const WEIGHT_STEP_G = 100;
 export type WeighInErrorCode =
   | 'not_signed_in'
   | 'not_found'
+  /** Hors du mode complet, aucune pesée ne s'écrit sur l'appareil. */
+  | 'mode'
   /** Poids hors de 30 à 250 kg, ou pas au pas de 100 g. */
   | 'weight'
   /** Date impossible ou dans le futur (Paris). */
@@ -78,6 +81,7 @@ export function createWeighInRepo(s: AppServices): WeighInsRepo {
   async function writer() {
     const userId = await currentUserId(db);
     if (userId === null) throw new WeighInError('not_signed_in');
+    if ((await localNutritionMode(db)) !== 'full') throw new WeighInError('mode');
     const ctx = {
       userId,
       now: nowIso,

@@ -71,9 +71,15 @@ export async function purgeNutrition(db: AppDb, rules: EntityRulesMap = entityRu
     db.mirror('nutrition_profile'),
     db.table('nutritionSheets'),
     db.meta,
+    db.outbox,
+    db.deadletter,
   ];
   await db.transaction('rw', tables, async () => {
     for (const t of NUTRITION_DATA_TABLES) await db.mirror(t).clear();
+    // Rien de C2 ne reste : ni op en attente (poids), ni copie de rejet.
+    const data: readonly string[] = NUTRITION_DATA_TABLES;
+    await db.outbox.filter((op) => data.includes(op.entity)).delete();
+    await db.deadletter.filter((d) => data.includes(d.entity)).delete();
     await db.table('nutritionSheets').clear();
     await deleteMeta(db, 'nutritionSheetsEtag');
     if (!rule) return;

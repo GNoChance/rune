@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ApiError, NetworkRequiredError } from '../../src/api/client';
 import { createAppDb } from '../../src/local-db/db';
 import { getMeta, setMeta } from '../../src/local-db/meta';
-import { localNutritionMode } from '../../src/local-db/nutrition';
+import { localNutritionMode, recordDescent } from '../../src/local-db/nutrition';
+import { wipeUserData } from '../../src/local-db/wipe';
 import { nutritionRepoFor } from '../../src/repos/nutrition-repo';
 import { WeighInError, weighInRepoFor } from '../../src/repos/weigh-in-repo';
 import { createTestServices, makeMe } from '../support/render';
@@ -30,6 +31,7 @@ async function services(opts: Parameters<typeof createTestServices>[0] = {}) {
   });
   const t = await createTestServices({ me, ...opts });
   await seedHealthConsent(t.db);
+  await setMeta(t.db, 'nutritionEffectiveMode', 'full');
   return t;
 }
 
@@ -69,14 +71,101 @@ describe('nutritionRepo.setMode (descente hors ligne, D11)', () => {
     expect(sync.triggers).toContain('manual');
   });
 
-  it('seule la plus restrictive compte : disabled l’emporte, qualitative ne le remplace pas', async () => {
-    const { services: s, db } = await services();
+  it('seule la plus restrictive compte : disabled l’emporte, la montée n’écrase pas l’intention', async () => {
+    const { services: s, db, api } = await services();
     const repo = nutritionRepoFor(s);
     await repo.setMode('qualitative');
     await repo.setMode('disabled');
     expect(await getMeta(db, 'nutritionPendingMode')).toMatchObject({ mode: 'disabled' });
-    await repo.setMode('qualitative');
+    // Remonter à qualitative n'est plus une descente : elle exige le réseau et ne remplace pas l'intention.
+    api.setOffline('reject');
+    await expect(repo.setMode('qualitative')).rejects.toBeDefined();
     expect(await getMeta(db, 'nutritionPendingMode')).toMatchObject({ mode: 'disabled' });
+  });
+});
+
+describe('nutritionRepo.setMode : montée sans écran', () => {
+  it('disabled vers qualitative, en ligne : le PUT part tout de suite, le mode local suit, aucune intention', async () => {
+    const { services: s, db, api } = await services();
+    await setMeta(db, 'nutritionEffectiveMode', 'disabled');
+    api.on('PUT', '/api/nutrition/mode', { status: 200, body: STATE_QUALITATIVE });
+    await nutritionRepoFor(s).setMode('qualitative');
+    expect(api.calls.filter((c) => c.method === 'PUT').map((c) => c.body)).toEqual([{ mode: 'qualitative' }]);
+    expect(await localNutritionMode(db)).toBe('qualitative');
+    expect(await getMeta(db, 'nutritionPendingMode')).toBeUndefined();
+  });
+
+  it('hors ligne : NetworkRequiredError, aucune intention écrite', async () => {
+    const { services: s, db, api } = await services();
+    await setMeta(db, 'nutritionEffectiveMode', 'disabled');
+    api.setOffline('reject');
+    await expect(nutritionRepoFor(s).setMode('qualitative')).rejects.toBeInstanceOf(NetworkRequiredError);
+    expect(await getMeta(db, 'nutritionPendingMode')).toBeUndefined();
+    expect(await localNutritionMode(db)).toBe('disabled');
+  });
+});
+
+describe('purge : rien de C2 ne reste', () => {
+  it('une descente vide l’outbox et la deadletter des pesées', async () => {
+    const { services: s, db } = await services();
+    const id = await weighInRepoFor(s).save({ date: '2026-10-05', weightG: 80000 });
+    await db.deadletter.put({
+      opId: 'dl-1',
+      userId: 'u-1',
+      entity: 'weigh_in',
+      id,
+      code: 'forbidden',
+      detail: { kind: 'create', fieldNames: ['date', 'weightG'] },
+      receivedAt: '2026-10-06T10:00:00.000Z',
+    });
+    await db.deadletter.put({
+      opId: 'dl-2',
+      userId: 'u-1',
+      entity: 'gym',
+      id: 'g',
+      code: 'forbidden',
+      detail: {},
+      receivedAt: '2026-10-06T10:00:00.000Z',
+    });
+    await nutritionRepoFor(s).setMode('qualitative');
+    const ops = await db.table('outbox').toArray();
+    expect(ops.filter((o) => o.entity === 'weigh_in')).toEqual([]);
+    expect(JSON.stringify(ops)).not.toContain('weightG');
+    expect((await db.deadletter.toArray()).map((d) => d.opId)).toEqual(['dl-2']);
+  });
+
+  it('wipeUserData vide nutritionSheets et son ETag', async () => {
+    const { db } = await services();
+    await db.table('nutritionSheets').put({ id: 'sleep' });
+    await setMeta(db, 'nutritionSheetsEtag', '"x"');
+    await wipeUserData(db, { keepOutbox: false });
+    expect(await db.table('nutritionSheets').count()).toBe(0);
+    expect(await getMeta(db, 'nutritionSheetsEtag')).toBeUndefined();
+  });
+
+  it('sheets : une réponse arrivée après une purge ne recache rien', async () => {
+    const { services: s, api, db } = await services();
+    await setMeta(db, 'nutritionEffectiveMode', 'qualitative');
+    const body = [
+      {
+        id: 'sleep',
+        title: 't',
+        body_md: 'x',
+        audience: 'all',
+        visible_modes: ['qualitative', 'full'],
+        tags: [],
+        sources: [],
+        version: 1,
+        reviewed_at: null,
+      },
+    ];
+    api.on('GET', '/api/nutrition/sheets', async () => {
+      await recordDescent(db, 'disabled', '2026-10-06T12:00:00.000Z');
+      return { status: 200, body, headers: { ETag: '"e"' } };
+    });
+    expect(await nutritionRepoFor(s).sheets()).toEqual([]);
+    expect(await db.table('nutritionSheets').count()).toBe(0);
+    expect(await getMeta(db, 'nutritionSheetsEtag')).toBeUndefined();
   });
 });
 
@@ -199,7 +288,7 @@ describe('nutritionRepo.sheets', () => {
     });
     const repo = nutritionRepoFor(s);
     expect((await repo.sheets()).map((x) => x.id)).toEqual(['sleep']);
-    expect(await db.table('nutritionSheets').count()).toBe(2);
+    expect(await db.table('nutritionSheets').count()).toBe(1);
     api.on('GET', '/api/nutrition/sheets', { status: 304 });
     expect((await repo.sheets()).map((x) => x.id)).toEqual(['sleep']);
     expect(api.calls.at(-1)?.headers.get('If-None-Match')).toBe('"v1-adults-qualitative"');
@@ -244,6 +333,16 @@ describe('weighInRepo', () => {
     await expect(repo.save({ date: '2026-10-05', weightG: 80050 })).rejects.toMatchObject({ code: 'weight' });
     await expect(repo.save({ date: '2026-10-07', weightG: 80000 })).rejects.toMatchObject({ code: 'date' });
     await expect(repo.save({ date: '2026-02-30', weightG: 80000 })).rejects.toMatchObject({ code: 'date' });
+  });
+
+  it('hors du mode complet : save, correct et remove refusés (mode)', async () => {
+    const { services: s, db } = await services();
+    const repo = weighInRepoFor(s);
+    const id = await repo.save({ date: '2026-10-05', weightG: 80000 });
+    await setMeta(db, 'nutritionEffectiveMode', 'qualitative');
+    await expect(repo.save({ date: '2026-10-04', weightG: 80000 })).rejects.toMatchObject({ code: 'mode' });
+    await expect(repo.correct(id, 80100)).rejects.toMatchObject({ code: 'mode' });
+    await expect(repo.remove(id)).rejects.toMatchObject({ code: 'mode' });
   });
 
   it('useWeighIns lit les pesées vivantes, la plus récente d’abord', async () => {

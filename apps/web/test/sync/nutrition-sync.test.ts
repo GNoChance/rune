@@ -242,7 +242,7 @@ describe('intention de descente (spec §6.4 bis)', () => {
 });
 
 describe('pesée rejetée', () => {
-  it('forbidden : apparaît dans les rejets du socle', async () => {
+  it('forbidden : la pesée rejetée ne laisse aucun poids sur l’appareil', async () => {
     pulledMode = 'qualitative';
     await writeLocal(
       db,
@@ -259,7 +259,9 @@ describe('pesée rejetée', () => {
       }),
     );
     await cycle();
-    expect(engine.getState().rejected).toBe(1);
+    // Le pull qualitative a purgé : ni le poids dans la deadletter, ni rejet à montrer.
+    expect(await db.deadletter.count()).toBe(0);
+    expect(await db.outbox.count()).toBe(0);
     expect(await db.mirror('weigh_in').count()).toBe(0);
   });
 });

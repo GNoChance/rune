@@ -30,6 +30,7 @@ import { ApiError } from '../api/client';
 import { type AppServices, useLive, useServices } from '../app-services';
 import { deleteMeta, getMeta, setMeta } from '../local-db/meta';
 import {
+  atLeastAsStrict,
   clearIntent,
   intentSettledBy,
   localNutritionMode,
@@ -170,14 +171,19 @@ export function createNutritionRepo(s: AppServices): NutritionRepo {
     const parsed = reply.res.status === 200 ? ServedSheets.safeParse(reply.body) : null;
     if (parsed?.success) {
       const list = parsed.data;
-      await db.transaction('rw', db.table('nutritionSheets'), db.meta, async () => {
+      // Le mode est relu à l'écriture : une réponse arrivée après une purge ou une descente ne recache rien de trop.
+      const kept = await db.transaction('rw', [db.table('nutritionSheets'), db.meta], async () => {
+        const mode = await localNutritionMode(db);
+        if (mode === 'disabled') return [];
+        const allowed = list.filter((sheet) => sheet.visible_modes.includes(mode));
         await db.table('nutritionSheets').clear();
-        await db.table('nutritionSheets').bulkPut(list);
+        await db.table('nutritionSheets').bulkPut(allowed);
         const next = reply.res.headers.get('ETag');
         if (next) await setMeta(db, 'nutritionSheetsEtag', next);
         else await deleteMeta(db, 'nutritionSheetsEtag');
+        return allowed;
       });
-      return visible(list);
+      return visible(kept);
     }
     // 304, ou réponse inutilisable : la dernière copie.
     const copy = await cached();
@@ -256,8 +262,20 @@ export function createNutritionRepo(s: AppServices): NutritionRepo {
       return send('POST', '/api/nutrition/screen', req, NutritionStateSchema);
     },
     async setMode(mode) {
-      await recordDescent(db, mode, nowIso());
-      void s.sync.syncNow('manual').catch(() => {});
+      const local = await localNutritionMode(db);
+      if (local === mode) return;
+      if (atLeastAsStrict(mode, local)) {
+        await recordDescent(db, mode, nowIso());
+        void s.sync.syncNow('manual').catch(() => {});
+        return;
+      }
+      // Montée sans écran (disabled vers qualitative) : en ligne seulement, l'état rendu s'applique tout de suite.
+      await flushIntent();
+      await sendThenPull(s, 'PUT', '/api/nutrition/mode', {
+        body: { mode },
+        schema: NutritionStateSchema,
+        apply: (state) => setMeta(db, 'nutritionEffectiveMode', state.effective_mode),
+      });
     },
     async preview(changes) {
       return (await s.api.send('POST', '/api/nutrition/settings/preview', { changes }, PreviewResponse))
