@@ -516,7 +516,7 @@ describe('CoachStore', () => {
     expect(calls('GET', '/api/coach/today').length).toBe(reads + 1);
   });
 
-  it('flushBefore(4000) par load et avant le premier message du jour seulement', async () => {
+  it('flushBefore(4000) par load et avant chaque envoi', async () => {
     const { store, api, sync } = await setup();
     api.on('POST', '/api/coach/messages', sse(`${TEXT('ok')}${DONE()}`));
     const spy = vi.spyOn(sync, 'flushBefore');
@@ -531,7 +531,7 @@ describe('CoachStore', () => {
     expect(flushes()).toBe(3);
     store.setDraft('Deuxième');
     await store.send();
-    expect(flushes()).toBe(3);
+    expect(flushes()).toBe(4);
     expect(spy.mock.calls.every(([ms]) => ms === 4000)).toBe(true);
   });
 
@@ -743,6 +743,17 @@ describe('CoachStore', () => {
       });
     });
 
+    it('sendGuided : le plus strict gagne, fil adulte et statut mineur composent le parcours mineur', async () => {
+      const { store, api, calls } = await setup({ today: TODAY_WITH_USER });
+      api.on('GET', '/api/coach/status', { status: 200, body: { ...STATUS, audience: 'minor' } });
+      api.on('POST', '/api/coach/messages', sse(DONE()));
+      await store.load();
+      await store.sendGuided({ flow: 'nutrition', choices: [] }, () => null);
+      expect(posted(calls)[0]?.body).toMatchObject({
+        text: 'Donne-moi des conseils généraux pour bien manger quand on fait du sport.',
+      });
+    });
+
     it('sendText : le texte tel quel, sans parcours, le brouillon intact', async () => {
       const { store, api, calls } = await setup();
       api.on('POST', '/api/coach/messages', sse(DONE()));
@@ -768,6 +779,23 @@ describe('CoachStore', () => {
       expect(bodies).toHaveLength(2);
       expect(bodies[1]?.guided).toEqual(GUIDED);
       expect(bodies[1]?.clientMessageId).toBe(bodies[0]?.clientMessageId);
+    });
+
+    it('un changement de coach encore en file : le flush part avant le POST', async () => {
+      const { store, api, sync } = await setup({ today: TODAY_WITH_USER });
+      const order: string[] = [];
+      vi.spyOn(sync, 'flushBefore').mockImplementation(async () => {
+        order.push('flush');
+      });
+      api.on('POST', '/api/coach/messages', () => {
+        order.push('post');
+        return sse(DONE());
+      });
+      await store.load();
+      order.length = 0;
+      store.setDraft('Salut');
+      await store.send();
+      expect(order).toEqual(['flush', 'post']);
     });
 
     it('un fil fermé par un changement de coach ne compte pas : le premier message du jour passe par flushBefore', async () => {

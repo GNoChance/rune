@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeText } from '../../src/ai';
-import { openTodayThread, todayThread } from '../../src/coach/threads';
+import { currentVersions, openTodayThread, todayThread } from '../../src/coach/threads';
 import { coachStatus, coachThread, coachThreads, coachToday } from '../../src/coach/views';
 import { insertFixtureRow } from '../support';
 import { type ExchangeKit, exchangeKit } from '../support/coach';
@@ -121,6 +121,43 @@ describe('changement de coach', () => {
     await run.finished;
     expect(run.events.at(-1)).toMatchObject({ type: 'done' });
     expect(kit.rows('SELECT role FROM coach_message')).toHaveLength(2);
+  });
+});
+
+describe('fils vides', () => {
+  const emptyThread = () =>
+    insertFixtureRow(kit.ctx.deps.db, 'coach_thread', {
+      userId: kit.user.id,
+      day: '2026-11-05',
+      persona: 'scribe',
+      ...currentVersions(kit.ctx.deps, 'adult'),
+      isOpen: 1,
+      userMessageCount: 0,
+    });
+
+  it('persona_change : le fil sans message de la personne est supprimé à sa fermeture', async () => {
+    kit = await exchangeKit({ chat: [] });
+    await emptyThread();
+    await pickCoach('ombre');
+    expect((await today()).thread).toBeNull();
+    expect(threads()).toHaveLength(0);
+  });
+
+  it('version_change : le fil sans message de la personne est supprimé, le fil neuf prend sa place', async () => {
+    kit = await exchangeKit({ chat: [fakeText(FINE)] });
+    const empty = await emptyThread();
+    kit.ctx.deps.coachConfig = { ...kit.ctx.deps.coachConfig, toolsVersion: 'tools-2' };
+    await kit.ask('Salut.');
+    expect(threads().map((x) => x.id)).not.toContain(empty.id);
+    expect(threads()).toHaveLength(1);
+  });
+
+  it('un fil qui a un message de la personne reste lisible', async () => {
+    kit = await exchangeKit({ chat: [fakeText(FINE)] });
+    await kit.ask('Salut.');
+    await pickCoach('ombre');
+    await today();
+    expect(threads()).toHaveLength(1);
   });
 });
 

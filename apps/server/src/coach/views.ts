@@ -124,7 +124,7 @@ async function messagesOf(db: DbExecutor, threadId: string): Promise<CoachMessag
 
 /**
  * `GET /api/coach/status` : disponibilité (premier contrôle de la garde), accord (`needsRenewal` : accord actif d'une
- * autre version que le texte en vigueur), public et voix du fil du jour (sinon ceux qu'il aurait), fil du jour (sans
+ * autre version que le texte en vigueur), public (le plus strict de celui du fil du jour et de celui du profil) et voix du fil du jour (sinon celle du profil), fil du jour (sans
  * fil, rien n'empêche d'écrire : `open`), messages restants, budget du mois en pourcentage entier (par défaut, 100 au
  * plus), mode dev.
  */
@@ -153,11 +153,8 @@ export async function coachStatus(
       currentVersion: currentConsentVersion,
       needsRenewal: consent.active && consent.textVersion !== currentConsentVersion,
     },
-    audience: thread?.audience ?? (await traitsOn(db, userId, today)).audience,
-    persona:
-      thread === undefined || thread.closedReason === 'persona_change'
-        ? await personaOf(db, userId)
-        : thread.persona,
+    audience: thread?.audience === 'minor' ? 'minor' : (await traitsOn(db, userId, today)).audience,
+    persona: thread === undefined || isReplaceable(thread) ? await personaOf(db, userId) : thread.persona,
     today: {
       threadId: thread?.id ?? null,
       open: thread === undefined || thread.isOpen === 1 || isReplaceable(thread),

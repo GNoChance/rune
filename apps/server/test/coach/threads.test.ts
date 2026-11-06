@@ -189,6 +189,11 @@ describe('gel', () => {
   it('un réglage figé qui change ferme le fil (version_change) ; sans changement, rien', async () => {
     await setup();
     const thread = await open((await createUser(ctx)).id);
+    await insertFixtureRow(ctx.deps.db, 'coach_message', {
+      userId: thread.userId,
+      threadId: thread.id,
+      role: 'user',
+    });
     expect(await closeIfFrozenStale(ctx.deps.db, ctx.deps, thread)).toBe(false);
     expect(rowOf('coach_thread', thread.id)).toMatchObject({ is_open: 1, closed_reason: null });
 
@@ -214,6 +219,14 @@ describe('gel', () => {
     const otherTools = await thread({ toolsVersion: 'tools-0' });
     const otherBrief = await thread({ briefSchema: 'coach-brief/0' });
     const alreadyClosed = await thread({ model: 'claude-sonnet-5-5', isOpen: 0, closedReason: 'day_over' });
+    // Un fil sans message de la personne n'est pas gardé en lecture : on en donne un à chacun.
+    for (const t of [current, currentMinor, otherModel, otherPrompt, otherEffort, otherTools, otherBrief]) {
+      await insertFixtureRow(ctx.deps.db, 'coach_message', {
+        userId: t.userId,
+        threadId: t.id,
+        role: 'user',
+      });
+    }
 
     await COACH_THREADS_STARTUP_TASK.run(ctx.deps);
 

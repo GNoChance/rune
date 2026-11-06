@@ -16,7 +16,7 @@ import { ApiError, NetworkRequiredError } from '../../api/client';
 import { type AppServices, useServices } from '../../app-services';
 import { coachRepoFor } from '../../repos/coach-repo';
 import { SseSilenceError } from '../../repos/sse-reader';
-import { liveToday } from './coach-thread';
+import { guidedAudience, liveToday } from './coach-thread';
 
 /** Réponse en cours : ce que le flux a déjà apporté, avant que `today` ne la contienne. */
 export interface PendingExchange {
@@ -169,13 +169,13 @@ export function createCoachStore(s: AppServices): CoachStore {
     if (code === 'consent_withdrawn' && gen === generation) await store.load();
   }
 
-  async function run(pending: PendingExchange, firstOfDay: boolean): Promise<void> {
+  async function run(pending: PendingExchange, flushFirst: boolean): Promise<void> {
     const gen = generation;
     answerRecorded = false;
     // Le champ est libre dès l'envoi : ce qui y est tapé pendant le flux est à la personne.
     const draft = !pending.chip && state.draft === pending.text ? '' : state.draft;
     set({ pending, draft, phase: 'streaming', error: null, refusalMessage: null });
-    if (firstOfDay) await flush();
+    if (flushFirst) await flush();
     if (gen !== generation) return;
 
     const seen: {
@@ -268,10 +268,9 @@ export function createCoachStore(s: AppServices): CoachStore {
     });
   }
 
-  /** Un message neuf : identifiant neuf, premier du jour si le fil du jour (périmé exclu) n'a rien de la personne. */
+  /** Un message neuf : identifiant neuf, et `flushBefore` d'abord (changement de coach, charges encore en file ; sans coût file vide). */
   async function submit(m: { text: string; guided?: GuidedRequest; chip?: true }): Promise<void> {
     if (state.phase === 'streaming') return;
-    const firstOfDay = !liveToday(state.today)?.messages.some((x) => x.role === 'user');
     await run(
       {
         clientMessageId: s.newOpId(),
@@ -283,7 +282,7 @@ export function createCoachStore(s: AppServices): CoachStore {
         ...(m.guided === undefined ? {} : { guided: m.guided }),
         ...(m.chip ? { chip: true as const } : {}),
       },
-      firstOfDay,
+      true,
     );
   }
 
@@ -345,7 +344,7 @@ export function createCoachStore(s: AppServices): CoachStore {
     async sendGuided(guided, names) {
       if (state.phase === 'streaming') return;
       // Public du fil du jour : le parcours de nutrition d'un mineur n'est pas celui d'un adulte.
-      const audience = liveToday(state.today)?.thread?.audience ?? state.status?.audience ?? 'adult';
+      const audience = guidedAudience(liveToday(state.today), state.status);
       let text: string;
       try {
         text = composeGuidedMessage(guided.flow, guided.choices, names, audience);

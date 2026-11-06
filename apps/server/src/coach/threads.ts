@@ -80,17 +80,33 @@ async function closeIfPersonaStale(
   deps: AppDeps,
   thread: ThreadRow,
   holdsLease: boolean,
-): Promise<ThreadRow> {
+): Promise<ThreadRow | undefined> {
   if (thread.isOpen !== 1) return thread;
   if (!holdsLease && deps.coach.exchanges.inProgress(thread.userId)) return thread;
   if ((await personaOf(deps.db, thread.userId)) === thread.persona) return thread;
-  await deps.db
-    .updateTable('coachThread')
-    .set({ isOpen: 0, closedReason: 'persona_change' })
-    .where('id', '=', thread.id)
-    .where('isOpen', '=', 1)
-    .execute();
-  return { ...thread, isOpen: 0, closedReason: 'persona_change' };
+  return deps.db.transaction().execute(async (trx) => {
+    const closed = await trx
+      .updateTable('coachThread')
+      .set({ isOpen: 0, closedReason: 'persona_change' })
+      .where('id', '=', thread.id)
+      .where('isOpen', '=', 1)
+      .executeTakeFirst();
+    if (closed.numUpdatedRows > 0n && (await deleteIfEmpty(trx, deps, thread))) return undefined;
+    return { ...thread, isOpen: 0, closedReason: 'persona_change' };
+  });
+}
+
+/** Un fil remplacé sans message de la personne n'a rien à relire : supprimé. Vrai s'il l'a été. */
+async function deleteIfEmpty(trx: DbExecutor, deps: AppDeps, thread: ThreadRow): Promise<boolean> {
+  const said = await trx
+    .selectFrom('coachMessage')
+    .select('id')
+    .where('threadId', '=', thread.id)
+    .where('role', '=', 'user')
+    .executeTakeFirst();
+  if (said !== undefined) return false;
+  await deleteThread(trx, deps, thread.userId, thread.id);
+  return true;
 }
 
 /** Fil du jour de Paris tel que la personne le voit : `todayThread`, périmé par un changement de coach fermé. */
@@ -208,6 +224,7 @@ export async function closeIfFrozenStale(
     .set({ isOpen: 0, closedReason: 'version_change' })
     .where('id', '=', thread.id)
     .execute();
+  await deleteIfEmpty(trx, deps, thread);
   return true;
 }
 

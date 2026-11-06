@@ -369,11 +369,40 @@ describe('coachStatus', () => {
       userMessageCount: 6,
     });
     const status = await coachStatus(ctx.deps.db, ctx.deps, user.id, ctx.clock.now());
+    // Fil remplaçable (version_change) : le message suivant ouvre un fil à la voix du profil.
     expect(status).toMatchObject({
       audience: 'minor',
-      persona: 'skald',
+      persona: 'ombre',
       today: { threadId: thread.id, open: true, closedReason: 'version_change', userMessageCount: 6 },
     });
+  });
+
+  it('/status : le plus strict gagne, fil adulte et profil mineur donnent mineur', async () => {
+    await setup();
+    const user = await createUser(ctx, { birthDate: '2010-01-01' });
+    await insertFixtureRow(ctx.deps.db, 'coach_thread', {
+      userId: user.id,
+      day: '2026-11-05',
+      audience: 'adult',
+    });
+    const status = await coachStatus(ctx.deps.db, ctx.deps, user.id, ctx.clock.now());
+    expect(status.audience).toBe('minor');
+  });
+
+  it('fil fermé par version_change : /status rend la voix du profil, pas celle du fil', async () => {
+    await setup();
+    const user = await createUser(ctx, {});
+    await insertFixtureRow(ctx.deps.db, 'training_profile', { ownerId: user.id, coach: 'ombre' });
+    await insertFixtureRow(ctx.deps.db, 'coach_thread', {
+      userId: user.id,
+      day: '2026-11-05',
+      persona: 'skald',
+      isOpen: 0,
+      closedReason: 'version_change',
+      userMessageCount: 2,
+    });
+    const status = await coachStatus(ctx.deps.db, ctx.deps, user.id, ctx.clock.now());
+    expect(status.persona).toBe('ombre');
   });
 
   it('indisponible : non configuré, coupé, suspendu ; budget plafonné à 100 et limite du jour à 0', async () => {
@@ -470,6 +499,7 @@ describe('coachBrief', () => {
     await setup();
     const user = await createUser(ctx);
     const thread = await openTodayThread(ctx.deps, user.id, ctx.clock.now());
+    await message({ userId: user.id, threadId: thread.id, role: 'user' });
     expect((await coachBrief(ctx.deps.db, ctx.deps, user.id, ctx.clock.now())).threadId).toBe(thread.id);
     await insertFixtureRow(ctx.deps.db, 'training_profile', { ownerId: user.id, coach: 'skald' });
     const response = await coachBrief(ctx.deps.db, ctx.deps, user.id, ctx.clock.now());

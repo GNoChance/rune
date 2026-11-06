@@ -31,7 +31,7 @@ import {
   VOICES,
   WELCOME,
 } from './coach-texts';
-import { liveToday } from './coach-thread';
+import { guidedAudience, liveToday } from './coach-thread';
 import { GuidedFlow } from './GuidedFlow';
 import { programExercises } from './guided-exercises';
 import { HelpCard } from './HelpCard';
@@ -172,7 +172,7 @@ export function CoachPage() {
   const blocked = noNetwork || inProgress || dailyLimit || monthlyLimit;
 
   const names = useMemo(() => (program && ctx ? programNames(program, ctx) : null), [program, ctx]);
-  const audience = today?.thread?.audience ?? status?.audience ?? 'adult';
+  const audience = guidedAudience(today, status);
   const minor = audience === 'minor';
   const flows = useMemo(() => guidedFlowsFor(audience), [audience]);
   // null tant que le programme se charge : « Mes charges » ne dit pas « pas de programme » trop tôt.
@@ -261,7 +261,7 @@ export function CoachPage() {
     phase === 'error' && error !== null && error !== 'thread_closed' && (error !== 'offline' || noNetwork) ? (
       <div className={styles.state}>
         <Banner tone={offline ? 'warning' : 'error'}>{errorText(error)}</Banner>
-        {FINAL_ERRORS.has(error) ? null : (
+        {FINAL_ERRORS.has(error) || (error === 'validation' && pending?.guided !== undefined) ? null : (
           <Button variant="secondary" onClick={retry}>
             {STATE_TEXTS.retry}
           </Button>

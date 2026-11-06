@@ -450,6 +450,42 @@ describe('Parcours guidés : public mineur et hors ligne', () => {
     });
   });
 
+  it('le plus strict gagne : fil adulte mais public mineur du statut, seul le parcours mineur est proposé', async () => {
+    const { api } = await setup({
+      status: coachStatus({ audience: 'minor' }),
+      today: todayWith([coachMessage(1, 'user', 'Salut'), coachMessage(2, 'assistant', 'Bonjour.')]),
+    });
+    await screen.findByText('Bonjour.');
+    click('Parcours guidés');
+    expect(screen.queryByRole('button', { name: 'Nutrition' })).toBeNull();
+    click('Bien manger quand on fait du sport');
+    await until(() => posts(api).length === 1);
+    expect(posts(api)[0]?.body).toMatchObject({ guided: { flow: 'nutrition', choices: [] } });
+  });
+
+  it('le plus strict gagne : fil mineur, statut adulte, seul le parcours mineur est proposé', async () => {
+    await setup({
+      status: coachStatus({ audience: 'adult' }),
+      today: todayWith([coachMessage(1, 'user', 'Salut'), coachMessage(2, 'assistant', 'Bonjour.')], {
+        ...THREAD,
+        audience: 'minor',
+      }),
+    });
+    await screen.findByText('Bonjour.');
+    click('Parcours guidés');
+    expect(screen.queryByRole('button', { name: 'Nutrition' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Bien manger quand on fait du sport' })).toBeTruthy();
+  });
+
+  it('un parcours refusé par le serveur (validation) : bannière sans « Réessayer »', async () => {
+    const { api } = await setup();
+    api.on('POST', '/api/coach/messages', { status: 400, body: { error: 'validation' } });
+    click('Ma prochaine séance');
+    await until(() => posts(api).length === 1);
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('button', { name: 'Réessayer' })).toBeNull();
+  });
+
   it('un adulte a « Nutrition » et ses quatre repères', async () => {
     const { api } = await setup();
     click('Nutrition');

@@ -1,4 +1,5 @@
 import {
+  type AgeBand,
   composeGuidedMessage,
   GuidedInvalidError,
   type GuidedRequest,
@@ -16,6 +17,7 @@ import { currentCatalog } from '../catalog/bundle';
 import type { AppDeps } from '../deps';
 import { httpError } from '../http/errors';
 import { loadReplayInput } from './brief-input';
+import { todayThread } from './threads';
 
 /*
  * Message d'un parcours guidé (spec brique 4.1 §4.2) : le texte est recomposé par le serveur à partir des identifiants
@@ -61,7 +63,13 @@ export async function composeForUser(
   guided: GuidedRequest,
   now: Date,
 ): Promise<string> {
-  const { audience, cautious } = await traitsOn(deps.db, userId, parisDate(now));
+  const today = parisDate(now);
+  const traits = await traitsOn(deps.db, userId, today);
+  const { cautious } = traits;
+  // Le plus strict gagne : mineur si le profil ou le fil ouvert du jour le dit (même règle que l'écran).
+  const thread = await todayThread(deps.db, userId, today);
+  const audience: AgeBand =
+    traits.audience === 'minor' || (thread?.isOpen === 1 && thread.audience === 'minor') ? 'minor' : 'adult';
   try {
     const exerciseIds = guidedExerciseChoices(guided.flow, guided.choices, audience);
     const inProgram = exerciseIds.length === 0 ? null : await programExerciseIds(deps, userId, cautious);

@@ -2,6 +2,8 @@ import { DisplayExtras, type GuidedRequest } from '@rune/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeText } from '../../src/ai';
 import { currentCatalog } from '../../src/catalog/bundle';
+import { currentVersions } from '../../src/coach/threads';
+import { insertFixtureRow } from '../support';
 import { sheetFixture, templateFixture } from '../support/catalog';
 import { type ExchangeKit, exchangeKit } from '../support/coach';
 import { enroll } from '../support/program';
@@ -152,6 +154,43 @@ describe('message guidé', () => {
     expect(messages()[0]?.display_text).toBe(
       'Donne-moi des conseils généraux pour bien manger quand on fait du sport.',
     );
+  });
+
+  it('le plus strict gagne : fil du jour mineur, profil adulte, seul le parcours mineur passe', async () => {
+    kit = await exchangeKit({ chat: [fakeText(FINE)] });
+    await insertFixtureRow(kit.ctx.deps.db, 'coach_thread', {
+      userId: kit.user.id,
+      day: '2026-11-05',
+      audience: 'minor',
+      persona: 'scribe',
+      ...currentVersions(kit.ctx.deps, 'minor'),
+      isOpen: 1,
+    });
+    await expect(kit.ask('', { guided: { flow: 'nutrition', choices: ['protein'] } })).rejects.toMatchObject({
+      code: 'validation',
+      status: 400,
+    });
+    await kit.ask('', { guided: { flow: 'nutrition', choices: [] } });
+    expect(messages()[0]?.display_text).toBe(
+      'Donne-moi des conseils généraux pour bien manger quand on fait du sport.',
+    );
+  });
+
+  it('le plus strict gagne : fil du jour adulte, profil mineur, seul le parcours mineur passe', async () => {
+    kit = await exchangeKit({ birthDate: '2010-01-01', chat: [fakeText(FINE)] });
+    await insertFixtureRow(kit.ctx.deps.db, 'coach_thread', {
+      userId: kit.user.id,
+      day: '2026-11-05',
+      audience: 'adult',
+      persona: 'scribe',
+      ...currentVersions(kit.ctx.deps, 'adult'),
+      isOpen: 1,
+    });
+    await expect(kit.ask('', { guided: { flow: 'nutrition', choices: ['protein'] } })).rejects.toMatchObject({
+      code: 'validation',
+    });
+    await kit.ask('', { guided: { flow: 'nutrition', choices: [] } });
+    expect(messages()).toHaveLength(2);
   });
 
   it('un adulte ne peut pas envoyer le parcours de nutrition des mineurs', async () => {
