@@ -251,7 +251,7 @@ Bases et sources : 07 §5.8 et ses sources ; celles de « Manger autour de la s�
 - Mode `full` seulement (donc accord santé actif ; et accord coach, condition du dossier) : `target` (`energy_kcal`, `energy_min_kcal`, `energy_max_kcal`, `protein_min_g`, `protein_max_g`, `fat_min_g`, `carbs_g`, `fiber_g`, `water_ml`, `effective_goal`, `applied_rules`, `algo_version`, `days_ago`) ; `weekly_change` (4 dernières semaines comptées : `weeks_ago`, `change_pct`, `null` si non définie) ; `last_checkin` (`weeks_ago`, `decision`, `proposed_delta_kcal`, `response`).
 - Jamais : pesées, moyennes de semaine en kg, taille, sexe, `mode_reason`, `cause`, réponses de l'écran, `bmr_kcal`, `tdee_kcal` (choix C28).
 
-Les clés portent leur unité (`_kcal`, `_g`, `_ml`, `_pct`) pour les valeurs autorisées. Le dossier d'un fil est figé à son ouverture (brique 4 D3) : un changement de cible vaut pour le fil du lendemain. `/coach/brief` montre la section Nutrition en clair.
+Les clés portent leur unité (`_kcal`, `_g`, `_ml`, `_pct`) pour les valeurs autorisées. Le dossier d'un fil est figé à son ouverture (brique 4 D3) : un changement de cible vaut pour le fil du lendemain. **Exception** : si le mode effectif n'est plus `full` alors que le dossier du fil ouvert l'est, ce fil est fermé au message suivant (`closed_reason = nutrition_mode_change`, même mécanisme paresseux que `persona_change` de la brique 4.1) et un nouveau fil s'ouvre avec le nouveau dossier : aucun repère chiffré ne reste dans un échange après la descente. La migration `0009` reconstruit `coach_thread` pour ajouter cette valeur au `CHECK`, comme `0008` (choix C31). `/coach/brief` montre la section Nutrition en clair.
 
 ### 11.2 Outil `open_nutrition_screen` (`tools-2`)
 
@@ -416,3 +416,4 @@ Les 8 familles de 07 §5.16, plus :
 | C28 | Ni MB ni DET dans le dossier du coach. | Les ajouter : deux clés et des valeurs autorisées. |
 | C29 | Carte de l'accueil : fourchette du jour en `full`, une fiche du jour en qualitatif. | Une carte plus discrète : un composant. |
 | C30 | Courbe sur 4 semaines, 3 mois ou 1 an. | D'autres plages : une liste. |
+| C31 | Fil du coach fermé au message suivant quand on quitte le mode complet. | Le garder : le modèle aurait encore les repères dans son dossier, contraire à 07 §5.2.6. |
