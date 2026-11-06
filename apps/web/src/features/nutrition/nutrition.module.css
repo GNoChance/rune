@@ -169,3 +169,15 @@
 .helpCard p {
   margin: 0;
 }
+
+/* Réponses de l'écran de sécurité : trois boutons pleine largeur, 48 px au moins. */
+.answers {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  gap: var(--space-2);
+}
+
+.answers > * {
+  min-height: 48px;
+}

@@ -170,5 +170,58 @@ export const NUTRITION_TEXTS = {
     link: "Demander de l'aide",
   },
 
+  /** Activation et écran de sécurité (§12.4) : une étape par écran, rien d'envoyé avant la dernière. */
+  start: {
+    begin: 'Commencer',
+    next: 'Continuer',
+    send: 'Valider',
+    consent: {
+      title: 'Accord santé',
+      lead: 'Les repères chiffrés utilisent des données de santé : ton accord est nécessaire pour les activer.',
+      accept: "J'accepte",
+      refuse: 'Conseils sans chiffres',
+    },
+    question: {
+      progress: (index: number, total: number) => `Question ${index} sur ${total}`,
+      yes: 'Oui',
+      no: 'Non',
+      preferNot: 'Je préfère ne pas répondre',
+    },
+    outcome: {
+      title: 'Ce que tu peux choisir',
+      safety: "D'après tes réponses, les conseils sans chiffres sont les plus adaptés.",
+      choice: 'Choisis comment utiliser Nutrition. Tu pourras changer à tout moment.',
+      modeLegend: 'Mode',
+      fullClosed: 'Pas encore ouvert dans ce cercle',
+    },
+    setup: {
+      title: 'Tes repères de départ',
+      lead: 'Quelques informations pour estimer tes repères.',
+      sexLegend: 'Sexe pour le calcul',
+      male: 'Homme',
+      female: 'Femme',
+      unspecified: 'Je préfère ne pas le dire',
+      height: 'Taille (cm)',
+      heightError: 'Indique une taille entre 120 et 220 cm.',
+      weight: 'Première pesée (kg)',
+      weightHelp: 'À 0,1 kg près.',
+      weightErrors: {
+        empty: 'Indique ton poids.',
+        format: 'Écris ton poids en kilos, par exemple 72,4.',
+        decimals: 'Une décimale au plus.',
+        range: 'Indique un poids entre 30 et 250 kg.',
+      },
+      activityLegend: "Niveau d'activité",
+      activity: {
+        1: 'Plutôt assis : travail ou études assis, peu de marche',
+        2: 'Un peu actif : assis la plupart du temps, mais marche ou vélo au quotidien, ou 2 à 4 séances par semaine',
+        3: 'Actif : métier debout ou physique léger, ou sport la plupart des jours',
+        4: 'Très actif : métier physique, ou entraînement intense presque tous les jours',
+      },
+      goalLegend: 'Objectif',
+      goals: { lose: 'Perte de gras', maintain: 'Maintien', gain: 'Prise de muscle' },
+    },
+  },
+
   offline: 'Nécessite le réseau',
 } as const;

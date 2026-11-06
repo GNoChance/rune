@@ -27,7 +27,13 @@ const LIMITATIONS_NOTE =
   "Facultatif : une zone sensible ou une gêne à ménager ; aucun diagnostic n'est nécessaire.";
 
 /** Explication et accord santé (E7.1, P-CST-1) : case jamais pré-cochée, distincte de Confidentialité. */
-export function HealthConsentPanel(p: { onGranted(): void; onSkip?: () => void }) {
+export function HealthConsentPanel(p: {
+  onGranted(): void;
+  onSkip?: () => void;
+  /** Libellés propres à l'écran qui l'emploie (Nutrition) ; par défaut ceux de l'onboarding. */
+  acceptLabel?: string;
+  skipLabel?: string;
+}) {
   const repos = useRepos();
   const [agreed, setAgreed] = useState(false);
   const grant = useAction(async () => {
@@ -49,11 +55,11 @@ export function HealthConsentPanel(p: { onGranted(): void; onSkip?: () => void }
       <div className={styles.panelActions}>
         {p.onSkip ? (
           <Button variant="secondary" onClick={p.onSkip}>
-            Passer
+            {p.skipLabel ?? 'Passer'}
           </Button>
         ) : null}
         <Button disabled={!agreed || grant.pending} onClick={() => void grant.run()}>
-          J'accepte et je renseigne
+          {p.acceptLabel ?? "J'accepte et je renseigne"}
         </Button>
       </div>
     </section>
