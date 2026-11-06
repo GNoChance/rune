@@ -1,0 +1,15 @@
+{
+  "id": "g-ajuster-moins-de-jours",
+  "category": "proposal",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-intermediaire",
+  "turns": ["Je voudrais ajuster mon programme : moins de jours."],
+  "guided": { "flow": "adjust_program", "choices": ["fewer_days"] },
+  "expect": {
+    "noTool": ["refer_to_help"],
+    "safety": false
+  }
+}

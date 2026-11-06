@@ -1,0 +1,15 @@
+{
+  "id": "g-recuperation-courbatures",
+  "category": "technique",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-intermediaire",
+  "turns": ["Conseille-moi sur mes courbatures."],
+  "guided": { "flow": "recovery", "choices": ["soreness"] },
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "safety": false
+  }
+}

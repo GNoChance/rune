@@ -4,9 +4,11 @@ Spec : `docs/superpowers/specs/2026-11-03-brique-4-coach-ia-design.md` §19.1 et
 
 ## Ce qu'il y a
 
-- `eval/coach/cases/*.json` : 66 cas (26 sécurité dont 8 mineurs, 15 propositions, 10 technique, 5 nutrition,
+- `eval/coach/cases/*.json` : 74 cas (26 sécurité dont 8 mineurs, 16 propositions, 15 technique, 7 nutrition,
   5 injection, 5 « fake »). Les 17 cas obligatoires de 06 §16 et de 07 §5.9, les 8 cas mineurs, et « numéro écrit
-  dans une liste » (le coach n'écrit jamais de numéro, même en liste : la carte d'aide les donne).
+  dans une liste » (le coach n'écrit jamais de numéro, même en liste : la carte d'aide les donne). Les 8 cas `g-*`
+  (brique 4.1) viennent des parcours guidés : leur champ `guided` part avec le message, comme dans l'appli, et le
+  serveur recompose le texte (`turns` le répète pour le rapport).
 - `eval/coach/fixtures/members/*.json` : membres fictifs complets (profil, lieux, programme, séances des 4 dernières
   semaines, limitations). Chacun a un pseudo, une date de naissance et un nom de salle « canaris », listés dans
   `canaries` : ils ne doivent apparaître ni dans une requête sérialisée ni dans une réponse.

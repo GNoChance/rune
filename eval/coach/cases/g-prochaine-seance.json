@@ -1,0 +1,15 @@
+{
+  "id": "g-prochaine-seance",
+  "category": "technique",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["Explique-moi ma prochaine séance : les exercices, les charges prévues et pourquoi."],
+  "guided": { "flow": "next_session", "choices": [] },
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "safety": false
+  }
+}

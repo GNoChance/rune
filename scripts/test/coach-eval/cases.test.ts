@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ExerciseSheetSchema } from '@rune/contracts';
+import { composeGuidedMessage, ExerciseSheetSchema, GUIDED_FLOW_IDS } from '@rune/contracts';
 import { describe, expect, it } from 'vitest';
 import { PROMPTS } from '../../../apps/server/src/coach/prompts';
 import {
@@ -51,9 +51,9 @@ const members = await loadMembers();
 const byCategory = (category: string) => cases.filter((c) => c.category === category);
 
 describe('jeu de cas', () => {
-  it('charge environ 65 cas valides, un fichier par identifiant', async () => {
-    expect(cases.length).toBeGreaterThanOrEqual(60);
-    expect(cases.length).toBeLessThanOrEqual(70);
+  it('charge environ 75 cas valides, un fichier par identifiant', async () => {
+    expect(cases.length).toBeGreaterThanOrEqual(70);
+    expect(cases.length).toBeLessThanOrEqual(80);
     const files = (await readdir(CASES_DIR)).filter((f) => f.endsWith('.json')).sort();
     expect(files).toEqual(cases.map((c) => `${c.id}.json`).sort());
     expect(new Set(cases.map((c) => c.id)).size).toBe(cases.length);
@@ -66,9 +66,9 @@ describe('jeu de cas', () => {
   it('répartit les cas : sécurité (dont 8 mineurs), propositions, technique, nutrition, injection, faux', () => {
     expect(byCategory('safety')).toHaveLength(ADULT_SAFETY.length + MINOR_SAFETY.length);
     expect(byCategory('safety').filter((c) => c.audience === 'minor')).toHaveLength(8);
-    expect(byCategory('proposal')).toHaveLength(15);
-    expect(byCategory('technique')).toHaveLength(10);
-    expect(byCategory('nutrition')).toHaveLength(5);
+    expect(byCategory('proposal')).toHaveLength(16);
+    expect(byCategory('technique')).toHaveLength(15);
+    expect(byCategory('nutrition')).toHaveLength(7);
     expect(byCategory('injection')).toHaveLength(5);
     expect(byCategory('fake')).toHaveLength(5);
   });
@@ -136,6 +136,63 @@ describe('jeu de cas', () => {
       expect(age < 18 ? 'minor' : 'adult', `${c.id} : public`).toBe(c.audience);
       expect(member.consents.health, c.id).toBe(c.consents.health);
     }
+  });
+});
+
+const guidedCases = cases.filter((c) => c.guided !== undefined);
+
+describe('cas des parcours guidés (brique 4.1)', () => {
+  it('8 cas : un par parcours, plus « quelle charge pour commencer » et la nutrition du mineur', () => {
+    expect(guidedCases.map((c) => c.id).sort()).toEqual([
+      'g-ajuster-moins-de-jours',
+      'g-charges-commencer-debutant',
+      'g-charges-trop-lourde',
+      'g-nouvelle-seance-jambes',
+      'g-nutrition-avant-seance',
+      'g-nutrition-mineur',
+      'g-prochaine-seance',
+      'g-recuperation-courbatures',
+    ]);
+    expect(new Set(guidedCases.map((c) => c.guided?.flow))).toEqual(new Set(GUIDED_FLOW_IDS));
+  });
+
+  it('un seul tour, dont le texte est celui que le serveur recompose depuis les choix', () => {
+    for (const c of guidedCases) {
+      const guided = c.guided;
+      if (guided === undefined) continue;
+      expect(c.turns, c.id).toHaveLength(1);
+      expect(c.fakeScript, c.id).toBeUndefined();
+      // Le nom de l'exercice vient du catalogue : il tient la place de « @@ ».
+      const probe = composeGuidedMessage(guided.flow, guided.choices, () => '@@', c.audience);
+      const [head = '', tail = ''] = probe.split('@@');
+      expect(c.turns[0]?.startsWith(head) && c.turns[0]?.endsWith(tail), c.id).toBe(true);
+    }
+  });
+
+  it('aucune charge ni aucun chiffre de nutrition inventés : mustNotMatch sur les parcours concernés', () => {
+    const patterns = (id: string) => cases.find((c) => c.id === id)?.expect.mustNotMatch ?? [];
+    const matches = (id: string, text: string) => patterns(id).some((p) => new RegExp(p, 'i').test(text));
+    for (const id of ['g-nouvelle-seance-jambes', 'g-charges-commencer-debutant']) {
+      expect(matches(id, 'Commence avec 20 kg'), id).toBe(true);
+      expect(matches(id, 'Prends 12,5 kilos'), id).toBe(true);
+      expect(matches(id, 'Garde 2 répétitions en réserve'), id).toBe(false);
+    }
+    for (const id of ['g-nutrition-avant-seance', 'g-nutrition-mineur']) {
+      expect(matches(id, 'Mange 60 g de protéines'), id).toBe(true);
+      expect(matches(id, 'Bois 2 litres'), id).toBe(true);
+      expect(matches(id, 'Environ 500 kcal'), id).toBe(true);
+      expect(matches(id, 'Mange un fruit avant la séance'), id).toBe(false);
+    }
+  });
+
+  it('« Nouvelle séance » attend search_exercises et aucune proposition sans demande ; le mineur reste mineur', () => {
+    const nouvelle = guidedCases.find((c) => c.id === 'g-nouvelle-seance-jambes');
+    expect(nouvelle?.expect.tools).toContain('search_exercises');
+    expect(nouvelle?.expect.noTool).toContain('propose_program_change');
+    expect(guidedCases.find((c) => c.id === 'g-nutrition-mineur')?.audience).toBe('minor');
+    expect(guidedCases.find((c) => c.id === 'g-charges-commencer-debutant')?.guided?.choices[1]).toBe(
+      'start',
+    );
   });
 });
 

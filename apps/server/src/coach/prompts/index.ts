@@ -4,6 +4,8 @@ import type { FilterRule, promptVariant } from '@rune/domain';
 import type { CachedBlock } from '../../ai';
 import { COACH_1_ADULT } from './coach-1-adult';
 import { COACH_1_MINOR } from './coach-1-minor';
+import { COACH_2_ADULT } from './coach-2-adult';
+import { COACH_2_MINOR } from './coach-2-minor';
 import { STYLE_OMBRE } from './style-ombre';
 import { STYLE_SCRIBE } from './style-scribe';
 import { STYLE_SKALD } from './style-skald';
@@ -14,9 +16,11 @@ import { STYLE_SKALD } from './style-skald';
  */
 
 /** Variante stockée dans `coach_thread.prompt_version` (`promptVariant`). */
-export type PromptVersion = ReturnType<typeof promptVariant>;
+export type PromptVersion = ReturnType<typeof promptVariant> | 'coach-1/adult' | 'coach-1/minor';
 
 export const PROMPTS: Record<PromptVersion, string> = {
+  'coach-2/adult': COACH_2_ADULT,
+  'coach-2/minor': COACH_2_MINOR,
   'coach-1/adult': COACH_1_ADULT,
   'coach-1/minor': COACH_1_MINOR,
 };

@@ -30,7 +30,7 @@ describe('COACH_CONFIG', () => {
       exchangeTimeoutMs: 180_000,
       callTimeoutMs: 120_000,
     });
-    expect(COACH_CONFIG.promptVersion).toBe('coach-1');
+    expect(COACH_CONFIG.promptVersion).toBe('coach-2');
     expect(COACH_CONFIG.toolsVersion).toBe('tools-1');
     expect(COACH_CONFIG.briefSchema).toBe('coach-brief/1');
     expect(COACH_CONFIG.retention).toEqual({ threadDays: 90, usageLogMonths: 12, reportDays: 90 });
@@ -52,15 +52,15 @@ describe('COACH_CONFIG', () => {
   });
 
   it('promptVariant', () => {
-    expect(promptVariant('minor')).toBe('coach-1/minor');
-    expect(promptVariant('adult')).toBe('coach-1/adult');
+    expect(promptVariant('minor')).toBe('coach-2/minor');
+    expect(promptVariant('adult')).toBe('coach-2/adult');
   });
 
   it('isEvaluated : combinaison exacte seulement', () => {
     const combo = {
       model: 'claude-opus-5-5',
       effort: 'low' as const,
-      promptVersion: 'coach-1',
+      promptVersion: 'coach-2',
       toolsVersion: 'tools-1',
       briefSchema: 'coach-brief/1',
       catalogVersion: '7',
@@ -71,6 +71,6 @@ describe('COACH_CONFIG', () => {
     expect(isEvaluated(cfg, { ...combo, catalogVersion: '8' })).toBe(false);
     expect(isEvaluated(cfg, { ...combo, effort: 'medium' })).toBe(false);
     expect(isEvaluated(cfg, { ...combo, model: 'claude-sonnet-5-5' })).toBe(false);
-    expect(isEvaluated(cfg, { ...combo, promptVersion: 'coach-2' })).toBe(false);
+    expect(isEvaluated(cfg, { ...combo, promptVersion: 'coach-1' })).toBe(false);
   });
 });

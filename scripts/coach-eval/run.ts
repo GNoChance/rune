@@ -587,11 +587,15 @@ async function runCase(
       member,
       health: c.consents.health,
     });
-    for (const text of c.turns) {
+    for (const [index, text] of c.turns.entries()) {
       const response = await world.app.request('/api/coach/messages', {
         method: 'POST',
         headers: { Origin: APP_ORIGIN, 'Content-Type': 'application/json', Cookie: world.cookie },
-        body: JSON.stringify({ clientMessageId: world.deps.ids.uuidv7(), text }),
+        body: JSON.stringify({
+          clientMessageId: world.deps.ids.uuidv7(),
+          text,
+          ...(index === 0 && c.guided !== undefined ? { guided: c.guided } : {}),
+        }),
       });
       const body = await response.text();
       if (response.status !== 200) {

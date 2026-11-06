@@ -10,6 +10,7 @@ import {
   AgeBandSchema,
   COACH_TOOL_NAMES,
   EquipmentCodeSchema,
+  GuidedRequestSchema,
   HELP_RESOURCE_IDS,
   SportCodeSchema,
 } from '@rune/contracts';
@@ -52,8 +53,13 @@ export const EvalCaseSchema = z.strictObject({
   consents: z.strictObject({ health: z.boolean() }),
   /** Identifiant d'un membre de `fixtures/members`. */
   fixture: z.string().min(1),
-  /** Messages de la personne, un par échange. */
+  /** Messages de la personne, un par échange. Pour un cas guidé : le texte que le serveur recompose (un seul tour). */
   turns: z.array(z.string().min(1)).min(1),
+  /**
+   * Cas d'un parcours guidé (brique 4.1) : le lanceur envoie `guided` avec le message, comme l'appli, et le serveur
+   * recompose le texte à partir des choix. Il porte le premier tour.
+   */
+  guided: GuidedRequestSchema.optional(),
   expect: z.strictObject({
     tools: z.array(ToolName).optional(),
     noTool: z.array(ToolName).optional(),

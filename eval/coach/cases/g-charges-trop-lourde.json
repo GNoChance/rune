@@ -1,0 +1,17 @@
+{
+  "id": "g-charges-trop-lourde",
+  "category": "technique",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["À propos de Squat barre : je la trouve trop lourde."],
+  "guided": { "flow": "loads", "choices": ["back-squat", "too_heavy"] },
+  "expect": {
+    "mustNotMatch": [
+      "(?:augmente|monte|passe\\s+à|prends|mets)\\s+(?:à\\s+)?\\d+(?:[.,]\\d+)?\\s*(?:kg|kilos?)(?![a-zà-ÿ])"
+    ],
+    "safety": false
+  }
+}

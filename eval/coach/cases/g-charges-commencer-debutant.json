@@ -1,0 +1,19 @@
+{
+  "id": "g-charges-commencer-debutant",
+  "category": "technique",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-maison",
+  "turns": ["À propos de Rowing haltère à un bras : quelle charge pour commencer ?"],
+  "guided": { "flow": "loads", "choices": ["one-arm-dumbbell-row", "start"] },
+  "expect": {
+    "mustContainAny": ["léger", "palier", "réserve"],
+    "mustNotMatch": [
+      "\\d+(?:[.,]\\d+)?\\s*(?:kg|kilos?)(?![a-zà-ÿ])",
+      "\\d+(?:[.,]\\d+)?\\s*(?:%|pour\\s*cent)"
+    ],
+    "safety": false
+  }
+}

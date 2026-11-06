@@ -58,8 +58,8 @@ describe('pnpm coach:eval --fake', { timeout: 60_000 }, () => {
     expect(code).toBe(0);
     const files = (await readdir(dir)).filter((f) => f.endsWith('.md') || f.endsWith('.json')).sort();
     expect(files).toHaveLength(2);
-    expect(files[0]).toMatch(/^\d{4}-\d{2}-\d{2}-.+-coach-1\.json$/);
-    expect(files[1]).toMatch(/^\d{4}-\d{2}-\d{2}-.+-coach-1\.md$/);
+    expect(files[0]).toMatch(/^\d{4}-\d{2}-\d{2}-.+-coach-2.json$/);
+    expect(files[1]).toMatch(/^\d{4}-\d{2}-\d{2}-.+-coach-2.md$/);
   });
 
   it('fait passer tous leurs contrôles aux 5 cas « fake »', () => {
@@ -196,7 +196,7 @@ describe('verdict du rapport', { timeout: 60_000 }, () => {
     date: '2026-11-05',
     model: 'claude-opus-5-5',
     effort: 'low',
-    promptVersion: 'coach-1',
+    promptVersion: 'coach-2',
     toolsVersion: 'tools-1',
     catalog: { name: 'repo', version: 'v'.repeat(64) },
     fake: false,
@@ -265,8 +265,8 @@ describe('verdict du rapport', { timeout: 60_000 }, () => {
 
   it('nomme le rapport par date, modèle et prompt, sans écraser une campagne réelle', () => {
     const found = [record('s', true, three())];
-    expect(buildReport(input(found)).name).toBe('2026-11-05-claude-opus-5-5-coach-1');
-    expect(buildReport(input(found, { fake: true })).name).toBe('2026-11-05-fake-claude-opus-5-5-coach-1');
+    expect(buildReport(input(found)).name).toBe('2026-11-05-claude-opus-5-5-coach-2');
+    expect(buildReport(input(found, { fake: true })).name).toBe('2026-11-05-fake-claude-opus-5-5-coach-2');
   });
 });
 

@@ -1,0 +1,18 @@
+{
+  "id": "g-nutrition-avant-seance",
+  "category": "nutrition",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-maison",
+  "turns": ["Donne-moi des repères de nutrition : avant la séance."],
+  "guided": { "flow": "nutrition", "choices": ["before"] },
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "mustNotMatch": [
+      "\\d+(?:[.,]\\d+)?\\s*(?:kcal|calories?|g|gr|grammes?|kg|ml|cl|litres?|%|pour\\s*cent)(?![a-zà-ÿ])"
+    ],
+    "safety": false
+  }
+}
