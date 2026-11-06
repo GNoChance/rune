@@ -2,7 +2,10 @@ import { DisplayExtras, type GuidedRequest } from '@rune/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeText } from '../../src/ai';
 import { currentCatalog } from '../../src/catalog/bundle';
+import { sheetFixture, templateFixture } from '../support/catalog';
 import { type ExchangeKit, exchangeKit } from '../support/coach';
+import { enroll } from '../support/program';
+import { rebuild, seedSheet } from '../support/review';
 
 /*
  * Messages des parcours guidés (spec brique 4.1 §4.2) : le serveur recompose le texte à partir des identifiants, ignore
@@ -100,6 +103,21 @@ describe('message guidé', () => {
       kit.ask('', { guided: { flow: 'loads', choices: ['inconnu-du-catalogue', 'why'] } }),
     ).rejects.toMatchObject({ code: 'validation', status: 400 });
     expect(kit.ctx.deps.coach.exchanges.inProgress(kit.user.id)).toBe(false);
+  });
+
+  it("« Mes charges » sur un slot à chaîne : l'exercice courant de la chaîne, pas son identifiant", async () => {
+    kit = await exchangeKit({ chat: [fakeText(FINE)] });
+    await seedSheet(kit.ctx, sheetFixture('chain-a', { chain_id: 'rangee' }));
+    await seedSheet(kit.ctx, sheetFixture('chain-b', { chain_id: 'rangee', easier_id: 'chain-a' }));
+    const template = templateFixture('chain-program', [{ chain: 'rangee' }]);
+    await rebuild(kit.ctx, [template]);
+    await enroll(kit.ctx, kit.user.id, template);
+
+    const ask = (id: string) => kit.ask('', { guided: { flow: 'loads', choices: [id, 'why'] } });
+    await expect(ask('rangee')).rejects.toMatchObject({ code: 'validation', status: 400 });
+    await expect(ask('chain-b')).rejects.toMatchObject({ code: 'validation', status: 400 });
+    await ask('chain-a');
+    expect(messages()[0]?.display_text).toContain(await nameOf('chain-a'));
   });
 
   it('« Mes charges » sans programme actif : 400', async () => {

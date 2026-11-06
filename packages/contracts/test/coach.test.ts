@@ -65,7 +65,12 @@ describe('coach (spec refonte §8)', () => {
 describe('constantes du coach IA (spec brique 4)', () => {
   it('valeurs des tables (§6.1), des outils (§10), du flux (§7.2) et de la garde (§7.1)', () => {
     expect(COACH_EFFORTS).toEqual(['low', 'medium', 'high']);
-    expect(COACH_CLOSED_REASONS).toEqual(['version_change', 'health_withdrawn', 'day_over']);
+    expect(COACH_CLOSED_REASONS).toEqual([
+      'version_change',
+      'health_withdrawn',
+      'day_over',
+      'persona_change',
+    ]);
     expect(COACH_MESSAGE_ROLES).toEqual(['user', 'assistant', 'system']);
     expect(COACH_REPORT_CATEGORIES).toEqual(['inaccurate', 'unsafe', 'inappropriate', 'other']);
     expect(COACH_COUNTER_KINDS).toEqual([

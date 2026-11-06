@@ -178,11 +178,14 @@ export async function recordExchange(
   if (!(await isConsentActive(trx, x.userId, 'ai_coach'))) throw new ExchangeGoneError('consent_withdrawn');
   const thread = await trx
     .selectFrom('coachThread')
-    .select('isOpen')
+    .select(['isOpen', 'closedReason'])
     .where('id', '=', x.thread.id)
     .where('userId', '=', x.userId)
     .executeTakeFirst();
-  if (thread === undefined || thread.isOpen !== 1) throw new ExchangeGoneError('thread_closed');
+  // Un changement de coach ne défait pas l'échange commencé avant lui : un fil clos `persona_change` s'enregistre.
+  if (thread === undefined || (thread.isOpen !== 1 && thread.closedReason !== 'persona_change')) {
+    throw new ExchangeGoneError('thread_closed');
+  }
   const healthConsent = await isHealthConsentActive(trx, x.userId);
   const now = deps.clock.now();
 

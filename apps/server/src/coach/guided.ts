@@ -4,7 +4,7 @@ import {
   type GuidedRequest,
   guidedExerciseChoices,
 } from '@rune/contracts';
-import { parisDate, replayInstance, UnknownRulesVersionError } from '@rune/domain';
+import { parisDate, profileChain, replayInstance, UnknownRulesVersionError } from '@rune/domain';
 import { traitsOn } from '../auth/me';
 import { currentCatalog } from '../catalog/bundle';
 import type { AppDeps } from '../deps';
@@ -18,15 +18,26 @@ import { loadReplayInput } from './brief-input';
  * 400 `validation`. Le résultat est un message de la personne comme un autre : mêmes gardes, limite et filtre.
  */
 
-/** Identifiants des fiches du programme courant (liste de chaque slot, ou sa chaîne) ; vide sans programme rejouable. */
-async function programExerciseIds(deps: AppDeps, userId: string): Promise<Set<string>> {
+/**
+ * Identifiants des fiches du programme courant : la liste de chaque slot ; pour un slot à chaîne, l'exercice courant
+ * de la chaîne (la variante que le rejeu vise, la première sans état), jamais l'identifiant de la chaîne. Vide sans
+ * programme rejouable.
+ */
+async function programExerciseIds(deps: AppDeps, userId: string, cautious: boolean): Promise<Set<string>> {
   const input = await loadReplayInput(deps.db, deps, userId);
   if (input === null) return new Set();
   try {
-    const { program } = replayInstance(input);
+    const { program, slotStates } = replayInstance(input);
     return new Set(
       program.template.workouts.flatMap((w) =>
-        w.slots.flatMap((s) => (s.chain === undefined ? (s.exercises ?? []) : [s.chain])),
+        w.slots.flatMap((s) => {
+          if (s.chain === undefined) return s.exercises ?? [];
+          const steps = profileChain(input.catalog, s.chain, cautious);
+          const state = slotStates.find((st) => st.slotId === s.id && st.exerciseId === s.chain);
+          const rank = Math.min(Math.max(state?.variantRank ?? 1, 1), steps.length);
+          const step = steps[rank - 1];
+          return step === undefined ? [] : [step.id];
+        }),
       ),
     );
   } catch (error) {
@@ -42,10 +53,10 @@ export async function composeForUser(
   guided: GuidedRequest,
   now: Date,
 ): Promise<string> {
-  const { audience } = await traitsOn(deps.db, userId, parisDate(now));
+  const { audience, cautious } = await traitsOn(deps.db, userId, parisDate(now));
   try {
     const exerciseIds = guidedExerciseChoices(guided.flow, guided.choices, audience);
-    const inProgram = exerciseIds.length === 0 ? null : await programExerciseIds(deps, userId);
+    const inProgram = exerciseIds.length === 0 ? null : await programExerciseIds(deps, userId, cautious);
     const catalog = exerciseIds.length === 0 ? null : (await currentCatalog(deps, deps.db)).exercises;
     return composeGuidedMessage(
       guided.flow,

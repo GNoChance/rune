@@ -594,20 +594,18 @@ describe('garde avant le flux', () => {
     await expect(kit.ask()).rejects.toMatchObject({ code: 'request_in_progress', status: 409 });
   });
 
-  it('fil clos : 409 thread_closed {reason} ; gel contrôlé (version_change)', async () => {
-    kit = await exchangeKit({ chat: [fakeText(FINE)] });
+  it('fil clos : 409 thread_closed {reason} ; gel contrôlé (version_change) : nouveau fil', async () => {
+    kit = await exchangeKit({ chat: [fakeText(FINE), fakeText(FINE)] });
     await kit.ask();
     kit.ctx.deps.sqlite.exec("UPDATE coach_thread SET is_open = 0, closed_reason = 'day_over'");
     await expect(kit.ask()).rejects.toMatchObject({ code: 'thread_closed', extra: { reason: 'day_over' } });
 
     kit.ctx.deps.sqlite.exec('UPDATE coach_thread SET is_open = 1, closed_reason = NULL');
     kit.ctx.deps.coachConfig = { ...kit.ctx.deps.coachConfig, toolsVersion: 'tools-2' };
-    await expect(kit.ask()).rejects.toMatchObject({
-      code: 'thread_closed',
-      extra: { reason: 'version_change' },
-    });
-    expect(kit.rows('SELECT is_open, closed_reason FROM coach_thread')).toEqual([
+    await kit.ask();
+    expect(kit.rows('SELECT is_open, closed_reason FROM coach_thread ORDER BY created_at, id')).toEqual([
       { is_open: 0, closed_reason: 'version_change' },
+      { is_open: 1, closed_reason: null },
     ]);
     expect(kit.ctx.deps.coach.exchanges.inProgress(kit.user.id)).toBe(false);
   });
@@ -906,14 +904,14 @@ describe('correction 1 : preuves des décisions 1b et 6, et pannes après la val
     expect(kit.ctx.deps.coach.exchanges.inProgress(kit.user.id)).toBe(false);
   });
 
-  it('doublon dans un fil gelé : thread_closed (le contrôle du gel précède l’idempotence)', async () => {
+  it('doublon d’un fil gelé : duplicate_message (le nouveau fil du jour ne le reçoit pas deux fois)', async () => {
     kit = await exchangeKit({ chat: [fakeText(FINE)] });
     const id = '019a5e00-0000-7000-8000-0000000000e1';
     await kit.ask('Salut.', { clientMessageId: id });
     kit.ctx.deps.coachConfig = { ...kit.ctx.deps.coachConfig, toolsVersion: 'tools-2' };
     await expect(kit.ask('Salut.', { clientMessageId: id })).rejects.toMatchObject({
-      code: 'thread_closed',
-      extra: { reason: 'version_change' },
+      code: 'duplicate_message',
+      extra: { seq: 1 },
     });
   });
 });

@@ -34,6 +34,7 @@ describe('migrate', () => {
         '0005_sync_rejection_codes',
         '0006_performed_set_target_reps',
         '0007_coach',
+        '0008_coach_threads_per_day',
       ],
       unknownNonBreaking: [],
     });
@@ -46,6 +47,7 @@ describe('migrate', () => {
       { id: '0005_sync_rejection_codes', breaking: 0, appliedAt: '2026-10-06T10:00:00.000Z' },
       { id: '0006_performed_set_target_reps', breaking: 0, appliedAt: '2026-10-06T10:00:00.000Z' },
       { id: '0007_coach', breaking: 0, appliedAt: '2026-10-06T10:00:00.000Z' },
+      { id: '0008_coach_threads_per_day', breaking: 0, appliedAt: '2026-10-06T10:00:00.000Z' },
     ]);
   });
 
@@ -92,6 +94,7 @@ describe('migrate', () => {
         '0005_sync_rejection_codes',
         '0006_performed_set_target_reps',
         '0007_coach',
+        '0008_coach_threads_per_day',
       ],
       unknownNonBreaking: ['0099_future'],
     });

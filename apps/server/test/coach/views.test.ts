@@ -238,6 +238,8 @@ describe('messages et fils', () => {
       messages: [],
       inProgress: false,
     });
+    // La voix du fil est celle du profil : le fil reste ouvert.
+    await insertFixtureRow(ctx.deps.db, 'training_profile', { ownerId: user.id, coach: 'skald' });
     const row = await insertFixtureRow(ctx.deps.db, 'coach_thread', {
       userId: user.id,
       day: '2026-11-05',
@@ -324,7 +326,7 @@ describe('coachStatus', () => {
     expect(status).toMatchObject({
       audience: 'minor',
       persona: 'skald',
-      today: { threadId: thread.id, open: false, closedReason: 'version_change', userMessageCount: 6 },
+      today: { threadId: thread.id, open: true, closedReason: 'version_change', userMessageCount: 6 },
     });
   });
 

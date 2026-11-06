@@ -11,9 +11,11 @@ import type { StartupTask } from '../startup';
 import { loadBriefInput } from './brief-input';
 
 /*
- * Fils du coach (spec brique 4 §6.4) : un fil vivant par personne et par jour de Paris, ouvert au premier message du
- * jour avec ses réglages, son public, sa voix, son dossier et sa table d'alias figés ; fermé (`version_change`) dès
- * qu'un réglage figé n'est plus le réglage courant. Supprimer un fil le détache d'abord de ce qui le cite.
+ * Fils du coach (spec brique 4 §6.4, brique 4.1 §4.4) : un fil ouvert au plus par personne et par jour de Paris,
+ * ouvert au premier message du jour avec ses réglages, son public, sa voix, son dossier et sa table d'alias figés ;
+ * fermé (`version_change`) dès qu'un réglage figé n'est plus le réglage courant, ou (`persona_change`) dès que la voix
+ * du profil n'est plus la sienne. Ces deux fermetures laissent le message suivant ouvrir un autre fil le même jour ;
+ * `health_withdrawn` et `day_over` ferment jusqu'au lendemain. Supprimer un fil le détache d'abord de ce qui le cite.
  */
 
 export type ThreadRow = Selectable<CoachThreadTable>;
@@ -40,14 +42,23 @@ export function currentVersions(deps: AppDeps, audience: AgeBand): CoachVersions
   };
 }
 
+/** Fil du jour de Paris : le fil ouvert, sinon le dernier fil du jour (clos). */
 export function todayThread(db: DbExecutor, userId: string, day: string): Promise<ThreadRow | undefined> {
   return db
     .selectFrom('coachThread')
     .selectAll()
     .where('userId', '=', userId)
     .where('day', '=', day)
+    .orderBy('isOpen', 'desc')
+    .orderBy('createdAt', 'desc')
+    .orderBy('id', 'desc')
     .executeTakeFirst();
 }
+
+/** Un fil clos que le message suivant remplace le même jour (changement de voix ou de réglage figé). */
+export const isReplaceable = (thread: ThreadRow): boolean =>
+  thread.isOpen === 0 &&
+  (thread.closedReason === 'persona_change' || thread.closedReason === 'version_change');
 
 /** Voix choisie dans le profil d'entraînement ; le Scribe tant qu'aucune ne l'est. */
 export async function personaOf(db: DbExecutor, userId: string): Promise<CoachId> {
@@ -61,27 +72,66 @@ export async function personaOf(db: DbExecutor, userId: string): Promise<CoachId
 }
 
 /**
- * Fil du jour de Paris de `userId` : celui qui existe (ouvert ou clos), sinon un fil ouvert dans une transaction,
- * public calculé par le serveur à partir de la date de naissance (jamais du client), voix du profil, réglages
- * courants, dossier construit à `now` (`brief` = son JSON) et sa table d'alias (alias → identifiant réel, JSON
+ * Changement de coach, fermeture paresseuse : un fil ouvert dont la voix n'est plus celle du profil est fermé
+ * (`persona_change`). Pendant un échange de la personne (bail du registre), il reste ouvert : l'échange finit et
+ * s'enregistre dans son fil, la fermeture vient au regard suivant. `holdsLease` : l'appelant tient lui-même le bail.
+ */
+async function closeIfPersonaStale(
+  deps: AppDeps,
+  thread: ThreadRow,
+  holdsLease: boolean,
+): Promise<ThreadRow> {
+  if (thread.isOpen !== 1) return thread;
+  if (!holdsLease && deps.coach.exchanges.inProgress(thread.userId)) return thread;
+  if ((await personaOf(deps.db, thread.userId)) === thread.persona) return thread;
+  await deps.db
+    .updateTable('coachThread')
+    .set({ isOpen: 0, closedReason: 'persona_change' })
+    .where('id', '=', thread.id)
+    .where('isOpen', '=', 1)
+    .execute();
+  return { ...thread, isOpen: 0, closedReason: 'persona_change' };
+}
+
+/** Fil du jour de Paris tel que la personne le voit : `todayThread`, périmé par un changement de coach fermé. */
+export async function currentThread(
+  deps: AppDeps,
+  userId: string,
+  day: string,
+  opts: { holdsLease?: boolean } = {},
+): Promise<ThreadRow | undefined> {
+  const thread = await todayThread(deps.db, userId, day);
+  return thread === undefined ? undefined : closeIfPersonaStale(deps, thread, opts.holdsLease === true);
+}
+
+/**
+ * Fil du jour de Paris de `userId` : le fil ouvert (voir `currentThread`), le dernier fil du jour s'il est clos, sauf
+ * clos par `persona_change` ou `version_change` : un fil neuf s'ouvre alors, comme sans fil. Il s'ouvre dans une
+ * transaction, public calculé par le serveur à partir de la date de naissance (jamais du client), voix du profil,
+ * réglages courants, dossier construit à `now` (`brief` = son JSON) et sa table d'alias (alias → identifiant réel, JSON
  * trié). Avec `requireConsent`, un fil neuf ne s'ouvre que si l'accord `ai_coach` est actif dans la transaction
- * (`consent_required` sinon ; un fil existant se rend sans contrôle). Deux appareils en course : `UNIQUE (user_id, day)` garde le premier, l'autre relit le fil gagnant. Un
- * dossier encore trop gros après la cascade est stocké tel quel, et journalisé par ses seuls jetons estimés.
+ * (`consent_required` sinon ; un fil existant se rend sans contrôle). Deux appareils en course : l'index unique des fils
+ * ouverts `(user_id, day)` garde le premier, l'autre relit le fil gagnant. `holdsLease` : l'appelant tient le bail
+ * de son échange. Un dossier encore trop gros après la cascade est stocké tel quel, et journalisé par ses seuls
+ * jetons estimés.
  */
 export async function openTodayThread(
   deps: AppDeps,
   userId: string,
   now: Date,
-  opts: { requireConsent?: boolean } = {},
+  opts: { requireConsent?: boolean; holdsLease?: boolean } = {},
 ): Promise<ThreadRow> {
   const day = parisDate(now);
-  const existing = await todayThread(deps.db, userId, day);
-  if (existing !== undefined) return existing;
+  const existing = await currentThread(deps, userId, day, opts);
+  if (existing !== undefined && !isReplaceable(existing)) return existing;
   return deps.db.transaction().execute(async (trx) => {
     // Un retrait de l'accord entre la garde et ici ne doit pas ouvrir un fil neuf (§8.1, course avec le retrait).
     if (opts.requireConsent === true && !(await isConsentActive(trx, userId, 'ai_coach'))) {
       throw httpError('consent_required');
     }
+    // Un autre appareil a pu ouvrir le fil du jour entre-temps.
+    const latest = await todayThread(trx, userId, day);
+    if (latest !== undefined && !isReplaceable(latest)) return latest;
     const input = await loadBriefInput(trx, deps, userId, now);
     const built = buildCoachBrief(input);
     const id = deps.ids.uuidv7();
@@ -102,7 +152,7 @@ export async function openTodayThread(
         createdAt: now.toISOString(),
         lastMessageAt: null,
       })
-      .onConflict((oc) => oc.columns(['userId', 'day']).doNothing())
+      .onConflict((oc) => oc.doNothing())
       .execute();
     const thread = await todayThread(trx, userId, day);
     if (thread === undefined) throw new Error('coach_thread_missing');

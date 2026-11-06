@@ -72,7 +72,8 @@ export interface PreparedExchange {
  * Tout ce qui précède le flux (§7.3, §8.1). Dans l'ordre : garde (instantané puis `coachAccessGuard`), validation du
  * texte, bail du registre (`begin`, 409 `request_in_progress` s'il est pris malgré la garde), puis, bail tenu, garde
  * relue (un retrait de l'accord qui précède le bail n'est plus à craindre : son `abortFor` atteint le bail), fil du
- * jour (ouvert seulement si l'accord est actif), gel contrôlé, idempotence. Toute erreur libère le bail avant de
+ * jour (ouvert seulement si l'accord est actif ; refermé puis rouvert si la voix ou un réglage a changé), idempotence
+ * sur tous les fils du jour. Toute erreur libère le bail avant de
  * remonter ; sinon `runExchange` le libère.
  */
 export async function prepareExchange(
@@ -104,20 +105,23 @@ export async function prepareExchange(
   if (lease === null) throw httpError('request_in_progress');
   try {
     await guard(true);
-    let thread = await openTodayThread(deps, userId, now, { requireConsent: true });
-    if (
-      thread.isOpen === 1 &&
-      (await deps.db.transaction().execute((trx) => closeIfFrozenStale(trx, deps, thread)))
-    ) {
-      thread = { ...thread, isOpen: 0, closedReason: 'version_change' };
+    // Le bail est à nous : un changement de coach ferme le fil du jour, le fil neuf prend la nouvelle voix.
+    const open = () => openTodayThread(deps, userId, now, { requireConsent: true, holdsLease: true });
+    let thread = await open();
+    // Gel : un fil dont un réglage a changé est fermé, un fil neuf s'ouvre le même jour avec les réglages courants.
+    if (await deps.db.transaction().execute((trx) => closeIfFrozenStale(trx, deps, thread))) {
+      thread = await open();
     }
+    // `health_withdrawn` et `day_over` ferment jusqu'au lendemain.
     if (thread.isOpen !== 1) throw httpError('thread_closed', { reason: thread.closedReason });
-    // Ordre du §7.3 : un doublon d'un fil clos ou gelé répond `thread_closed`, pas `duplicate_message`.
+    // Idempotence sur tous les fils du jour : le doublon d'un fil gelé ou changé de voix reste un doublon.
     const duplicate = await deps.db
       .selectFrom('coachMessage')
-      .select('seq')
-      .where('threadId', '=', thread.id)
-      .where('clientMessageId', '=', body.clientMessageId)
+      .innerJoin('coachThread', 'coachThread.id', 'coachMessage.threadId')
+      .select('coachMessage.seq')
+      .where('coachThread.userId', '=', userId)
+      .where('coachThread.day', '=', thread.day)
+      .where('coachMessage.clientMessageId', '=', body.clientMessageId)
       .executeTakeFirst();
     if (duplicate !== undefined) throw httpError('duplicate_message', { seq: duplicate.seq });
     return {

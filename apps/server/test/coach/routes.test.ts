@@ -102,10 +102,10 @@ describe('POST /messages : refus avant le flux (JSON)', () => {
   it('fil fermé : 409 thread_closed avec la raison', async () => {
     await setup();
     await (await post(body('Salut'))).text();
-    kit.ctx.deps.sqlite.exec("UPDATE coach_thread SET is_open = 0, closed_reason = 'version_change'");
+    kit.ctx.deps.sqlite.exec("UPDATE coach_thread SET is_open = 0, closed_reason = 'day_over'");
     const res = await post(body('Encore'));
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ error: 'thread_closed', reason: 'version_change' });
+    expect(await res.json()).toMatchObject({ error: 'thread_closed', reason: 'day_over' });
   });
 
   it('sans accord : 403 consent_required', async () => {

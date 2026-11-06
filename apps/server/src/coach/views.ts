@@ -19,7 +19,7 @@ import { httpError } from '../http/errors';
 import { getConsentState } from '../privacy/consent-state';
 import { loadBriefInput } from './brief-input';
 import { readCoachState } from './state';
-import { personaOf, type ThreadRow, todayThread } from './threads';
+import { currentThread, isReplaceable, personaOf, type ThreadRow, todayThread } from './threads';
 
 /*
  * Instantané de la garde (spec brique 4 §7.3) et vues des routes `/api/coach` (§7.1). Jours et mois de Paris. Les
@@ -137,7 +137,7 @@ export async function coachStatus(
   const snapshot = await loadGuardSnapshot(db, deps, userId, now);
   const refusal = coachAccessGuard(snapshot, deps.coachConfig);
   const unavailableReason = refusal?.code === 'coach_unavailable' ? refusal.reason : null;
-  const thread = await todayThread(db, userId, today);
+  const thread = await currentThread(deps, userId, today);
   const { consent, currentConsentVersion } = snapshot;
   const { limits } = deps.coachConfig;
   const budgetMicros = limits.personMonthlyBudgetUsd * 1_000_000;
@@ -153,10 +153,13 @@ export async function coachStatus(
       needsRenewal: consent.active && consent.textVersion !== currentConsentVersion,
     },
     audience: thread?.audience ?? (await traitsOn(db, userId, today)).audience,
-    persona: thread?.persona ?? (await personaOf(db, userId)),
+    persona:
+      thread === undefined || thread.closedReason === 'persona_change'
+        ? await personaOf(db, userId)
+        : thread.persona,
     today: {
       threadId: thread?.id ?? null,
-      open: thread === undefined || thread.isOpen === 1,
+      open: thread === undefined || thread.isOpen === 1 || isReplaceable(thread),
       closedReason: thread?.closedReason ?? null,
       userMessageCount: thread?.userMessageCount ?? 0,
       remaining: Math.max(0, limits.messagesPerDay - snapshot.countedToday),
@@ -174,7 +177,7 @@ export async function coachToday(
   userId: string,
   now: Date,
 ): Promise<CoachTodayResponse> {
-  const thread = await todayThread(db, userId, parisDate(now));
+  const thread = await currentThread(deps, userId, parisDate(now));
   return {
     thread: thread === undefined ? null : threadView(thread),
     messages: thread === undefined ? [] : await messagesOf(db, thread.id),

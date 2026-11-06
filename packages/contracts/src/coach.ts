@@ -33,7 +33,12 @@ export const COACH_EFFORTS = ['low', 'medium', 'high'] as const;
 export type CoachEffort = (typeof COACH_EFFORTS)[number];
 
 /** Raison de la fermeture d'un fil (`coach_thread.closed_reason`, §6.4). */
-export const COACH_CLOSED_REASONS = ['version_change', 'health_withdrawn', 'day_over'] as const;
+export const COACH_CLOSED_REASONS = [
+  'version_change',
+  'health_withdrawn',
+  'day_over',
+  'persona_change',
+] as const;
 export type CoachClosedReason = (typeof COACH_CLOSED_REASONS)[number];
 
 /** Rôle d'un message stocké (`coach_message.role`) ; un message `system` n'est jamais rendu au téléphone. */

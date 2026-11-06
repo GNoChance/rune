@@ -23,6 +23,7 @@ const PREVIOUS = [
       '0005_sync_rejection_codes',
       '0006_performed_set_target_reps',
       '0007_coach',
+      '0008_coach_threads_per_day',
     ],
   },
   {
@@ -34,12 +35,19 @@ const PREVIOUS = [
       '0005_sync_rejection_codes',
       '0006_performed_set_target_reps',
       '0007_coach',
+      '0008_coach_threads_per_day',
     ],
   },
   {
     fixture: 'schema-v3.sql',
     done: ['0001_socle', '0002_coach', '0003_catalog'],
-    applied: ['0004_program', '0005_sync_rejection_codes', '0006_performed_set_target_reps', '0007_coach'],
+    applied: [
+      '0004_program',
+      '0005_sync_rejection_codes',
+      '0006_performed_set_target_reps',
+      '0007_coach',
+      '0008_coach_threads_per_day',
+    ],
   },
 ];
 

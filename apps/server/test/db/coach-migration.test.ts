@@ -29,7 +29,7 @@ const bad = (sqlite: Sqlite, sql: string) => expect(() => sqlite.exec(sql), sql)
 
 describe('migration 0007_coach', () => {
   it("suit 0006 et n'est pas cassante", () => {
-    expect(MIGRATIONS.at(-1)).toMatchObject({ id: '0007_coach', breaking: false });
+    expect(MIGRATIONS.find((m) => m.id === '0007_coach')).toMatchObject({ breaking: false });
   });
 
   it('crée les 6 tables STRICT et la ligne unique de coach_state, coach désactivé', async () => {
@@ -63,7 +63,7 @@ describe('migration 0007_coach', () => {
       );
       const before = count(h.sqlite, 'user');
       const result = await migrate(h.db, MIGRATIONS, clock);
-      expect(result.applied).toEqual(['0007_coach']);
+      expect(result.applied).toEqual(['0007_coach', '0008_coach_threads_per_day']);
       expect(count(h.sqlite, 'user')).toBe(before);
       expect(count(h.sqlite, 'coach_state')).toBe(1);
     } finally {
@@ -71,7 +71,7 @@ describe('migration 0007_coach', () => {
     }
   });
 
-  it('un seul fil par (user_id, day), un seul message par (thread_id, seq) et par client_message_id', async () => {
+  it('un seul fil ouvert par (user_id, day), un seul message par (thread_id, seq) et par client_message_id', async () => {
     ctx = await createTestContext();
     const { db, sqlite } = ctx.deps;
     const user = await insertFixtureRow(db, 'user');
@@ -80,6 +80,18 @@ describe('migration 0007_coach', () => {
       insertFixtureRow(db, 'coach_thread', { userId: user.id, day: '2026-11-03' }),
     ).rejects.toThrow(/UNIQUE/i);
     await insertFixtureRow(db, 'coach_thread', { userId: user.id, day: '2026-11-04' });
+    // Un fil clos laisse la place : plusieurs fils le même jour, un seul ouvert.
+    sqlite.exec(
+      `UPDATE coach_thread SET is_open = 0, closed_reason = 'persona_change' WHERE id = '${thread.id}'`,
+    );
+    const second = await insertFixtureRow(db, 'coach_thread', { userId: user.id, day: '2026-11-03' });
+    await expect(
+      insertFixtureRow(db, 'coach_thread', { userId: user.id, day: '2026-11-03' }),
+    ).rejects.toThrow(/UNIQUE/i);
+    sqlite.exec(
+      `UPDATE coach_thread SET is_open = 0, closed_reason = 'version_change' WHERE id = '${second.id}'`,
+    );
+    await insertFixtureRow(db, 'coach_thread', { userId: user.id, day: '2026-11-03' });
 
     await insertFixtureRow(db, 'coach_message', {
       threadId: thread.id,
@@ -102,6 +114,52 @@ describe('migration 0007_coach', () => {
     await insertFixtureRow(db, 'coach_message', { threadId: thread.id, userId: user.id, seq: 2 });
     await insertFixtureRow(db, 'coach_message', { threadId: thread.id, userId: user.id, seq: 3 });
     expect(count(sqlite, 'coach_message')).toBe(3);
+  });
+
+  it('0008 : reconstruit coach_thread en gardant fils, messages, clés et index', async () => {
+    const h = openDatabase(':memory:');
+    try {
+      const clock = new FakeClock();
+      await migrate(
+        h.db,
+        MIGRATIONS.filter((m) => m.id < '0008'),
+        clock,
+      );
+      h.sqlite.exec(
+        "INSERT INTO user (id, username, username_key, password_hash, role, status, birth_date, terms_version, terms_accepted_at, rev, created_at, updated_at) VALUES ('u1', 'u1', 'u1', 'h', 'member', 'active', '1990-01-01', '1', 'x', 1, 'x', 'x')",
+      );
+      const thread = (id: string, day: string, open: number, reason: string | null) =>
+        `INSERT INTO coach_thread (id, user_id, day, audience, persona, model, effort, prompt_version, tools_version, brief_schema, brief, slot_aliases, is_open, closed_reason, user_message_count, created_at, last_message_at) VALUES ('${id}', 'u1', '${day}', 'adult', 'skald', 'm', 'low', 'coach-1/adult', 'tools-1', 'coach-brief/1', '{"a":1}', '{"s":"A9"}', ${open}, ${reason === null ? 'NULL' : `'${reason}'`}, 1, '${day}T10:00:00.000Z', '${day}T10:05:00.000Z')`;
+      h.sqlite.exec(thread('t1', '2026-11-03', 0, 'day_over'));
+      h.sqlite.exec(thread('t2', '2026-11-04', 1, null));
+      h.sqlite.exec(
+        "INSERT INTO coach_message (id, thread_id, user_id, seq, role, display_text, client_message_id, created_at) VALUES ('m1', 't1', 'u1', 1, 'user', 'Salut', 'c1', 'x'), ('m2', 't1', 'u1', 2, 'assistant', 'Hello', NULL, 'x'), ('m3', 't2', 'u1', 1, 'user', 'Re', 'c1', 'x')",
+      );
+      const dump = (table: string) => h.sqlite.prepare(`SELECT * FROM ${table} ORDER BY id`).all();
+      const threads = dump('coach_thread');
+      const messages = dump('coach_message');
+
+      const result = await migrate(h.db, MIGRATIONS, clock);
+      expect(result.applied).toEqual(['0008_coach_threads_per_day']);
+      expect(dump('coach_thread')).toEqual(threads);
+      expect(dump('coach_message')).toEqual(messages);
+      expect(h.sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+      expect(
+        h.sqlite.prepare('SELECT "table", on_delete FROM pragma_foreign_key_list(?)').all('coach_message'),
+      ).toEqual([
+        { table: 'user', on_delete: 'CASCADE' },
+        { table: 'coach_thread', on_delete: 'CASCADE' },
+      ]);
+      // La nouvelle règle : un seul fil ouvert par jour, plusieurs fils clos.
+      h.sqlite.exec("UPDATE coach_thread SET is_open = 0, closed_reason = 'persona_change' WHERE id = 't2'");
+      h.sqlite.exec(thread('t3', '2026-11-04', 1, null));
+      expect(() => h.sqlite.exec(thread('t4', '2026-11-04', 1, null))).toThrow(/UNIQUE/i);
+      // La cascade tient toujours.
+      h.sqlite.exec("DELETE FROM coach_thread WHERE id = 't1'");
+      expect(h.sqlite.prepare('SELECT id FROM coach_message').all()).toEqual([{ id: 'm3' }]);
+    } finally {
+      h.sqlite.close();
+    }
   });
 
   it('refuse les valeurs hors énumération, le JSON invalide et un commentaire trop long', async () => {

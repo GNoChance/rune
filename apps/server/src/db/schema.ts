@@ -480,7 +480,7 @@ export interface CoachThreadTable {
   /** Alias → identifiant réel des slots ajoutés par la personne ; jamais exporté ni envoyé au modèle. */
   slotAliases: Generated<string>;
   isOpen: Generated<number>;
-  closedReason: 'version_change' | 'health_withdrawn' | 'day_over' | null;
+  closedReason: 'version_change' | 'health_withdrawn' | 'day_over' | 'persona_change' | null;
   userMessageCount: Generated<number>;
   createdAt: string;
   lastMessageAt: string | null;
