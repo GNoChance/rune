@@ -1,6 +1,6 @@
 import {
   type CoachBriefResponse,
-  CoachBriefSchema,
+  CoachBriefStoredSchema,
   type CoachMessageView,
   type CoachStatusView,
   type CoachThreadResponse,
@@ -230,15 +230,18 @@ export async function coachThread(db: DbExecutor, userId: string, id: string): P
   return { thread: threadView(thread), messages: await messagesOf(db, thread.id) };
 }
 
+const STORED_SCHEMAS: ReadonlySet<string> = new Set(['coach-brief/1', 'coach-brief/2']);
+
 /**
  * Dossier stocké d'un fil, exactement (§9, transparence : l'ordre de ses clés compris) ; null après le retrait santé.
- * Au schéma courant, il doit passer `CoachBriefSchema` (sinon erreur interne) ; celui d'un ancien `brief_schema` est
- * rendu brut, sans être validé par un schéma qui n'est pas le sien.
+ * Un `brief_schema` connu (v1 ou v2) doit passer son schéma (sinon erreur interne) ; un plus ancien est rendu brut,
+ * sans être validé par un schéma qui n'est pas le sien.
  */
-function storedBrief(deps: AppDeps, thread: ThreadRow): CoachBriefResponse['brief'] {
+function storedBrief(thread: ThreadRow): CoachBriefResponse['brief'] {
   if (thread.brief === null) return null;
   const raw: unknown = JSON.parse(thread.brief);
-  if (thread.briefSchema === deps.coachConfig.briefSchema) CoachBriefSchema.parse(raw);
+  // v1 (fil ouvert avant la brique 5, `nutrition` nul) et v2 se relisent par leur propre schéma ; un autre est brut.
+  if (STORED_SCHEMAS.has(thread.briefSchema)) CoachBriefStoredSchema.parse(raw);
   return raw as CoachBriefResponse['brief'];
 }
 
@@ -256,7 +259,7 @@ export async function coachBrief(
   // Même fil que `/today` : le dossier d'un fil périmé (changement de coach ou de réglage) n'est jamais rendu.
   const thread = await currentThread(deps, userId, day);
   if (thread !== undefined && !isReplaceable(thread)) {
-    return { brief: storedBrief(deps, thread), threadId: thread.id, day, preview: false };
+    return { brief: storedBrief(thread), threadId: thread.id, day, preview: false };
   }
   const { brief } = buildCoachBrief(await loadBriefInput(db, deps, userId, now));
   return { brief, threadId: null, day, preview: true };

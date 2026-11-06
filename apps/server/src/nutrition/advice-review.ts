@@ -2,6 +2,7 @@ import {
   type AdviceSheetFile,
   AdviceSheetFileSchema,
   type AdviceStatus,
+  type NutritionMode,
   type ServedAdviceSheet,
 } from '@rune/contracts';
 import { validateAdviceSheet } from '@rune/domain';
@@ -153,6 +154,22 @@ export async function transitionAdvice(
     .where('id', '=', id)
     .execute();
   return getAdvice(trx, id);
+}
+
+/**
+ * Fiches servies à une personne : celles qui visent son public (`adults`/`minors`/`all`) et son mode effectif ;
+ * aucune en mode `disabled`. Filtre de `GET /api/nutrition/sheets`, partagé avec le dossier du coach.
+ */
+export function servedFor(
+  published: { served: ServedAdviceSheet }[],
+  age: number,
+  mode: NutritionMode,
+): ServedAdviceSheet[] {
+  if (mode === 'disabled') return [];
+  const audience = age < 18 ? 'minors' : 'adults';
+  return published
+    .map(({ served }) => served)
+    .filter((s) => (s.audience === 'all' || s.audience === audience) && s.visible_modes.includes(mode));
 }
 
 /** Fiches publiées, au format servi, avec leur ligne. */

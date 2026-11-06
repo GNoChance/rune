@@ -32,7 +32,7 @@ describe('COACH_CONFIG', () => {
     });
     expect(COACH_CONFIG.promptVersion).toBe('coach-2');
     expect(COACH_CONFIG.toolsVersion).toBe('tools-1');
-    expect(COACH_CONFIG.briefSchema).toBe('coach-brief/1');
+    expect(COACH_CONFIG.briefSchema).toBe('coach-brief/2');
     expect(COACH_CONFIG.retention).toEqual({ threadDays: 90, usageLogMonths: 12, reportDays: 90 });
     expect(COACH_CONFIG.workspaceMonthlyLimitUsd).toBe(20);
     expect(COACH_CONFIG.helpResources).toBe(HELP_RESOURCES);

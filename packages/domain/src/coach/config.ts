@@ -94,7 +94,7 @@ export const COACH_CONFIG: CoachConfig = deepFreeze({
   },
   promptVersion: 'coach-2',
   toolsVersion: 'tools-1',
-  briefSchema: 'coach-brief/1',
+  briefSchema: 'coach-brief/2',
   retention: { threadDays: 90, usageLogMonths: 12, reportDays: 90 },
   helpResources: HELP_RESOURCES,
   allowedConstants,

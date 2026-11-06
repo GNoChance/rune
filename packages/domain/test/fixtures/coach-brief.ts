@@ -368,6 +368,15 @@ export function briefInput(edit: (input: CoachBriefInput) => void = () => {}): C
     }),
     catalog: BRIEF_CATALOG,
     limitations: [{ area: 'shoulder', side: 'right', severity: 'mild', note: 'Gêne au développé.' }],
+    nutrition: {
+      mode: 'disabled',
+      minor: false,
+      safetyPause: false,
+      sheets: [],
+      target: null,
+      weeklyChange: [],
+      lastCheckin: null,
+    },
   };
   edit(input);
   return input;

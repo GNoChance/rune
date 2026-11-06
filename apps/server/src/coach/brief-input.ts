@@ -33,6 +33,7 @@ import { getConsentState } from '../privacy/consent-state';
 import { activeInstance, type InstanceRow } from '../program/enroll';
 import { isEquipmentCode, toPlaceContext, toSessionRecords } from '../program/records';
 import { loadInput, parseSnapshot, placeRowsOf } from '../program/replay-service';
+import { loadBriefNutrition } from './brief-nutrition';
 
 /*
  * Entrée du dossier du coach (spec brique 4 §9) et contexte de la séance prévue, rassemblés par le serveur avec ses
@@ -395,6 +396,7 @@ export async function loadBriefInput(
     sessions: await recentSessions(db, deps, userId, now, health),
     catalog: catalog.exercises,
     limitations: health ? await limitationsOf(db, userId) : [],
+    nutrition: await loadBriefNutrition(db, deps, userId, today),
   };
 }
 

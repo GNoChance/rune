@@ -31,7 +31,7 @@ import {
   ReferToHelpInput,
   SearchExercisesInput,
 } from '../src/coach';
-import { CoachBriefResponse, CoachBriefSchema } from '../src/coach-brief';
+import { CoachBriefResponse, CoachBriefSchema, CoachBriefStoredSchema } from '../src/coach-brief';
 import { entityRules } from '../src/entity-rules';
 import { InstanceChangeOperationSchema, REASON_TEXTS } from '../src/program';
 
@@ -412,7 +412,7 @@ describe('vues et requêtes (§7.1, §17.2)', () => {
 
 /** Dossier complet : programme, deux lieux, une séance, records, santé. */
 const BRIEF = {
-  schema: 'coach-brief/1',
+  schema: 'coach-brief/2',
   today: '2026-11-03',
   audience: 'adult',
   age_band: '30-39',
@@ -533,10 +533,69 @@ const BRIEF = {
     { exercise_id: 'front-plank', name: 'Gainage ventral', best_set: null, most_reps: null, longest_s: 40 },
   ],
   health: { limitations: [{ area: 'knee', side: 'left', severity: 'mild', note: null }] },
-  nutrition: null,
+  nutrition: {
+    mode: 'qualitative',
+    directives: ['no_deficit', 'no_numbers'],
+    sheets: [{ id: 'hydration', title: 'Bien boire' }],
+  },
 };
 
-describe('CoachBriefSchema (coach-brief/1, §9)', () => {
+const TARGET = {
+  energy_kcal: 2400,
+  energy_min_kcal: 2300,
+  energy_max_kcal: 2500,
+  protein_min_g: 130,
+  protein_max_g: 175,
+  fat_min_g: 65,
+  carbs_g: 300,
+  fiber_g: 30,
+  water_ml: 2500,
+  effective_goal: 'lose',
+  applied_rules: ['bmr_floor'],
+  algo_version: 'nutri-1.0.0',
+  days_ago: 3,
+};
+
+describe('CoachBriefSchema (coach-brief/2, §9 et brique 5 §11.1)', () => {
+  it('bloc nutrition complet (mode full) passe', () => {
+    const full = {
+      mode: 'full',
+      directives: [],
+      sheets: [],
+      target: TARGET,
+      weekly_change: [
+        { weeks_ago: 1, change_pct: -0.4 },
+        { weeks_ago: 2, change_pct: null },
+      ],
+      last_checkin: { weeks_ago: 1, decision: 'proposal', proposed_delta_kcal: -100 },
+    };
+    expect(CoachBriefSchema.parse({ ...BRIEF, nutrition: full })).toEqual({ ...BRIEF, nutrition: full });
+  });
+
+  it('refuse une clé hors liste dans le bloc nutrition (pesée, bmr, tdee, mode_reason) et nutrition: null', () => {
+    const parse = (n: unknown) => CoachBriefSchema.safeParse({ ...BRIEF, nutrition: n }).success;
+    const base = { mode: 'full', directives: [], sheets: [], target: TARGET };
+    expect(parse(base)).toBe(true);
+    expect(parse({ ...base, weight_g: 70000 })).toBe(false);
+    expect(parse({ ...base, mode_reason: 'x' })).toBe(false);
+    expect(parse({ ...base, target: { ...TARGET, bmr_kcal: 1700 } })).toBe(false);
+    expect(parse({ ...base, target: { ...TARGET, tdee_kcal: 2400 } })).toBe(false);
+    expect(parse(null)).toBe(false);
+    expect(parse({ ...base, last_checkin: { weeks_ago: 1, decision: 'proposal', response: null } })).toBe(
+      false,
+    );
+  });
+
+  it('CoachBriefStoredSchema relit un dossier coach-brief/1 (nutrition: null) et un coach-brief/2', () => {
+    const v1 = { ...BRIEF, schema: 'coach-brief/1', nutrition: null };
+    expect(CoachBriefStoredSchema.parse(v1)).toEqual(v1);
+    expect(CoachBriefSchema.safeParse(v1).success).toBe(false);
+    expect(CoachBriefStoredSchema.parse(BRIEF)).toEqual(BRIEF);
+    expect(CoachBriefStoredSchema.safeParse({ ...v1, nutrition: {} }).success).toBe(false);
+  });
+});
+
+describe('CoachBriefSchema (socle coach-brief/1, §9)', () => {
   it('un dossier complet passe', () => {
     expect(CoachBriefSchema.parse(BRIEF)).toEqual(BRIEF);
   });
@@ -556,14 +615,14 @@ describe('CoachBriefSchema (coach-brief/1, §9)', () => {
     expect(CoachBriefSchema.safeParse(empty).success).toBe(true);
   });
 
-  it('refuse une clé pseudo, un lieu nommé ou identifié, une date de naissance, une nutrition avant la brique 5', () => {
+  it('refuse une clé pseudo, un lieu nommé ou identifié, une date de naissance, un bloc nutrition vide', () => {
     const [primary] = BRIEF.places;
     const parse = (b: unknown) => CoachBriefSchema.safeParse(b).success;
     expect(parse({ ...BRIEF, pseudo: 'kevin' })).toBe(false);
     expect(parse({ ...BRIEF, places: [{ ...primary, name: 'Salle Canari' }] })).toBe(false);
     expect(parse({ ...BRIEF, places: [{ ...primary, id: 'place-1' }] })).toBe(false);
     expect(parse({ ...BRIEF, profile: { ...BRIEF.profile, birth_date: '2001-07-13' } })).toBe(false);
-    expect(parse({ ...BRIEF, schema: 'coach-brief/2' })).toBe(false);
+    expect(parse({ ...BRIEF, schema: 'coach-brief/3' })).toBe(false);
     expect(parse({ ...BRIEF, nutrition: {} })).toBe(false);
   });
 

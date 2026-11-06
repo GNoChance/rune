@@ -13,7 +13,7 @@ import { httpError } from '../http/errors';
 import { parseJson } from '../http/validate';
 import { assertHealthConsent } from '../privacy/consent';
 import { liveRowsOf } from '../sync/pull';
-import { publishedSheets } from './advice-review';
+import { publishedSheets, servedFor } from './advice-review';
 import { checkinRoutes } from './checkin-routes';
 import { loadNutritionContext } from './context';
 import { openNutrition } from './open';
@@ -87,15 +87,7 @@ export function nutritionRoutes(deps: AppDeps): Hono<AppEnv> {
       .map((v) => v.trim().replace(/^W\//, ''))
       .includes(etag);
     if (matches) return c.body(null, 304);
-    const served =
-      mode === 'disabled'
-        ? []
-        : published
-            .map(({ served: s }) => s)
-            .filter(
-              (s) => (s.audience === 'all' || s.audience === audience) && s.visible_modes.includes(mode),
-            );
-    return c.json(served);
+    return c.json(servedFor(published, ctx.age, mode));
   });
 
   routes.delete('/data', async (c) => c.json(await deleteNutritionData(deps, userOf(c))));

@@ -1,7 +1,9 @@
 import {
   type AgeBand,
+  type AppliedRule,
   type BodyArea,
   type ChangeAuthor,
+  type CheckinDecision,
   type CoachAgeBand,
   type CoachBrief,
   CoachBriefSchema,
@@ -18,6 +20,8 @@ import {
   type LimitationSide,
   type LoadSettings,
   maxExerciseLevel,
+  type NutritionGoal,
+  type NutritionMode,
   PAIN_CODE_REWRITES,
   type PainLevel,
   REASON_CODES,
@@ -31,6 +35,7 @@ import {
   type WorkoutSpec,
 } from '@rune/contracts';
 import { expandEquipment } from '../catalog/equipment';
+import { daysBetween } from '../nutrition/weights';
 import { type EffectiveProgram, workSetCount } from '../program/effective';
 import { workSpec } from '../program/primitives';
 import { parisDaysUntil } from '../program/program-state';
@@ -50,7 +55,7 @@ import { levelFromExperience, type TemplateContext, templateContext } from '../r
 import { COACH_CONFIG } from './config';
 
 /*
- * Dossier envoyé au coach (`coach-brief/1`, spec brique 4 §9 et §15) : ce que le coach sait de la personne. Fonction
+ * Dossier envoyé au coach (`coach-brief/2`, spec brique 4 §9 et §15, brique 5 §11.1) : ce que le coach sait de la personne. Fonction
  * pure ; le serveur rassemble l'entrée (tâche 15). Vie privée : aucun nom de lieu (lieux renommés `lieu_n`), aucun
  * identifiant de base (instance, lieu, séance, exercice réalisé, série ; changement, porté par l'identifiant d'un slot
  * ajouté, d'où ses alias `A-x1`…), aucune date de naissance (l'entrée n'a que `audience` et `ageBand`, calculés dans
@@ -109,6 +114,44 @@ export interface BriefLimitation {
   note: string | null;
 }
 
+/** Cible en vigueur lue par le dossier : ni `bmr_kcal` ni `tdee_kcal` n'en sortent (choix C28). */
+export interface BriefNutritionTargetInput {
+  /** Jour de Paris `YYYY-MM-DD` d'entrée en vigueur. */
+  validFrom: string;
+  algoVersion: string;
+  effectiveGoal: NutritionGoal;
+  kcalTarget: number;
+  kcalMin: number;
+  kcalMax: number;
+  proteinGMin: number;
+  proteinGMax: number;
+  fatGMin: number;
+  carbsG: number;
+  fiberG: number;
+  waterMl: number;
+  appliedRules: readonly AppliedRule[];
+}
+
+/**
+ * Nutrition lue par le dossier (brique 5 §11.1). `mode` est le mode effectif ; `target`, `weeklyChange` et
+ * `lastCheckin` ne servent qu'en mode `full` (le domaine les ignore sinon). Semaines relatives à la semaine du jour.
+ */
+export interface BriefNutritionInput {
+  mode: NutritionMode;
+  minor: boolean;
+  safetyPause: boolean;
+  sheets: { id: string; title: string }[];
+  target: BriefNutritionTargetInput | null;
+  /** Les 4 dernières semaines comptées. */
+  weeklyChange: { weeksAgo: number; changePct: number | null }[];
+  lastCheckin: {
+    weeksAgo: number;
+    decision: CheckinDecision;
+    proposedDeltaKcal: -100 | 100 | null;
+    response: 'accepted' | 'declined' | null;
+  } | null;
+}
+
 export interface CoachBriefInput {
   /** Jour de Paris `YYYY-MM-DD`, seule date absolue du dossier. */
   today: string;
@@ -131,6 +174,7 @@ export interface CoachBriefInput {
   sessions: BriefSession[];
   catalog: readonly BriefSheet[];
   limitations: BriefLimitation[];
+  nutrition: BriefNutritionInput;
 }
 
 type BriefSlot = NonNullable<CoachBrief['program']>['workouts'][number]['slots'][number];
@@ -802,8 +846,57 @@ function fit(brief: CoachBrief, max: number): CoachBrief {
   return out;
 }
 
+type BriefNutrition = CoachBrief['nutrition'];
+
+/** Bloc `nutrition` (brique 5 §11.1) : repères chiffrés en mode effectif `full` seulement ; clés sans champ nul. */
+function briefNutrition(input: CoachBriefInput): BriefNutrition {
+  const n = input.nutrition;
+  const full = n.mode === 'full';
+  const directives: BriefNutrition['directives'] = [];
+  if (n.minor) directives.push('minor_profile');
+  if (!full || n.safetyPause || n.target?.effectiveGoal !== 'lose') directives.push('no_deficit');
+  if (!full) directives.push('no_numbers');
+  const out: BriefNutrition = {
+    mode: n.mode,
+    directives,
+    sheets: n.sheets.map((s) => ({ id: s.id, title: s.title })),
+  };
+  if (!full) return out;
+  const t = n.target;
+  if (t !== null) {
+    out.target = {
+      energy_kcal: t.kcalTarget,
+      energy_min_kcal: t.kcalMin,
+      energy_max_kcal: t.kcalMax,
+      protein_min_g: t.proteinGMin,
+      protein_max_g: t.proteinGMax,
+      fat_min_g: t.fatGMin,
+      carbs_g: t.carbsG,
+      fiber_g: t.fiberG,
+      water_ml: t.waterMl,
+      effective_goal: t.effectiveGoal,
+      applied_rules: [...t.appliedRules],
+      algo_version: t.algoVersion,
+      days_ago: Math.max(0, daysBetween(t.validFrom, input.today)),
+    };
+  }
+  if (n.weeklyChange.length > 0) {
+    out.weekly_change = n.weeklyChange.map((w) => ({ weeks_ago: w.weeksAgo, change_pct: w.changePct }));
+  }
+  const c = n.lastCheckin;
+  if (c !== null) {
+    out.last_checkin = {
+      weeks_ago: c.weeksAgo,
+      decision: c.decision,
+      ...(c.proposedDeltaKcal === null ? {} : { proposed_delta_kcal: c.proposedDeltaKcal }),
+      ...(c.response === null ? {} : { response: c.response }),
+    };
+  }
+  return out;
+}
+
 /**
- * Dossier `coach-brief/1` du fil (§9) : le dossier validé par `CoachBriefSchema`, son JSON à clés triées sans espace
+ * Dossier `coach-brief/2` du fil (§9) : le dossier validé par `CoachBriefSchema`, son JSON à clés triées sans espace
  * (celui que reçoit le modèle et que stocke le fil), ses jetons estimés, `oversize` (encore au-dessus du plafond après
  * la cascade de `fit`, hors du JSON, à journaliser sans contenu) et `slotAliases` (alias d'un slot créé par
  * `add_slot` → son identifiant réel), pour retraduire les références de slot des opérations proposées
@@ -820,7 +913,7 @@ export function buildCoachBrief(input: CoachBriefInput): {
   const health = healthAllowed(input);
   const days = COACH_CONFIG.limits.readTrainingMaxDays;
   const draft: CoachBrief = {
-    schema: 'coach-brief/1',
+    schema: 'coach-brief/2',
     today: input.today,
     audience: input.audience,
     age_band: input.ageBand,
@@ -841,7 +934,7 @@ export function buildCoachBrief(input: CoachBriefInput): {
           },
         }
       : {}),
-    nutrition: null,
+    nutrition: briefNutrition(input),
   };
   const max = COACH_CONFIG.limits.briefMaxTokens;
   const brief = CoachBriefSchema.parse(fit(draft, max));

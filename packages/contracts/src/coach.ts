@@ -21,7 +21,7 @@ export type CoachId = z.infer<typeof CoachIdSchema>;
 
 /*
  * Coach IA (spec brique 4) : constantes des tables (§6.1), entrées des outils (§10), flux (§7.2), vues et requêtes
- * (§7.1, §17.2). Le dossier envoyé (`coach-brief/1`, §9) est dans `coach-brief.ts`.
+ * (§7.1, §17.2). Le dossier envoyé (`coach-brief/2`, §9) est dans `coach-brief.ts`.
  */
 
 // ---------------------------------------------------------------------------------------------------------------

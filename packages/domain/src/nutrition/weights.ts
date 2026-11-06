@@ -35,6 +35,11 @@ function fromDayNumber(z0: number): string {
   return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
+/** Nombre de jours civils de `from` à `to` (négatif si `to` précède `from`). */
+export function daysBetween(from: string, to: string): number {
+  return toDayNumber(to) - toDayNumber(from);
+}
+
 export function addDays(day: string, n: number): string {
   return fromDayNumber(toDayNumber(day) + n);
 }

@@ -1,5 +1,5 @@
 /*
- * Dossier `coach-brief/1` (spec brique 4 §9, §15) : ce que le coach sait de la personne. Canaris de vie privée,
+ * Dossier `coach-brief/2` (spec brique 4 §9, §15) : ce que le coach sait de la personne. Canaris de vie privée,
  * accords C2, mineurs, dates relatives, clés triées, troncature, textes libres, membre sans rien.
  */
 import { CoachBriefSchema, REASON_TEXTS } from '@rune/contracts';
@@ -897,8 +897,8 @@ describe('sérialisation', () => {
     expect(build().json).toBe(json);
     expect(JSON.parse(json)).toEqual(brief);
     expect(estimatedTokens).toBe(Math.ceil(json.length / 3));
-    expect(brief.schema).toBe('coach-brief/1');
-    expect(brief.nutrition).toBeNull();
+    expect(brief.schema).toBe('coach-brief/2');
+    expect(brief.nutrition.mode).toBe('disabled');
   });
 });
 

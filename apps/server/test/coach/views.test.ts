@@ -491,7 +491,7 @@ describe('coachBrief', () => {
     expect(dump()).toEqual(afterFirst);
     expect(response).toMatchObject({ threadId: null, day: '2026-11-05', preview: true });
     expect(CoachBriefSchema.parse(response.brief)).toEqual(response.brief);
-    expect(response.brief).toMatchObject({ schema: 'coach-brief/1', today: '2026-11-05', audience: 'adult' });
+    expect(response.brief).toMatchObject({ schema: 'coach-brief/2', today: '2026-11-05', audience: 'adult' });
     expect(ctx.deps.sqlite.prepare('SELECT id FROM coach_thread').all()).toEqual([]);
   });
 

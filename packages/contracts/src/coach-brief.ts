@@ -5,6 +5,7 @@ import { PlaceKindSchema } from './api/places';
 import { DAYS_PER_WEEK, Goal, SESSION_MINUTES } from './api/profile';
 import { COACH_AGE_BANDS } from './coach';
 import { EXERCISE_ID_RE } from './exercise';
+import { APPLIED_RULES, CHECKIN_DECISIONS, NutritionGoalSchema, NutritionModeSchema } from './nutrition';
 import {
   CHANGE_AUTHORS,
   DECISION_RESULTS,
@@ -23,7 +24,7 @@ import { SportCodeSchema } from './sports';
 import { EquipmentCodeSchema, MovementPatternSchema } from './taxonomy';
 
 /*
- * Dossier envoyé au coach (`coach-brief/1`, spec brique 4 §9), produit par `buildCoachBrief` (domaine). Zod strict,
+ * Dossier envoyé au coach (`coach-brief/2`, spec brique 4 §9 et brique 5 §11.1), produit par `buildCoachBrief` (domaine). Zod strict,
  * clés en snake_case : une clé hors du schéma (pseudo, identifiant, date de naissance, nom de lieu…) est refusée.
  * Seule `today` est une date absolue ; le reste en jours écoulés (`days_ago`). Charges en kg, durées et repos en
  * secondes, unité dans la clé (`_kg`, `_s`) pour le filtre (§11.2). Fichier à part de `coach.ts` : il lit les
@@ -155,8 +156,7 @@ const BriefRecord = z.strictObject({
   e1rm_kg: Kg.optional(),
 });
 
-export const CoachBriefSchema = z.strictObject({
-  schema: z.literal('coach-brief/1'),
+const BriefBase = {
   today: z.iso.date(),
   audience: AgeBandSchema,
   age_band: z.enum(COACH_AGE_BANDS),
@@ -178,10 +178,68 @@ export const CoachBriefSchema = z.strictObject({
       ),
     })
     .optional(),
-  /** Rien avant la brique 5. */
-  nutrition: z.null(),
+};
+
+export const BRIEF_DIRECTIVES = ['minor_profile', 'no_deficit', 'no_numbers'] as const;
+
+/**
+ * Repères chiffrés du mode `full` (07 §5.12, brique 5 §11.1). Les clés portent leur unité (`_kcal`, `_g`, `_ml`)
+ * pour les valeurs autorisées du filtre ; ni `bmr_kcal` ni `tdee_kcal` (choix C28).
+ */
+const BriefNutritionTarget = z.strictObject({
+  energy_kcal: Count,
+  energy_min_kcal: Count,
+  energy_max_kcal: Count,
+  protein_min_g: Count,
+  protein_max_g: Count,
+  fat_min_g: Count,
+  carbs_g: Count,
+  fiber_g: Count,
+  water_ml: Count,
+  effective_goal: NutritionGoalSchema,
+  applied_rules: z.array(z.enum(APPLIED_RULES)),
+  algo_version: z.string(),
+  days_ago: Count,
+});
+
+/**
+ * Bloc `nutrition` de `coach-brief/2` : toujours présent. `target`, `weekly_change` et `last_checkin` seulement en
+ * mode effectif `full`. Jamais : pesées, moyennes en kg, taille, sexe, `mode_reason`, réponses de l'écran.
+ */
+const BriefNutrition = z.strictObject({
+  mode: NutritionModeSchema,
+  directives: z.array(z.enum(BRIEF_DIRECTIVES)),
+  sheets: z.array(z.strictObject({ id: z.string(), title: z.string() })),
+  target: BriefNutritionTarget.optional(),
+  /** Les 4 dernières semaines comptées ; `change_pct` nul si non défini. */
+  weekly_change: z.array(z.strictObject({ weeks_ago: Count, change_pct: z.number().nullable() })).optional(),
+  last_checkin: z
+    .strictObject({
+      weeks_ago: Count,
+      decision: z.enum(CHECKIN_DECISIONS),
+      /** Absents (jamais nuls) sans proposition, ou sans réponse. */
+      proposed_delta_kcal: z.union([z.literal(-100), z.literal(100)]).optional(),
+      response: z.enum(['accepted', 'declined']).optional(),
+    })
+    .optional(),
+});
+
+export const CoachBriefSchema = z.strictObject({
+  ...BriefBase,
+  schema: z.literal('coach-brief/2'),
+  nutrition: BriefNutrition,
 });
 export type CoachBrief = z.infer<typeof CoachBriefSchema>;
+
+/** Dossier `coach-brief/1` (brique 4), tel qu'un fil ouvert avant la brique 5 l'a figé : `nutrition` y est nul. */
+export const CoachBriefV1Schema = z.strictObject({
+  ...BriefBase,
+  schema: z.literal('coach-brief/1'),
+  nutrition: z.null(),
+});
+
+/** Tout dossier stocké sur un fil, v1 ou v2, discriminé par `schema` : la relecture d'un ancien fil ne casse pas. */
+export const CoachBriefStoredSchema = z.discriminatedUnion('schema', [CoachBriefSchema, CoachBriefV1Schema]);
 
 /**
  * `GET /api/coach/brief` (§7.1, §16.5) : le dossier stocké du fil du jour, analysé (`null` après le retrait santé),

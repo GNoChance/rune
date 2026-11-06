@@ -49,7 +49,7 @@ const BRIEF = {
     ],
     truncated: false,
   },
-  nutrition: null,
+  nutrition: { directives: ['no_deficit', 'no_numbers'], mode: 'disabled', sheets: [] },
   places: [
     {
       equipment: ['dumbbells'],
@@ -79,7 +79,7 @@ const BRIEF = {
       name: 'Squat gobelet',
     },
   ],
-  schema: 'coach-brief/1',
+  schema: 'coach-brief/2',
   today: '2025-10-28',
 };
 
