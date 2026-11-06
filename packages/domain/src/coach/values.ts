@@ -1,4 +1,4 @@
-export type UnitFamily = 'mass' | 'percent' | 'nutrition' | 'duration';
+export type UnitFamily = 'mass' | 'percent' | 'nutrition';
 
 export interface Quantity {
   value: string;
@@ -29,10 +29,6 @@ const UNIT_FAMILIES: Readonly<Record<string, UnitFamily>> = {
   g: 'nutrition',
   gr: 'nutrition',
   gramme: 'nutrition',
-  min: 'duration',
-  mn: 'duration',
-  minute: 'duration',
-  minutes: 'duration',
   grammes: 'nutrition',
 };
 
@@ -44,7 +40,7 @@ const RANGE_SEPARATOR = `${SP}*(?:[-/\\u2010-\\u2015\\u2212]|à|et|ou)${SP}*`;
 // ni d'un chiffre suivi d'un séparateur décimal.
 const QUANTITY = new RegExp(
   `(?<!\\d)(?<!\\d[.,])(?:(${NUMBER})${RANGE_SEPARATOR})?(${NUMBER})${SP}*` +
-    `(kilogrammes?|kilos?|kg|kcal|calories?|cal|grammes?|gr|g|minutes?|min|mn|%|pour${SP}*cent|pourcent)(?![\\p{L}\\d])`,
+    `(kilogrammes?|kilos?|kg|kcal|calories?|cal|grammes?|gr|g|%|pour${SP}*cent|pourcent)(?![\\p{L}\\d])`,
   'giud',
 );
 
@@ -74,7 +70,6 @@ function familyOfKey(key: string | undefined): UnitFamily | undefined {
   if (key === undefined) return undefined;
   if (key.endsWith('_kg')) return 'mass';
   if (key.endsWith('_pct')) return 'percent';
-  if (key.endsWith('_min') || key.endsWith('_minutes')) return 'duration';
   if (key.endsWith('_kcal') || key.endsWith('_g')) return 'nutrition';
   return undefined;
 }
@@ -86,14 +81,11 @@ export function allowedValues(sources: {
   toolResults: readonly unknown[];
   constants: readonly number[];
   nutritionFull: boolean;
-  /** Durées (minutes) que le message de la personne autorise, par exemple celles d'un parcours guidé. */
-  durationsMin?: readonly number[];
 }): AllowedValues {
   const sets: Record<UnitFamily, Set<string>> = {
     mass: new Set(),
     percent: new Set(),
     nutrition: new Set(),
-    duration: new Set(),
   };
   // Le signe est ignoré (comme dans `findQuantities`) ; arrondi à 3 décimales (0.1 + 0.2 -> 0.3).
   const addNumber = (family: UnitFamily, value: number) => {
@@ -133,6 +125,5 @@ export function allowedValues(sources: {
   walk(sources.brief, undefined);
   for (const result of sources.toolResults) walk(result, undefined);
   for (const constant of sources.constants) addNumber('percent', constant);
-  for (const minutes of sources.durationsMin ?? []) addNumber('duration', minutes);
   return sets;
 }

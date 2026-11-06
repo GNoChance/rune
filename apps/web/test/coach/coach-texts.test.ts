@@ -49,7 +49,6 @@ const allowed = (percent: string[] = [], mass: string[] = []): AllowedValues => 
   mass: new Set(mass),
   percent: new Set(percent),
   nutrition: new Set(),
-  duration: new Set(),
 });
 
 const contexts = (percent: string[] = [], mass: string[] = []): FilterContext[] =>

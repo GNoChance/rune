@@ -128,22 +128,15 @@ describe('message guidé', () => {
     });
   });
 
-  it('« 40 min » est relayé pour new_session, bloqué sans le parcours', async () => {
+  it('« 40 min » est relayé avec ou sans le parcours (le filtre ne contrôle pas les durées)', async () => {
     const TEXT = 'Prévois environ 40 min pour cette séance.';
     kit = await exchangeKit({ chat: [fakeText(TEXT)] });
     const guided = await kit.ask('', { guided: { flow: 'new_session', choices: ['legs', 'medium'] } });
     expect(guided.events.map((e) => e.type)).toEqual(['text', 'done']);
-    expect(guided.events[0]).toEqual({ type: 'text', text: TEXT });
     kit.ctx.close();
-
-    kit = await exchangeKit({ chat: [fakeText(TEXT), fakeText(FINE)] });
+    kit = await exchangeKit({ chat: [fakeText(TEXT)] });
     const free = await kit.ask('Une séance de 40 min ?');
-    expect(free.events.map((e) => e.type)).toEqual(['retry', 'text', 'done']);
-    kit.ctx.close();
-
-    kit = await exchangeKit({ chat: [fakeText(TEXT), fakeText(FINE)] });
-    const other = await kit.ask('', { guided: { flow: 'recovery', choices: ['sleep'] } });
-    expect(other.events.map((e) => e.type)).toEqual(['retry', 'text', 'done']);
+    expect(free.events.map((e) => e.type)).toEqual(['text', 'done']);
   });
 
   it("le message guidé compte dans la limite d'un message libre", async () => {

@@ -1,4 +1,4 @@
-import { GUIDED_FLOWS, GUIDED_PROGRAM_EXERCISES, guidedAllowedValues } from '@rune/contracts';
+import { GUIDED_FLOWS, GUIDED_PROGRAM_EXERCISES } from '@rune/contracts';
 import { describe, expect, it } from 'vitest';
 import { type FilterContext, outputFilterText } from '../../src/coach/filter';
 import { allowedValues } from '../../src/coach/values';
@@ -39,8 +39,7 @@ describe('textes des parcours guidés', () => {
   it.each(['adult', 'minor'] as const)(
     'chaque libellé et chaque message passe le filtre (%s)',
     (audience) => {
-      for (const { text, flow } of texts()) {
-        const { duration_min } = guidedAllowedValues(flow, []);
+      for (const { text } of texts()) {
         const ctx: FilterContext = {
           audience,
           nutritionMode: 'none',
@@ -49,7 +48,6 @@ describe('textes des parcours guidés', () => {
             toolResults: [],
             constants: [],
             nutritionFull: false,
-            durationsMin: duration_min,
           }),
         };
         expect(outputFilterText(text, ctx), text).toEqual({ ok: true });

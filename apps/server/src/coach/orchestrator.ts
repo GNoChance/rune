@@ -5,7 +5,6 @@ import {
   cleanCoachText,
   coachTextLength,
   type GuidedRequest,
-  guidedAllowedValues,
 } from '@rune/contracts';
 import {
   type ApiBlock,
@@ -277,9 +276,6 @@ export async function runExchange(
       ...historyForApi(stored),
       { role: 'user', content: [{ type: 'text', text: x.text }] },
     ];
-    // Durées de « Nouvelle séance » : autorisées pour cet échange seulement (spec 4.1 §4.3).
-    const durationsMin =
-      x.guided === null ? [] : guidedAllowedValues(x.guided.flow, x.guided.choices).duration_min;
     const month = parisMonthOf(x.day);
     const budgetMicros = deps.coachConfig.limits.personMonthlyBudgetUsd * 1_000_000;
     const request: AttemptInput['request'] = {
@@ -308,7 +304,6 @@ export async function runExchange(
           toolResults: threadToolResults,
           constants: deps.coachConfig.allowedConstants,
           nutritionFull: false,
-          durationsMin,
         }),
       };
       const outcome = await runAttempt({
@@ -318,7 +313,7 @@ export async function runExchange(
           note === null ? base : [...base, { role: 'system', content: [{ type: 'text', text: note }] }],
         tools: TOOLS_1,
         toolCtx,
-        filter: { audience: thread.audience, brief, threadToolResults, durationsMin },
+        filter: { audience: thread.audience, brief, threadToolResults },
         signal: x.lease.signal,
         async canCall(spentUsd) {
           const spentMicros = await monthSpentMicros(deps.db, x.userId, month);

@@ -5,7 +5,6 @@ import {
   GUIDED_FLOW_IDS,
   GUIDED_FLOWS,
   GuidedInvalidError,
-  guidedAllowedValues,
   guidedFlowsFor,
 } from '../src/coach-guided';
 
@@ -66,17 +65,14 @@ describe('table des parcours guidés', () => {
     const text = composeGuidedMessage(
       'loads',
       ['squat-barre', 'start'],
-      (id) => (seen.push(id), 'Mon nom'),
+      (id) => {
+        seen.push(id);
+        return 'Mon nom';
+      },
       'adult',
     );
     expect(seen).toEqual(['squat-barre']);
     expect(text).toBe('À propos de Mon nom : quelle charge pour commencer ?');
-  });
-
-  it('les durées autorisées ne concernent que « Nouvelle séance »', () => {
-    expect(guidedAllowedValues('new_session', ['legs', 'short'])).toEqual({ duration_min: [20, 40, 60] });
-    expect(guidedAllowedValues('loads', ['squat-barre', 'why'])).toEqual({ duration_min: [] });
-    expect(guidedAllowedValues('recovery', ['sleep'])).toEqual({ duration_min: [] });
   });
 
   it('les puces de suite suivent la spec §2.3', () => {

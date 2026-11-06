@@ -61,8 +61,6 @@ export interface AttemptInput {
     audience: AgeBand;
     brief: unknown;
     threadToolResults: readonly unknown[];
-    /** Durées (minutes) que le message de la personne autorise (parcours guidé). */
-    durationsMin?: readonly number[];
   };
   signal: AbortSignal;
   /** Le budget permet-il un appel de plus ? `spentUsd` : coût des appels de cette tentative. */
@@ -184,7 +182,6 @@ function allowedFor(input: AttemptInput, toolResults: readonly unknown[]): Allow
     toolResults: [...input.filter.threadToolResults, ...toolResults],
     constants: input.toolCtx.deps.coachConfig.allowedConstants,
     nutritionFull: false,
-    durationsMin: input.filter.durationsMin ?? [],
   });
 }
 

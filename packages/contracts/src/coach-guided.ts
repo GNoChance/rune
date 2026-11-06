@@ -81,8 +81,6 @@ const DURATIONS: readonly GuidedChip[] = [
   chip('medium', 'Moyenne (40 min)', '40 minutes'),
   chip('long', 'Longue (60 min)', '60 minutes'),
 ];
-/** Durées des puces de « Nouvelle séance », autorisées dans la réponse de cet échange (spec §4.3). */
-const DURATION_MINUTES = [20, 40, 60] as const;
 
 const QUESTIONS: readonly GuidedChip[] = [
   chip('why', 'Pourquoi cette charge ?', 'pourquoi cette charge ?'),
@@ -247,14 +245,6 @@ export function guidedExerciseChoices(
   return flow.steps.flatMap((step, i) =>
     step.chips === GUIDED_PROGRAM_EXERCISES && choices[i] !== undefined ? [choices[i] as string] : [],
   );
-}
-
-/**
- * Valeurs que le message d'un parcours autorise dans la réponse (spec §4.3) : les durées des puces (20, 40, 60 min)
- * pour « Nouvelle séance » seulement, aucune pour les autres parcours.
- */
-export function guidedAllowedValues(flowId: string, _choices: readonly string[]): { duration_min: number[] } {
-  return { duration_min: flowId === 'new_session' ? [...DURATION_MINUTES] : [] };
 }
 
 /** Parcours d'une requête : `flow` connu, `choices` des identifiants courts dont la table vérifie le sens. */
