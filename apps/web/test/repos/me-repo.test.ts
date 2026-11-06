@@ -11,7 +11,13 @@ import { until } from '../support/wait';
 const lea = makeMe({ id: 'u-A', username: 'lea' });
 const max = makeMe({ id: 'u-B', username: 'max' });
 const ok = (body: unknown) => ({ status: 200, body });
-const EMPTY_PULL = { rows: [], nextWatermark: 'e1:0', hasMore: false, catalogVersion: null };
+const EMPTY_PULL = {
+  rows: [],
+  nextWatermark: 'e1:0',
+  hasMore: false,
+  catalogVersion: null,
+  nutrition: { effective_mode: 'disabled', cause: 'stored' },
+};
 
 let engine: SyncEngine | null = null;
 afterEach(() => {

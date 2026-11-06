@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ModeCauseSchema, NutritionModeSchema } from './nutrition';
 
 export const SYNC_PUSH_MAX = 200;
 export const SYNC_PULL_LIMIT = 500;
@@ -90,6 +91,8 @@ export const PullResponse = z.object({
   nextWatermark: z.string(),
   hasMore: z.boolean(),
   catalogVersion: z.string().nullable(),
+  /** Mode nutrition effectif à la requête (spec brique 5 §6.4) : le client purge ses copies dès qu'il n'est plus `full`. */
+  nutrition: z.object({ effective_mode: NutritionModeSchema, cause: ModeCauseSchema }),
 });
 export type PullResponse = z.infer<typeof PullResponse>;
 

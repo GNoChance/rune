@@ -56,7 +56,13 @@ export async function settle(turns = 50): Promise<void> {
   });
 }
 
-export const EMPTY_PULL = { rows: [], nextWatermark: 'e1:0', hasMore: false, catalogVersion: null };
+export const EMPTY_PULL = {
+  rows: [],
+  nextWatermark: 'e1:0',
+  hasMore: false,
+  catalogVersion: null,
+  nutrition: { effective_mode: 'disabled', cause: 'stored' },
+};
 
 export interface LostSessionApi extends FakeApi {
   /** La session est rouverte (connexion, création, réinitialisation réussie) : tout répond. */

@@ -335,7 +335,13 @@ describe('erreurs', () => {
     server.on('GET /api/sync/pull', (req) =>
       req.query.has('since')
         ? server.json(410, { error: 'watermark_expired' })
-        : server.json(200, { rows: [], nextWatermark: 'E1:99', hasMore: false, catalogVersion: null }),
+        : server.json(200, {
+            rows: [],
+            nextWatermark: 'E1:99',
+            hasMore: false,
+            catalogVersion: null,
+            nutrition: { effective_mode: 'disabled', cause: 'stored' },
+          }),
     );
     await makeEngine().pullNow();
     expect(pullSince()).toEqual(['E1:10', null]);
@@ -611,8 +617,20 @@ describe('pull', () => {
     await setMeta(db, 'watermark', 'E1:10');
     server.on('GET /api/sync/pull', (req) =>
       req.query.get('since') === 'E1:10'
-        ? server.json(200, { rows: [], nextWatermark: 'E1:20', hasMore: true, catalogVersion: 'cat-2' })
-        : server.json(200, { rows: [], nextWatermark: 'E1:30', hasMore: false, catalogVersion: 'cat-2' }),
+        ? server.json(200, {
+            rows: [],
+            nextWatermark: 'E1:20',
+            hasMore: true,
+            catalogVersion: 'cat-2',
+            nutrition: { effective_mode: 'disabled', cause: 'stored' },
+          })
+        : server.json(200, {
+            rows: [],
+            nextWatermark: 'E1:30',
+            hasMore: false,
+            catalogVersion: 'cat-2',
+            nutrition: { effective_mode: 'disabled', cause: 'stored' },
+          }),
     );
     await makeEngine().syncNow('manual');
     expect(pullSince()).toEqual(['E1:10', 'E1:20']);
@@ -673,7 +691,13 @@ describe('pull', () => {
     const orphan = await acceptedNote(5);
     server.on('GET /api/sync/pull', (req) => {
       if (req.query.has('since')) throw new TypeError('Failed to fetch');
-      return server.json(200, { rows: [], nextWatermark: 'E1:20', hasMore: true, catalogVersion: null });
+      return server.json(200, {
+        rows: [],
+        nextWatermark: 'E1:20',
+        hasMore: true,
+        catalogVersion: null,
+        nutrition: { effective_mode: 'disabled', cause: 'stored' },
+      });
     });
     await makeEngine().pullNow();
     expect(pullSince()).toEqual([null, 'E1:20']);

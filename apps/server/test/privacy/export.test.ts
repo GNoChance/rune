@@ -2,6 +2,7 @@ import { type EntityRulesMap, entityRules, snakeToCamel } from '@rune/contracts'
 import { sql } from 'kysely';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Migration } from '../../src/db/migrations/index';
+import { fullMember, seedTarget, seedWeighIns } from '../nutrition/fixtures';
 import { createTestContext, createUser, insertFixtureRow, login, type TestContext } from '../support';
 
 let ctx: TestContext;
@@ -230,6 +231,37 @@ describe('GET /api/me/export (R-EXP-1, R-EXP-2, P-DRT-1)', () => {
     for (const table of ['exercise', 'exercise_comment', 'exercise_validation', 'exercise_revision']) {
       expect(exp.tables).not.toHaveProperty(table);
     }
+  });
+
+  it('exporte les quatre tables nutrition du membre en mode complet, pas celles des autres', async () => {
+    ctx = await createTestContext({ now: '2026-11-09T09:00:00.000Z' });
+    const u = await createUser(ctx, { username: 'lea' });
+    const other = await createUser(ctx, { username: 'tom' });
+    const cookie = await login(ctx, 'lea', u.password);
+    await fullMember(ctx, u.id);
+    await fullMember(ctx, other.id);
+    const target = (await seedTarget(ctx, u.id, { validFrom: '2026-11-02' })) as { id: string };
+    await seedTarget(ctx, other.id, { validFrom: '2026-11-02' });
+    await seedWeighIns(ctx, u.id, [['2026-11-07', 80_000]]);
+    await seedWeighIns(ctx, other.id, [['2026-11-07', 91_000]]);
+    await insertFixtureRow(ctx.deps.db, 'nutrition_checkin', {
+      ownerId: u.id,
+      weekStart: '2026-11-02',
+      createdTargetId: target.id,
+    });
+
+    const text = await (await ctx.request('/api/me/export', { cookie })).text();
+    const exp = JSON.parse(text) as { tables: Record<string, Record<string, unknown>[]> };
+    expect(exp.tables.nutrition_profile).toHaveLength(1);
+    expect(exp.tables.nutrition_profile?.[0]).toMatchObject({
+      ownerId: u.id,
+      heightCm: 180,
+      goal: 'maintain',
+    });
+    expect(exp.tables.weigh_in).toMatchObject([{ ownerId: u.id, date: '2026-11-07', weightG: 80_000 }]);
+    expect(exp.tables.nutrition_target).toHaveLength(1);
+    expect(exp.tables.nutrition_checkin).toHaveLength(1);
+    expect(text).not.toContain('91000');
   });
 
   it('journalise data_exported sans détail', async () => {

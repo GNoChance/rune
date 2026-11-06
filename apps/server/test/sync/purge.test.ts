@@ -149,6 +149,31 @@ describe('syncPurgeJob (tombstones à 90 j, applied_op à 12 mois)', () => {
     expect(await purgeRev()).toBe(0);
   });
 
+  it('bilan et cible nutrition tombstones à 91 j, le bilan référençant la cible : les deux sont purgés', async () => {
+    const a = await setup();
+    const { db } = ctx.deps;
+    const old = { deletedAt: OLD, updatedAt: OLD };
+    const target = await insertFixtureRow(db, 'nutrition_target', { ownerId: a.id, ...old });
+    const checkin = await insertFixtureRow(db, 'nutrition_checkin', {
+      ownerId: a.id,
+      createdTargetId: target.id,
+      recalibrationTargetId: target.id,
+      ...old,
+    });
+    const keptTarget = await insertFixtureRow(db, 'nutrition_target', { ownerId: a.id, ...old });
+    const liveCheckin = await insertFixtureRow(db, 'nutrition_checkin', {
+      ownerId: a.id,
+      createdTargetId: keptTarget.id,
+    });
+
+    await syncPurgeJob.run(ctx.deps);
+
+    expect(rowOf('nutrition_checkin', checkin.id as string)).toBeUndefined();
+    expect(rowOf('nutrition_target', target.id as string)).toBeUndefined();
+    expect(rowOf('nutrition_target', keptTarget.id as string)).toBeDefined();
+    expect(rowOf('nutrition_checkin', liveCheckin.id as string)).toBeDefined();
+  });
+
   it('tombstone_purge_rev ne diminue jamais', async () => {
     const a = await setup();
     insertNote(a, OLD);

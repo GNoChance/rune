@@ -162,6 +162,7 @@ describe('nouvelle époque (Review Focus 2)', () => {
         nextWatermark: 'E2:300',
         hasMore: false,
         catalogVersion: null,
+        nutrition: { effective_mode: 'disabled', cause: 'stored' },
       });
     });
     await makeEngine().syncNow('manual');
@@ -186,7 +187,13 @@ describe('nouvelle époque (Review Focus 2)', () => {
     server.on('GET /api/sync/pull', () => {
       n += 1;
       server.epoch = `E${n + 1}`;
-      return server.json(200, { rows: [], nextWatermark: 'x:1', hasMore: false, catalogVersion: null });
+      return server.json(200, {
+        rows: [],
+        nextWatermark: 'x:1',
+        hasMore: false,
+        catalogVersion: null,
+        nutrition: { effective_mode: 'disabled', cause: 'stored' },
+      });
     });
     await makeEngine().syncNow('manual');
     expect(server.paths().filter((p) => p === 'GET /api/health')).toHaveLength(2);

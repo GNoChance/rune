@@ -90,7 +90,11 @@ describe.each(['member', 'admin'] as const)('pull : test de fuite (session %s)',
 
     const { rows } = await pullAll(a.cookie);
     const dump = JSON.stringify(rows);
-    expect(new Set(rows.map((r) => r.entity))).toEqual(new Set(mirroredTables()));
+    // Les trois tables de pesées et de cibles ne sortent qu'en mode nutrition `full` (nutrition/pull.test.ts).
+    const nutritionFullOnly = ['weigh_in', 'nutrition_target', 'nutrition_checkin'];
+    expect(new Set(rows.map((r) => r.entity))).toEqual(
+      new Set(mirroredTables().filter((t) => !nutritionFullOnly.includes(t))),
+    );
     for (const r of rows) expect(mirroredTables()).toContain(r.entity);
     for (const w of own) expect(dump).toContain(w);
     expect(dump).not.toContain(b.id);

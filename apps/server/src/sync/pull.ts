@@ -14,6 +14,7 @@ import type { Database, DbExecutor } from '../db/schema';
 import { getServerMeta } from '../db/server-meta';
 import type { AppDeps } from '../deps';
 import { httpError } from '../http/errors';
+import { loadNutritionContext } from '../nutrition/context';
 import { expireProposals } from '../program/expire';
 
 type Raw = Record<string, unknown>;
@@ -25,21 +26,30 @@ interface Source {
   scope: RawBuilder<unknown>;
   /** Utilisateur de la session : seule valeur gardée dans les colonnes `pullRedact`. */
   userId: string;
+  /** Valeurs C2 de colonnes C1 servies à null (hors mode complet). */
+  hiddenValues: Readonly<Record<string, readonly string[]>>;
 }
 
 const MIRRORED = new Set(['J', 'D', 'E']);
+/** Tables servies seulement en mode nutrition effectif `full` (spec brique 5 §6.4). */
+const NUTRITION_FULL_ONLY = new Set(['weigh_in', 'nutrition_target', 'nutrition_checkin']);
 
 /** Tables du périmètre de l'utilisateur (R-SYN-21) : ses lignes J/D/E, et les tables C0 partagées. */
-function sourcesFor(deps: AppDeps, userId: string): Source[] {
+function sourcesFor(deps: AppDeps, userId: string, nutritionFull = true): Source[] {
   const sources: Source[] = [];
   for (const [entity, rule] of Object.entries(deps.entityRules)) {
     if (!MIRRORED.has(rule.syncClass)) continue;
+    if (!nutritionFull && NUTRITION_FULL_ONLY.has(entity)) continue;
     let scope: RawBuilder<unknown>;
     if (rule.ownerColumn !== null) scope = sql`${sql.ref(rule.ownerColumn)} = ${userId}`;
     else if (rule.category === 'C0') scope = sql`1 = 1`;
     else continue;
-    const columns = rule.columns.filter((c) => !rule.secretColumns.includes(c));
-    sources.push({ entity, rule, columns, scope, userId });
+    // Hors mode complet, le profil nutrition ne sert que ses colonnes C1 (choix C19).
+    const hidden = !nutritionFull && entity === 'nutrition_profile';
+    const columns = rule.columns.filter(
+      (c) => !rule.secretColumns.includes(c) && !(hidden && rule.c2Columns.includes(c)),
+    );
+    sources.push({ entity, rule, columns, scope, userId, hiddenValues: hidden ? (rule.c2Values ?? {}) : {} });
   }
   return sources;
 }
@@ -59,7 +69,9 @@ function toPulled(source: Source, raw: Raw): PulledRow {
   const row: Raw = { deletedAt: null };
   for (const column of source.columns) {
     const key = snakeToCamel(column);
-    const value = redact.includes(column) && raw[key] !== source.userId ? null : raw[key];
+    const hiddenValues = Object.hasOwn(source.hiddenValues, column) ? source.hiddenValues[column] : undefined;
+    const hidden = typeof raw[key] === 'string' && hiddenValues?.includes(raw[key]);
+    const value = hidden || (redact.includes(column) && raw[key] !== source.userId) ? null : raw[key];
     row[key] = decode(codecs[column], value);
   }
   return { entity: source.entity, rev: Number(row.rev), row };
@@ -132,7 +144,9 @@ export async function buildPull(
       throw httpError('watermark_expired');
     }
     const sinceRev = sinceWatermark?.rev ?? 0;
-    const sources = sourcesFor(deps, user.id);
+    // Mode effectif lu une fois par requête : il décide des tables servies et des colonnes C2 du profil.
+    const { effective } = await loadNutritionContext(trx, deps, user.id);
+    const sources = sourcesFor(deps, user.id, effective.mode === 'full');
 
     const candidates: PulledRow[] = [];
     for (const s of sources)
@@ -155,6 +169,7 @@ export async function buildPull(
       nextWatermark: encodeWatermark(meta.serverEpoch, nextRev),
       hasMore,
       catalogVersion: meta.catalogVersion,
+      nutrition: { effective_mode: effective.mode, cause: effective.cause },
     };
   });
 }

@@ -108,6 +108,7 @@ export function createFakeSyncServer(epoch = 'E1'): FakeSyncServer {
         nextWatermark: `${server.epoch}:${rev}`,
         hasMore: false,
         catalogVersion: server.catalogVersion,
+        nutrition: { effective_mode: 'disabled', cause: 'stored' },
       }),
     'GET /api/me': () =>
       server.json(200, {

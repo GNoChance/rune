@@ -25,7 +25,13 @@ function syncingApi(): FakeApi {
     .on('GET', '/api/health', { status: 200, body: HEALTH })
     .on('GET', '/api/sync/pull', {
       status: 200,
-      body: { rows: [], nextWatermark: 'e1:1', hasMore: false, catalogVersion: null },
+      body: {
+        rows: [],
+        nextWatermark: 'e1:1',
+        hasMore: false,
+        catalogVersion: null,
+        nutrition: { effective_mode: 'disabled', cause: 'stored' },
+      },
     });
 }
 

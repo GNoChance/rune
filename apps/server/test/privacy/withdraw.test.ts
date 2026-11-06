@@ -259,11 +259,12 @@ describe('retrait du consentement santé (R-CST-5, P-CST-3, 09 §8)', () => {
 });
 
 describe('HEALTH_WITHDRAW_HOOKS', () => {
-  it('porte les tables dont le retrait réécrit des codes (brique 3) et le coach (brique 4)', () => {
+  it('porte les tables dont le retrait réécrit des codes (brique 3) et le coach (brique 4), le profil nutrition (brique 5)', () => {
     expect(Object.keys(HEALTH_WITHDRAW_HOOKS).sort()).toEqual([
       'coach_thread',
       'engine_decision',
       'instance_change',
+      'nutrition_profile',
     ]);
     expect(HEALTH_WITHDRAW_HOOKS.coach_thread).toBe(coachHealthWithdrawHook);
   });

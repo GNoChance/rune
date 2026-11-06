@@ -2,6 +2,7 @@ import type { SyncOp } from '@rune/contracts';
 import type { Transaction } from 'kysely';
 import type { Database } from '../db/schema';
 import type { AppDeps } from '../deps';
+import { NUTRITION_SYNC_HOOKS } from '../nutrition/sync-hooks';
 import { PROGRAM_SYNC_HOOKS } from '../program/sync-hooks';
 
 export interface HookCtx {
@@ -56,4 +57,5 @@ export type SyncHooksMap = Readonly<Record<string, EntitySyncHooks>>;
 export const SYNC_HOOKS: SyncHooksMap = {
   sync_rejection: { allowedKinds: ['patch'] },
   ...PROGRAM_SYNC_HOOKS,
+  ...NUTRITION_SYNC_HOOKS,
 };

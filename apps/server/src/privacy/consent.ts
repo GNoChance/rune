@@ -13,6 +13,7 @@ import { writeStamp } from '../db/rev';
 import type { Database, DbExecutor } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { httpError } from '../http/errors';
+import { nutritionHealthWithdrawHook } from '../nutrition/withdraw';
 import { getConsentState, insertConsentEvent, isHealthConsentActive } from './consent-state';
 
 type Row = { rid: number };
@@ -47,12 +48,14 @@ function rewritePainCodes(table: string, clearReason: boolean): HealthWithdrawHo
  * Une entrée remplace la règle générique du retrait pour sa table (09 §8). Brique 3 : les motifs et codes de douleur
  * des changements de programme et des décisions du moteur. `pain_level`, `swap_reason = 'pain'` et `pain_streak`
  * passent par la règle générique (`c2Columns`, `c2Values`) ; les suspensions de slot restent. Brique 4 : le coach
- * (fils clos, dossiers et blocs bruts effacés, choix C13), dont les tables n'ont pas de rev.
+ * (fils clos, dossiers et blocs bruts effacés, choix C13), dont les tables n'ont pas de rev. Brique 5 : le profil
+ * nutrition, neutralisé et non tombstoné (le mode est C1) ; ses trois autres tables suivent la règle générique.
  */
 export const HEALTH_WITHDRAW_HOOKS: HealthWithdrawHooks = {
   instance_change: rewritePainCodes('instance_change', true),
   engine_decision: rewritePainCodes('engine_decision', false),
   coach_thread: coachHealthWithdrawHook,
+  nutrition_profile: nutritionHealthWithdrawHook,
 };
 
 const SYNC: readonly string[] = SYNC_COLUMNS;
