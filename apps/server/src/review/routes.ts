@@ -4,6 +4,7 @@ import type { AppEnv } from '../app-env';
 import type { AppDeps } from '../deps';
 import { httpError } from '../http/errors';
 import { parseJson, parseQuery } from '../http/validate';
+import { adviceRoutes } from '../nutrition/advice-routes';
 import { requireReviewer } from './guard';
 import { addComment, listReview, resolveComment, reviewSheet, validateSheet } from './review';
 
@@ -14,6 +15,8 @@ import { addComment, listReview, resolveComment, reviewSheet, validateSheet } fr
  */
 export function reviewRoutes(deps: AppDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
+  // Fiches conseils : admin seul (sa propre garde), monté avant celle des relecteurs.
+  routes.route('/advice', adviceRoutes(deps));
   routes.use('*', requireReviewer);
 
   const callerOf = (c: Context<AppEnv>) => {

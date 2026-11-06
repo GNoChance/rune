@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   ModeRequestSchema,
   ScreenRequestSchema,
@@ -12,6 +13,7 @@ import { httpError } from '../http/errors';
 import { parseJson } from '../http/validate';
 import { assertHealthConsent } from '../privacy/consent';
 import { liveRowsOf } from '../sync/pull';
+import { publishedSheets } from './advice-review';
 import { checkinRoutes } from './checkin-routes';
 import { loadNutritionContext } from './context';
 import { openNutrition } from './open';
@@ -64,6 +66,37 @@ export function nutritionRoutes(deps: AppDeps): Hono<AppEnv> {
   );
 
   routes.route('/checkins', checkinRoutes(deps));
+
+  // Fiches publiées pour l'âge et le mode effectif. ETag = "<version des fiches>-<audience>-<mode>", où la version
+  // est l'empreinte des (id, version, publication) des fiches publiées : elle change à toute publication, retrait
+  // ou modification de texte.
+  routes.get('/sheets', async (c) => {
+    const ctx = await loadNutritionContext(deps.db, deps, userOf(c).id);
+    const mode = ctx.effective.mode;
+    const audience = ctx.age < 18 ? 'minors' : 'adults';
+    const published = await publishedSheets(deps.db);
+    const version = createHash('sha256')
+      .update(published.map(({ row }) => `${row.id}:${row.version}:${row.publishedAt}`).join('|'))
+      .digest('hex')
+      .slice(0, 16);
+    const etag = `"${version}-${audience}-${mode}"`;
+    c.header('ETag', etag);
+    c.header('Cache-Control', 'no-cache');
+    const matches = (c.req.header('If-None-Match') ?? '')
+      .split(',')
+      .map((v) => v.trim().replace(/^W\//, ''))
+      .includes(etag);
+    if (matches) return c.body(null, 304);
+    const served =
+      mode === 'disabled'
+        ? []
+        : published
+            .map(({ served: s }) => s)
+            .filter(
+              (s) => (s.audience === 'all' || s.audience === audience) && s.visible_modes.includes(mode),
+            );
+    return c.json(served);
+  });
 
   routes.delete('/data', async (c) => c.json(await deleteNutritionData(deps, userOf(c))));
 

@@ -38,7 +38,9 @@ const call = (route: { method: string; path: string }, cookie?: string) =>
 describe('droits sur /api/review/* et /api/admin/*, par énumération (spec brique 2 §7, critère 1)', () => {
   it('sans session : 401 ; membre : 403 ; relectrice et relectrice santé : accès à la relecture', async () => {
     const cookies = await setup();
-    const review = listRoutes(ctx.app).filter((r) => r.path.startsWith('/api/review/'));
+    const review = listRoutes(ctx.app).filter(
+      (r) => r.path.startsWith('/api/review/') && !r.path.startsWith('/api/review/advice'),
+    );
     expect(review.length).toBeGreaterThanOrEqual(MIN_REVIEW_ROUTES);
     for (const r of review) {
       const label = `${r.method} ${r.path}`;
@@ -57,7 +59,9 @@ describe('droits sur /api/review/* et /api/admin/*, par énumération (spec briq
 
   it("une relectrice reçoit 403 sur chaque route de l'administration, comme un membre", async () => {
     const cookies = await setup();
-    const admin = listRoutes(ctx.app).filter((r) => r.path.startsWith('/api/admin/'));
+    const admin = listRoutes(ctx.app).filter(
+      (r) => r.path.startsWith('/api/admin/') || r.path.startsWith('/api/review/advice'),
+    );
     expect(admin.length).toBeGreaterThan(0);
     for (const r of admin) {
       for (const cookie of [cookies.member, cookies.reviewer, cookies.health]) {

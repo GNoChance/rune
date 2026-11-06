@@ -20,6 +20,7 @@ import type { Transaction } from 'kysely';
 import type { Database } from '../db/schema';
 import type { AppDeps } from '../deps';
 import type { Logger } from '../logger';
+import { loadAdviceFiles, seedOrMergeAdviceSheets } from '../nutrition/advice-loader';
 import type { StartupTask } from '../startup';
 import { rebuildCatalog } from './bundle';
 import { insertSheet, upsertIllustration } from './repo';
@@ -300,6 +301,18 @@ function logReport(logger: Logger, report: CatalogMergeReport): void {
 
 const errorName = (error: unknown) => (error instanceof Error ? error.name : 'unknown');
 
+/** Fiches conseils de `data/advice` : un fichier invalide est journalisé (nom seulement) et ignoré, jamais bloquant. */
+async function loadAdviceFilesSafely(deps: AppDeps) {
+  try {
+    const { files, invalid } = await loadAdviceFiles(deps);
+    for (const file of invalid) deps.logger.error('advice_invalid', { event: file });
+    return files;
+  } catch (error) {
+    deps.logger.error('advice_unreadable', { event: errorName(error) });
+    return [];
+  }
+}
+
 /**
  * Au démarrage : `loadCatalogFiles` → `seedOrMergeCatalog` → `rebuildCatalog`, dans une transaction. Des fichiers
  * invalides n'écrivent rien : le bloc est reconstruit depuis le catalogue déjà en base, et l'appli démarre. Un
@@ -320,9 +333,12 @@ export const CATALOG_STARTUP_TASK: StartupTask = {
       deps.logger.error('program_template_invalid', { event: file });
     if (result.ok) {
       const { files } = result;
+      const advice = await loadAdviceFilesSafely(deps);
       try {
         const report = await deps.db.transaction().execute(async (trx) => {
-          const merged = await seedOrMergeCatalog(trx, files, deps.clock.now().toISOString());
+          const now = deps.clock.now().toISOString();
+          const merged = await seedOrMergeCatalog(trx, files, now);
+          await seedOrMergeAdviceSheets(trx, advice, now);
           await rebuildCatalog(trx, deps, files.templates);
           return merged;
         });
