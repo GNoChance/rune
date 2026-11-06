@@ -7,6 +7,7 @@ import { syncRejectionCodes } from './0005_sync_rejection_codes';
 import { performedSetTargetReps } from './0006_performed_set_target_reps';
 import { coachTables } from './0007_coach';
 import { coachThreadsPerDay } from './0008_coach_threads_per_day';
+import { nutrition } from './0009_nutrition';
 
 export interface Migration {
   id: string;
@@ -25,4 +26,5 @@ export const MIGRATIONS: readonly Migration[] = [
   performedSetTargetReps,
   coachTables,
   coachThreadsPerDay,
+  nutrition,
 ];

@@ -38,6 +38,7 @@ export const COACH_CLOSED_REASONS = [
   'health_withdrawn',
   'day_over',
   'persona_change',
+  'nutrition_mode_change',
 ] as const;
 export type CoachClosedReason = (typeof COACH_CLOSED_REASONS)[number];
 

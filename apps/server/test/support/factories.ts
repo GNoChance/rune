@@ -460,6 +460,59 @@ const FACTORIES: Record<string, Factory> = {
     }
     return insert(db, 'coach_state', { id: 1, enabled: 0, updatedAt: NOW, ...v });
   },
+  // Nutrition (brique 5). Les pesées d'un même propriétaire prennent des dates distinctes.
+  nutrition_profile: owned('nutrition_profile', () => ({}), true),
+  weigh_in: owned('weigh_in', (db) => ({
+    date: `2026-09-${String((next(db) % 28) + 1).padStart(2, '0')}`,
+    weightG: 80_000,
+  })),
+  nutrition_target: owned('nutrition_target', () => ({
+    validFrom: NOW,
+    algoVersion: 'nutri-1.0.0',
+    reason: 'initial',
+    inputs: '{}',
+    effectiveGoal: 'maintain',
+    bmrKcal: 1780,
+    tdeeKcal: 2759,
+    kcalTarget: 2200,
+    kcalMin: 2100,
+    kcalMax: 2300,
+    proteinGMin: 130,
+    proteinGMax: 175,
+    fatGMin: 50,
+    carbsG: 310,
+    fiberG: 30,
+    waterMl: 2500,
+    appliedRules: '[]',
+  })),
+  nutrition_checkin: owned('nutrition_checkin', (db) => ({
+    weekStart: `2026-09-${String((next(db) % 28) + 1).padStart(2, '0')}`,
+    weighInCount: 0,
+    representative: 1,
+    decision: 'insufficient_data',
+  })),
+  advice_sheet: plain('advice_sheet', (db) => ({
+    id: `advice-${next(db)}`,
+    title: 'Fiche',
+    bodyMd: 'Texte',
+    audience: 'all',
+    visibleModes: '["full","qualitative"]',
+    tags: '[]',
+    sources: '[]',
+    status: 'draft',
+    draftOrigin: 'human',
+    updatedAt: NOW,
+    contentHash: 'hash',
+  })),
+  // Ligne unique insérée par la migration : relue, ou remplacée si des valeurs sont fournies.
+  nutrition_state: async (db, v) => {
+    if (Object.keys(v).length > 0) await sql`delete from nutrition_state`.execute(db);
+    else {
+      const existing = await sql<Values>`select * from nutrition_state where id = 1`.execute(db);
+      if (existing.rows[0]) return rowToCamel(existing.rows[0]);
+    }
+    return insert(db, 'nutrition_state', { id: 1, fullOpen: 0, updatedAt: NOW, ...v });
+  },
 };
 
 const ownerOf = (v: Values): Values => (v.ownerId ? { ownerId: v.ownerId } : {});

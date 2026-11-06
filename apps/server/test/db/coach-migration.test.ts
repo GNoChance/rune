@@ -63,7 +63,7 @@ describe('migration 0007_coach', () => {
       );
       const before = count(h.sqlite, 'user');
       const result = await migrate(h.db, MIGRATIONS, clock);
-      expect(result.applied).toEqual(['0007_coach', '0008_coach_threads_per_day']);
+      expect(result.applied).toEqual(['0007_coach', '0008_coach_threads_per_day', '0009_nutrition']);
       expect(count(h.sqlite, 'user')).toBe(before);
       expect(count(h.sqlite, 'coach_state')).toBe(1);
     } finally {
@@ -140,7 +140,7 @@ describe('migration 0007_coach', () => {
       const messages = dump('coach_message');
 
       const result = await migrate(h.db, MIGRATIONS, clock);
-      expect(result.applied).toEqual(['0008_coach_threads_per_day']);
+      expect(result.applied).toEqual(['0008_coach_threads_per_day', '0009_nutrition']);
       expect(dump('coach_thread')).toEqual(threads);
       expect(dump('coach_message')).toEqual(messages);
       expect(h.sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);

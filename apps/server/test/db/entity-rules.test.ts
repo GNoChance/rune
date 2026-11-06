@@ -63,7 +63,10 @@ describe('entityRules contre la base migrée', () => {
     const hashes = Object.entries(entityRules)
       .flatMap(([t, r]) => r.columns.filter((c) => c.endsWith('_hash')).map((c) => `${t}.${c}`))
       .sort();
-    expect(declared.filter((c) => c !== 'coach_thread.slot_aliases')).toEqual(hashes);
+    // `advice_sheet.content_hash` est une empreinte de contenu, pas un secret.
+    expect(hashes.filter((c) => c !== 'advice_sheet.content_hash')).toEqual(
+      declared.filter((c) => c !== 'coach_thread.slot_aliases'),
+    );
   });
 
   it.each(Object.keys(entityRules))('insertFixtureRow(%s) insère une ligne valide', async (table) => {

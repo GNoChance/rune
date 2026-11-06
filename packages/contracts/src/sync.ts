@@ -130,4 +130,7 @@ export const COLUMN_CODECS: Readonly<Record<string, Readonly<Record<string, Colu
   instance_change: { operations: 'json', ai_generated: 'boolean' },
   slot_state: { suspended: 'boolean' },
   engine_decision: { next_target: 'json' },
+  nutrition_profile: { safety_pause: 'boolean' },
+  nutrition_target: { inputs: 'json', applied_rules: 'json' },
+  nutrition_checkin: { representative: 'boolean' },
 };

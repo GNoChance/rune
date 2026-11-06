@@ -71,6 +71,7 @@ describe('migration 0004_program', () => {
       { id: '0006_performed_set_target_reps', breaking: false },
       { id: '0007_coach', breaking: false },
       { id: '0008_coach_threads_per_day', breaking: false },
+      { id: '0009_nutrition', breaking: false },
     ]);
   });
 
@@ -121,6 +122,7 @@ describe('migration 0004_program', () => {
           '0006_performed_set_target_reps',
           '0007_coach',
           '0008_coach_threads_per_day',
+          '0009_nutrition',
         ],
         unknownNonBreaking: [],
       });

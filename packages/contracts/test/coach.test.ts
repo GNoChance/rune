@@ -70,6 +70,7 @@ describe('constantes du coach IA (spec brique 4)', () => {
       'health_withdrawn',
       'day_over',
       'persona_change',
+      'nutrition_mode_change',
     ]);
     expect(COACH_MESSAGE_ROLES).toEqual(['user', 'assistant', 'system']);
     expect(COACH_REPORT_CATEGORIES).toEqual(['inaccurate', 'unsafe', 'inappropriate', 'other']);

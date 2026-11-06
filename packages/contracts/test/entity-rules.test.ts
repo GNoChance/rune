@@ -41,6 +41,13 @@ const EXPECTED: Record<string, string> = {
   coach_safety_counter: 'C0/H//false/not_linked',
   coach_state: 'C0/H//false/not_linked',
   coach_thread: 'C3/H/user_id/true/cascade',
+  // Nutrition (brique 5)
+  advice_sheet: 'C0/C//false/set_null',
+  nutrition_checkin: 'C2/D/owner_id/true/cascade',
+  nutrition_profile: 'C1/E/owner_id/true/cascade',
+  nutrition_state: 'C0/H//false/set_null',
+  nutrition_target: 'C2/D/owner_id/true/cascade',
+  weigh_in: 'C2/J/owner_id/true/cascade',
 };
 
 /** Tables de la brique 3 : programmes (E, D) et séances (J). */
@@ -85,7 +92,7 @@ const pick = (t: string) => {
 };
 
 describe('entityRules', () => {
-  it('déclare les 18 tables du socle, les 5 du catalogue, les 7 des programmes et les 6 du coach avec leurs valeurs', () => {
+  it('déclare les 18 tables du socle, les 5 du catalogue, les 7 des programmes et les 6 du coach et les 6 de la nutrition avec leurs valeurs', () => {
     expect(Object.keys(entityRules).sort()).toEqual(Object.keys(EXPECTED).sort());
     for (const t of Object.keys(EXPECTED)) expect(pick(t)).toBe(EXPECTED[t]);
   });
@@ -154,6 +161,31 @@ describe('entityRules', () => {
     );
   });
 
+  it('déclare la nutrition : profil C1 à colonnes C2, pesée J écrite par le client, cibles et bilans du serveur', () => {
+    expect(ruleOf('nutrition_profile').c2Columns).toEqual([
+      'safety_screen_version',
+      'safety_screen_at',
+      'safety_pause',
+      'sex_for_calc',
+      'height_cm',
+      'activity_level',
+      'goal',
+      'cumulative_adjustment_kcal',
+    ]);
+    expect(ruleOf('nutrition_profile').c2Values).toEqual({ mode_reason: ['safety'] });
+    expect(ruleOf('nutrition_profile').c2Columns).not.toContain('mode');
+    expect(ruleOf('weigh_in').clientWritable).toEqual(['date', 'weight_g']);
+    for (const t of [
+      'nutrition_profile',
+      'nutrition_target',
+      'nutrition_checkin',
+      'advice_sheet',
+      'nutrition_state',
+    ])
+      expect(ruleOf(t).clientWritable, t).toEqual([]);
+    expect(ruleOf('advice_sheet').columns).toContain('content_hash');
+  });
+
   it('porte les colonnes écrivables par le client et les secrets', () => {
     expect(ruleOf('sync_rejection').clientWritable).toEqual(['dismissed_at']);
     expect(ruleOf('user').secretColumns).toEqual(['password_hash']);
@@ -179,6 +211,9 @@ describe('entityRules', () => {
       'home_equipment',
       'instance_change',
       'limitation',
+      'nutrition_checkin',
+      'nutrition_profile',
+      'nutrition_target',
       'performed_exercise',
       'performed_set',
       'place',
@@ -187,6 +222,7 @@ describe('entityRules', () => {
       'sync_rejection',
       'training_profile',
       'user',
+      'weigh_in',
       'workout_session',
     ]);
     // Catalogue servi par GET /api/catalog (classe C), relecture en ligne seulement (classe H) : hors pull.
@@ -235,12 +271,13 @@ describe('entityRules', () => {
       }
     });
 
-    it('seules les tables de la brique 3 ont un parent ou des c2Values (ni le socle ni le catalogue)', () => {
+    it('seules les tables des briques 3 et 5 ont un parent ou des c2Values (ni le socle ni le catalogue)', () => {
       const withExtension = all
         .filter(([, r]) => r.parent !== undefined || r.c2Values !== undefined)
         .map(([t]) => t);
-      expect(withExtension.sort()).toEqual(['performed_exercise', 'performed_set']);
-      for (const t of withExtension) expect(PROGRAM_TABLES).toContain(t);
+      expect(withExtension.sort()).toEqual(['nutrition_profile', 'performed_exercise', 'performed_set']);
+      for (const t of withExtension.filter((x) => x !== 'nutrition_profile'))
+        expect(PROGRAM_TABLES).toContain(t);
     });
 
     it('les tables du coach ne sont pas miroir et ne portent ni owner_id, ni rev, ni deleted_at', () => {

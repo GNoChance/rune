@@ -1,6 +1,11 @@
 import {
+  type ActivityLevel,
+  type AdviceAudience,
+  type AdviceStatus,
   type ChangeAuthor,
   type ChangeStatus,
+  type CheckinDecision,
+  type CheckinPosition,
   type CoachId,
   type CommentPart,
   type DecisionResult,
@@ -14,16 +19,21 @@ import {
   type LoadMode,
   type MEASURES,
   type MECHANICS,
+  type ModeReason,
   type NextAdjustment,
+  type NutritionGoal,
+  type NutritionMode,
   type PainLevel,
   type RejectionCode,
   type SessionProfile,
   type SessionStatus,
   type SetKind,
+  type SexForCalc,
   type Side,
   type SlotMode,
   type SwapReason,
   snakeToCamel,
+  type TargetReason,
   type WeekType,
 } from '@rune/contracts';
 import type { Generated, Kysely, Transaction } from 'kysely';
@@ -480,7 +490,13 @@ export interface CoachThreadTable {
   /** Alias → identifiant réel des slots ajoutés par la personne ; jamais exporté ni envoyé au modèle. */
   slotAliases: Generated<string>;
   isOpen: Generated<number>;
-  closedReason: 'version_change' | 'health_withdrawn' | 'day_over' | 'persona_change' | null;
+  closedReason:
+    | 'version_change'
+    | 'health_withdrawn'
+    | 'day_over'
+    | 'persona_change'
+    | 'nutrition_mode_change'
+    | null;
   userMessageCount: Generated<number>;
   createdAt: string;
   lastMessageAt: string | null;
@@ -562,6 +578,94 @@ export interface CoachStateTable {
   updatedAt: string;
 }
 
+/** Nutrition (migration 0009_nutrition, spec brique 5 §6.1). Les colonnes C2 sont nulles dans une tombstone. */
+export interface NutritionProfileTable extends SyncColumns, SoftDelete {
+  /** = `owner_id`. */
+  id: string;
+  mode: Generated<NutritionMode>;
+  modeReason: ModeReason | null;
+  safetyScreenVersion: number | null;
+  safetyScreenAt: string | null;
+  safetyPause: Generated<number>;
+  sexForCalc: SexForCalc | null;
+  heightCm: number | null;
+  activityLevel: ActivityLevel | null;
+  goal: NutritionGoal | null;
+  cumulativeAdjustmentKcal: Generated<number>;
+}
+
+export interface WeighInTable extends SyncColumns, SoftDelete {
+  id: string;
+  date: string | null;
+  weightG: number | null;
+}
+
+export interface NutritionTargetTable extends SyncColumns, SoftDelete {
+  id: string;
+  validFrom: string | null;
+  algoVersion: string | null;
+  reason: TargetReason | null;
+  inputs: string | null;
+  effectiveGoal: NutritionGoal | null;
+  bmrKcal: number | null;
+  tdeeKcal: number | null;
+  kcalTarget: number | null;
+  kcalMin: number | null;
+  kcalMax: number | null;
+  proteinGMin: number | null;
+  proteinGMax: number | null;
+  fatGMin: number | null;
+  carbsG: number | null;
+  fiberG: number | null;
+  waterMl: number | null;
+  appliedRules: string | null;
+}
+
+export interface NutritionCheckinTable extends SyncColumns, SoftDelete {
+  id: string;
+  weekStart: string | null;
+  weighInCount: number | null;
+  meanWeightG: number | null;
+  changePct: number | null;
+  representative: number | null;
+  decision: CheckinDecision | null;
+  position: CheckinPosition | null;
+  proposedDeltaKcal: -100 | 100 | null;
+  response: 'accepted' | 'declined' | null;
+  respondedAt: string | null;
+  createdTargetId: string | null;
+  recalibrationTargetId: string | null;
+}
+
+/** Fiche conseil : C0 partagée, sans colonne de synchro par propriétaire. */
+export interface AdviceSheetTable {
+  id: string;
+  title: string;
+  bodyMd: string;
+  audience: AdviceAudience;
+  visibleModes: string;
+  tags: string;
+  sources: string;
+  status: AdviceStatus;
+  version: Generated<number>;
+  draftOrigin: 'ai' | 'human';
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  publishedAt: string | null;
+  retiredAt: string | null;
+  updatedAt: string;
+  /** Empreinte du contenu, pour le chargeur de fiches (pas un secret). */
+  contentHash: string;
+}
+
+/** Une seule ligne, `id` = 1, insérée par la migration ; `fullOpen` = 0 tant que le mode complet est fermé. */
+export interface NutritionStateTable {
+  id: 1;
+  fullOpen: Generated<number>;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
 export interface Database {
   serverMeta: ServerMetaTable;
   schemaMigrations: SchemaMigrationsTable;
@@ -599,6 +703,12 @@ export interface Database {
   coachReport: CoachReportTable;
   coachSafetyCounter: CoachSafetyCounterTable;
   coachState: CoachStateTable;
+  nutritionProfile: NutritionProfileTable;
+  weighIn: WeighInTable;
+  nutritionTarget: NutritionTargetTable;
+  nutritionCheckin: NutritionCheckinTable;
+  adviceSheet: AdviceSheetTable;
+  nutritionState: NutritionStateTable;
 }
 
 export type DbExecutor = Kysely<Database> | Transaction<Database>;
