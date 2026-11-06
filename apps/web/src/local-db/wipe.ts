@@ -13,6 +13,7 @@ export async function wipeUserData(db: AppDb, opts: { keepOutbox: boolean }): Pr
   clearAllCommentDrafts();
   await db.transaction('rw', db.tables, async () => {
     for (const store of mirrorStoreNames(db)) await db.mirror(store).clear();
+    await db.table('nutritionSheets').clear();
     await db.meta.bulkDelete([...USER_META_KEYS]);
     if (!opts.keepOutbox) {
       await db.outbox.clear();

@@ -17,8 +17,9 @@ import { createMonotonicUuidV7 } from '@rune/domain';
 import { localHealthConsentActive } from '../local-db/consent';
 import { type AppDb, mirrorStoreNames, type OutboxOp } from '../local-db/db';
 import { deleteMeta, getMeta, setMeta } from '../local-db/meta';
+import { applyPulledNutritionMode, clearIntent, intentSettledBy } from '../local-db/nutrition';
 import { clearMirrors, purgeHealthData, wipeUserData } from '../local-db/wipe';
-import { applyPulledRows } from './apply-pull';
+import { applyNutritionSnapshot, applyPulledRows, NutritionSnapshot } from './apply-pull';
 import { refreshCatalog } from './catalog';
 import { type EpochIo, handleEpoch } from './epoch';
 import { pendingCount } from './outbox';
@@ -204,10 +205,15 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
   // ---- HTTP ----
 
   /** Requête de synchro ; l'échéance couvre la lecture du corps, l'époque est lue avant lui. */
-  function request(cycle: Cycle, method: 'GET' | 'POST', path: string, body?: unknown): Promise<JsonReply> {
+  function request(
+    cycle: Cycle,
+    method: 'GET' | 'POST' | 'PUT',
+    path: string,
+    body?: unknown,
+  ): Promise<JsonReply> {
     const headers: Record<string, string> = { [PROTOCOL_HEADER]: String(SYNC_PROTOCOL) };
     const init: RequestInit = { method, headers };
-    if (method === 'POST') {
+    if (method !== 'GET') {
       headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(body ?? {});
     }
@@ -269,6 +275,30 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     }
   }
 
+  // ---- 3 bis. Intention de descente de mode nutrition (spec brique 5 §6.4 bis) ----
+
+  /**
+   * `PUT /api/nutrition/mode` avant le pull. L'intention s'efface sur un succès et sur une 4xx qui la règle ; une
+   * erreur réseau ou une 5xx la garde (l'échec est celui du cycle, repris plus tard), comme une session perdue.
+   */
+  async function sendNutritionIntent(cycle: Cycle): Promise<void> {
+    const intent = await getMeta(db, 'nutritionPendingMode');
+    if (!intent) return;
+    const reply = await request(cycle, 'PUT', '/api/nutrition/mode', { mode: intent.mode });
+    await assertCurrent(cycle);
+    if (reply.res.ok) return clearIntent(db, intent);
+    const error = httpErrorOf(reply);
+    if (!intentSettledBy(error.status, error.code)) throw error;
+    await clearIntent(db, intent);
+  }
+
+  /** Instantané des trois tables au retour du mode complet ; le mode lu devient `full` avec lui. */
+  async function loadNutritionSnapshot(cycle: Cycle): Promise<void> {
+    const snapshot = NutritionSnapshot.parse(okBody(await request(cycle, 'GET', '/api/nutrition/rows')));
+    await assertCurrent(cycle);
+    await applyNutritionSnapshot(db, snapshot);
+  }
+
   // ---- 4. Pull ----
 
   async function dropUnreceived(received: Map<string, Set<string>>, watermark: string): Promise<void> {
@@ -292,6 +322,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     let full = since === null;
     let expiredHandled = false;
     const received = new Map<string, Set<string>>();
+    let snapshotNeeded = false;
     for (;;) {
       await assertCurrent(cycle);
       const path = since === null ? '/api/sync/pull' : `/api/sync/pull?since=${encodeURIComponent(since)}`;
@@ -314,6 +345,8 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       const page = PullResponse.parse(reply.body);
       await assertCurrent(cycle);
       await applyPulledRows(db, page.rows);
+      snapshotNeeded = (await applyPulledNutritionMode(db, page.nutrition.effective_mode, rules))
+        .needsSnapshot;
       if (full) {
         for (const { entity, row } of page.rows) {
           const ids = received.get(entity) ?? new Set<string>();
@@ -332,6 +365,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       if (!page.hasMore) break;
     }
     if (full && since !== null) await dropUnreceived(received, since);
+    if (snapshotNeeded) await loadNutritionSnapshot(cycle);
     await setMeta(db, 'lastPullOkAt', nowIso());
     setState({ pulledThisRun: true });
   }
@@ -431,6 +465,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       setState({ connection: 'online' });
       await handleEpoch(epochIo(cycle), cycle.epoch);
       if (kind === 'full') await push(cycle);
+      await sendNutritionIntent(cycle);
       await pull(cycle);
       await reconcileProvisional(cycle);
       await syncCatalog();

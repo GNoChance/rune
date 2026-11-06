@@ -7,6 +7,7 @@ import { type ConsentRepo, createConsentRepo } from './consent-repo';
 import { type CreditsRepo, createCreditsRepo } from './credits-repo';
 import { createGymsRepo, type GymsRepo } from './gyms-repo';
 import { createMeRepo, type MeRepo } from './me-repo';
+import { type NutritionRepo, nutritionRepoFor } from './nutrition-repo';
 import { createPlacesRepo, type PlacesRepo } from './places-repo';
 import { createProfileRepo, type ProfileRepo } from './profile-repo';
 import { type ProgramRepo, programRepoFor } from './program-repo';
@@ -14,6 +15,7 @@ import { type ProgramViewRepo, programViewFor } from './program-view';
 import { createRejectionsRepo, type RejectionsRepo } from './rejections-repo';
 import { createReviewRepo, type ReviewRepo } from './review-repo';
 import { createStatusRepo, type StatusRepo } from './status-repo';
+import { type WeighInsRepo, weighInRepoFor } from './weigh-in-repo';
 import { type WorkoutsRepo, workoutRepoFor } from './workout-repo';
 
 export type { AdminRepo } from './admin-repo';
@@ -39,6 +41,14 @@ export type { CreditsRepo, CreditsView } from './credits-repo';
 export { type DeviceSettings, useDeviceSettings } from './device-settings';
 export type { GymsRepo } from './gyms-repo';
 export type { DeviceOwner, MeRepo } from './me-repo';
+export {
+  type NutritionCheckinView,
+  type NutritionRepo,
+  type NutritionSettingsView,
+  type NutritionTargetView,
+  type NutritionView,
+  useNutritionView,
+} from './nutrition-repo';
 export type { PlacesRepo, PlaceView } from './places-repo';
 export type { ProfileRepo, TrainingProfileView } from './profile-repo';
 export {
@@ -75,6 +85,13 @@ export {
 } from './review-repo';
 export { isLive, parseJsonColumn } from './rows';
 export type { StatusRepo } from './status-repo';
+export {
+  useWeighIns,
+  WeighInError,
+  type WeighInErrorCode,
+  type WeighInsRepo,
+  type WeighInView,
+} from './weigh-in-repo';
 export {
   closeStaleAfterPull,
   type LiveContext,
@@ -116,6 +133,10 @@ export interface Repos {
   programView: ProgramViewRepo;
   /** Coach IA : API en ligne et flux SSE, rien d'écrit sur l'appareil (spec brique 4 C17). */
   coach: CoachRepo;
+  /** Nutrition : API en ligne, descente de mode hors ligne (spec brique 5 D11). */
+  nutrition: NutritionRepo;
+  /** Pesées : saisie hors ligne par l'outbox (spec brique 5 §6.3). */
+  weighIns: WeighInsRepo;
 }
 
 export function createRepos(s: AppServices): Repos {
@@ -139,6 +160,8 @@ export function createRepos(s: AppServices): Repos {
     programView: programViewFor(s),
     // Le même que celui du magasin du coach.
     coach: coachRepoFor(s),
+    nutrition: nutritionRepoFor(s),
+    weighIns: weighInRepoFor(s),
   };
 }
 

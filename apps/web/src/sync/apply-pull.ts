@@ -1,5 +1,8 @@
-import type { PulledRow } from '@rune/contracts';
+import { PulledRow } from '@rune/contracts';
+import { z } from 'zod';
 import type { AppDb, MirrorRow } from '../local-db/db';
+import { getMeta, setMeta } from '../local-db/meta';
+import { NUTRITION_DATA_TABLES } from '../local-db/nutrition';
 
 /**
  * Écrit les lignes tirées dans les miroirs, en une transaction (R-SYN-22) : la ligne serveur
@@ -21,5 +24,32 @@ export async function applyPulledRows(db: AppDb, rows: PulledRow[]): Promise<voi
       }
       await db.mirror(entity).put(merged);
     }
+  });
+}
+
+/** Réponse de `GET /api/nutrition/rows` : les lignes vivantes des trois tables, au format du pull. */
+export const NutritionSnapshot = z.object({
+  weigh_in: z.array(PulledRow),
+  nutrition_target: z.array(PulledRow),
+  nutrition_checkin: z.array(PulledRow),
+});
+export type NutritionSnapshot = z.infer<typeof NutritionSnapshot>;
+
+/**
+ * Instantané du retour en mode complet (spec §6.4) : les copies des trois tables sont remplacées (les ops en
+ * attente sont rejouées dessus) et `full` devient le mode lu, en une transaction. Une descente demandée entre-temps
+ * l'emporte : rien n'est écrit, les copies restent purgées.
+ */
+export async function applyNutritionSnapshot(db: AppDb, snapshot: NutritionSnapshot): Promise<void> {
+  const stores = NUTRITION_DATA_TABLES.map((t) => db.mirror(t));
+  await db.transaction('rw', [db.outbox, db.meta, ...stores], async () => {
+    if (await getMeta(db, 'nutritionPendingMode')) return;
+    for (const store of stores) await store.clear();
+    await applyPulledRows(db, [
+      ...snapshot.weigh_in,
+      ...snapshot.nutrition_target,
+      ...snapshot.nutrition_checkin,
+    ]);
+    await setMeta(db, 'nutritionEffectiveMode', 'full');
   });
 }

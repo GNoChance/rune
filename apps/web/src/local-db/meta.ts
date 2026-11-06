@@ -1,4 +1,4 @@
-import type { AgeBand, MeResponse } from '@rune/contracts';
+import type { AgeBand, MeResponse, NutritionMode } from '@rune/contracts';
 import type { AppDb } from './db';
 
 export interface MetaValues {
@@ -25,6 +25,15 @@ export interface MetaValues {
    * bandeau « Un autre programme te correspond mieux » ne revient que pour un autre modèle (R-REC-7).
    */
   recommendationSeen: string;
+  /**
+   * Descente de mode nutrition demandée hors ligne, pas encore envoyée (spec brique 5 §6.4 bis) : seule la plus
+   * restrictive est gardée. Hors de l'outbox ; effacée quand le serveur l'a reçue ou ne peut plus la prendre.
+   */
+  nutritionPendingMode: { mode: 'qualitative' | 'disabled'; at: string };
+  /** Dernier mode nutrition effectif appliqué sur l'appareil (lu au pull) ; absent : jamais lu. */
+  nutritionEffectiveMode: NutritionMode;
+  /** ETag de la dernière liste de fiches conseils gardée dans `nutritionSheets`. */
+  nutritionSheetsEtag: string;
 }
 
 /** Clés liées à l'utilisateur connecté, effacées par `wipeUserData`. */
@@ -38,6 +47,9 @@ export const USER_META_KEYS: readonly (keyof MetaValues)[] = [
   'lastAgeBand',
   'reviewIntroSeen',
   'recommendationSeen',
+  'nutritionPendingMode',
+  'nutritionEffectiveMode',
+  'nutritionSheetsEtag',
 ];
 
 export async function getMeta<K extends keyof MetaValues>(
