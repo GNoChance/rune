@@ -66,3 +66,25 @@ export async function seedWeighIns(
 
 export const open = (ctx: TestContext, cookie: string) =>
   ctx.request('/api/nutrition/open', { method: 'POST', cookie, json: {} });
+
+export const NO_ANSWERS = { pregnancy: 'no', eating_disorder: 'no', medical: 'no' } as const;
+
+export const SETUP = {
+  sex_for_calc: 'male',
+  height_cm: 180,
+  activity_level: 2,
+  goal: 'maintain',
+  weigh_in: { id: '0190aaaa-0000-7000-8000-000000000001', date: '2026-11-09', weight_g: 80_000 },
+} as const;
+
+/** Accord santé actif et mode complet ouvert, sans profil. */
+export async function openFullFor(ctx: TestContext, userId: string): Promise<void> {
+  await insertFixtureRow(ctx.deps.db, 'consent_event', { ownerId: userId, type: 'health', action: 'grant' });
+  await ctx.deps.db.updateTable('nutritionState').set({ fullOpen: 1 }).execute();
+}
+
+export const screen = (ctx: TestContext, cookie: string, json: unknown) =>
+  ctx.request('/api/nutrition/screen', { method: 'POST', cookie, json });
+
+export const putMode = (ctx: TestContext, cookie: string, json: unknown) =>
+  ctx.request('/api/nutrition/mode', { method: 'PUT', cookie, json });

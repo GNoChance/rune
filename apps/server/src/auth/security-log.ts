@@ -28,7 +28,8 @@ export type SecurityEventType =
   | 'coach_suspended'
   | 'coach_report_created'
   | 'coach_report_classified'
-  | 'coach_api_auth_failed';
+  | 'coach_api_auth_failed'
+  | 'nutrition_state_changed';
 
 export type SecurityDetails = { [key: string]: string | number | boolean };
 

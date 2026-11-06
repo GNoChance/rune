@@ -16,6 +16,7 @@ import type { AppDeps } from '../deps';
 import { validClientIp } from '../http/client-ip';
 import { httpError } from '../http/errors';
 import { parseJson } from '../http/validate';
+import { adminNutritionRoutes } from '../nutrition/admin-routes';
 import { deleteGymAsAdmin } from '../places/gyms';
 import { deleteAccount } from '../privacy/delete-account';
 import { adminExerciseRoutes } from '../review/admin-routes';
@@ -123,6 +124,9 @@ export function adminRoutes(deps: AppDeps): Hono<AppEnv> {
 
   // Administration du coach (spec brique 4 §17) : état, coûts, signalements.
   routes.route('/coach', adminCoachRoutes(deps));
+
+  // Interrupteur des repères chiffrés (spec brique 5 §7).
+  routes.route('/nutrition', adminNutritionRoutes(deps));
 
   return routes;
 }
