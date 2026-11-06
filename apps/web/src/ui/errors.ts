@@ -56,6 +56,12 @@ export const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   request_in_progress: 'Le coach termine une réponse…',
   thread_closed: 'Ta conversation du jour est close. Reviens demain.',
   duplicate_message: 'Ce message a déjà été envoyé.',
+  mode_not_allowed: "Ce mode n'est pas possible pour le moment.",
+  setup_required: 'Il manque tes réglages pour calculer des repères.',
+  screen_required: "Passe d'abord les trois questions de sécurité.",
+  weigh_in_required: "Ajoute d'abord une pesée.",
+  goal_not_allowed: "Cet objectif n'est pas proposé actuellement.",
+  checkin_not_actionable: "Ce bilan n'attend plus de réponse.",
   internal: 'Le serveur a rencontré une erreur.',
 };
 

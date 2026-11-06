@@ -45,6 +45,8 @@ const GROUPS: Record<number, string[]> = {
     'request_in_progress',
     'thread_closed',
     'duplicate_message',
+    'weigh_in_required',
+    'checkin_not_actionable',
   ],
   410: ['account_deleted', 'watermark_expired'],
   415: ['unsupported_media_type'],
@@ -53,6 +55,10 @@ const GROUPS: Record<number, string[]> = {
     'template_unavailable',
     'days_out_of_range',
     'invalid_change',
+    'mode_not_allowed',
+    'setup_required',
+    'screen_required',
+    'goal_not_allowed',
     'coach_load_increase',
     'coach_load_unverifiable',
   ],
@@ -63,8 +69,8 @@ const GROUPS: Record<number, string[]> = {
 };
 
 describe('ApiErrorCode et ERROR_STATUS', () => {
-  it('compte 54 codes', () => {
-    expect(ApiErrorCode.options).toHaveLength(54);
+  it('compte 60 codes', () => {
+    expect(ApiErrorCode.options).toHaveLength(60);
   });
 
   it("refus de la garde de hausse à l'acceptation d'une proposition du coach : 422 (spec brique 4 §12.2)", () => {

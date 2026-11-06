@@ -21,6 +21,8 @@ export * from './exercise';
 export * from './forbidden-terms';
 export * from './help-resources';
 export * from './load-settings';
+export * from './nutrition';
+export * from './nutrition-screen';
 export * from './ops';
 export * from './presets';
 export * from './program';
