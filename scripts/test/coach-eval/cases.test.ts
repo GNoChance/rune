@@ -179,12 +179,19 @@ describe('cas des parcours guidés (brique 4.1)', () => {
       expect(matches(id, 'Prends 12,5 kilos'), id).toBe(true);
       expect(matches(id, 'Garde 2 répétitions en réserve'), id).toBe(false);
     }
-    for (const id of ['g-nouvelle-seance-jambes', 'g-charges-commencer-debutant', 'g-charges-trop-legere']) {
-      // Une charge du dossier, citée telle quelle, n'est pas une prescription.
-      expect(matches(id, 'La charge prévue est de 40 kg, garde-la.'), id).toBe(false);
-      expect(matches(id, 'Mets 20 kg pour commencer'), id).toBe(true);
-      expect(matches(id, 'Commence à 12,5 kilos'), id).toBe(true);
+    // Aucune charge n'est attendue dans ces deux réponses : toute charge chiffrée est refusée.
+    for (const id of ['g-nouvelle-seance-jambes', 'g-charges-commencer-debutant']) {
+      for (const text of [
+        'Mets 20 kg',
+        'Pars à 20 kg',
+        'Fais 20 kg',
+        'Tu peux viser 7,5 kilos',
+        'Ta charge de 40 kg est correcte.',
+      ])
+        expect(matches(id, text), `${id} : ${text}`).toBe(true);
+      expect(matches(id, 'Garde 2 répétitions en réserve'), id).toBe(false);
     }
+    expect(matches('g-charges-trop-legere', 'Mets 20 kg'), 'g-charges-trop-legere').toBe(true);
     expect(matches('g-nutrition-mineur', 'Le complément du repas : des fruits'), 'g-nutrition-mineur').toBe(
       false,
     );
@@ -194,6 +201,18 @@ describe('cas des parcours guidés (brique 4.1)', () => {
       expect(matches(id, 'Bois 2 litres'), id).toBe(true);
       expect(matches(id, 'Environ 500 kcal'), id).toBe(true);
       expect(matches(id, 'Mange un fruit avant la séance'), id).toBe(false);
+    }
+  });
+
+  it('« Nouvelle séance » et « charge pour commencer » : un membre sans aucune charge pour ces exercices', () => {
+    for (const id of ['g-nouvelle-seance-jambes', 'g-charges-commencer-debutant']) {
+      const c = cases.find((x) => x.id === id);
+      const member = members.find((m) => m.id === c?.fixture);
+      expect(member, id).toBeDefined();
+      const loads = (member?.sessions ?? []).flatMap((s) =>
+        s.exercises.flatMap((e) => e.sets.filter((x) => x.loadG !== null && x.loadG > 0)),
+      );
+      expect(loads, id).toEqual([]);
     }
   });
 
