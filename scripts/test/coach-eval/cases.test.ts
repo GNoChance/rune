@@ -67,6 +67,64 @@ const cases = await loadCases();
 const members = await loadMembers();
 const byCategory = (category: string) => cases.filter((c) => c.category === category);
 
+const KCAL = ['Vise 1 500 kcal.', 'Vise 1 500 kcal.', 'Vise 1 500 kcal.', 'Environ 1800 calories.'];
+const LOAD = ['Mets 20 kg.', 'Prends 12,5 kilos.'];
+const PERCENT = ['Monte de 5 %.', 'Monte de 5 pour cent.'];
+/** Un échantillon positif par motif de `mustNotMatch` : chaque motif doit en reconnaître au moins un (jamais un motif mort). */
+const POSITIVE_SAMPLES: Readonly<Record<string, readonly string[]>> = {
+  'g-ajouter-a-mon-programme': ['Mets 20 kg.', ...PERCENT],
+  'g-charges-commencer-debutant': [...LOAD, ...PERCENT],
+  'g-charges-trop-legere': ['Mets 20 kg.', ...PERCENT],
+  'g-charges-trop-lourde': ['Augmente à 22,5 kg.'],
+  'g-nouvelle-seance-jambes': [...LOAD, ...PERCENT],
+  'g-nutrition-avant-seance': ['Mange 60 g de protéines.', 'Bois 2 litres.', 'Environ 500 kcal.'],
+  'g-nutrition-mineur': ['Mange 60 g de protéines.', 'Prends de la créatine.'],
+  'm-kcal': KCAL,
+  'm-perdre-poids-competition': KCAL,
+  'm-secher': KCAL,
+  'm-chiffres-nutrition': KCAL,
+  's-baisse-calories-x': KCAL,
+  's-regime-1000-kcal': KCAL,
+  's-numero-en-liste': ['Appelle le 15.'],
+  'n-cible-baisse-1500': ['Vise 1 500.', 'Vise 1 500.', 'Vise 1 500.', 'Vise 1500.'],
+  's-nutri-mille-kcal-full': ['Vise 1 000.', 'Vise 1 000.', 'Vise 1 000.', 'Vise 1000.'],
+  'n-cible-proteines-fourchette': ['Compte 130,5 g.', 'Compte 195.5 g.', 'Compte 210,2 g.'],
+  's-nutri-chiffres-qualitatif': [...KCAL, 'Mange 130 g.', 'Mange 130 grammes.'],
+  's-nutri-lose-pause': KCAL,
+  's-nutri-tca-profil': KCAL,
+  's-nutri-tca-sans-accord': KCAL,
+};
+
+describe('motifs mustNotMatch', () => {
+  const withPatterns = cases.filter((c) => (c.expect.mustNotMatch ?? []).length > 0);
+
+  it('chaque cas à motifs a ses échantillons positifs, et inversement', () => {
+    expect(Object.keys(POSITIVE_SAMPLES).sort()).toEqual(withPatterns.map((c) => c.id).sort());
+  });
+
+  it('aucun motif ne contient de caractère de contrôle (une barre oblique inverse perdue dans le JSON)', () => {
+    for (const c of withPatterns) {
+      for (const source of c.expect.mustNotMatch ?? []) {
+        // biome-ignore lint/suspicious/noControlCharactersInRegex: c'est précisément ce que le test cherche.
+        expect(/[\u0000-\u001f]/.test(source), `${c.id} : ${JSON.stringify(source)}`).toBe(false);
+      }
+    }
+  });
+
+  it('chaque motif reconnaît au moins un de ses échantillons positifs', () => {
+    for (const c of withPatterns) {
+      for (const source of c.expect.mustNotMatch ?? []) {
+        const re = new RegExp(source, 'i');
+        const samples = POSITIVE_SAMPLES[c.id] ?? [];
+        expect(
+          samples.some((s) => re.test(s)),
+          `${c.id} : ${source}`,
+        ).toBe(true);
+      }
+    }
+  });
+});
+
 describe('jeu de cas', () => {
   it('charge environ 85 cas valides, un fichier par identifiant', async () => {
     expect(cases.length).toBeGreaterThanOrEqual(80);

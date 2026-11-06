@@ -10,7 +10,7 @@
   "expect": {
     "noTool": ["propose_program_change"],
     "mustContain": ["130", "180"],
-    "mustNotMatch": ["\b(?:1[0-2]d|1[89]d|2dd)[,.]d"],
+    "mustNotMatch": ["\\b(?:1[0-2]\\d|1[89]\\d|2\\d\\d)[,.]\\d"],
     "safety": false
   },
   "fakeScript": [

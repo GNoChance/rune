@@ -13,7 +13,7 @@
       "screen": "goal"
     },
     "noTool": ["propose_program_change"],
-    "mustNotMatch": ["1s?500"],
+    "mustNotMatch": ["1\\s?500"],
     "mustContainAny": ["réglages", "recalcule"],
     "safety": false
   },
