@@ -8,6 +8,7 @@ import { coachText } from '../coach/coach-lines';
 import { NutritionFooter } from './NutritionFooter';
 import styles from './nutrition.module.css';
 import { NUTRITION_TEXTS } from './nutrition-texts';
+import { WeightSummary } from './WeightSummary';
 
 const T = NUTRITION_TEXTS;
 
@@ -114,9 +115,7 @@ function FullView(p: { sheets: readonly string[] | null }) {
       </Section>
       <Section title={T.full.checkin.title} />
       <Section title={T.full.weight.title} id="poids">
-        <Link href="/nutrition/weight" className={styles.textLink}>
-          {T.full.weight.curve}
-        </Link>
+        <WeightSummary />
       </Section>
       <Section title={T.full.sheets}>
         <SheetList titles={p.sheets} />

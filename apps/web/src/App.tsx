@@ -71,6 +71,9 @@ const NutritionPage = lazy(() =>
 const StartFlow = lazy(() =>
   import('./features/nutrition/StartFlow').then((m) => ({ default: m.StartFlow })),
 );
+const WeightPage = lazy(() =>
+  import('./features/nutrition/WeightPage').then((m) => ({ default: m.WeightPage })),
+);
 const NutritionHelpPage = lazy(() =>
   import('./features/public/NutritionHelpPage').then((m) => ({ default: m.NutritionHelpPage })),
 );
@@ -223,6 +226,7 @@ function ConnectedRoutes() {
       <Route path="/coach/threads/:id" component={ThreadPage} />
       <Route path="/nutrition" component={NutritionPage} />
       <Route path="/nutrition/start" component={StartFlow} />
+      <Route path="/nutrition/weight" component={WeightPage} />
       <Route path="/profile" component={ProfileHub} />
       <Route path="/profile/edit" component={ProfilePage} />
       <Route path="/profile/coach" component={MyCoachPage} />

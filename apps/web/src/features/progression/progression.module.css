@@ -390,6 +390,11 @@
   animation: chart-draw var(--dur-celebrate) var(--ease) 200ms backwards;
 }
 
+.chartPoint {
+  fill: var(--accent);
+  fill-opacity: 0.55;
+}
+
 .chartDot {
   fill: var(--surface);
   stroke: var(--accent);

@@ -2,8 +2,10 @@ import { parisDate } from '@rune/domain';
 import { useEffect, useId, useState } from 'react';
 import { Link } from 'wouter';
 import { type NutritionView, useNutritionView, useRepos } from '../../repos';
+import { Button } from '../../ui';
 import styles from './nutrition.module.css';
 import { NUTRITION_TEXTS } from './nutrition-texts';
+import { WeighInSheet } from './WeighInSheet';
 
 const T = NUTRITION_TEXTS.home;
 const DAY_MS = 86_400_000;
@@ -40,6 +42,7 @@ export function HomeNutritionCard(p: { nowMs: number }) {
   const repos = useRepos();
   const titleId = useId();
   const [titles, setTitles] = useState<readonly string[]>([]);
+  const [weighing, setWeighing] = useState(false);
   const mode = view?.mode;
   useEffect(() => {
     if (mode !== 'qualitative') {
@@ -73,9 +76,15 @@ export function HomeNutritionCard(p: { nowMs: number }) {
           {sheet ? <p>{sheet}</p> : null}
         </>
       )}
+      {full ? (
+        <Button variant="secondary" onClick={() => setWeighing(true)}>
+          {NUTRITION_TEXTS.full.weight.log}
+        </Button>
+      ) : null}
       <Link href="/nutrition" className={styles.action}>
         {full ? T.openFull : T.openQualitative}
       </Link>
+      {full ? <WeighInSheet open={weighing} onClose={() => setWeighing(false)} /> : null}
     </section>
   );
 }
