@@ -47,7 +47,7 @@ export function normalizeForTerms(text: string): string {
 const NUMERO_SIGN = /(?<![\p{L}\p{N}])n[°º]|№/giu;
 
 /** Texte lu par les règles : signe numéro en mot, NFKC, invisibles et marques retirés. */
-function prepare(sentence: string): string {
+export function prepare(sentence: string): string {
   return sentence.replace(NUMERO_SIGN, ' numero ').normalize('NFKC').replace(INVISIBLE_OR_MARK, '');
 }
 

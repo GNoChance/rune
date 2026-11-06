@@ -1,5 +1,5 @@
 import type { AdviceSheetFile } from '@rune/contracts';
-import { forbiddenTermIn } from '../coach/filter';
+import { forbiddenTermIn, prepare } from '../coach/filter';
 import { findUnitNumbers } from '../coach/values';
 
 /*
@@ -51,7 +51,7 @@ function linksOf(body: string): string[] {
 /** `phase` : les deux passages (`reviewed`, `published`) appliquent les mêmes contrôles. */
 export function validateAdviceSheet(sheet: AdviceSheetFile, _phase: 'reviewed' | 'published'): SheetVerdict {
   const issues: SheetIssue[] = [];
-  const text = `${sheet.title}\n${sheet.body_md}`;
+  const text = prepare(`${sheet.title}\n${sheet.body_md}`);
   const qualitative = sheet.visible_modes.includes('qualitative');
   const minors = sheet.audience === 'minors' || sheet.audience === 'all';
 

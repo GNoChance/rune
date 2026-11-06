@@ -119,4 +119,18 @@ describe('validateAdviceSheet', () => {
       'forbidden_term',
     ]);
   });
+
+  // Écrits par code : Biome remplacerait un échappement par le caractère invisible lui-même.
+  const SHY = String.fromCharCode(0x00ad);
+  const ZWSP = String.fromCharCode(0x200b);
+  const fullwidth = (digits: string) =>
+    [...digits].map((d) => String.fromCharCode(0xff10 + Number(d))).join('');
+
+  it('lit le texte comme le filtre : chiffres pleine chasse, caractères invisibles', () => {
+    expect(codes(sheet({ body_md: `Mange ${fullwidth('500')} g de viande.` }))).toEqual([
+      'numbers_not_allowed',
+    ]);
+    expect(codes(sheet({ body_md: `Fais un rég${SHY}ime.` }))).toEqual(['forbidden_term']);
+    expect(codes(sheet({ body_md: `Fais un ré${ZWSP}gime.` }))).toEqual(['forbidden_term']);
+  });
 });
