@@ -1,6 +1,8 @@
 import {
   ACTIVITY_LEVELS,
   type ActivityLevel,
+  APPLIED_RULES,
+  type AppliedRule,
   CHECKIN_DECISIONS,
   CHECKIN_POSITIONS,
   type CheckinDecision,
@@ -53,6 +55,8 @@ export interface NutritionTargetView {
   validFrom: string;
   reason: TargetReason | null;
   effectiveGoal: NutritionGoal | null;
+  /** Règles qui ont modifié le résultat (07 §5.6.2), pour la page de calcul. */
+  appliedRules: AppliedRule[];
   kcalTarget: number;
   kcalMin: number;
   kcalMax: number;
@@ -89,6 +93,8 @@ export interface NutritionView {
   mode: NutritionMode;
   /** Une descente attend son envoi. */
   descentPending: boolean;
+  /** Pause de sécurité en cours (D14) : aucune « perte » proposée. Faux hors du mode `full`. */
+  safetyPause: boolean;
   settings: NutritionSettingsView | null;
   target: NutritionTargetView | null;
   /** Du plus récent au plus ancien. */
@@ -193,7 +199,14 @@ export function createNutritionRepo(s: AppServices): NutritionRepo {
   async function view(): Promise<NutritionView> {
     const mode = await localNutritionMode(db);
     const descentPending = (await getMeta(db, 'nutritionPendingMode')) !== undefined;
-    const empty: NutritionView = { mode, descentPending, settings: null, target: null, checkins: [] };
+    const empty: NutritionView = {
+      mode,
+      descentPending,
+      safetyPause: false,
+      settings: null,
+      target: null,
+      checkins: [],
+    };
     const userId = await currentUserId(db);
     if (mode !== 'full' || userId === null) return empty;
     const owned = (r: { deletedAt?: unknown; ownerId?: unknown }) =>
@@ -208,6 +221,7 @@ export function createNutritionRepo(s: AppServices): NutritionRepo {
     const t = targets[0];
     return {
       ...empty,
+      safetyPause: profile && isLive(profile) ? profile.safetyPause === true : false,
       settings:
         profile && isLive(profile)
           ? {
@@ -222,6 +236,9 @@ export function createNutritionRepo(s: AppServices): NutritionRepo {
             validFrom: String(t.validFrom),
             reason: oneOf(TARGET_REASONS, t.reason),
             effectiveGoal: oneOf(NUTRITION_GOALS, t.effectiveGoal),
+            appliedRules: Array.isArray(t.appliedRules)
+              ? t.appliedRules.flatMap((r) => oneOf(APPLIED_RULES, r) ?? [])
+              : [],
             kcalTarget: num(t.kcalTarget),
             kcalMin: num(t.kcalMin),
             kcalMax: num(t.kcalMax),

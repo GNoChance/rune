@@ -181,3 +181,90 @@
 .answers > * {
   min-height: 48px;
 }
+
+/* Repères du jour : libellé, valeur, repère central en petit. */
+.targets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  margin: 0;
+}
+
+.targets > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-3);
+}
+
+.targets dt {
+  min-width: 6rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.targets dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.targets dd.muted {
+  font-weight: 400;
+}
+
+/* Page de calcul : le niveau de la personne se repère au texte, pas à la couleur seule. */
+.mine {
+  font-weight: 700;
+}
+
+/* Réglages : une section repliable par réglage, cible de 48 px au moins pour l'en-tête. */
+.setting {
+  width: 100%;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.settingSummary {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-height: 48px;
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.settingSummary .muted {
+  font-family: var(--font-body, inherit);
+  font-weight: 400;
+}
+
+.settingBody {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.suggestion {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.previewBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+}

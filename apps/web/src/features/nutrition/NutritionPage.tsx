@@ -8,6 +8,7 @@ import { coachText } from '../coach/coach-lines';
 import { NutritionFooter } from './NutritionFooter';
 import styles from './nutrition.module.css';
 import { NUTRITION_TEXTS } from './nutrition-texts';
+import { TargetsCard } from './TargetsCard';
 import { WeightSummary } from './WeightSummary';
 
 const T = NUTRITION_TEXTS;
@@ -104,14 +105,11 @@ function QualitativeView(p: { state: NutritionState | null; sheets: readonly str
  * Mode `full` : les sections du §12.2 (repères, bilan, poids, fiches, réglages) avec leurs points d'entrée. Leur
  * contenu chiffré est branché par les composants des tâches suivantes (repères, bilan, courbe, fiches).
  */
-function FullView(p: { sheets: readonly string[] | null }) {
+function FullView(p: { view: NutritionView; sheets: readonly string[] | null }) {
   return (
     <>
       <Section title={T.full.targets.title}>
-        <p className={styles.muted}>{T.full.targets.estimate}</p>
-        <Link href="/nutrition/how" className={styles.textLink}>
-          {T.full.targets.how}
-        </Link>
+        <TargetsCard target={p.view.target} requestedGoal={p.view.settings?.goal ?? null} />
       </Section>
       <Section title={T.full.checkin.title} />
       <Section title={T.full.weight.title} id="poids">
@@ -188,7 +186,7 @@ export function NutritionPage() {
         ) : view.mode === 'qualitative' ? (
           <QualitativeView state={current} sheets={sheets} />
         ) : (
-          <FullView sheets={sheets} />
+          <FullView view={view} sheets={sheets} />
         )}
         <NutritionFooter />
       </div>

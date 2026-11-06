@@ -4,6 +4,7 @@ import {
   formatKcal,
   formatKg,
   formatLitres,
+  formatLongDate,
   formatPct,
 } from '../../src/features/nutrition/format';
 
@@ -40,5 +41,12 @@ describe('format français des nombres de la nutrition', () => {
     expect(formatPct(0.3)).toBe('+0,3');
     expect(formatPct(0)).toBe('0,0');
     expect(formatPct(-0.04)).toBe('0,0');
+  });
+});
+
+describe('formatLongDate', () => {
+  it('date civile en toutes lettres', () => {
+    expect(formatLongDate('2026-11-07')).toBe('7 novembre 2026');
+    expect(formatLongDate('2026-02-01')).toBe('1er février 2026');
   });
 });

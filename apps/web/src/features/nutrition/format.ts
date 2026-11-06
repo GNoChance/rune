@@ -41,3 +41,26 @@ export function formatPct(x: number): string {
   if (tenths === 0) return body;
   return `${x < 0 ? MINUS : '+'}${body}`;
 }
+
+const MONTHS = [
+  'janvier',
+  'février',
+  'mars',
+  'avril',
+  'mai',
+  'juin',
+  'juillet',
+  'août',
+  'septembre',
+  'octobre',
+  'novembre',
+  'décembre',
+] as const;
+
+/** Date civile en toutes lettres : `2026-11-07` → « 7 novembre 2026 » (« 1er » le premier du mois). */
+export function formatLongDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const month = MONTHS[(m ?? 1) - 1];
+  if (!y || !d || !month) return iso;
+  return `${d === 1 ? '1er' : String(d)} ${month} ${y}`;
+}

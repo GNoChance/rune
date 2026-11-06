@@ -1,4 +1,4 @@
-import type { CheckinDecision, ModeCause, NutritionMode } from '@rune/contracts';
+import type { AppliedRule, CheckinDecision, ModeCause, NutritionMode } from '@rune/contracts';
 import { formatGrams, formatKcal, formatLitres } from './format';
 
 /*
@@ -263,5 +263,117 @@ export const NUTRITION_TEXTS = {
     },
   },
 
+  /** Page de calcul `/nutrition/how` (§10.6) : texte fixe, les valeurs viennent de la cible en vigueur. */
+  how: {
+    title: 'Comment sont calculés mes repères',
+    lead: 'Une estimation, pas une consigne. Ces repères sont un point de départ : ton corps et ta semaine ne suivent pas une formule.',
+    noTarget:
+      "Tes repères ne sont pas encore calculés. Dès qu'ils le sont, tu les retrouves ici avec leur calcul.",
+    base: {
+      title: 'Ton énergie de départ',
+      text: "On estime d'abord ce que ton corps dépense au repos avec la formule de Mifflin-St Jeor, à partir de ton poids, de ta taille, de ton âge et de ton sexe pour le calcul.",
+    },
+    activity: {
+      title: "Ton niveau d'activité",
+      text: "Cette dépense est multipliée par un coefficient qui dépend de ton niveau d'activité (FAO/OMS/UNU).",
+      factor: (label: string, pal: string) => `${label} : × ${pal}`,
+      pal: { 1: '1,40', 2: '1,55', 3: '1,75', 4: '2,00' },
+      mine: 'Ton niveau',
+    },
+    goal: {
+      title: 'Ton objectif',
+      text: "L'objectif décale l'énergie par rapport à ta dépense, dans des bornes fixes.",
+      lose: 'Perte de gras : 20 % de moins que ta dépense, jamais sous 75 % de celle-ci.',
+      maintain: "Maintien : au niveau de ta dépense, dans une marge de 10 % de part et d'autre.",
+      gain: 'Prise de muscle : 10 % de plus que ta dépense, jamais au-delà de 115 % de celle-ci.',
+    },
+    values: {
+      title: 'Tes repères en ce moment',
+      energy: (min: number, max: number, centre: number) =>
+        `Énergie : ${formatKcal(min)} à ${formatKcal(max)} kcal, autour d'un repère de ${formatKcal(centre)} kcal.`,
+      protein: (min: number, max: number) =>
+        `Protéines : ${formatGrams(min)} à ${formatGrams(max)} g, soit 1,6 à 2,2 g par kilo de poids.`,
+      fat: (g: number) =>
+        `Lipides : au moins ${formatGrams(g)} g, soit le plus grand de 0,6 g par kilo et de 20 % de l'énergie.`,
+      carbs: (g: number) =>
+        `Glucides : environ ${formatGrams(g)} g, ce qui reste une fois les protéines et les lipides comptés.`,
+      fiber: (g: number) => `Fibres : ${formatGrams(g)} g par jour.`,
+      water: (ml: number) => `Eau : ${formatLitres(ml)} L par jour, aliments compris.`,
+    },
+    rules: {
+      title: 'Règles appliquées à tes repères',
+      no_deficit_low_bmi: 'Ton objectif est réglé sur le maintien.',
+      deficit_cap_25: "La baisse d'énergie est limitée à un quart de ta dépense.",
+      surplus_cap_15: "La hausse d'énergie est limitée à 15 % de ta dépense.",
+      maintenance_band: "L'énergie est restée dans la marge de 10 % autour de ta dépense.",
+      bmr_floor: "L'énergie ne descend jamais sous ce que ton corps dépense au repos.",
+      ref_weight_bmi25:
+        "Pour les protéines et les lipides, le calcul s'appuie sur un poids de référence, pas sur ton poids du jour.",
+    } satisfies Record<AppliedRule, string> & { title: string },
+    rounding: {
+      title: 'Arrondis',
+      text: "L'énergie est arrondie à 50 kcal près, les grammes à 5 g près, l'eau à 0,05 L près. La fourchette va de 100 kcal sous le repère à 100 kcal au-dessus.",
+    },
+    checkin: {
+      title: 'Bilan de la semaine',
+      text: "Chaque semaine, ta tendance de poids est comparée à la fourchette visée. Si elle s'en écarte deux semaines de suite, on te propose de bouger ton repère de 100 kcal. C'est toi qui décides.",
+    },
+    sources: {
+      title: 'Sources',
+      reviewedOn: 'Relu le',
+      labels: {
+        mifflin: 'Mifflin et coll., 1990 : équation du métabolisme de base',
+        fao: "FAO/OMS/UNU, 2004 : besoins énergétiques et niveaux d'activité",
+        issn: 'ISSN : position sur les protéines et le sport',
+        anses: 'ANSES, 2016 : repères pour les lipides et les fibres',
+        efsa: "EFSA, 2010 : repères pour l'eau",
+      },
+    },
+  },
+
+  /** Réglages `/nutrition/settings` (§12.5). Le mode et la suppression sont vus aussi hors du mode complet. */
+  settings: {
+    title: 'Réglages',
+    suggestion: 'Suggestion du coach',
+    suggestedMode: (label: string) => `Suggestion du coach : ${label}`,
+    mode: {
+      title: 'Mode',
+      current: (label: string) => `Mode actuel : ${label}`,
+      pending: 'Le changement part dès que le réseau revient.',
+      toQualitative: 'Passer en conseils sans chiffres',
+      toDisabled: 'Désactiver Nutrition',
+      activate: 'Activer',
+      rescreen: 'Repasser les questions de sécurité',
+      rescreenUp: "Pour retrouver les repères chiffrés, tu repasses d'abord trois questions.",
+      rescreenPause: 'Tes repères chiffrés sont en pause. Tu peux repasser les questions quand tu veux.',
+    },
+    preview: 'Aperçu de tes nouveaux repères',
+    previewing: 'Calcul en cours…',
+    weighNote: 'Note ton poids pour recalculer tes repères',
+    save: 'Enregistrer',
+    saved: 'Réglage enregistré',
+    heightLabel: 'Taille (cm)',
+    delete: {
+      open: 'Supprimer mes données nutrition',
+      title: 'Supprimer mes données nutrition',
+      body: 'Tes pesées, tes repères et tes bilans de nutrition sont supprimés. Cette action est définitive.',
+      confirm: 'Supprimer',
+      cancel: 'Annuler',
+    },
+  },
+
   offline: 'Nécessite le réseau',
 } as const;
+
+/** Adresses des sources de `/nutrition/how` (07-nutrition.md « Sources »), hors des textes : ce ne sont pas des phrases. */
+export const HOW_SOURCE_URLS: Record<keyof typeof NUTRITION_TEXTS.how.sources.labels, string> = {
+  mifflin: 'https://pubmed.ncbi.nlm.nih.gov/2305711/',
+  fao: 'https://openknowledge.fao.org/server/api/core/bitstreams/65875dc7-f8c5-4a70-b0e1-f429793860ae/content',
+  issn: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC5470183/',
+  anses:
+    'https://www.cerin.org/articles/references-nutritionnelles-proteines-lipides-glucides-fibres-adultes-personnes-agees/',
+  efsa: 'https://www.sennutricion.org/media/Docs_Consenso/Scientific_Opinion_Dietary_Reference_Values_for_water-EFSA_2010.pdf',
+};
+
+/** Date de la dernière relecture des calculs et des sources de la page `/nutrition/how`. */
+export const HOW_REVIEWED_ON = '2026-11-07';
