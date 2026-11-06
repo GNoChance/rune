@@ -3,7 +3,7 @@ import { isHealthReviewer, isReviewer } from '@rune/domain';
 import { useCallback, useRef, useState } from 'react';
 import { useSearch } from 'wouter';
 import { useLive, useMe, useSyncState } from '../../app-services';
-import { useRepos } from '../../repos';
+import { useNutritionView, useRepos } from '../../repos';
 import {
   Badge,
   Banner,
@@ -16,12 +16,14 @@ import {
   RankBadge,
 } from '../../ui';
 import { LogoutDialog } from '../auth/LogoutDialog';
+import { NUTRITION_TEXTS } from '../nutrition/nutrition-texts';
 import { REVIEW_ACCESS_LOST_MESSAGE, REVIEW_ACCESS_LOST_REASON } from '../review/use-lost-access';
 import {
   ChatIcon,
   HeartIcon,
   HelpIcon,
   LogoutIcon,
+  NutritionIcon,
   PinIcon,
   ReviewIcon,
   ShieldIcon,
@@ -60,6 +62,7 @@ export function ProfileHub() {
   const profile = useLive(() => repos.profile.get(), [repos]);
   const places = useLive(() => repos.places.list(), [repos]);
   const limitations = useLive(() => repos.consent.limitations(), [repos]);
+  const nutrition = useNutritionView();
   const [logout, setLogout] = useState(false);
   const logoutRow = useRef<HTMLDivElement>(null);
   const closeLogout = useCallback(() => setLogout(false), []);
@@ -113,6 +116,12 @@ export function ProfileHub() {
               href="/profile/coach"
             />
             <ListRow icon={<PinIcon />} label="Mes lieux" value={primary} href="/places" />
+            <ListRow
+              icon={<NutritionIcon />}
+              label="Nutrition"
+              value={nutrition ? NUTRITION_TEXTS.entry[nutrition.mode] : undefined}
+              href="/nutrition"
+            />
             <ListRow
               icon={<HeartIcon />}
               label="Santé"

@@ -64,6 +64,13 @@ const BriefPage = lazy(() => import('./features/coach/BriefPage').then((m) => ({
 const CoachHelpPage = lazy(() =>
   import('./features/public/CoachHelpPage').then((m) => ({ default: m.CoachHelpPage })),
 );
+/** Module Nutrition et sa page d'aide publique : hors du bundle initial, chargés à la demande. */
+const NutritionPage = lazy(() =>
+  import('./features/nutrition/NutritionPage').then((m) => ({ default: m.NutritionPage })),
+);
+const NutritionHelpPage = lazy(() =>
+  import('./features/public/NutritionHelpPage').then((m) => ({ default: m.NutritionHelpPage })),
+);
 const ConsentPage = lazy(() =>
   import('./features/coach/ConsentPage').then((m) => ({ default: m.ConsentPage })),
 );
@@ -99,6 +106,7 @@ export const PUBLIC_PATHS: readonly string[] = [
   '/credits',
   '/help',
   '/help/coach',
+  '/help/nutrition',
 ];
 
 export type GuardResult =
@@ -177,6 +185,7 @@ function PublicRoutes() {
       <Route path="/credits" component={CreditsPage} />
       <Route path="/help" component={HelpPage} />
       <Route path="/help/coach" component={CoachHelpPage} />
+      <Route path="/help/nutrition" component={NutritionHelpPage} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -209,6 +218,7 @@ function ConnectedRoutes() {
       <Route path="/coach/consent" component={ConsentPage} />
       <Route path="/coach/threads" component={ThreadsPage} />
       <Route path="/coach/threads/:id" component={ThreadPage} />
+      <Route path="/nutrition" component={NutritionPage} />
       <Route path="/profile" component={ProfileHub} />
       <Route path="/profile/edit" component={ProfilePage} />
       <Route path="/profile/coach" component={MyCoachPage} />

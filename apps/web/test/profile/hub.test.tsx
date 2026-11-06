@@ -105,12 +105,13 @@ describe('ProfileHub (spec refonte §5, maquette C01)', () => {
   it('groupes et lignes : Entraînement, Compte et appli, chacun vers sa page', async () => {
     await renderHub();
     expect(groupTitles()).toEqual(['Entraînement', 'Compte et appli']);
-    expect(rowLabels('Entraînement')).toEqual(['Mon profil', 'Mon coach', 'Mes lieux', 'Santé']);
+    expect(rowLabels('Entraînement')).toEqual(['Mon profil', 'Mon coach', 'Mes lieux', 'Nutrition', 'Santé']);
     expect(rowLabels('Compte et appli')).toEqual(['Confidentialité et données', 'Réglages', 'Aide']);
     const href = (name: string) => link(name).getAttribute('href');
     expect(href('Mon profil')).toBe('/profile/edit');
     expect(href('Mon coach')).toBe('/profile/coach');
     expect(href('Mes lieux')).toBe('/places');
+    expect(href('Nutrition')).toBe('/nutrition');
     expect(href('Santé')).toBe('/profile/health');
     expect(href('Confidentialité et données')).toBe('/profile/privacy');
     expect(href('Réglages')).toBe('/settings');

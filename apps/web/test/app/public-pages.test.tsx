@@ -178,6 +178,7 @@ describe('Aide (maquette A05, spec refonte §10.6)', () => {
       'Installer Rune',
       'Numéros utiles',
       'Coach IA',
+      "Alimentation : demander de l'aide",
       'Crédits',
     ]);
     const install = screen.getByRole('region', { name: 'Installer Rune' });

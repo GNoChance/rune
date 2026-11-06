@@ -6,6 +6,7 @@ import { useMe } from '../../app-services';
 import { Button, formatDate, Page } from '../../ui';
 import { InstallSteps } from '../auth/InstallSteps';
 import { installHelp } from '../auth/install-help';
+import { NUTRITION_TEXTS } from '../nutrition/nutrition-texts';
 import { HowToReview } from '../review/HowToReview';
 import reviewStyles from '../review/review.module.css';
 import { CreditsContent } from './CreditsPage';
@@ -120,6 +121,17 @@ function CoachHelpLink() {
   );
 }
 
+/** Lien vers « Demander de l'aide » (spec brique 5 §12.1) : page publique, lisible sans session. */
+function NutritionHelpLink() {
+  return (
+    <HelpSection title={NUTRITION_TEXTS.helpEntry.section}>
+      <div className={`${styles.card} ${styles.install}`}>
+        <Link href="/help/nutrition">{NUTRITION_TEXTS.helpEntry.link}</Link>
+      </div>
+    </HelpSection>
+  );
+}
+
 /** Rappel de « Comment relire » (spec brique 2 §4.4), pour un relecteur seulement. */
 function ReviewHelp() {
   const [open, setOpen] = useState(false);
@@ -159,6 +171,7 @@ export function HelpPage() {
         </HelpSection>
         <UsefulNumbers resources={useful} verifiedOn={verifiedOn} />
         <CoachHelpLink />
+        <NutritionHelpLink />
         {me && isReviewer(me) ? <ReviewHelp /> : null}
         <HelpSection title="Crédits">
           <CreditsContent headingLevel={3} />

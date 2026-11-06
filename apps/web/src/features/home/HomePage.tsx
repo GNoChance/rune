@@ -24,6 +24,7 @@ import {
 } from '../../ui';
 import { coachLine } from '../coach/coach-lines';
 import { COACH_ADMIN_TEXTS, ENTRY_TEXTS } from '../coach/coach-texts';
+import { HomeNutritionCard } from '../nutrition/HomeNutritionCard';
 import { AwakeningQuests, awakeningQuests } from '../onboarding/AwakeningQuests';
 import { ReviewHomeCard } from '../review/ReviewHomeCard';
 import { OfflineReadyIndicator } from '../status/OfflineReadyIndicator';
@@ -33,7 +34,7 @@ import { useNow } from './use-now';
 
 /** R-AGE-6 : affiché une fois par appareil, au passage de mineur à adulte. */
 export const ADULT_NOTICE_TEXT =
-  "Tu as 18 ans : tu peux désormais choisir l'objectif « Perdre du gras » dans ton profil.";
+  "Tu as 18 ans : tu peux désormais choisir l'objectif « Perdre du gras » dans ton profil, et activer des repères nutrition chiffrés depuis Profil › Nutrition.";
 
 const parisHour = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/Paris',
@@ -314,6 +315,9 @@ export function HomePage() {
           ) : null}
           <ReadErrorBoundary compact>
             <ProgramCards places={places} />
+          </ReadErrorBoundary>
+          <ReadErrorBoundary compact>
+            <HomeNutritionCard nowMs={now} />
           </ReadErrorBoundary>
           {quests.every((q) => q.done) ? null : (
             <ReadErrorBoundary compact>

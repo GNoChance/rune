@@ -1,0 +1,171 @@
+/*
+ * Module Nutrition (spec brique 5 §12.2) : coquille, sections, ligne de cause, pied. Couleurs : jetons seulement,
+ * donc justes dans les 5 thèmes. Ni rouge ni vert sur le poids (07 §5.10) : aucune teinte d'état ici.
+ */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.section h2,
+.footerTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.section p,
+.footer p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+/* Ligne neutre qui explique pourquoi le mode n'est pas celui du choix (mineur, âge, accord, écran, ouverture). */
+.cause {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+}
+
+/* Lien ou bouton d'action : cible de 48 px au moins. */
+.action,
+.textLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.action {
+  justify-content: center;
+  padding: var(--space-2) 20px;
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.textLink {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.error {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+/* Pied : un trait au-dessus, texte discret ; la ligne d'écoute y reste lisible. */
+.footer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.tca {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tcaLabel {
+  margin: 0;
+}
+
+.tcaActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.phone {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 48px;
+  font-family: var(--font-display);
+  font-size: 1.1875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+
+.phone svg {
+  flex: none;
+}
+
+/* Carte de l'accueil : même allure que les cartes de séance. */
+.homeCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.homeCard h2,
+.homeCard p {
+  margin: 0;
+}
+
+.homeCard h2 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+/* Carte de la ligne d'écoute sur la page publique : un peu d'air autour du libellé et des liens. */
+.helpCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+.helpCard p {
+  margin: 0;
+}

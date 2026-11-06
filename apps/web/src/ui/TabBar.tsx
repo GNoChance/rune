@@ -27,14 +27,17 @@ export const SIDE_ITEMS: typeof TAB_ITEMS = [
 
 /**
  * Préfixes rangés sous chaque onglet : le catalogue sous Exercices ; la séance et le programme sous Séance ;
- * la progression et l'historique sous Progression ; les lieux et les salles (`/places…` canonique, `/gyms…`),
+ * la progression et l'historique sous Progression ; les lieux et les salles (`/places…` canonique, `/gyms…`), la nutrition (spec brique 5 D1 : pas d'onglet),
  * les réglages et l'administration sous Profil.
  */
 const SECTIONS: readonly { tab: TabHref; prefixes: readonly string[] }[] = [
   { tab: '/exercises', prefixes: ['/exercises'] },
   { tab: '/workout', prefixes: ['/workout', '/program'] },
   { tab: '/progression', prefixes: ['/progression', '/history'] },
-  { tab: '/profile', prefixes: ['/profile', '/places', '/gyms', '/settings', '/rejections', '/admin'] },
+  {
+    tab: '/profile',
+    prefixes: ['/profile', '/nutrition', '/places', '/gyms', '/settings', '/rejections', '/admin'],
+  },
 ];
 
 /**

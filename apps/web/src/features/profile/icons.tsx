@@ -239,3 +239,10 @@ export const DevicesIcon = () => (
     <rect x="17" y="8" width="4.5" height="10" rx="1.2" />
   </Stroke>
 );
+
+export const NutritionIcon = () => (
+  <Stroke>
+    <path d="M12 8c-1.6-1.4-4.6-1.4-6 1.2-1.6 3 .2 8.8 3.4 10.3 1.2.5 1.6.3 2.6 0 1 .3 1.4.5 2.6 0 3.2-1.5 5-7.3 3.4-10.3-1.4-2.6-4.4-2.6-6-1.2z" />
+    <path d="M12 8c0-2 1-3.4 3-4" />
+  </Stroke>
+);

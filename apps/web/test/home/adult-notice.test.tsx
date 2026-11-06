@@ -6,7 +6,8 @@ import { createTestLocalDb } from '../support/local-db';
 import { makeMe, renderApp } from '../support/render';
 import { until } from '../support/wait';
 
-const NOTICE = "Tu as 18 ans : tu peux désormais choisir l'objectif « Perdre du gras » dans ton profil.";
+const NOTICE =
+  "Tu as 18 ans : tu peux désormais choisir l'objectif « Perdre du gras » dans ton profil, et activer des repères nutrition chiffrés depuis Profil › Nutrition.";
 const notice = () => screen.queryByText(NOTICE);
 
 describe('message des 18 ans (R-AGE-6)', () => {

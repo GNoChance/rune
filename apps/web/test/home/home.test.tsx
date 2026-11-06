@@ -420,7 +420,8 @@ describe('entrée des cartes en cascade, une fois les lectures locales faites', 
 
 describe('bandeaux existants, mêmes conditions et mêmes textes', () => {
   const REMINDER = 'Pense à changer ton mot de passe (rappel annuel).';
-  const NOTICE = "Tu as 18 ans : tu peux désormais choisir l'objectif « Perdre du gras » dans ton profil.";
+  const NOTICE =
+    "Tu as 18 ans : tu peux désormais choisir l'objectif « Perdre du gras » dans ton profil, et activer des repères nutrition chiffrés depuis Profil › Nutrition.";
 
   it('rappel annuel du mot de passe et message des 18 ans affichés quand ils s’appliquent', async () => {
     const db = createTestLocalDb();
