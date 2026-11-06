@@ -5,6 +5,7 @@ import { Page } from '../../ui';
 import { formatLongDate } from './format';
 import styles from './nutrition.module.css';
 import { HOW_REVIEWED_ON, HOW_SOURCE_URLS, NUTRITION_TEXTS } from './nutrition-texts';
+import { useLoseAllowed } from './use-lose-allowed';
 
 const T = NUTRITION_TEXTS.how;
 const SOURCE_IDS = Object.keys(HOW_SOURCE_URLS) as (keyof typeof HOW_SOURCE_URLS)[];
@@ -17,10 +18,11 @@ const SOURCE_IDS = Object.keys(HOW_SOURCE_URLS) as (keyof typeof HOW_SOURCE_URLS
  */
 export function HowPage() {
   const view = useNutritionView();
+  const loseAllowed = useLoseAllowed(view);
   if (view === undefined) return null;
   if (view.mode !== 'full') return <Redirect to="/nutrition" replace />;
   const t = view.target;
-  const goals: readonly NutritionGoal[] = NUTRITION_GOALS.filter((g) => !(g === 'lose' && view.safetyPause));
+  const goals: readonly NutritionGoal[] = NUTRITION_GOALS.filter((g) => g !== 'lose' || loseAllowed);
   const mine = view.settings?.activityLevel ?? null;
 
   return (

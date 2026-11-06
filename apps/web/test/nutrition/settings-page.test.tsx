@@ -154,3 +154,57 @@ describe('réglages : suppression des données', () => {
     expect(await within(sheet).findByText('Nécessite le réseau')).toBeTruthy();
   });
 });
+
+describe('réglages : « perte » jamais proposée si le calcul l’impose', () => {
+  const lowWeigh = [
+    {
+      id: 'w1',
+      ownerId: 'u-1',
+      serverRevSeen: 1,
+      deletedAt: null,
+      updatedAt: '2026-10-05T10:00:00.000Z',
+      date: '2026-10-05',
+      weightG: 47_000,
+    },
+  ];
+
+  async function openLow(o: Parameters<typeof openNutritionAt>[1], path: string) {
+    const view = await openNutritionAt(path, { ...o });
+    opened.push(view.db);
+    await screen.findByRole('heading', { level: 1, name: 'Réglages' }, LAZY);
+    return view;
+  }
+
+  it('taille 160 cm, poids de référence 47 kg : ni option, ni présélection', async () => {
+    const view = await openNutritionAt('/nutrition/settings?focus=goal&suggest=lose', {
+      settings: { heightCm: 160 },
+      weighIns: lowWeigh,
+    });
+    opened.push(view.db);
+    await screen.findByRole('heading', { level: 1, name: 'Réglages' }, LAZY);
+    const group = screen.getByRole('group', { name: 'Objectif' });
+    await waitFor(() => expect(within(group).queryByRole('radio', { name: 'Perte de gras' })).toBeNull());
+    expect(within(group).getByRole('radio', { name: 'Maintien' })).toBeTruthy();
+    expect((within(group).getByRole('radio', { name: 'Maintien' }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByText('Suggestion du coach')).toBeNull();
+  });
+
+  it('cible avec no_deficit_low_bmi : même chose', async () => {
+    await openLow(
+      { target: { appliedRules: ['no_deficit_low_bmi'] } },
+      '/nutrition/settings?focus=goal&suggest=lose',
+    );
+    const group = screen.getByRole('group', { name: 'Objectif' });
+    expect(within(group).queryByRole('radio', { name: 'Perte de gras' })).toBeNull();
+    expect(screen.queryByText('Suggestion du coach')).toBeNull();
+  });
+
+  it('goal_not_allowed du serveur : message neutre', async () => {
+    const { api } = await open('/nutrition/settings');
+    api.on('POST', '/api/nutrition/settings/preview', { status: 422, body: { error: 'goal_not_allowed' } });
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Objectif' })).getByRole('radio', { name: 'Prise de muscle' }),
+    );
+    expect(await screen.findByText("Cet objectif n'est pas proposé actuellement.", {}, LAZY)).toBeTruthy();
+  });
+});

@@ -17,6 +17,7 @@ import { type NutritionView, useNutritionView, useRepos } from '../../repos';
 import { BottomSheet, Button, ChoiceList, errorMessage, Field, Page, useAction } from '../../ui';
 import styles from './nutrition.module.css';
 import { NUTRITION_TEXTS } from './nutrition-texts';
+import { useLoseAllowed } from './use-lose-allowed';
 import { WeighInSheet } from './WeighInSheet';
 
 const T = NUTRITION_TEXTS.settings;
@@ -353,13 +354,14 @@ const asOption = <V,>(values: readonly V[], raw: string | null): V | null =>
 export function SettingsPage() {
   const me = useMe();
   const view = useNutritionView();
+  const loseAllowed = useLoseAllowed(view);
   const [params] = useSearchParams();
   const { guard, sheet } = useWeighInGate();
   if (view === undefined) return null;
   const focus = params.get('focus');
   const suggest = params.get('suggest');
   const requestedGoal = view.settings?.goal ?? null;
-  const goals = NUTRITION_GOALS.filter((g) => !(g === 'lose' && view.safetyPause));
+  const goals = NUTRITION_GOALS.filter((g) => g !== 'lose' || loseAllowed);
   const goalSuggestion = focus === 'goal' ? asOption(goals, suggest) : null;
   const activitySuggestion = focus === 'activity' ? asOption<ActivityLevel>(ACTIVITY_LEVELS, suggest) : null;
   const sexSuggestion = focus === 'sex' ? asOption<SexForCalc>(SEX_FOR_CALC, suggest) : null;

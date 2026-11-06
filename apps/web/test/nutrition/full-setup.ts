@@ -36,6 +36,8 @@ export interface FullOptions {
   /** Champs de la cible en vigueur (camelCase, miroir) ; `null` : aucune cible. */
   target?: Record<string, unknown> | null;
   safetyPause?: boolean;
+  /** Pesées du miroir. */
+  weighIns?: Record<string, unknown>[];
 }
 
 /** Ouvre `path` avec un appareil au mode demandé (`full` par défaut) et la cible A en copie locale. */
@@ -81,6 +83,7 @@ export async function openNutritionAt(path: string, o: FullOptions = {}) {
       ]);
     }
   }
+  if (o.weighIns) await seedMirror(db, 'weigh_in', o.weighIns);
   const api = createFakeApi();
   const me = makeMe({
     consents: {
