@@ -8,7 +8,7 @@ import {
 } from '@rune/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { toStructuredSchema } from '../../../src/ai';
-import { runTool, TOOLS_1, toolDefinitions } from '../../../src/coach/tools';
+import { runTool, TOOLS_1, TOOLS_2, toolDefinitions } from '../../../src/coach/tools';
 import type { CoachTool } from '../../../src/coach/tools/types';
 import { createTestContext, createUserAndLogin, type TestContext } from '../../support';
 import { toolContext } from '../../support/coach';
@@ -97,11 +97,12 @@ describe('runTool', () => {
   });
 });
 
-describe('TOOLS_1 et définitions', () => {
-  it('noms triés : les 4 de COACH_TOOL_NAMES', () => {
-    const names = TOOLS_1.map((t) => t.name);
+describe('TOOLS_1, TOOLS_2 et définitions', () => {
+  it('noms triés : les 5 de COACH_TOOL_NAMES pour TOOLS_2, ces 5 moins open_nutrition_screen pour TOOLS_1', () => {
+    const names = TOOLS_2.map((t) => t.name);
     expect(names).toEqual([...names].sort());
     expect(names).toEqual([...COACH_TOOL_NAMES]);
+    expect(TOOLS_1.map((t) => t.name)).toEqual(names.filter((n) => n !== 'open_nutrition_screen'));
   });
 
   it('forme rendue figée : JSON Schema strict, bornes et motif dans la description', () => {

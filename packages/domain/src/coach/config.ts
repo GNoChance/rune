@@ -93,7 +93,7 @@ export const COACH_CONFIG: CoachConfig = deepFreeze({
     callTimeoutMs: 120_000,
   },
   promptVersion: 'coach-2',
-  toolsVersion: 'tools-1',
+  toolsVersion: 'tools-2',
   briefSchema: 'coach-brief/2',
   retention: { threadDays: 90, usageLogMonths: 12, reportDays: 90 },
   helpResources: HELP_RESOURCES,

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { type AiTool, toStructuredSchema } from '../../ai';
+import { openNutritionScreen } from './open-nutrition-screen';
 import { correctionsExhausted, proposeProgramChange } from './propose-program-change';
 import { readTraining } from './read-training';
 import { referToHelp } from './refer-to-help';
@@ -9,17 +10,20 @@ import type { CoachTool, ToolContext, ToolOutcome } from './types';
 export type { AttemptToolState, CoachTool, PendingProposal, ToolContext, ToolOutcome } from './types';
 
 /*
- * Registre des outils du coach (spec brique 4 §10) : `tools-1`, définitions envoyées en `strict: true`, et appel
+ * Registre des outils du coach (spec brique 4 §10) : `tools-1` puis `tools-2`, définitions envoyées en `strict: true`, et appel
  * d'un outil, revalidé par son schéma Zod complet avant le gestionnaire (P10).
  */
 
-/** Outils de `tools-1`, triés par nom. */
+/** Outils de `tools-1` (brique 4), triés par nom. */
 export const TOOLS_1: readonly CoachTool[] = [
   proposeProgramChange,
   readTraining,
   referToHelp,
   searchExercises,
 ];
+
+/** Outils de `tools-2` (brique 5 §11.2) : `tools-1` et `open_nutrition_screen`, triés par nom. */
+export const TOOLS_2: readonly CoachTool[] = [openNutritionScreen, ...TOOLS_1];
 
 /**
  * Définitions envoyées à l'API : JSON Schema de l'entrée (`z.toJSONSchema`, côté entrée) adapté au mode strict par
@@ -35,7 +39,7 @@ export function toolDefinitions(tools: readonly CoachTool[]): AiTool[] {
 }
 
 /**
- * Appel de l'outil `name` parmi `tools` (`TOOLS_1` par défaut ; la tentative passe les siens). Nom inconnu →
+ * Appel de l'outil `name` parmi `tools` (`TOOLS_2` par défaut ; la tentative passe les siens). Nom inconnu →
  * `{error: 'unknown_tool'}`. Pour `propose_program_change`, la limite des corrections passe d'abord : atteinte, tout
  * appel rend `corrections_exhausted`, entrée invalide comprise (§12.2). Entrée revalidée par le schéma Zod complet
  * avant le gestionnaire ; invalide → `{error: 'invalid_input', issues: [{path, message}]}`, une entrée par problème
@@ -48,7 +52,7 @@ export async function runTool(
   name: string,
   raw: unknown,
   ctx: ToolContext,
-  tools: readonly CoachTool[] = TOOLS_1,
+  tools: readonly CoachTool[] = TOOLS_2,
 ): Promise<ToolOutcome> {
   const tool = tools.find((t) => t.name === name);
   if (tool === undefined) return { isError: true, result: { error: 'unknown_tool' } };

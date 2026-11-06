@@ -146,7 +146,7 @@ describe('fils vides', () => {
   it('version_change : le fil sans message de la personne est supprimé, le fil neuf prend sa place', async () => {
     kit = await exchangeKit({ chat: [fakeText(FINE)] });
     const empty = await emptyThread();
-    kit.ctx.deps.coachConfig = { ...kit.ctx.deps.coachConfig, toolsVersion: 'tools-2' };
+    kit.ctx.deps.coachConfig = { ...kit.ctx.deps.coachConfig, toolsVersion: 'tools-3' };
     await kit.ask('Salut.');
     expect(threads().map((x) => x.id)).not.toContain(empty.id);
     expect(threads()).toHaveLength(1);
@@ -179,7 +179,7 @@ describe('autres fermetures', () => {
     kit = await exchangeKit({ chat: [fakeText(FINE), fakeText(FINE)] });
     const id = '019a5e00-0000-7000-8000-0000000000f1';
     await kit.ask('Salut.', { clientMessageId: id });
-    kit.ctx.deps.coachConfig = { ...kit.ctx.deps.coachConfig, toolsVersion: 'tools-2' };
+    kit.ctx.deps.coachConfig = { ...kit.ctx.deps.coachConfig, toolsVersion: 'tools-3' };
     await expect(kit.ask('Salut.', { clientMessageId: id })).rejects.toMatchObject({
       code: 'duplicate_message',
       extra: { seq: 1 },

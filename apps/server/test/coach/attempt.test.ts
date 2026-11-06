@@ -23,7 +23,7 @@ import {
   fakeToolUse,
 } from '../../src/ai';
 import { type AttemptInput, type CallRecord, runAttempt } from '../../src/coach/attempt';
-import { TOOLS_1, toolDefinitions } from '../../src/coach/tools';
+import { TOOLS_2, toolDefinitions } from '../../src/coach/tools';
 import type { CoachTool, PendingProposal, ToolContext, ToolOutcome } from '../../src/coach/tools/types';
 import { createLogger, createTestContext, createUserAndLogin, type TestContext } from '../support';
 import { toolContext } from '../support/coach';
@@ -83,13 +83,13 @@ async function setup(o: Setup) {
         { text: 'Prompt figé.', cache: true },
         { text: 'Voix et dossier.', cache: true },
       ],
-      tools: toolDefinitions(TOOLS_1),
+      tools: toolDefinitions(TOOLS_2),
       thinkingBinding: 'error',
       fallbacks: audience === 'adult' ? 'default' : null,
       timeoutMs: 120_000,
     },
     messages: MESSAGES,
-    tools: o.tools ?? TOOLS_1,
+    tools: o.tools ?? TOOLS_2,
     toolCtx,
     filter: { audience, brief: o.brief ?? {}, threadToolResults: o.threadToolResults ?? [] },
     signal: o.signal ?? new AbortController().signal,
@@ -446,7 +446,7 @@ describe('runAttempt : boucle d’outils', () => {
 
   it('outil inconnu : ni tool_running ni gestionnaire, résultat unknown_tool', async () => {
     const { fake, events, run } = await setup({
-      chat: [fakeToolUse('toolu_1', 'open_nutrition_screen', {}), fakeText('Je ne peux pas.')],
+      chat: [fakeToolUse('toolu_1', 'delete_everything', {}), fakeText('Je ne peux pas.')],
     });
     expect(await run()).toMatchObject({ kind: 'answered', toolResults: [{ error: 'unknown_tool' }] });
     expect(events.filter((e) => e.type === 'tool_running')).toEqual([]);

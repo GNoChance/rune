@@ -14,6 +14,7 @@ import { currentCatalog } from '../../catalog/bundle';
 import { changeValidationInput, instanceProgram } from '../../program/changes';
 import { activeInstance } from '../../program/enroll';
 import { parseSnapshot } from '../../program/replay-service';
+import { nutritionFilterOf, storedThreadNutritionMode } from '../nutrition-mode';
 import { checkCoachLoad } from '../proposals';
 import { frozenSlotAliases } from '../threads';
 import { defineTool, type ToolContext, type ToolOutcome } from './types';
@@ -223,7 +224,10 @@ export const proposeProgramChange = defineTool({
     // Étape 7 : le motif, de plusieurs phrases s'il le faut, passe le filtre du flux.
     const verdict = outputFilterText(input.reason, {
       audience: ctx.thread.audience,
-      nutritionMode: 'none',
+      nutritionMode: nutritionFilterOf(
+        ctx.thread.audience,
+        await storedThreadNutritionMode(ctx.db, ctx.userId, ctx.thread.id),
+      ).nutritionMode,
       allowed: ctx.allowed,
     });
     if (!verdict.ok) return refuse(ctx, [wholeChange('reason_blocked')]);

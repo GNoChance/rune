@@ -601,7 +601,7 @@ describe('garde avant le flux', () => {
     await expect(kit.ask()).rejects.toMatchObject({ code: 'thread_closed', extra: { reason: 'day_over' } });
 
     kit.ctx.deps.sqlite.exec('UPDATE coach_thread SET is_open = 1, closed_reason = NULL');
-    kit.ctx.deps.coachConfig = { ...kit.ctx.deps.coachConfig, toolsVersion: 'tools-2' };
+    kit.ctx.deps.coachConfig = { ...kit.ctx.deps.coachConfig, toolsVersion: 'tools-3' };
     await kit.ask();
     expect(kit.rows('SELECT is_open, closed_reason FROM coach_thread ORDER BY created_at, id')).toEqual([
       { is_open: 0, closed_reason: 'version_change' },
@@ -908,7 +908,7 @@ describe('correction 1 : preuves des décisions 1b et 6, et pannes après la val
     kit = await exchangeKit({ chat: [fakeText(FINE)] });
     const id = '019a5e00-0000-7000-8000-0000000000e1';
     await kit.ask('Salut.', { clientMessageId: id });
-    kit.ctx.deps.coachConfig = { ...kit.ctx.deps.coachConfig, toolsVersion: 'tools-2' };
+    kit.ctx.deps.coachConfig = { ...kit.ctx.deps.coachConfig, toolsVersion: 'tools-3' };
     await expect(kit.ask('Salut.', { clientMessageId: id })).rejects.toMatchObject({
       code: 'duplicate_message',
       extra: { seq: 1 },

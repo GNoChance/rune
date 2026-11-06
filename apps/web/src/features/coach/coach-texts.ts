@@ -69,6 +69,7 @@ export const TOOL_LABELS: Readonly<Record<CoachToolName, string>> = {
   search_exercises: 'Le coach cherche des exercices…',
   propose_program_change: 'Le coach prépare une proposition…',
   refer_to_help: "Le coach prépare une carte d'aide…",
+  open_nutrition_screen: 'Le coach prépare un réglage nutrition…',
 };
 
 /** Un texte par code de l'événement `error` du flux. */

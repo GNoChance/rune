@@ -182,8 +182,14 @@ export async function recordExchange(
     .where('id', '=', x.thread.id)
     .where('userId', '=', x.userId)
     .executeTakeFirst();
-  // Un changement de coach ne défait pas l'échange commencé avant lui : un fil clos `persona_change` s'enregistre.
-  if (thread === undefined || (thread.isOpen !== 1 && thread.closedReason !== 'persona_change')) {
+  // Un changement de coach ne défait pas l'échange commencé avant lui : un fil clos `persona_change` s'enregistre,
+  // comme un fil clos par la descente du mode nutrition (`nutrition_mode_change`).
+  if (
+    thread === undefined ||
+    (thread.isOpen !== 1 &&
+      thread.closedReason !== 'persona_change' &&
+      thread.closedReason !== 'nutrition_mode_change')
+  ) {
     throw new ExchangeGoneError('thread_closed');
   }
   const healthConsent = await isHealthConsentActive(trx, x.userId);

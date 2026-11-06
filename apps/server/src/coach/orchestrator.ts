@@ -24,6 +24,7 @@ import { isHealthConsentActive } from '../privacy/consent-state';
 import type { AttemptInput, AttemptOutcome, CallRecord } from './attempt';
 import { runAttempt } from './attempt';
 import { composeForUser } from './guided';
+import { nutritionFilterOf, nutritionModeOfBrief } from './nutrition-mode';
 import {
   type PromptVersion,
   REFUSAL_MESSAGE,
@@ -41,7 +42,7 @@ import {
 import type { ExchangeLease } from './registry';
 import { suspendCoach } from './state';
 import { closeIfFrozenStale, openTodayThread, type ThreadRow } from './threads';
-import { TOOLS_1, toolDefinitions } from './tools';
+import { TOOLS_2, toolDefinitions } from './tools';
 import type { AttemptToolState, ToolContext } from './tools/types';
 import { loadGuardSnapshot, monthSpentMicros } from './views';
 
@@ -287,14 +288,19 @@ export async function runExchange(
       effort: thread.effort,
       maxTokens: deps.coachConfig.maxTokens,
       system: systemBlocks(thread.promptVersion as PromptVersion, thread.persona, thread.brief ?? '{}'),
-      tools: toolDefinitions(TOOLS_1),
+      tools: toolDefinitions(TOOLS_2),
       thinkingBinding: deps.coachThinkingBinding,
       fallbacks: thread.audience === 'adult' ? 'default' : null,
       timeoutMs: deps.coachConfig.limits.callTimeoutMs,
     };
 
     const attempt = async (note: string | null, priorCostUsd: number): Promise<Attempted> => {
-      const state: AttemptToolState = { proposals: [], invalidProposals: 0, helpCards: [] };
+      const state: AttemptToolState = {
+        proposals: [],
+        invalidProposals: 0,
+        helpCards: [],
+        nutritionScreens: [],
+      };
       const held: CoachStreamEvent[] = [];
       const toolCtx: ToolContext = {
         db: deps.db,
@@ -307,7 +313,7 @@ export async function runExchange(
           brief,
           toolResults: threadToolResults,
           constants: deps.coachConfig.allowedConstants,
-          nutritionFull: false,
+          nutritionFull: nutritionFilterOf(thread.audience, nutritionModeOfBrief(brief)).nutritionFull,
         }),
       };
       const outcome = await runAttempt({
@@ -315,7 +321,7 @@ export async function runExchange(
         request,
         messages:
           note === null ? base : [...base, { role: 'system', content: [{ type: 'text', text: note }] }],
-        tools: TOOLS_1,
+        tools: TOOLS_2,
         toolCtx,
         filter: { audience: thread.audience, brief, threadToolResults },
         signal: x.lease.signal,
@@ -324,7 +330,12 @@ export async function runExchange(
           return spentMicros + (priorCostUsd + spentUsd) * 1_000_000 < budgetMicros;
         },
         // Cartes de proposition retenues avec la tentative ; cartes d'aide relues de `state` (toutes les tentatives).
-        emit: (e) => (e.type === 'proposal' ? held.push(e) : e.type === 'help_card' ? undefined : send(e)),
+        emit: (e) =>
+          e.type === 'proposal' || e.type === 'nutrition_screen'
+            ? held.push(e)
+            : e.type === 'help_card'
+              ? undefined
+              : send(e),
         now: () => deps.clock.now().getTime(),
         healthConsent: x.healthConsent,
       });
@@ -411,7 +422,9 @@ export async function runExchange(
     for (const resource of helpCards) send({ type: 'help_card', resource });
     if (outcome.kind === 'answered') {
       // Seules les propositions écrites `proposed` ont une carte, dont le motif suit l'accord santé de l'enregistrement.
+      // Le bouton des réglages nutrition (au plus un par message) ne part qu'avec une réponse enregistrée.
       for (const event of current.held) {
+        if (event.type === 'nutrition_screen') send(event);
         if (event.type !== 'proposal' || !recorded.proposalIds.includes(event.id)) continue;
         const pending = current.state.proposals.find((p) => p.id === event.id);
         send({ ...event, reason: recorded.healthConsent ? (pending?.reason ?? event.reason) : null });

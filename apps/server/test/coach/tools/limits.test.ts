@@ -1,6 +1,6 @@
 import { COACH_TOOL_NAMES } from '@rune/contracts';
 import { describe, expect, it } from 'vitest';
-import { TOOLS_1, toolDefinitions } from '../../../src/coach/tools';
+import { TOOLS_2, toolDefinitions } from '../../../src/coach/tools';
 
 /*
  * Limites du mode strict sur toute une requête (spec brique 4 §5.3) : les 4 outils de `tools-1` ensemble, au plus 24
@@ -48,20 +48,21 @@ function census(schemas: readonly unknown[]): Census {
 }
 
 describe('tools-1 : limites du mode strict', () => {
-  it('les 4 noms de COACH_TOOL_NAMES, triés', () => {
-    const names = TOOLS_1.map((t) => t.name);
+  it('les 5 noms de COACH_TOOL_NAMES, triés', () => {
+    const names = TOOLS_2.map((t) => t.name);
     expect(names).toEqual([...COACH_TOOL_NAMES]);
     expect(names).toEqual([...names].sort());
   });
 
-  it('au plus 24 propriétés facultatives et 16 unions sur les 4 outils, aucun type en tableau', () => {
-    const counted = census(toolDefinitions(TOOLS_1).map((d) => d.inputSchema));
+  it('au plus 24 propriétés facultatives et 16 unions sur les 5 outils, aucun type en tableau', () => {
+    const counted = census(toolDefinitions(TOOLS_2).map((d) => d.inputSchema));
     expect(counted.optional).toBeLessThanOrEqual(24);
     expect(counted.unions).toBeLessThanOrEqual(16);
     expect(counted.typeArrays).toEqual([]);
-    // Relevé de `tools-1` : read_training 1 (exercise_id), search_exercises 4, propose_program_change 1
-    // (switch_template.daysPerWeek) ; unions : les variantes d'opérations et `change_sets.delta`.
-    expect(counted).toEqual({ optional: 6, unions: 2, typeArrays: [] });
+    // Relevé de `tools-2` : read_training 1 (exercise_id), search_exercises 4, propose_program_change 1
+    // (switch_template.daysPerWeek), open_nutrition_screen 1 (suggestion) ; unions : les variantes d'opérations,
+    // `change_sets.delta` et la suggestion de open_nutrition_screen (la union et celle des niveaux 1 à 4).
+    expect(counted).toEqual({ optional: 7, unions: 4, typeArrays: [] });
   });
 
   it('le recensement voit un type en tableau, une union imbriquée et une propriété facultative', () => {

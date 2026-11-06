@@ -16,7 +16,7 @@ import { deleteAllThreads } from './threads';
 
 /**
  * Entrée `coach_thread` de `HEALTH_WITHDRAW_HOOKS` (§6.3, choix C13) : fils ouverts de la personne clos
- * (`health_withdrawn`, ainsi que ceux du jour clos pour `persona_change` ou `version_change`), `brief` à NULL sur tous ses fils, `blocks` à NULL sur tous ses messages. `display_text` et
+ * (`health_withdrawn`, ainsi que ceux du jour clos pour `persona_change`, `version_change` ou `nutrition_mode_change`), `brief` à NULL sur tous ses fils, `blocks` à NULL sur tous ses messages. `display_text` et
  * `coach_report.exchange_text` (copie choisie par la personne) restent. Tables de classe H : ni rev, ni tombstone.
  */
 export const coachHealthWithdrawHook: HealthWithdrawHook = async (trx, deps, userId) => {
@@ -29,7 +29,10 @@ export const coachHealthWithdrawHook: HealthWithdrawHook = async (trx, deps, use
     .where((eb) =>
       eb.or([
         eb('isOpen', '=', 1),
-        eb.and([eb('day', '=', today), eb('closedReason', 'in', ['persona_change', 'version_change'])]),
+        eb.and([
+          eb('day', '=', today),
+          eb('closedReason', 'in', ['persona_change', 'version_change', 'nutrition_mode_change']),
+        ]),
       ]),
     )
     .execute();

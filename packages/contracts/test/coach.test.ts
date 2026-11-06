@@ -86,6 +86,7 @@ describe('constantes du coach IA (spec brique 4)', () => {
     ]);
     expect(COACH_LINKS).toEqual(['program', 'coach_help']);
     expect(COACH_TOOL_NAMES).toEqual([
+      'open_nutrition_screen',
       'propose_program_change',
       'read_training',
       'refer_to_help',
@@ -219,7 +220,7 @@ describe('texte du coach (§7.3, §16.2)', () => {
 const NOW = '2026-11-03T10:00:00.000Z';
 const THREAD_ID = '019a4a00-0000-7000-8000-000000000001';
 
-/** Un exemple de chacun des 8 événements du §7.2, avec ses données. */
+/** Un exemple de chacun des 9 événements du §7.2, avec ses données. */
 const EVENTS = [
   { type: 'text', text: 'Ta prochaine séance est la B. ' },
   { type: 'tool_running', tool: 'read_training' },
@@ -233,6 +234,7 @@ const EVENTS = [
     expiresAt: '2026-11-10T10:00:00.000Z',
   },
   { type: 'help_card', resource: 'distress' },
+  { type: 'nutrition_screen', screen: 'goal', suggestion: 'maintain' },
   { type: 'retry', reason: 'filter' },
   {
     type: 'done',
@@ -249,12 +251,13 @@ const EVENTS = [
 ];
 
 describe('CoachStreamEventSchema (§7.2)', () => {
-  it('chacun des 8 événements passe avec ses données', () => {
+  it('chacun des 9 événements passe avec ses données', () => {
     expect(EVENTS.map((e) => e.type)).toEqual([
       'text',
       'tool_running',
       'proposal',
       'help_card',
+      'nutrition_screen',
       'retry',
       'done',
       'refused',
@@ -280,7 +283,13 @@ describe('CoachStreamEventSchema (§7.2)', () => {
     expect(parse({ type: 'typing' })).toBe(false);
     expect(parse({ type: 'text' })).toBe(false);
     expect(parse({ type: 'text', text: 'a', extra: 1 })).toBe(false);
-    expect(parse({ type: 'tool_running', tool: 'open_nutrition_screen' })).toBe(false);
+    expect(parse({ type: 'tool_running', tool: 'open_nutrition_screen' })).toBe(true);
+    expect(parse({ type: 'tool_running', tool: 'inconnu' })).toBe(false);
+    expect(parse({ type: 'nutrition_screen', screen: 'other' })).toBe(false);
+    expect(parse({ type: 'nutrition_screen', screen: 'goal', extra: 1 })).toBe(false);
+    expect(parse({ type: 'nutrition_screen', screen: 'mode', suggestion: 'qualitative' })).toBe(true);
+    expect(parse({ type: 'nutrition_screen', screen: 'activity', suggestion: 3 })).toBe(true);
+    expect(parse({ type: 'nutrition_screen', screen: 'activity', suggestion: 5 })).toBe(false);
     expect(parse({ type: 'retry', reason: 'other' })).toBe(false);
     expect(parse({ ...proposal, reasonCode: 'USER_CHANGE' })).toBe(false);
     expect(parse({ ...proposal, operations: [{ op: 'resume_slot', slot: 'A1' }] })).toBe(false);

@@ -26,6 +26,7 @@ import {
   type AiErrorCode,
   type TokenUsage,
 } from '../ai';
+import { nutritionFilterOf, nutritionModeOfBrief } from './nutrition-mode';
 import { runTool } from './tools';
 import type { CoachTool, PendingProposal, ToolContext, ToolOutcome } from './tools/types';
 
@@ -181,7 +182,8 @@ function allowedFor(input: AttemptInput, toolResults: readonly unknown[]): Allow
     brief: input.filter.brief,
     toolResults: [...input.filter.threadToolResults, ...toolResults],
     constants: input.toolCtx.deps.coachConfig.allowedConstants,
-    nutritionFull: false,
+    nutritionFull: nutritionFilterOf(input.filter.audience, nutritionModeOfBrief(input.filter.brief))
+      .nutritionFull,
   });
 }
 
@@ -229,7 +231,10 @@ class Relay {
     if (this.verdict !== null) return;
     const verdict = outputFilter(sentence, {
       audience: this.input.filter.audience,
-      nutritionMode: 'none',
+      nutritionMode: nutritionFilterOf(
+        this.input.filter.audience,
+        nutritionModeOfBrief(this.input.filter.brief),
+      ).nutritionMode,
       allowed: this.allowed(),
       precedingWords: this.precedingWords,
     });
@@ -402,6 +407,7 @@ export async function runAttempt(input: AttemptInput): Promise<AttemptOutcome> {
       toolCtx.allowed = allowed;
       const proposals = toolCtx.state.proposals.length;
       const helpCards = toolCtx.state.helpCards.length;
+      const screens = toolCtx.state.nutritionScreens.length;
       let outcome: ToolOutcome;
       try {
         outcome = await runTool(toolCall.name, toolCall.input, toolCtx, input.tools);
@@ -420,6 +426,8 @@ export async function runAttempt(input: AttemptInput): Promise<AttemptOutcome> {
       }
       for (const resource of toolCtx.state.helpCards.slice(helpCards))
         input.emit({ type: 'help_card', resource });
+      for (const screen of toolCtx.state.nutritionScreens.slice(screens))
+        input.emit({ type: 'nutrition_screen', ...screen });
     }
     turns.push({ role: 'assistant', blocks: final.blocks }, { role: 'user', blocks: results });
     toolRounds += 1;

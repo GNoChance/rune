@@ -3,6 +3,7 @@ import { AgeBandSchema } from './api/auth';
 import { GuidedRequestSchema } from './coach-guided';
 import { EXERCISE_ID_RE } from './exercise';
 import { HELP_RESOURCE_IDS } from './help-resources';
+import { ActivityLevelSchema, NutritionGoalSchema } from './nutrition';
 import {
   type ChangeReasonCode,
   InstanceChangeOperationSchema,
@@ -67,8 +68,9 @@ export type CoachCounterKind = (typeof COACH_COUNTER_KINDS)[number];
 export const COACH_LINKS = ['program', 'coach_help'] as const;
 export type CoachLink = (typeof COACH_LINKS)[number];
 
-/** Outils de `tools-1`, triés par nom (§10). */
+/** Outils de `tools-2`, triés par nom (§10, brique 5 §11.2). */
 export const COACH_TOOL_NAMES = [
+  'open_nutrition_screen',
   'propose_program_change',
   'read_training',
   'refer_to_help',
@@ -174,6 +176,31 @@ export type ProposeProgramChangeInput = z.infer<typeof ProposeProgramChangeInput
 
 export const ReferToHelpInput = z.strictObject({ resource: HelpResourceIdSchema });
 export type ReferToHelpInput = z.infer<typeof ReferToHelpInput>;
+
+/** Écrans des réglages nutrition que le coach peut ouvrir (brique 5 §11.2). */
+export const NUTRITION_SCREENS = ['goal', 'activity', 'mode'] as const;
+export const NutritionScreenSchema = z.enum(NUTRITION_SCREENS);
+export type NutritionScreen = z.infer<typeof NutritionScreenSchema>;
+
+/** Valeur présélectionnée : un objectif (`goal`), un niveau 1 à 4 (`activity`), `qualitative` ou `disabled` (`mode`). */
+export const NutritionSuggestionSchema = z.union([
+  NutritionGoalSchema,
+  ActivityLevelSchema,
+  z.enum(['qualitative', 'disabled']),
+]);
+export type NutritionSuggestion = z.infer<typeof NutritionSuggestionSchema>;
+
+export const OpenNutritionScreenInput = z
+  .strictObject({ screen: NutritionScreenSchema, suggestion: NutritionSuggestionSchema.optional() })
+  .refine(
+    (v) =>
+      v.suggestion === undefined ||
+      (v.screen === 'goal' && NutritionGoalSchema.safeParse(v.suggestion).success) ||
+      (v.screen === 'activity' && ActivityLevelSchema.safeParse(v.suggestion).success) ||
+      (v.screen === 'mode' && (v.suggestion === 'qualitative' || v.suggestion === 'disabled')),
+    { message: "la suggestion doit correspondre à l'écran", path: ['suggestion'] },
+  );
+export type OpenNutritionScreenInput = z.infer<typeof OpenNutritionScreenInput>;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Vues et requêtes (§7.1)
@@ -314,6 +341,11 @@ export const CoachStreamEventSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('tool_running'), tool: z.enum(COACH_TOOL_NAMES) }),
   CoachProposalEvent,
   z.strictObject({ type: z.literal('help_card'), resource: HelpResourceIdSchema }),
+  z.strictObject({
+    type: z.literal('nutrition_screen'),
+    screen: NutritionScreenSchema,
+    suggestion: NutritionSuggestionSchema.optional(),
+  }),
   z.strictObject({ type: z.literal('retry'), reason: z.literal('filter') }),
   z.strictObject({
     type: z.literal('done'),

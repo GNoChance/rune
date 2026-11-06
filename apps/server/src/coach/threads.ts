@@ -6,15 +6,18 @@ import { writeStamp } from '../db/rev';
 import type { CoachThreadTable, DbExecutor } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { httpError } from '../http/errors';
+import { loadNutritionContext } from '../nutrition/context';
 import { isConsentActive } from '../privacy/consent-state';
 import type { StartupTask } from '../startup';
 import { loadBriefInput } from './brief-input';
+import { nutritionModeOf } from './nutrition-mode';
 
 /*
  * Fils du coach (spec brique 4 §6.4, brique 4.1 §4.4) : un fil ouvert au plus par personne et par jour de Paris,
  * ouvert au premier message du jour avec ses réglages, son public, sa voix, son dossier et sa table d'alias figés ;
  * fermé (`version_change`) dès qu'un réglage figé n'est plus le réglage courant, ou (`persona_change`) dès que la voix
- * du profil n'est plus la sienne. Ces deux fermetures laissent le message suivant ouvrir un autre fil le même jour ;
+ * du profil n'est plus la sienne, ou (`nutrition_mode_change`, brique 5 §11.1) dès que son dossier est en mode
+ * nutrition `full` et que le mode effectif ne l'est plus. Ces fermetures laissent le message suivant ouvrir un autre fil le même jour ;
  * `health_withdrawn` et `day_over` ferment jusqu'au lendemain. Un fil remplacé qui n'a aucun message est supprimé à sa
  * fermeture (rien à relire). Supprimer un fil le détache d'abord de ce qui le cite.
  */
@@ -59,7 +62,9 @@ export function todayThread(db: DbExecutor, userId: string, day: string): Promis
 /** Un fil clos que le message suivant remplace le même jour (changement de voix ou de réglage figé). */
 export const isReplaceable = (thread: ThreadRow): boolean =>
   thread.isOpen === 0 &&
-  (thread.closedReason === 'persona_change' || thread.closedReason === 'version_change');
+  (thread.closedReason === 'persona_change' ||
+    thread.closedReason === 'version_change' ||
+    thread.closedReason === 'nutrition_mode_change');
 
 /** Voix choisie dans le profil d'entraînement ; le Scribe tant qu'aucune ne l'est. */
 export async function personaOf(db: DbExecutor, userId: string): Promise<CoachId> {
@@ -85,16 +90,42 @@ async function closeIfPersonaStale(
   if (thread.isOpen !== 1) return thread;
   if (!holdsLease && deps.coach.exchanges.inProgress(thread.userId)) return thread;
   if ((await personaOf(deps.db, thread.userId)) === thread.persona) return thread;
+  return closeThread(deps, thread, holdsLease, 'persona_change');
+}
+
+/** Ferme le fil ouvert pour `reason` ; supprimé (`undefined`) s'il n'a aucun message. */
+function closeThread(
+  deps: AppDeps,
+  thread: ThreadRow,
+  holdsLease: boolean,
+  reason: 'persona_change' | 'nutrition_mode_change',
+): Promise<ThreadRow | undefined> {
   return deps.db.transaction().execute(async (trx) => {
     const closed = await trx
       .updateTable('coachThread')
-      .set({ isOpen: 0, closedReason: 'persona_change' })
+      .set({ isOpen: 0, closedReason: reason })
       .where('id', '=', thread.id)
       .where('isOpen', '=', 1)
       .executeTakeFirst();
     if (closed.numUpdatedRows > 0n && (await deleteIfEmpty(trx, deps, thread, !holdsLease))) return undefined;
-    return { ...thread, isOpen: 0, closedReason: 'persona_change' };
+    return { ...thread, isOpen: 0, closedReason: reason };
   });
+}
+
+/**
+ * Descente du mode nutrition, fermeture paresseuse (brique 5 §11.1) : un fil ouvert dont le dossier est en mode
+ * `full` alors que le mode effectif ne l'est plus est fermé (`nutrition_mode_change`) : aucun repère chiffré ne reste
+ * dans un échange après la descente. Même règle de bail que `closeIfPersonaStale`.
+ */
+async function closeIfNutritionModeDropped(
+  deps: AppDeps,
+  thread: ThreadRow,
+  holdsLease: boolean,
+): Promise<ThreadRow | undefined> {
+  if (thread.isOpen !== 1 || nutritionModeOf(thread) !== 'full') return thread;
+  if (!holdsLease && deps.coach.exchanges.inProgress(thread.userId)) return thread;
+  if ((await loadNutritionContext(deps.db, deps, thread.userId)).effective.mode === 'full') return thread;
+  return closeThread(deps, thread, holdsLease, 'nutrition_mode_change');
 }
 
 /** Un fil remplacé sans aucun message et sans message compté n'a rien à relire : supprimé. Vrai s'il l'a été. */
@@ -124,7 +155,10 @@ export async function currentThread(
   opts: { holdsLease?: boolean } = {},
 ): Promise<ThreadRow | undefined> {
   const thread = await todayThread(deps.db, userId, day);
-  return thread === undefined ? undefined : closeIfPersonaStale(deps, thread, opts.holdsLease === true);
+  if (thread === undefined) return undefined;
+  const holdsLease = opts.holdsLease === true;
+  const afterPersona = await closeIfPersonaStale(deps, thread, holdsLease);
+  return afterPersona === undefined ? undefined : closeIfNutritionModeDropped(deps, afterPersona, holdsLease);
 }
 
 /**

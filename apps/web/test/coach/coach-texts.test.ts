@@ -189,6 +189,7 @@ describe('coach-texts', () => {
       search_exercises: 'Le coach cherche des exercices…',
       propose_program_change: 'Le coach prépare une proposition…',
       refer_to_help: "Le coach prépare une carte d'aide…",
+      open_nutrition_screen: 'Le coach prépare un réglage nutrition…',
     });
     expect(counterText(1950)).toBe('1 950 / 2 000');
     expect(remainingText(5)).toBe("Il te reste 5 messages aujourd'hui");

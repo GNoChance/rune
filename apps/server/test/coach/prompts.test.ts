@@ -51,7 +51,7 @@ import {
 import { MINOR_PHRASINGS } from '../../src/coach/prompts/coach-1-minor';
 import { GUIDED_ADULT } from '../../src/coach/prompts/coach-2-adult';
 import { GUIDED_MINOR } from '../../src/coach/prompts/coach-2-minor';
-import { TOOLS_1, toolDefinitions } from '../../src/coach/tools';
+import { TOOLS_1, TOOLS_2, toolDefinitions } from '../../src/coach/tools';
 import { PROPOSAL_ERROR_MESSAGES } from '../../src/coach/tools/propose-program-change';
 
 /*
@@ -124,7 +124,10 @@ describe.each(VARIANTS)('prompt %s', (variant) => {
     for (const s of ['Coach IA', 'Claude', 'Anthropic', '28 jours', 'adulte de confiance']) {
       expect(prompt).toContain(s);
     }
-    for (const tool of COACH_TOOL_NAMES) expect(prompt).toContain(tool);
+    // Les 4 outils de `tools-1` ; `open_nutrition_screen` entre au prompt avec la tâche 14.
+    for (const tool of COACH_TOOL_NAMES.filter((t) => t !== 'open_nutrition_screen')) {
+      expect(prompt).toContain(tool);
+    }
   });
 
   it('chaque terme interdit pour tous, chacun avec sa tournure ou sa conduite', () => {
@@ -506,22 +509,35 @@ describe('empreinte des prompts', () => {
 });
 
 /*
- * Empreintes de `tools-1` (spec §10) : définitions envoyées au modèle (nom, description, schéma) et messages d'erreur
+ * Empreintes de `tools-1` et `tools-2` (spec §10, brique 5 §11.2) : définitions envoyées au modèle (nom, description, schéma) et messages d'erreur
  * de la proposition, que le modèle lit dans les `tool_result`. Même règle que les prompts : jamais d'empreinte mise à
- * jour seule, toute modification crée `tools-2` et une nouvelle évaluation.
+ * jour seule, toute modification crée une nouvelle version et une nouvelle évaluation.
  */
 const TOOLS_FINGERPRINTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   'tools-1': {
     definitions: '81b3a40b8b1ab087de55fd4d5de68c8b837be6c471ee5ae788f0b2865b57fcfc',
     proposal_error_messages: '239332d319819fd65cb4ad089c8f951f3d519f3500c23eb2e2e405e4ea49de5b',
   },
+  'tools-2': {
+    definitions: '18ce2b0681a7e9385ed343a778c4073b350ec198ceacd3a6e6e5242d2a706ff9',
+    proposal_error_messages: '239332d319819fd65cb4ad089c8f951f3d519f3500c23eb2e2e405e4ea49de5b',
+  },
 };
 
-describe('empreinte de tools-1', () => {
+const TOOLS_BY_VERSION = { 'tools-1': TOOLS_1, 'tools-2': TOOLS_2 } as const;
+
+describe('empreinte des outils', () => {
   it('les définitions et les messages d’erreur de la version de la configuration sont ceux de leur empreinte', () => {
-    expect(COACH_CONFIG.toolsVersion).toBe('tools-1');
+    expect(COACH_CONFIG.toolsVersion).toBe('tools-2');
     expect(TOOLS_FINGERPRINTS[COACH_CONFIG.toolsVersion]).toEqual({
-      definitions: sha256(JSON.stringify(toolDefinitions(TOOLS_1))),
+      definitions: sha256(JSON.stringify(toolDefinitions(TOOLS_2))),
+      proposal_error_messages: sha256(JSON.stringify(PROPOSAL_ERROR_MESSAGES)),
+    });
+  });
+
+  it("tools-1, gardé pour les fils déjà ouverts, reste ce qu'il était", () => {
+    expect(TOOLS_FINGERPRINTS['tools-1']).toEqual({
+      definitions: sha256(JSON.stringify(toolDefinitions(TOOLS_BY_VERSION['tools-1']))),
       proposal_error_messages: sha256(JSON.stringify(PROPOSAL_ERROR_MESSAGES)),
     });
   });

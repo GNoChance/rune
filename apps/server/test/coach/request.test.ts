@@ -48,6 +48,7 @@ describe('requête sérialisée, pour chaque public', () => {
         block_binding: { prefix_mismatch_behavior: 'error' },
       });
       expect(body.tools.map((t) => t.name)).toEqual([
+        'open_nutrition_screen',
         'propose_program_change',
         'read_training',
         'refer_to_help',

@@ -1,4 +1,11 @@
-import type { AgeBand, CoachToolName, HelpResourceId, InstanceChangeOperation } from '@rune/contracts';
+import type {
+  AgeBand,
+  CoachToolName,
+  HelpResourceId,
+  InstanceChangeOperation,
+  NutritionScreen,
+  NutritionSuggestion,
+} from '@rune/contracts';
 import type { AllowedValues } from '@rune/domain';
 import type { z } from 'zod';
 import type { DbExecutor } from '../../db/schema';
@@ -35,6 +42,8 @@ export interface AttemptToolState {
    */
   invalidProposals: number;
   helpCards: HelpResourceId[];
+  /** Écran des réglages nutrition ouvert par le coach (brique 5 §11.2) : un au plus par tentative. */
+  nutritionScreens: Array<{ screen: NutritionScreen; suggestion?: NutritionSuggestion }>;
 }
 
 export interface ToolContext {
