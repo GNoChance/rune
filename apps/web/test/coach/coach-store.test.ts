@@ -1,7 +1,8 @@
 import type { CoachProposalEvent, CoachTodayResponse, GuidedRequest } from '@rune/contracts';
+import { SYNC_PROTOCOL } from '@rune/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type CoachState, coachStoreFor } from '../../src/features/coach/coach-store';
-import { deleteMeta, setMeta } from '../../src/local-db/meta';
+import { deleteMeta, getMeta, setMeta } from '../../src/local-db/meta';
 import { coachRepoFor } from '../../src/repos/coach-repo';
 import { createTestServices, makeMe } from '../support/render';
 import { until } from '../support/wait';
@@ -102,6 +103,22 @@ async function setup(opts: { today?: unknown } = {}) {
   const calls = (method: string, path: string) =>
     t.api.calls.filter((c) => c.method === method && c.path === path);
   return { ...t, store, states, calls };
+}
+
+/** Une opération locale en attente d'envoi pour l'utilisateur de l'appareil. */
+async function queueOp(db: Awaited<ReturnType<typeof setup>>['db']): Promise<void> {
+  const userId = await getMeta(db, 'userId');
+  await db.outbox.add({
+    opId: '0192f5a0-0000-7000-8000-000000000001',
+    userId: userId as string,
+    entity: 'training_profile',
+    id: 'p-1',
+    kind: 'patch',
+    fields: { coach: 'skald' },
+    clientTs: '2026-10-06T11:00:00.000Z',
+    protocol: SYNC_PROTOCOL,
+    attempts: 0,
+  });
 }
 
 /** Attend que l'utilisateur de l'appareil ait été lu une première fois, comme le magasin l'a fait. */
@@ -516,8 +533,8 @@ describe('CoachStore', () => {
     expect(calls('GET', '/api/coach/today').length).toBe(reads + 1);
   });
 
-  it('flushBefore(4000) par load et avant chaque envoi', async () => {
-    const { store, api, sync } = await setup();
+  it("flushBefore(4000) par load, et avant un envoi seulement si l'outbox n'est pas vide", async () => {
+    const { store, api, sync, db } = await setup();
     api.on('POST', '/api/coach/messages', sse(`${TEXT('ok')}${DONE()}`));
     const spy = vi.spyOn(sync, 'flushBefore');
     const flushes = () => spy.mock.calls.length;
@@ -525,13 +542,14 @@ describe('CoachStore', () => {
     expect(flushes()).toBe(1);
     store.setDraft('Premier');
     await store.send();
-    expect(flushes()).toBe(2);
+    expect(flushes()).toBe(1);
+    await queueOp(db);
     api.on('GET', '/api/coach/today', { status: 200, body: TODAY_WITH_USER });
     await store.load();
-    expect(flushes()).toBe(3);
+    expect(flushes()).toBe(2);
     store.setDraft('Deuxième');
     await store.send();
-    expect(flushes()).toBe(4);
+    expect(flushes()).toBe(3);
     expect(spy.mock.calls.every(([ms]) => ms === 4000)).toBe(true);
   });
 
@@ -781,8 +799,19 @@ describe('CoachStore', () => {
       expect(bodies[1]?.clientMessageId).toBe(bodies[0]?.clientMessageId);
     });
 
-    it('un changement de coach encore en file : le flush part avant le POST', async () => {
+    it("outbox vide : aucun flush avant l'envoi", async () => {
       const { store, api, sync } = await setup({ today: TODAY_WITH_USER });
+      api.on('POST', '/api/coach/messages', sse(DONE()));
+      await store.load();
+      const spy = vi.spyOn(sync, 'flushBefore');
+      store.setDraft('Salut');
+      await store.send();
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('un changement de coach encore en file : le flush part avant le POST', async () => {
+      const { store, api, sync, db } = await setup({ today: TODAY_WITH_USER });
+      await queueOp(db);
       const order: string[] = [];
       vi.spyOn(sync, 'flushBefore').mockImplementation(async () => {
         order.push('flush');
@@ -798,13 +827,14 @@ describe('CoachStore', () => {
       expect(order).toEqual(['flush', 'post']);
     });
 
-    it('un fil fermé par un changement de coach ne compte pas : le premier message du jour passe par flushBefore', async () => {
+    it("un fil fermé par un changement de coach ne compte pas : le premier message du jour passe par flushBefore si l'outbox n'est pas vide", async () => {
       const stale = {
         thread: { ...THREAD, open: false, closedReason: 'persona_change' },
         messages: TODAY_WITH_USER.messages,
         inProgress: false,
       };
-      const { store, api, sync } = await setup({ today: stale });
+      const { store, api, sync, db } = await setup({ today: stale });
+      await queueOp(db);
       api.on('POST', '/api/coach/messages', sse(DONE()));
       await store.load();
       const before = sync.triggers.filter((x) => x === 'coach').length;

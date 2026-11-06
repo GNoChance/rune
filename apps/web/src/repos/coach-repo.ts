@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { ApiError, NetworkRequiredError } from '../api/client';
 import type { AppServices } from '../app-services';
 import { getMeta, setMeta } from '../local-db/meta';
+import { pendingCount } from '../sync/outbox';
 import { sendThenPull } from './rows';
 import { readSse } from './sse-reader';
 
@@ -50,6 +51,8 @@ export interface CoachRepo {
   withdraw(password: string): Promise<MeResponse>;
   /** Appelle `fn` avec l'utilisateur de l'appareil, à l'abonnement puis à chaque changement (`null` : déconnecté). */
   watchUser(fn: (userId: string | null) => void): () => void;
+  /** Opérations locales encore en attente d'envoi (outbox) pour l'utilisateur de l'appareil. */
+  pendingOps(): Promise<number>;
 }
 
 const MESSAGES_PATH = '/api/coach/messages';
@@ -153,6 +156,10 @@ export function createCoachRepo(s: AppServices): CoachRepo {
         schema: MeResponse,
         apply: saveMe,
       }),
+    async pendingOps() {
+      const userId = await getMeta(s.db, 'userId');
+      return userId ? pendingCount(s.db, userId) : 0;
+    },
     watchUser(fn) {
       const subscription = liveQuery(async () => (await getMeta(s.db, 'userId')) ?? null).subscribe({
         next: fn,

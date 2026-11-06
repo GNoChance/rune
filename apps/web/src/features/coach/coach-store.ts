@@ -175,7 +175,8 @@ export function createCoachStore(s: AppServices): CoachStore {
     // Le champ est libre dès l'envoi : ce qui y est tapé pendant le flux est à la personne.
     const draft = !pending.chip && state.draft === pending.text ? '' : state.draft;
     set({ pending, draft, phase: 'streaming', error: null, refusalMessage: null });
-    if (flushFirst) await flush();
+    // Le cycle de synchro n'est lancé que s'il y a quelque chose à envoyer (changement de coach, charges).
+    if (flushFirst && (await repo.pendingOps().catch(() => 0)) > 0) await flush();
     if (gen !== generation) return;
 
     const seen: {
@@ -268,7 +269,7 @@ export function createCoachStore(s: AppServices): CoachStore {
     });
   }
 
-  /** Un message neuf : identifiant neuf, et `flushBefore` d'abord (changement de coach, charges encore en file ; sans coût file vide). */
+  /** Un message neuf : identifiant neuf ; `flushBefore` d'abord si l'outbox n'est pas vide. */
   async function submit(m: { text: string; guided?: GuidedRequest; chip?: true }): Promise<void> {
     if (state.phase === 'streaming') return;
     await run(

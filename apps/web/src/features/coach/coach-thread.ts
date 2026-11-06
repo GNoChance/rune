@@ -17,10 +17,12 @@ export function liveToday(today: CoachTodayResponse | null): CoachTodayResponse 
   return today !== null && isRenewedThread(today) ? { ...today, thread: null, messages: [] } : today;
 }
 
-/** Public des parcours guidés : le plus strict gagne, mineur si le fil du jour ou le statut le dit (comme le serveur). */
+/** Public des parcours guidés : le plus strict gagne, mineur si le fil ouvert du jour ou le statut le dit (comme le serveur). */
 export function guidedAudience(
   today: CoachTodayResponse | null,
   status: CoachStatusView | null,
 ): 'adult' | 'minor' {
-  return today?.thread?.audience === 'minor' || status?.audience === 'minor' ? 'minor' : 'adult';
+  return (today?.thread?.open === true && today.thread.audience === 'minor') || status?.audience === 'minor'
+    ? 'minor'
+    : 'adult';
 }

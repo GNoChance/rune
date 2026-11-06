@@ -353,7 +353,7 @@ describe('coachStatus', () => {
     });
   });
 
-  it('fil du jour : son public et sa voix, même si le profil a changé depuis', async () => {
+  it('fil du jour remplaçable (version_change) : public et voix du profil, pas ceux du fil fermé', async () => {
     await setup();
     const user = await createUser(ctx, { birthDate: '2008-11-04' });
     await insertFixtureRow(ctx.deps.db, 'training_profile', { ownerId: user.id, coach: 'ombre' });
@@ -371,7 +371,7 @@ describe('coachStatus', () => {
     const status = await coachStatus(ctx.deps.db, ctx.deps, user.id, ctx.clock.now());
     // Fil remplaçable (version_change) : le message suivant ouvre un fil à la voix du profil.
     expect(status).toMatchObject({
-      audience: 'minor',
+      audience: 'adult',
       persona: 'ombre',
       today: { threadId: thread.id, open: true, closedReason: 'version_change', userMessageCount: 6 },
     });

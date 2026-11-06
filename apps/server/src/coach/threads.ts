@@ -15,7 +15,8 @@ import { loadBriefInput } from './brief-input';
  * ouvert au premier message du jour avec ses réglages, son public, sa voix, son dossier et sa table d'alias figés ;
  * fermé (`version_change`) dès qu'un réglage figé n'est plus le réglage courant, ou (`persona_change`) dès que la voix
  * du profil n'est plus la sienne. Ces deux fermetures laissent le message suivant ouvrir un autre fil le même jour ;
- * `health_withdrawn` et `day_over` ferment jusqu'au lendemain. Supprimer un fil le détache d'abord de ce qui le cite.
+ * `health_withdrawn` et `day_over` ferment jusqu'au lendemain. Un fil remplacé qui n'a aucun message est supprimé à sa
+ * fermeture (rien à relire). Supprimer un fil le détache d'abord de ce qui le cite.
  */
 
 export type ThreadRow = Selectable<CoachThreadTable>;
@@ -91,18 +92,24 @@ async function closeIfPersonaStale(
       .where('id', '=', thread.id)
       .where('isOpen', '=', 1)
       .executeTakeFirst();
-    if (closed.numUpdatedRows > 0n && (await deleteIfEmpty(trx, deps, thread))) return undefined;
+    if (closed.numUpdatedRows > 0n && (await deleteIfEmpty(trx, deps, thread, !holdsLease))) return undefined;
     return { ...thread, isOpen: 0, closedReason: 'persona_change' };
   });
 }
 
-/** Un fil remplacé sans message de la personne n'a rien à relire : supprimé. Vrai s'il l'a été. */
-async function deleteIfEmpty(trx: DbExecutor, deps: AppDeps, thread: ThreadRow): Promise<boolean> {
+/** Un fil remplacé sans aucun message et sans message compté n'a rien à relire : supprimé. Vrai s'il l'a été. */
+async function deleteIfEmpty(
+  trx: DbExecutor,
+  deps: AppDeps,
+  thread: ThreadRow,
+  guardLease: boolean,
+): Promise<boolean> {
+  if (thread.userMessageCount > 0) return false;
+  if (guardLease && deps.coach.exchanges.inProgress(thread.userId)) return false;
   const said = await trx
     .selectFrom('coachMessage')
     .select('id')
     .where('threadId', '=', thread.id)
-    .where('role', '=', 'user')
     .executeTakeFirst();
   if (said !== undefined) return false;
   await deleteThread(trx, deps, thread.userId, thread.id);
@@ -224,7 +231,7 @@ export async function closeIfFrozenStale(
     .set({ isOpen: 0, closedReason: 'version_change' })
     .where('id', '=', thread.id)
     .execute();
-  await deleteIfEmpty(trx, deps, thread);
+  await deleteIfEmpty(trx, deps, thread, false);
   return true;
 }
 

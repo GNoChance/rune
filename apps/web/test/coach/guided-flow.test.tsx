@@ -477,6 +477,19 @@ describe('Parcours guidés : public mineur et hors ligne', () => {
     expect(screen.getByRole('button', { name: 'Bien manger quand on fait du sport' })).toBeTruthy();
   });
 
+  it('fil mineur fermé (version_change), statut adulte : le public est adulte', async () => {
+    await setup({
+      status: coachStatus({ audience: 'adult' }),
+      today: todayWith([coachMessage(1, 'user', 'Salut'), coachMessage(2, 'assistant', 'Bonjour.')], {
+        ...THREAD,
+        audience: 'minor',
+        open: false,
+        closedReason: 'version_change',
+      }),
+    });
+    expect(await screen.findByRole('button', { name: 'Nutrition' })).toBeTruthy();
+  });
+
   it('un parcours refusé par le serveur (validation) : bannière sans « Réessayer »', async () => {
     const { api } = await setup();
     api.on('POST', '/api/coach/messages', { status: 400, body: { error: 'validation' } });

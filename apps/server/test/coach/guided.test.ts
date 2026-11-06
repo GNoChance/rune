@@ -193,6 +193,22 @@ describe('message guidé', () => {
     expect(messages()).toHaveLength(2);
   });
 
+  it('fil mineur fermé par version_change, profil adulte : le public est adulte, le parcours adulte passe', async () => {
+    kit = await exchangeKit({ chat: [fakeText(FINE)] });
+    await insertFixtureRow(kit.ctx.deps.db, 'coach_thread', {
+      userId: kit.user.id,
+      day: '2026-11-05',
+      audience: 'minor',
+      persona: 'scribe',
+      ...currentVersions(kit.ctx.deps, 'minor'),
+      isOpen: 0,
+      closedReason: 'version_change',
+      userMessageCount: 2,
+    });
+    await kit.ask('', { guided: { flow: 'nutrition', choices: ['protein'] } });
+    expect(messages().at(-2)?.display_text).toContain('protéines');
+  });
+
   it('un adulte ne peut pas envoyer le parcours de nutrition des mineurs', async () => {
     kit = await exchangeKit({ chat: [] });
     await expect(kit.ask('', { guided: { flow: 'nutrition', choices: [] } })).rejects.toMatchObject({

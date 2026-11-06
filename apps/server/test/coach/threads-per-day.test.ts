@@ -152,6 +152,19 @@ describe('fils vides', () => {
     expect(threads()).toHaveLength(1);
   });
 
+  it('un fil sans message de la personne mais avec une réponse du coach reste lisible', async () => {
+    kit = await exchangeKit({ chat: [] });
+    const thread = await emptyThread();
+    await insertFixtureRow(kit.ctx.deps.db, 'coach_message', {
+      userId: kit.user.id,
+      threadId: thread.id,
+      role: 'assistant',
+    });
+    await pickCoach('ombre');
+    await today();
+    expect(threads()).toHaveLength(1);
+  });
+
   it('un fil qui a un message de la personne reste lisible', async () => {
     kit = await exchangeKit({ chat: [fakeText(FINE)] });
     await kit.ask('Salut.');
