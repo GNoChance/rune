@@ -125,7 +125,22 @@ describe('Mon coach : section « Coach IA » (spec brique 4 §16.7)', () => {
     await renderCoach();
     fireEvent.click(await screen.findByRole('button', { name: 'Changer de coach' }));
     const sheet = within(await screen.findByRole('dialog', { name: 'Changer de coach' }));
-    expect(sheet.getByText("Le nouveau ton s'appliquera à ta conversation de demain.")).toBeTruthy();
+    expect(
+      sheet.getByText(
+        "Le nouveau ton s'applique dès ton prochain message. Ta conversation de ce jour restera dans Conversations précédentes.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it('changer de coach relit la conversation du jour (GET /api/coach/today), sans recharger', async () => {
+    const { api } = await renderCoach();
+    await screen.findByText(MY_COACH_TEXTS.active);
+    fireEvent.click(await screen.findByRole('button', { name: 'Changer de coach' }));
+    const sheet = within(await screen.findByRole('dialog', { name: 'Changer de coach' }));
+    const before = calls(api, 'GET', '/api/coach/today').length;
+    fireEvent.click(sheet.getByRole('radio', { name: 'Le Scribe' }));
+    fireEvent.click(sheet.getByRole('button', { name: 'Choisir le Scribe' }));
+    await until(() => calls(api, 'GET', '/api/coach/today').length > before);
   });
 
   it('« Supprimer mes conversations » : confirmation sans mot de passe, DELETE /api/coach/threads', async () => {

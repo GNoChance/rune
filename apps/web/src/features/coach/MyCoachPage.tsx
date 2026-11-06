@@ -44,6 +44,7 @@ const ignore = () => {};
  */
 export function MyCoachPage() {
   const me = useMe();
+  const { store } = useCoachStore();
   const { coach: saved, loaded, known } = useTrainingProfile();
   const [chosen, setChosen] = useState<CoachId | null>(null);
   const [announced, setAnnounced] = useState<CoachId | null>(null);
@@ -69,6 +70,8 @@ export function MyCoachPage() {
     setChosen(next);
     setAnnounced(next);
     setSheet(false);
+    // Le serveur ferme la conversation de l'ancienne voix à la relecture : la page du coach repart vide, voix neuve.
+    void store.load();
   }
 
   return (
