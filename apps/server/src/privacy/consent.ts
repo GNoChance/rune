@@ -119,7 +119,7 @@ async function stampRows(
  * Une table sans `rev` (classe H, tables du coach) est ignorée ; si elle porte du C2, seul un crochet de
  * `HEALTH_WITHDRAW_HOOKS` sait l'effacer : sans crochet, le retrait est refusé (transaction annulée).
  */
-async function clearTable(
+export async function clearTable(
   trx: Transaction<Database>,
   deps: AppDeps,
   table: string,

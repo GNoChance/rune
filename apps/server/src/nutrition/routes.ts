@@ -1,4 +1,9 @@
-import { ModeRequestSchema, ScreenRequestSchema } from '@rune/contracts';
+import {
+  ModeRequestSchema,
+  ScreenRequestSchema,
+  SettingsChangesSchema,
+  SettingsPreviewRequestSchema,
+} from '@rune/contracts';
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env';
 import { requireUser } from '../auth/session';
@@ -7,9 +12,11 @@ import { httpError } from '../http/errors';
 import { parseJson } from '../http/validate';
 import { assertHealthConsent } from '../privacy/consent';
 import { liveRowsOf } from '../sync/pull';
+import { checkinRoutes } from './checkin-routes';
 import { loadNutritionContext } from './context';
 import { openNutrition } from './open';
 import { changeMode, submitScreen } from './screen';
+import { deleteNutritionData, previewSettings, saveSettings } from './settings';
 
 const MIRRORED_TABLES = ['weigh_in', 'nutrition_target', 'nutrition_checkin'] as const;
 
@@ -46,6 +53,19 @@ export function nutritionRoutes(deps: AppDeps): Hono<AppEnv> {
     const { mode } = await parseJson(c, ModeRequestSchema);
     return c.json(await changeMode(deps, user, mode));
   });
+
+  routes.post('/settings/preview', async (c) => {
+    const { changes } = await parseJson(c, SettingsPreviewRequestSchema);
+    return c.json(await previewSettings(deps, userOf(c), changes));
+  });
+
+  routes.put('/settings', async (c) =>
+    c.json(await saveSettings(deps, userOf(c), await parseJson(c, SettingsChangesSchema))),
+  );
+
+  routes.route('/checkins', checkinRoutes(deps));
+
+  routes.delete('/data', async (c) => c.json(await deleteNutritionData(deps, userOf(c))));
 
   // Lignes vivantes des trois tables au format du pull ; vides hors mode effectif `full`.
   routes.get('/rows', async (c) => {
