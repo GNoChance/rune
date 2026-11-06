@@ -205,9 +205,11 @@ export function runChecks(c: EvalCase, run: CaseRun): CheckResult[] {
     );
   }
 
-  if (e.tools === undefined || e.tools.length === 0) results.push(skip('tools'));
+  // Le faux par défaut ne propose jamais de programme : propose_program_change n'est alors pas exigé.
+  const expectedTools = (e.tools ?? []).filter((t) => run.mode !== 'fake-default' || t !== PROPOSE);
+  if (expectedTools.length === 0) results.push(skip('tools'));
   else {
-    const missing = e.tools.filter((t) => !called.has(t));
+    const missing = expectedTools.filter((t) => !called.has(t));
     results.push(
       missing.length === 0 ? pass('tools') : fail('tools', `outil non appelé : ${missing.join(', ')}`),
     );

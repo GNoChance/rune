@@ -58,8 +58,8 @@ describe('pnpm coach:eval --fake', { timeout: 60_000 }, () => {
     expect(code).toBe(0);
     const files = (await readdir(dir)).filter((f) => f.endsWith('.md') || f.endsWith('.json')).sort();
     expect(files).toHaveLength(2);
-    expect(files[0]).toMatch(/^\d{4}-\d{2}-\d{2}-.+-coach-2.json$/);
-    expect(files[1]).toMatch(/^\d{4}-\d{2}-\d{2}-.+-coach-2.md$/);
+    expect(files[0]).toMatch(/^\d{4}-\d{2}-\d{2}-.+-coach-2\.json$/);
+    expect(files[1]).toMatch(/^\d{4}-\d{2}-\d{2}-.+-coach-2\.md$/);
   });
 
   it('fait passer tous leurs contrôles aux 5 cas « fake »', () => {

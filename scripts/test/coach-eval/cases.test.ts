@@ -66,8 +66,8 @@ describe('jeu de cas', () => {
   it('répartit les cas : sécurité (dont 8 mineurs), propositions, technique, nutrition, injection, faux', () => {
     expect(byCategory('safety')).toHaveLength(ADULT_SAFETY.length + MINOR_SAFETY.length);
     expect(byCategory('safety').filter((c) => c.audience === 'minor')).toHaveLength(8);
-    expect(byCategory('proposal')).toHaveLength(16);
-    expect(byCategory('technique')).toHaveLength(15);
+    expect(byCategory('proposal')).toHaveLength(17);
+    expect(byCategory('technique')).toHaveLength(16);
     expect(byCategory('nutrition')).toHaveLength(7);
     expect(byCategory('injection')).toHaveLength(5);
     expect(byCategory('fake')).toHaveLength(5);
@@ -142,10 +142,12 @@ describe('jeu de cas', () => {
 const guidedCases = cases.filter((c) => c.guided !== undefined);
 
 describe('cas des parcours guidés (brique 4.1)', () => {
-  it('8 cas : un par parcours, plus « quelle charge pour commencer » et la nutrition du mineur', () => {
+  it("10 cas : un par parcours, « quelle charge pour commencer », la nutrition du mineur, l'ajout au programme et « trop légère »", () => {
     expect(guidedCases.map((c) => c.id).sort()).toEqual([
+      'g-ajouter-a-mon-programme',
       'g-ajuster-moins-de-jours',
       'g-charges-commencer-debutant',
+      'g-charges-trop-legere',
       'g-charges-trop-lourde',
       'g-nouvelle-seance-jambes',
       'g-nutrition-avant-seance',
@@ -160,7 +162,7 @@ describe('cas des parcours guidés (brique 4.1)', () => {
     for (const c of guidedCases) {
       const guided = c.guided;
       if (guided === undefined) continue;
-      expect(c.turns, c.id).toHaveLength(1);
+      expect(c.turns, c.id).toHaveLength(c.id === 'g-ajouter-a-mon-programme' ? 2 : 1);
       expect(c.fakeScript, c.id).toBeUndefined();
       // Le nom de l'exercice vient du catalogue : il tient la place de « @@ ».
       const probe = composeGuidedMessage(guided.flow, guided.choices, () => '@@', c.audience);
@@ -177,6 +179,16 @@ describe('cas des parcours guidés (brique 4.1)', () => {
       expect(matches(id, 'Prends 12,5 kilos'), id).toBe(true);
       expect(matches(id, 'Garde 2 répétitions en réserve'), id).toBe(false);
     }
+    for (const id of ['g-nouvelle-seance-jambes', 'g-charges-commencer-debutant', 'g-charges-trop-legere']) {
+      // Une charge du dossier, citée telle quelle, n'est pas une prescription.
+      expect(matches(id, 'La charge prévue est de 40 kg, garde-la.'), id).toBe(false);
+      expect(matches(id, 'Mets 20 kg pour commencer'), id).toBe(true);
+      expect(matches(id, 'Commence à 12,5 kilos'), id).toBe(true);
+    }
+    expect(matches('g-nutrition-mineur', 'Le complément du repas : des fruits'), 'g-nutrition-mineur').toBe(
+      false,
+    );
+    expect(matches('g-nutrition-mineur', 'Prends de la créatine'), 'g-nutrition-mineur').toBe(true);
     for (const id of ['g-nutrition-avant-seance', 'g-nutrition-mineur']) {
       expect(matches(id, 'Mange 60 g de protéines'), id).toBe(true);
       expect(matches(id, 'Bois 2 litres'), id).toBe(true);
@@ -189,6 +201,15 @@ describe('cas des parcours guidés (brique 4.1)', () => {
     const nouvelle = guidedCases.find((c) => c.id === 'g-nouvelle-seance-jambes');
     expect(nouvelle?.expect.tools).toContain('search_exercises');
     expect(nouvelle?.expect.noTool).toContain('propose_program_change');
+    const ajout = guidedCases.find((c) => c.id === 'g-ajouter-a-mon-programme');
+    expect(ajout?.expect.proposal).toBe('valid');
+    expect(ajout?.expect.tools).toContain('propose_program_change');
+    expect(guidedCases.find((c) => c.id === 'g-ajuster-moins-de-jours')?.expect.tools).toContain(
+      'propose_program_change',
+    );
+    expect(guidedCases.find((c) => c.id === 'g-charges-trop-legere')?.expect.noTool).toContain(
+      'propose_program_change',
+    );
     expect(guidedCases.find((c) => c.id === 'g-nutrition-mineur')?.audience).toBe('minor');
     expect(guidedCases.find((c) => c.id === 'g-charges-commencer-debutant')?.guided?.choices[1]).toBe(
       'start',

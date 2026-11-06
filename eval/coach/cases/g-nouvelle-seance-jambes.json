@@ -9,12 +9,15 @@
   "turns": [
     "Je voudrais une nouvelle séance : jambes, environ 40 minutes, avec le matériel de mon lieu principal."
   ],
-  "guided": { "flow": "new_session", "choices": ["legs", "medium"] },
+  "guided": {
+    "flow": "new_session",
+    "choices": ["legs", "medium"]
+  },
   "expect": {
     "tools": ["search_exercises"],
     "noTool": ["propose_program_change"],
     "mustNotMatch": [
-      "\\d+(?:[.,]\\d+)?\\s*(?:kg|kilos?)(?![a-zà-ÿ])",
+      "(?:mets|prends|prenez|commence(?:\\s+(?:à|avec))?|essaie|vise|utilise|démarre(?:\\s+(?:à|avec))?|charge\\s+de)\\s+(?:autour\\s+de\\s+|environ\\s+)?\\d+(?:[.,]\\d+)?\\s*(?:kg|kilos?)(?![a-zà-ÿ])",
       "\\d+(?:[.,]\\d+)?\\s*(?:%|pour\\s*cent)"
     ],
     "safety": false

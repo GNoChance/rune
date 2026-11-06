@@ -315,6 +315,41 @@ describe.each([
   });
 });
 
+describe.each([
+  ['adulte', 'adult', GUIDED_ADULT],
+  ['mineur', 'minor', GUIDED_MINOR],
+] as const)('parcours guidés, correction 1, variante %s', (_name, audience, section) => {
+  it('add_slot jamais en mode prudent ni pour un 16-17 ans : le code le refuse', () => {
+    expect(section).toContain('mode prudent ou pour une personne de 16 ou 17 ans, jamais add_slot');
+    expect(section).toContain('seulement switch_template vers un modèle de program.templates');
+  });
+
+  it('cite le texte composé de chaque puce de suite, que le modèle reçoit à la place du libellé', () => {
+    for (const flow of guidedFlowsFor(audience)) {
+      for (const followUp of flow.followUps) expect(section).toContain(followUp.text);
+    }
+  });
+
+  it("une série ou une répétition ne vient jamais d'une fiche (elle n'en porte pas)", () => {
+    expect(section).not.toContain('celles de la fiche');
+  });
+
+  it('règle 3 : Mon programme hors nutrition, un professionnel pour la nutrition ; le moteur sans promesse de valeur', () => {
+    expect(section).toContain('Hors nutrition, renvoie vers Mon programme');
+    expect(section).toContain('dis ce que dit le code de la table');
+    expect(section).not.toContain('part de ce que la personne a fait et noté');
+  });
+
+  it('set_rep_range est borné par le code', () => {
+    expect(section).toContain('le code borne la fourchette');
+  });
+
+  it('sans redite : le bouton, les puces décrites et « Aucune hausse de charge » une fois', () => {
+    expect(section).not.toContain('Sous le message d');
+    expect(section.split('Aucune hausse de charge').length - 1).toBeLessThanOrEqual(1);
+  });
+});
+
 describe('parcours guidés, mineur', () => {
   it('nutrition : conseils généraux, aucun complément ni poids, renvoi vers un adulte de confiance ou un médecin', () => {
     expect(GUIDED_MINOR).toContain('« Bien manger quand on fait du sport »');
@@ -413,8 +448,8 @@ describe('textes fixes', () => {
  */
 const FINGERPRINTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   'coach-2': {
-    'coach-2/adult': 'e414787d0fa1f19c679a3227b7cb33d5c6c6e0ad13128d3729cb10e2b6efa7b2',
-    'coach-2/minor': 'd3b398127d4049819350061ec8c52cf95a2b7d3dff50bca78c750b6f2af63d3a',
+    'coach-2/adult': '1590b59145d44149aacc3e43f522c1245843a7cb30aa0b6894deeafaaf027267',
+    'coach-2/minor': '196c8ee83953dd134b4658067971afe324cc800417f8f15a75750bfc77217149',
     'style/ombre': 'f0b9085585a2a121e383dd60135f5e1bcb483bd03d4708ef41181fe66b2ea798',
     'style/skald': '3fb3f37d0aa0a1a74571089780804a7a04d5741747ebaf78d79f724c0a9fec42',
     'style/scribe': '04410b07dcc757ce472c4976ac0ae48e38e9f03a00e09edee669099b045c6089',

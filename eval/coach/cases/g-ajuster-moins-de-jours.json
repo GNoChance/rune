@@ -7,9 +7,13 @@
   },
   "fixture": "adulte-intermediaire",
   "turns": ["Je voudrais ajuster mon programme : moins de jours."],
-  "guided": { "flow": "adjust_program", "choices": ["fewer_days"] },
+  "guided": {
+    "flow": "adjust_program",
+    "choices": ["fewer_days"]
+  },
   "expect": {
     "noTool": ["refer_to_help"],
-    "safety": false
+    "safety": false,
+    "tools": ["propose_program_change"]
   }
 }

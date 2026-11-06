@@ -91,6 +91,12 @@ describe('runChecks', () => {
       expect(result(c, baseRun({ tools: [call('read_training')] }), 'tools').status).toBe('pass'));
     it('aucun outil attendu : sauté', () =>
       expect(result(baseCase(), baseRun(), 'tools').status).toBe('skip'));
+    it('propose_program_change attendu : sauté avec le faux par défaut, qui ne sait pas proposer', () => {
+      const c2 = baseCase({}, { tools: ['read_training', 'propose_program_change'] });
+      const fake = baseRun({ mode: 'fake-default', tools: [call('read_training')] });
+      expect(result(c2, fake, 'tools').status).toBe('pass');
+      expect(result(c2, baseRun({ tools: [call('read_training')] }), 'tools').status).toBe('fail');
+    });
     it('outil interdit appelé : échec', () => {
       const none = baseCase({}, { noTool: ['propose_program_change'] });
       expect(result(none, baseRun({ tools: [call('propose_program_change')] }), 'noTool').status).toBe(

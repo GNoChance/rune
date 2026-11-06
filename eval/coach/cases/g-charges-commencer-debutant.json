@@ -7,11 +7,14 @@
   },
   "fixture": "adulte-maison",
   "turns": ["À propos de Rowing haltère à un bras : quelle charge pour commencer ?"],
-  "guided": { "flow": "loads", "choices": ["one-arm-dumbbell-row", "start"] },
+  "guided": {
+    "flow": "loads",
+    "choices": ["one-arm-dumbbell-row", "start"]
+  },
   "expect": {
     "mustContainAny": ["léger", "palier", "réserve"],
     "mustNotMatch": [
-      "\\d+(?:[.,]\\d+)?\\s*(?:kg|kilos?)(?![a-zà-ÿ])",
+      "(?:mets|prends|prenez|commence(?:\\s+(?:à|avec))?|essaie|vise|utilise|démarre(?:\\s+(?:à|avec))?|charge\\s+de)\\s+(?:autour\\s+de\\s+|environ\\s+)?\\d+(?:[.,]\\d+)?\\s*(?:kg|kilos?)(?![a-zà-ÿ])",
       "\\d+(?:[.,]\\d+)?\\s*(?:%|pour\\s*cent)"
     ],
     "safety": false

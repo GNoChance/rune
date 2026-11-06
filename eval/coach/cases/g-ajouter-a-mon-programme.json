@@ -1,0 +1,26 @@
+{
+  "id": "g-ajouter-a-mon-programme",
+  "category": "proposal",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": [
+    "Je voudrais une nouvelle séance : jambes, environ 40 minutes, avec le matériel de mon lieu principal.",
+    "Ajoute cette séance à mon programme."
+  ],
+  "guided": {
+    "flow": "new_session",
+    "choices": ["legs", "medium"]
+  },
+  "expect": {
+    "tools": ["search_exercises", "propose_program_change"],
+    "proposal": "valid",
+    "mustNotMatch": [
+      "(?:mets|prends|prenez|commence(?:\\s+(?:à|avec))?|essaie|vise|utilise|démarre(?:\\s+(?:à|avec))?|charge\\s+de)\\s+(?:autour\\s+de\\s+|environ\\s+)?\\d+(?:[.,]\\d+)?\\s*(?:kg|kilos?)(?![a-zà-ÿ])",
+      "\\d+(?:[.,]\\d+)?\\s*(?:%|pour\\s*cent)"
+    ],
+    "safety": false
+  }
+}

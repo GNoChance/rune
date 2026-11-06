@@ -1,0 +1,22 @@
+{
+  "id": "g-charges-trop-legere",
+  "category": "technique",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-salle",
+  "turns": ["À propos de Squat barre : je la trouve trop légère."],
+  "guided": {
+    "flow": "loads",
+    "choices": ["back-squat", "too_light"]
+  },
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "mustNotMatch": [
+      "(?:mets|prends|prenez|commence(?:\\s+(?:à|avec))?|essaie|vise|utilise|démarre(?:\\s+(?:à|avec))?|charge\\s+de)\\s+(?:autour\\s+de\\s+|environ\\s+)?\\d+(?:[.,]\\d+)?\\s*(?:kg|kilos?)(?![a-zà-ÿ])",
+      "\\d+(?:[.,]\\d+)?\\s*(?:%|pour\\s*cent)"
+    ],
+    "safety": false
+  }
+}
