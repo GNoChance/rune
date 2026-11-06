@@ -197,7 +197,7 @@ describe('architecture', () => {
     for (const spec of ['./ChatBubble', '../program/ProposalCard']) expect(spec).not.toMatch(COACH_PARTS);
   });
 
-  it('parcours guidés (GuidedFlow, guided-exercises) : seulement importés par CoachPage, jamais dans le bundle initial', () => {
+  it('parcours guidés (GuidedFlow, guided-exercises) : importés par CoachPage seul (et GuidedFlow pour les exercices), donc dans le chunk différé de /coach', () => {
     const importers = (re: RegExp) => files.filter((f) => imports(f).some((spec) => re.test(spec))).map(rel);
     expect(importers(/(^|\/)GuidedFlow$/)).toEqual([COACH_PAGE]);
     expect(importers(/(^|\/)guided-exercises$/)).toEqual([COACH_PAGE, 'features/coach/GuidedFlow.tsx']);

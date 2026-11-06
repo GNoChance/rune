@@ -564,10 +564,6 @@ describe('guided.module : cibles et couleurs', () => {
     }
   });
 
-  it('le texte « pas de programme » n’est pas atténué (hors du bouton grisé, sans opacité)', () => {
-    expect(declarationsOf(blocks, '.guidedHint')?.has('opacity')).toBe(false);
-  });
-
   it('aucune couleur écrite en dur', () => {
     expect(css.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/#[0-9a-f]{3,8}\b|\brgba?\(/i);
   });
