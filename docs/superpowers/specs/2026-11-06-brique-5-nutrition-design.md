@@ -44,7 +44,7 @@ Ces points ne sont pas des choix : ils attendent le propriétaire, et le plan le
 | D7 | Fiches et pages fixes | Les 8 fiches du catalogue sont des `advice_sheet`. « Comment sont calculés mes repères » et « Demander de l'aide » deviennent des pages de l'appli, au texte dans le code (choix C8). | Écart à 07 §5.8, §3.1. |
 | D8 | Service des fiches | `GET /api/nutrition/sheets`, filtré par âge et mode effectif, ETag = version des fiches + public + mode ; copie hors ligne dans Dexie. Les fiches ne sont pas dans `GET /api/catalog` (choix C9). | Écart léger à 01 (catalogue unique), §3.1. |
 | D9 | Relecture des fiches | Par l'admin seul, dans l'écran de relecture existant, segment « Fiches conseils » ; même cycle `draft → reviewed → published → retired` (choix C10). | Précise 07 §5.8.1 (« écran éditorial générique »). |
-| D10 | Mode effectif côté client | Chaque réponse de pull porte `nutrition: { effective_mode }`, calculé à l'instant ; le client purge ses copies dès qu'il lit autre chose que `full`, et redemande l'instantané des trois tables quand il relit `full` (choix C11). | Précise 07 §5.12 (« Pull ») et §5.4 (purge). |
+| D10 | Mode effectif côté client | Chaque réponse de pull porte `nutrition: { effective_mode }`, calculé à l'instant ; le client purge ses copies dès qu'il lit autre chose que `full`, et, quand il relit `full` après un autre mode, charge l'instantané des trois tables par `GET /api/nutrition/rows` : le pull n'a qu'un curseur commun à toutes les tables (choix C11). | Précise 07 §5.12 (« Pull ») et §5.4 (purge). |
 | D11 | Sortie du mode complet hors ligne | Le passage vers `qualitative` ou `disabled` agit tout de suite sur l'appareil (chiffres masqués, copies purgées) et part au retour du réseau, avant le pull ; les autres réglages exigent le réseau (choix C12). | Écart à 01 (classe E « en ligne seulement »), §3.1. |
 | D12 | Coach | `coach-brief/2` (bloc `nutrition`), `tools-2` (`open_nutrition_screen` avec une suggestion facultative), prompts `coach-3-adult` et `coach-3-minor` ; les fils déjà ouverts gardent leurs versions (choix C13, C14). | 06 §5, §6 ; brique 4 §9, §10. |
 | D13 | Filtre | Le filtre lit le mode effectif du fil. Termes interdits v2 : la liste « pour tous » s'applique dans tous les modes ; une liste « hors mode complet » s'ajoute ; la liste mineur ne change pas. Les volumes (L, mL, cL) entrent dans la famille nutrition (choix C15, C16). | Écart à 06 §7.3, §3.1 ; brique 4 §11. |
@@ -135,7 +135,7 @@ Dans l'ordre :
 
 - `weigh_in`, `nutrition_target`, `nutrition_checkin` ne sont servies que si le mode effectif, calculé à la requête, vaut `full`.
 - `nutrition_profile` est servie avec ses colonnes C1 ; ses colonnes C2 seulement en mode effectif `full` (choix C19).
-- Chaque réponse porte `nutrition: { effective_mode, cause }` (D10). Le client purge les trois tables et les colonnes C2 du profil dès qu'il lit un mode ≠ `full` ; au passage de ≠ `full` à `full`, il remet à zéro le curseur de ces trois tables pour recevoir l'instantané.
+- Chaque réponse porte `nutrition: { effective_mode, cause }` (D10). Le client purge les trois tables et les colonnes C2 du profil dès qu'il lit un mode ≠ `full` ; au passage de ≠ `full` à `full`, il charge l'instantané des trois tables (`GET /api/nutrition/rows`, lignes vivantes au format du pull) et remplace ses copies : le pull n'a qu'un curseur commun, et les lignes écartées pendant l'autre mode ne reviendraient pas seules.
 
 ### 6.4 bis Descente de mode hors ligne (D11)
 
@@ -164,6 +164,7 @@ Toutes les routes exigent une session ; une session admin reçoit 404 sur les do
 | `POST /api/nutrition/checkins/:weekStart/respond` | `{ response: accepted | declined }` | bilan le plus récent seulement, décision `proposal` ou `rapid_loss`, sans réponse : sinon `409 checkin_not_actionable` |
 | `POST /api/nutrition/checkins/:weekStart/non-representative` | marque la semaine et recalcule la décision | bilan le plus récent, sans réponse |
 | `DELETE /api/nutrition/data` | §6.5 | — |
+| `GET /api/nutrition/rows` | lignes vivantes de `weigh_in`, `nutrition_target`, `nutrition_checkin` (format `PulledRow`) | mode effectif `full`, sinon liste vide |
 | `GET /api/nutrition/sheets` | fiches publiées visibles (corps compris), ETag | `304` sur `If-None-Match` |
 | `PUT /api/admin/nutrition` | `{ full_open }`, depuis un interrupteur d'Admin › Serveur (« Repères chiffrés », avec le rappel du prérequis 2) | admin ; journalisé sans donnée personnelle |
 
@@ -218,7 +219,7 @@ Appliqués au passage en `reviewed` et en `published` (refus `422` avec la liste
 
 ### 10.4 Service
 
-`GET /api/nutrition/sheets` : fiches `published` dont l'audience convient à l'âge (`adults` : 18 ans et plus ; `minors` : moins de 18 ; `all`) et dont `visible_modes` contient le mode effectif ; mode `disabled` : liste vide. Le client garde la liste dans Dexie pour le hors ligne et la vide quand le mode effectif change.
+`GET /api/nutrition/sheets` : fiches `published` dont l'audience convient à l'âge (`adults` : 18 ans et plus ; `minors` : moins de 18 ; `all`) et dont `visible_modes` contient le mode effectif ; mode `disabled` : liste vide. Le client garde la liste dans un magasin Dexie à lui (`nutritionSheets`, version 3 de la base locale) pour le hors ligne et la vide quand le mode effectif change ; le champ `adviceSheets` du catalogue partagé et son magasin restent vides (la synchro du catalogue les remplace en bloc).
 
 ### 10.5 Les 8 fiches de la v1 (brouillons rédigés par la brique, `draft_origin: ai`)
 
@@ -395,7 +396,7 @@ Les 8 familles de 07 §5.16, plus :
 | C8 | « Comment sont calculés mes repères » et « Demander de l'aide » en pages fixes. | En faire des fiches : gabarits de valeurs et service public du catalogue. |
 | C9 | Fiches servies par une route filtrée, hors `GET /api/catalog`. | Les mettre dans le catalogue : filtrage côté client, contraire à 07 §5.8.3. |
 | C10 | Fiches conseils relues par l'admin seul. | Ouvrir aux relectrices : une garde. |
-| C11 | Mode effectif porté par chaque pull ; curseur des trois tables remis à zéro au retour en `full`. | Un autre signal de purge : à reprendre dans la synchro. |
+| C11 | Mode effectif porté par chaque pull ; instantané des trois tables par une route à part au retour en `full`. | Un autre signal de purge : à reprendre dans la synchro. |
 | C12 | Descente de mode hors ligne, effet local immédiat et envoi différé. | La réserver au réseau : retirer l'intention en attente. |
 | C13 | `open_nutrition_screen` avec suggestion facultative. | Sans suggestion : retirer un champ et la présélection. |
 | C14 | Nouveaux `prompt_version`, `tools_version`, `brief_schema` ; fils ouverts inchangés. | Aucun coût de code ; la réévaluation est obligatoire de toute façon. |
