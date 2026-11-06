@@ -197,6 +197,12 @@ describe('architecture', () => {
     for (const spec of ['./ChatBubble', '../program/ProposalCard']) expect(spec).not.toMatch(COACH_PARTS);
   });
 
+  it('parcours guidés (GuidedFlow, guided-exercises) : seulement importés par CoachPage, jamais dans le bundle initial', () => {
+    const importers = (re: RegExp) => files.filter((f) => imports(f).some((spec) => re.test(spec))).map(rel);
+    expect(importers(/(^|\/)GuidedFlow$/)).toEqual([COACH_PAGE]);
+    expect(importers(/(^|\/)guided-exercises$/)).toEqual([COACH_PAGE, 'features/coach/GuidedFlow.tsx']);
+  });
+
   it('le motif des écrans du programme voit leurs chemins depuis App.tsx et depuis un autre écran', () => {
     for (const spec of [
       './features/program/ProgramPage',

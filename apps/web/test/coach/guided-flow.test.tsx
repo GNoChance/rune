@@ -1,17 +1,19 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { CoachStatusView, CoachTodayResponse } from '@rune/contracts';
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import { type CoachStatusView, type CoachTodayResponse, guidedFlowsFor } from '@rune/contracts';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { CoachPage } from '../../src/features/coach/CoachPage';
 import { GUIDED_TEXTS } from '../../src/features/coach/coach-texts';
+import { GuidedFlow } from '../../src/features/coach/GuidedFlow';
 import { programExercises } from '../../src/features/coach/guided-exercises';
+import { setMeta } from '../../src/local-db/meta';
 import { coachMessage, coachStatus, EMPTY_TODAY } from '../support/coach';
 import { declarationsOf, parseCssBlocks } from '../support/css-blocks';
 import { createFakeApi, createFakeSyncEngine, type FakeApi } from '../support/fake-api';
 import { createTestLocalDb } from '../support/local-db';
 import { seedProgram } from '../support/program';
-import { renderWithServices } from '../support/render';
+import { makeMe, renderWithServices } from '../support/render';
 import { until } from '../support/wait';
 
 const THREAD = {
@@ -222,10 +224,27 @@ describe('Parcours guidés : puces de suite', () => {
   });
 
   it('elles disparaissent dès qu’un autre message part', async () => {
-    await setup({ today: todayWith(NEW) });
+    const { api } = await setup({ today: todayWith(NEW) });
+    // Après l'envoi, le fil du jour compte la question de la puce et sa réponse.
+    api.on('GET', '/api/coach/today', () => ({
+      status: 200,
+      body:
+        posts(api).length === 0
+          ? todayWith(NEW)
+          : todayWith([
+              ...NEW,
+              coachMessage(3, 'user', 'Propose-moi une version plus courte de cette séance.'),
+              coachMessage(4, 'assistant', 'Version courte.'),
+            ]),
+    }));
     await screen.findByText('Voici une séance jambes.');
     click('Plus courte');
     await until(() => screen.queryByRole('button', { name: 'Plus courte' }) === null);
+    // Après le done du second message, les puces du premier parcours ne reviennent pas.
+    await screen.findByText('Version courte.');
+    await act(async () => {});
+    expect(screen.queryByRole('button', { name: 'Plus courte' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Une autre idée' })).toBeNull();
   });
 
   it('pas de puces quand un message est parti depuis (la réponse n’est plus la dernière)', async () => {
@@ -304,7 +323,9 @@ describe('Parcours guidés : « Mes charges »', () => {
   it('liste les exercices du programme par leur nom, puis la question, puis envoie le slug', async () => {
     const { api } = await setup();
     // Le programme se lit dans la base locale : « Mes charges » s'ouvre quand il est arrivé.
-    await until(() => screen.queryByRole('button', { name: /^Mes charges$/ }) !== null);
+    await until(
+      () => screen.queryByRole('button', { name: 'Mes charges' })?.hasAttribute('disabled') === false,
+    );
     click('Mes charges');
     expect(screen.getByText('Quel exercice ?')).toBeTruthy();
     for (const name of ['Squat barre', 'Squat goblet', 'Presse à cuisses', 'Pompe', 'Planche']) {
@@ -324,9 +345,95 @@ describe('Parcours guidés : « Mes charges »', () => {
 
   it('sans programme : grisé, avec « Choisis d’abord un programme »', async () => {
     await setup({ program: false });
-    const button = await screen.findByRole('button', { name: /Mes charges/ });
-    expect((button as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("Choisis d'abord un programme")).toBeTruthy();
+    const hint = await screen.findByText("Choisis d'abord un programme");
+    const button = screen.getByRole('button', { name: 'Mes charges' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    // Le texte est hors du bouton grisé (donc non atténué) et le décrit.
+    expect(hint.closest('button')).toBeNull();
+    expect(button.getAttribute('aria-describedby')).toBe(hint.id);
+  });
+
+  it('tant que le programme se charge (null), « Mes charges » est grisé sans dire « pas de programme »', () => {
+    render(
+      <GuidedFlow flows={guidedFlowsFor('adult')} exercises={null} disabled={false} onChoose={() => {}} />,
+    );
+    expect((screen.getByRole('button', { name: 'Mes charges' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText("Choisis d'abord un programme")).toBeNull();
+  });
+});
+
+describe('Parcours guidés : focus et groupes', () => {
+  it('chaque étape met le focus sur sa question ; la question nomme le groupe de puces', async () => {
+    await setup();
+    click('Nouvelle séance');
+    const muscle = screen.getByText('Quel muscle veux-tu travailler ?');
+    expect(document.activeElement).toBe(muscle);
+    expect(muscle.getAttribute('tabindex')).toBe('-1');
+    expect(screen.getByRole('group', { name: 'Quel muscle veux-tu travailler ?' })).toBeTruthy();
+    click('Jambes');
+    expect(document.activeElement).toBe(screen.getByText('Combien de temps as-tu ?'));
+    click('Retour');
+    expect(document.activeElement).toBe(screen.getByText('Quel muscle veux-tu travailler ?'));
+  });
+
+  it('« Annuler » (fil vide) rend le focus au premier parcours de la liste', async () => {
+    await setup();
+    click('Nouvelle séance');
+    click('Annuler');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Ma prochaine séance' }));
+  });
+
+  it('fil non vide : l’envoi et « Annuler » rendent le focus à « Parcours guidés »', async () => {
+    await setup({
+      today: todayWith([coachMessage(1, 'user', 'Salut'), coachMessage(2, 'assistant', 'Bonjour.')]),
+    });
+    await screen.findByText('Bonjour.');
+    click('Parcours guidés');
+    click('Récupération');
+    click('Annuler');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Parcours guidés' }));
+    click('Parcours guidés');
+    click('Récupération');
+    click('Sommeil');
+    await until(() => document.activeElement === screen.getByRole('button', { name: 'Parcours guidés' }));
+  });
+
+  it('fil vide : l’envoi d’un parcours ne laisse pas le focus sur le corps (le fil est alors rempli : « Parcours guidés »)', async () => {
+    const { api } = await setup();
+    api.on('GET', '/api/coach/today', () => ({
+      status: 200,
+      body:
+        posts(api).length === 0 ? EMPTY_TODAY : todayWith(answered({ flow: 'next_session', choices: [] })),
+    }));
+    click('Ma prochaine séance');
+    await screen.findByText('Voici ma réponse.');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Parcours guidés' }));
+  });
+});
+
+describe('Parcours guidés : changement d’utilisateur', () => {
+  it('le parcours en cours repart de la liste', async () => {
+    const { db } = await setup();
+    click('Nouvelle séance');
+    expect(screen.getByText('Quel muscle veux-tu travailler ?')).toBeTruthy();
+    await act(async () => {
+      await setMeta(db, 'me', makeMe({ id: 'u-2', username: 'paul' }));
+    });
+    await until(() => screen.queryByText('Quel muscle veux-tu travailler ?') === null);
+    expect(screen.getByRole('button', { name: 'Nouvelle séance' })).toBeTruthy();
+  });
+
+  it('le panneau « Parcours guidés » d’un fil non vide se referme', async () => {
+    const { db } = await setup({
+      today: todayWith([coachMessage(1, 'user', 'Salut'), coachMessage(2, 'assistant', 'Bonjour.')]),
+    });
+    await screen.findByText('Bonjour.');
+    click('Parcours guidés');
+    expect(screen.getByRole('button', { name: 'Nouvelle séance' })).toBeTruthy();
+    await act(async () => {
+      await setMeta(db, 'me', makeMe({ id: 'u-2', username: 'paul' }));
+    });
+    await until(() => screen.queryByRole('button', { name: 'Nouvelle séance' }) === null);
   });
 });
 
@@ -455,6 +562,10 @@ describe('guided.module : cibles et couleurs', () => {
     for (const selector of ['.guidedChip', '.guidedLink', '.guidedToggle']) {
       expect(declarationsOf(blocks, selector)?.get('min-height'), selector).toBe('48px');
     }
+  });
+
+  it('le texte « pas de programme » n’est pas atténué (hors du bouton grisé, sans opacité)', () => {
+    expect(declarationsOf(blocks, '.guidedHint')?.has('opacity')).toBe(false);
   });
 
   it('aucune couleur écrite en dur', () => {

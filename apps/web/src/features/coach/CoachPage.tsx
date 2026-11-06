@@ -8,7 +8,7 @@ import {
 } from '@rune/contracts';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'wouter';
-import { useSyncState } from '../../app-services';
+import { useMe, useSyncState } from '../../app-services';
 import { useProgramEditContext, useProgramView } from '../../repos';
 import { Banner, BottomSheet, Button, CoachAvatar, Page, SystemPanel } from '../../ui';
 import { PreparingCard, ProposalCard } from '../program/ProposalCard';
@@ -120,6 +120,11 @@ export function CoachPage() {
   // Un fil fermé par un changement de coach ou de version n'est plus la conversation du jour (spec 4.1 §4.4).
   const today = liveToday(state.today);
   const [guidedOpen, setGuidedOpen] = useState(false);
+  // Après la fermeture du panneau : le focus revient à « Parcours guidés », ou au champ (fil vide).
+  const [refocus, setRefocus] = useState(0);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const field = useRef<HTMLTextAreaElement>(null);
+  const userId = useMe()?.id ?? null;
   const announced = useAnswerAnnounced(phase);
   const end = useRef<HTMLDivElement>(null);
   const [report, setReport] = useState<{ threadId: string; messageSeq: number } | null>(null);
@@ -130,6 +135,14 @@ export function CoachPage() {
   useEffect(() => {
     void store.load();
   }, [store]);
+
+  useEffect(() => {
+    if (refocus > 0) (toggle.current ?? field.current)?.focus();
+  }, [refocus]);
+
+  // Un autre compte : le parcours en cours n'est pas à lui.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: seul le changement d'utilisateur ferme le panneau
+  useEffect(() => setGuidedOpen(false), [userId]);
 
   const inProgress =
     phase !== 'streaming' && (status?.today.inProgress === true || today?.inProgress === true);
@@ -162,10 +175,16 @@ export function CoachPage() {
   const audience = today?.thread?.audience ?? status?.audience ?? 'adult';
   const minor = audience === 'minor';
   const flows = useMemo(() => guidedFlowsFor(audience), [audience]);
-  const exercises = useMemo(() => (program && ctx ? programExercises(program, ctx) : []), [program, ctx]);
-  const exerciseName = (id: string) => exercises.find((e) => e.id === id)?.name ?? null;
+  // null tant que le programme se charge : « Mes charges » ne dit pas « pas de programme » trop tôt.
+  const exercises = useMemo(
+    () =>
+      program === undefined ? null : program === null ? [] : ctx ? programExercises(program, ctx) : null,
+    [program, ctx],
+  );
+  const exerciseName = (id: string) => exercises?.find((e) => e.id === id)?.name ?? null;
   const chooseGuided = (guided: GuidedRequest) => {
     setGuidedOpen(false);
+    setRefocus((n) => n + 1);
     void store.sendGuided(guided, exerciseName);
   };
   // Puces de suite : sous la dernière réponse, si elle est finie, d'un message venu d'un parcours, et seulement alors.
@@ -288,7 +307,13 @@ export function CoachPage() {
             <div className={styles.welcome}>
               <p className={styles.welcomeTitle}>Message d'accueil</p>
               <ChatBubble author="assistant" coach={coach} text={WELCOME} streaming />
-              <GuidedFlow flows={flows} exercises={exercises} disabled={blocked} onChoose={chooseGuided} />
+              <GuidedFlow
+                key={userId}
+                flows={flows}
+                exercises={exercises}
+                disabled={blocked}
+                onChoose={chooseGuided}
+              />
             </div>
           ) : null}
           {messages.map((m) =>
@@ -370,6 +395,7 @@ export function CoachPage() {
             {empty ? null : (
               <>
                 <button
+                  ref={toggle}
                   type="button"
                   className={styles.guidedToggle}
                   aria-expanded={guidedOpen}
@@ -379,16 +405,21 @@ export function CoachPage() {
                 </button>
                 {guidedOpen ? (
                   <GuidedFlow
+                    key={userId}
                     flows={flows}
                     exercises={exercises}
                     disabled={blocked}
                     onChoose={chooseGuided}
-                    onCancel={() => setGuidedOpen(false)}
+                    onCancel={() => {
+                      setGuidedOpen(false);
+                      setRefocus((n) => n + 1);
+                    }}
                   />
                 ) : null}
               </>
             )}
             <Composer
+              inputRef={field}
               value={draft}
               onChange={store.setDraft}
               onSend={() => void store.send()}

@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { type Ref, useId } from 'react';
 import styles from './coach-page.module.css';
 import { COUNTER_FROM, counterText, MESSAGE_CHARS } from './coach-texts';
 
@@ -11,6 +11,7 @@ export const codePoints = (text: string): number => [...text].length;
  * l'envoi (un échange est en cours : on peut déjà écrire la suite).
  */
 export function Composer(p: {
+  inputRef?: Ref<HTMLTextAreaElement>;
   value: string;
   onChange(text: string): void;
   onSend(): void;
@@ -35,6 +36,7 @@ export function Composer(p: {
       </label>
       <div className={styles.inputRow}>
         <textarea
+          ref={p.inputRef}
           id={id}
           className={styles.field}
           rows={2}
