@@ -3,7 +3,7 @@ import Dexie, { type Table } from 'dexie';
 import { convertOutboxOp } from '../sync/protocol-converters';
 
 export const LOCAL_DB_NAME = 'rune';
-export const LOCAL_DB_VERSION = 2;
+export const LOCAL_DB_VERSION = 3;
 
 export type OutboxOp = SyncOp;
 
@@ -62,16 +62,30 @@ const STORES_V2: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Version 3 (brique 5, spec §6) : les 4 tables de la nutrition et `nutritionSheets`, cache des fiches de la
+ * personne (pas un miroir). Les versions 1 et 2 ne changent pas.
+ */
+const STORES_V3: Readonly<Record<string, string>> = {
+  ...STORES_V2,
+  nutrition_profile: 'id',
+  weigh_in: 'id, date',
+  nutrition_target: 'id, validFrom',
+  nutrition_checkin: 'id, weekStart',
+  nutritionSheets: 'id',
+};
+
+/**
  * Schéma de chaque version, jamais modifié une fois livré (R-VER-5). Une version suivante ajoute son schéma ici ;
  * sa mise à niveau convertit l'outbox par `convertOutboxOp` (R-VER-4).
  */
 export const STORE_SCHEMAS_BY_VERSION: Readonly<Record<number, Readonly<Record<string, string>>>> = {
   1: STORES_V1,
   2: STORES_V2,
+  3: STORES_V3,
 };
 
 /** Schéma de LOCAL_DB_VERSION. */
-export const STORE_SCHEMAS: Readonly<Record<string, string>> = STORES_V2;
+export const STORE_SCHEMAS: Readonly<Record<string, string>> = STORES_V3;
 
 export const NON_MIRROR_STORES: readonly string[] = [
   'meta',
@@ -81,6 +95,7 @@ export const NON_MIRROR_STORES: readonly string[] = [
   'illustrations',
   'programTemplates',
   'adviceSheets',
+  'nutritionSheets',
 ];
 
 export class AppDb extends Dexie {

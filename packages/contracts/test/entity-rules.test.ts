@@ -92,7 +92,7 @@ const pick = (t: string) => {
 };
 
 describe('entityRules', () => {
-  it('déclare les 18 tables du socle, les 5 du catalogue, les 7 des programmes et les 6 du coach et les 6 de la nutrition avec leurs valeurs', () => {
+  it('déclare les 18 tables du socle, les 5 du catalogue, les 7 des programmes et les 6 du coach, et les 6 de la nutrition avec leurs valeurs', () => {
     expect(Object.keys(entityRules).sort()).toEqual(Object.keys(EXPECTED).sort());
     for (const t of Object.keys(EXPECTED)) expect(pick(t)).toBe(EXPECTED[t]);
   });
@@ -276,6 +276,7 @@ describe('entityRules', () => {
         .filter(([, r]) => r.parent !== undefined || r.c2Values !== undefined)
         .map(([t]) => t);
       expect(withExtension.sort()).toEqual(['nutrition_profile', 'performed_exercise', 'performed_set']);
+      // `nutrition_profile` (brique 5) est la seule hors des tables de séance : c2Values `mode_reason`, sans parent.
       for (const t of withExtension.filter((x) => x !== 'nutrition_profile'))
         expect(PROGRAM_TABLES).toContain(t);
     });

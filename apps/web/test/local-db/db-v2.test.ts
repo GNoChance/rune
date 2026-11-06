@@ -1,11 +1,6 @@
+import Dexie from 'dexie';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  type AppDb,
-  createAppDb,
-  LOCAL_DB_VERSION,
-  STORE_SCHEMAS,
-  STORE_SCHEMAS_BY_VERSION,
-} from '../../src/local-db/db';
+import { type AppDb, createAppDb, LOCAL_DB_VERSION, STORE_SCHEMAS_BY_VERSION } from '../../src/local-db/db';
 import { getMeta } from '../../src/local-db/meta';
 import { createSyncEngine } from '../../src/sync/engine';
 import { convertOutboxOp } from '../../src/sync/protocol-converters';
@@ -30,12 +25,11 @@ afterEach(async () => {
 
 describe('base locale v2 (spec brique 3 §5.4)', () => {
   it('version 2 : les magasins de la v1, plus les 7 de la brique 3', () => {
-    expect(LOCAL_DB_VERSION).toBe(2);
-    expect(STORE_SCHEMAS).toBe(STORE_SCHEMAS_BY_VERSION[2]);
     const v1 = STORE_SCHEMAS_BY_VERSION[1] ?? {};
-    for (const [store, schema] of Object.entries(v1)) expect(STORE_SCHEMAS[store], store).toBe(schema);
+    const v2 = STORE_SCHEMAS_BY_VERSION[2] ?? {};
+    for (const [store, schema] of Object.entries(v1)) expect(v2[store], store).toBe(schema);
     expect(
-      Object.keys(STORE_SCHEMAS)
+      Object.keys(v2)
         .filter((s) => !(s in v1))
         .sort(),
     ).toEqual(PROGRAM_STORES);
@@ -49,7 +43,7 @@ describe('base locale v2 (spec brique 3 §5.4)', () => {
     opened.push(db);
     await db.open();
 
-    expect(db.verno).toBe(2);
+    expect(db.verno).toBe(LOCAL_DB_VERSION);
     expect(await db.outbox.toArray()).toEqual(dump.outbox.map((op) => convertOutboxOp(op)));
     expect(await db.deadletter.toArray()).toEqual(dump.deadletter);
     for (const [store, rows] of Object.entries(dump.mirrors)) {
@@ -128,5 +122,53 @@ describe('base locale v2 (spec brique 3 §5.4)', () => {
     expect(
       await db.mirror('performed_set').where('performedExerciseId').anyOf(['pe-2']).primaryKeys(),
     ).toEqual(['set-2']);
+  });
+});
+
+describe('base locale v3 (spec brique 5 §6)', () => {
+  it('version 3 : les magasins de la v2, plus 4 miroirs de nutrition et le cache des fiches', () => {
+    expect(LOCAL_DB_VERSION).toBe(3);
+    expect(STORE_SCHEMAS_BY_VERSION[3]).toBeDefined();
+    const v2 = STORE_SCHEMAS_BY_VERSION[2] ?? {};
+    const v3 = STORE_SCHEMAS_BY_VERSION[3] ?? {};
+    for (const [store, schema] of Object.entries(v2)) expect(v3[store], store).toBe(schema);
+    expect(
+      Object.keys(v3)
+        .filter((s) => !(s in v2))
+        .sort(),
+    ).toEqual(['nutritionSheets', 'nutrition_checkin', 'nutrition_profile', 'nutrition_target', 'weigh_in']);
+  });
+
+  it('une base v2 ouverte passe en v3 : outbox et miroir gardés, nouveaux magasins vides', async () => {
+    const name = `v2-to-v3-${crypto.randomUUID()}`;
+    const old = new Dexie(name);
+    old.version(2).stores(STORE_SCHEMAS_BY_VERSION[2] ?? {});
+    await old.open();
+    const op = {
+      opId: 'op-1',
+      userId: 'u-1',
+      entity: 'place',
+      id: 'p-1',
+      kind: 'upsert',
+      protocol: 1,
+      baseRev: null,
+      patch: { name: 'Maison' },
+    };
+    await old.table('outbox').put(op);
+    await old.table('place').put({ id: 'p-1', name: 'Maison', serverRevSeen: 3, deletedAt: null });
+    await old.table('meta').put({ key: 'deviceId', value: 'd-1' });
+    old.close();
+
+    const db = createAppDb(name);
+    opened.push(db);
+    await db.open();
+    expect(db.verno).toBe(3);
+    expect((await db.outbox.toArray()).map((o) => o.opId)).toEqual(['op-1']);
+    expect(await db.mirror('place').get('p-1')).toMatchObject({ name: 'Maison', serverRevSeen: 3 });
+    expect(await getMeta(db, 'deviceId')).toBe('d-1');
+    for (const store of ['nutrition_profile', 'weigh_in', 'nutrition_target', 'nutrition_checkin'])
+      expect(await db.mirror(store).count(), store).toBe(0);
+    expect(await db.table('nutritionSheets').count()).toBe(0);
+    expect(db.mirrorNames).not.toContain('nutritionSheets');
   });
 });
