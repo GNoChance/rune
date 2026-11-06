@@ -85,7 +85,7 @@ export type AdviceStatus = z.infer<typeof AdviceStatusSchema>;
 export const ADVICE_DRAFT_ORIGINS = ['ai', 'human'] as const;
 
 /** Orientation affichée selon l'issue de l'écran de sécurité (07 §5.4). */
-export const ORIENTATIONS = ['midwife_or_doctor', 'doctor_or_dietitian', 'helpline'] as const;
+export const ORIENTATIONS = ['midwife', 'doctor', 'dietitian', 'eating_disorder_line'] as const;
 export const OrientationSchema = z.enum(ORIENTATIONS);
 export type Orientation = z.infer<typeof OrientationSchema>;
 

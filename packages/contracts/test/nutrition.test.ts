@@ -4,6 +4,7 @@ import {
   APPLIED_RULES,
   ModeRequestSchema,
   NutritionStateSchema,
+  ORIENTATIONS,
   ScreenRequestSchema,
 } from '../src/index';
 
@@ -130,5 +131,11 @@ describe('APPLIED_RULES', () => {
       'bmr_floor',
       'ref_weight_bmi25',
     ]);
+  });
+});
+
+describe('ORIENTATIONS', () => {
+  it("épingle les orientations de l'écran de sécurité", () => {
+    expect([...ORIENTATIONS]).toEqual(['midwife', 'doctor', 'dietitian', 'eating_disorder_line']);
   });
 });
