@@ -323,7 +323,7 @@ describe('textes de l’administration du coach', () => {
   const contexts: FilterContext[] = (['adult', 'minor'] as const).map((audience) => ({
     audience,
     nutritionMode: 'none',
-    allowed: { mass: new Set(), percent: new Set(), nutrition: new Set() },
+    allowed: { mass: new Set(), percent: new Set(), nutrition: new Set(), duration: new Set() },
   }));
 
   const TEXTS: [string, string][] = [

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AgeBandSchema } from './api/auth';
+import { GuidedRequestSchema } from './coach-guided';
 import { EXERCISE_ID_RE } from './exercise';
 import { HELP_RESOURCE_IDS } from './help-resources';
 import {
@@ -185,6 +186,8 @@ export type DisplayExtras = z.infer<typeof DisplayExtras>;
 export const CoachMessageRequest = z.strictObject({
   clientMessageId: z.uuid({ version: 'v7' }),
   text: z.string(),
+  /** Message d'un parcours guidé : le serveur recompose le texte à partir de ces identifiants (spec 4.1 §4.2). */
+  guided: GuidedRequestSchema.optional(),
 });
 export type CoachMessageRequest = z.infer<typeof CoachMessageRequest>;
 

@@ -237,3 +237,22 @@ describe('allowedValues, signe, arrondi et chaînes numériques', () => {
     expect(allowed[quantity?.family ?? 'mass'].has(quantity?.value ?? '')).toBe(true);
   });
 });
+
+describe('durées en minutes', () => {
+  it('reconnaît min, mn et minutes comme une famille de durée', () => {
+    expect(findQuantities('40 min').map((q) => [q.value, q.family])).toEqual([['40', 'duration']]);
+    expect(findQuantities('20 minutes')[0]?.family).toBe('duration');
+    expect(findQuantities('une minute de pause')).toEqual([]);
+    expect(findQuantities('10 minimum')).toEqual([]);
+  });
+
+  it('autorise les durées de la source `durationsMin` et des clés *_min', () => {
+    const allowed = allowedValues({
+      ...NO_SOURCES,
+      durationsMin: [20, 40],
+      brief: { x: { duration_min: 45 } },
+    });
+    expect([...allowed.duration].sort()).toEqual(['20', '40', '45']);
+    expect(allowedValues(NO_SOURCES).duration.size).toBe(0);
+  });
+});

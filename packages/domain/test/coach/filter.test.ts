@@ -15,6 +15,7 @@ const values = (v: Partial<Record<UnitFamily, string[]>> = {}): AllowedValues =>
   mass: new Set(v.mass ?? []),
   percent: new Set(v.percent ?? []),
   nutrition: new Set(v.nutrition ?? []),
+  duration: new Set(v.duration ?? []),
 });
 
 const ctx = (audience: AgeBand, over: Partial<FilterContext> = {}): FilterContext => ({
@@ -351,5 +352,22 @@ describe('flux découpé puis filtré phrase par phrase', () => {
     expect(sentences).toEqual(['Mon tél. 119 si besoin. ', 'Bonne séance.']);
     const verdicts = sentences.map((s) => outputFilter(s, ctx('minor')));
     expect(verdicts.find((v) => !v.ok)).toEqual(blocked('phone', '119'));
+  });
+});
+
+describe('durées en minutes', () => {
+  const allowed = (minutes: string[]): AllowedValues => ({ ...values(), duration: new Set(minutes) });
+
+  it.each(AUDIENCES)('bloque « 40 min » hors des valeurs autorisées (%s)', (audience) => {
+    expect(outputFilter('Compte environ 40 min.', ctx(audience))).toEqual(blocked('unit', '40 min'));
+  });
+
+  it.each(AUDIENCES)('relaie « 40 min » quand la durée est autorisée (%s)', (audience) => {
+    expect(outputFilter('Compte environ 40 min.', ctx(audience, { allowed: allowed(['40']) }))).toEqual({
+      ok: true,
+    });
+    expect(outputFilter('Compte environ 60 min.', ctx(audience, { allowed: allowed(['40']) })).ok).toBe(
+      false,
+    );
   });
 });

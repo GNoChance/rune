@@ -13,6 +13,7 @@ export * from './case';
 export * from './catalog';
 export * from './coach';
 export * from './coach-brief';
+export * from './coach-guided';
 export * from './constants';
 export * from './entity-rules';
 export * from './equipment-short-labels';

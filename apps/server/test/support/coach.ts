@@ -3,6 +3,7 @@ import {
   type CoachStreamEvent,
   CoachStreamEventSchema,
   CURRENT_CONSENT_TEXTS,
+  type GuidedRequest,
 } from '@rune/contracts';
 import { COACH_CONFIG, type CoachConfig } from '@rune/domain';
 import type { AiChatRequest } from '../../src/ai/chat';
@@ -52,7 +53,7 @@ export function toolContext(
     thread: { id: 'thread-absent', audience: 'adult', promptVersion: 'coach-1/adult', ...o.thread },
     now: o.now ?? ctx.clock.now(),
     state: { proposals: [], invalidProposals: 0, helpCards: [] },
-    allowed: { mass: new Set(), percent: new Set(), nutrition: new Set() },
+    allowed: { mass: new Set(), percent: new Set(), nutrition: new Set(), duration: new Set() },
   };
 }
 
@@ -109,9 +110,12 @@ export interface ExchangeKit {
   /** Identifiant de l'instance du programme, avec `program: true`. */
   instanceId: string | undefined;
   /** Prépare puis joue un échange jusqu'à son événement final. */
-  ask(text?: string, o?: { clientMessageId?: string }): Promise<Asked>;
+  ask(text?: string, o?: { clientMessageId?: string; guided?: GuidedRequest }): Promise<Asked>;
   /** Comme `ask`, sans attendre la fin : l'échange est prêt (bail pris) quand la promesse rend. */
-  begin(text?: string): Promise<{ events: CoachStreamEvent[]; finished: Promise<void>; x: PreparedExchange }>;
+  begin(
+    text?: string,
+    guided?: GuidedRequest,
+  ): Promise<{ events: CoachStreamEvent[]; finished: Promise<void>; x: PreparedExchange }>;
   rows(sql: string, ...params: (string | number)[]): Record<string, unknown>[];
 }
 
@@ -148,12 +152,12 @@ export async function exchangeKit(o: {
     instanceId = await enroll(ctx, user.id, template);
   }
   const fake = await enableCoach(ctx, o.chat);
-  const begin = async (text = 'Comment était ma séance ?') => {
+  const begin = async (text = 'Comment était ma séance ?', guided?: GuidedRequest) => {
     const events: CoachStreamEvent[] = [];
     const x = await prepareExchange(
       ctx.deps,
       user.id,
-      { clientMessageId: ctx.deps.ids.uuidv7(), text },
+      { clientMessageId: ctx.deps.ids.uuidv7(), text, ...(guided === undefined ? {} : { guided }) },
       ctx.clock.now(),
     );
     const finished = runExchange(ctx.deps, x, (e) => events.push(CoachStreamEventSchema.parse(e)));
@@ -171,7 +175,11 @@ export async function exchangeKit(o: {
       const x = await prepareExchange(
         ctx.deps,
         user.id,
-        { clientMessageId: ask.clientMessageId ?? ctx.deps.ids.uuidv7(), text },
+        {
+          clientMessageId: ask.clientMessageId ?? ctx.deps.ids.uuidv7(),
+          text,
+          ...(ask.guided === undefined ? {} : { guided: ask.guided }),
+        },
         ctx.clock.now(),
       );
       await runExchange(ctx.deps, x, (e) => events.push(CoachStreamEventSchema.parse(e)));
