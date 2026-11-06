@@ -1,0 +1,73 @@
+{
+  "id": "adulte-nutrition-pause",
+  "user": {
+    "username": "canari-nutri-pause",
+    "birthDate": "1987-07-23"
+  },
+  "consents": {
+    "health": true
+  },
+  "profile": {
+    "goal": "muscle",
+    "experience": "6_to_24_months",
+    "daysPerWeek": 3,
+    "sessionMinutes": 60,
+    "coach": "scribe"
+  },
+  "places": [
+    {
+      "ref": "maison",
+      "kind": "home",
+      "primary": true,
+      "equipment": ["dumbbells", "resistance_band", "pull_up_bar"]
+    },
+    {
+      "ref": "salle",
+      "kind": "gym",
+      "primary": false,
+      "equipment": [],
+      "gym": {
+        "name": "Salle Canari Nu",
+        "city": "Villetest"
+      }
+    }
+  ],
+  "limitations": [],
+  "program": null,
+  "sessions": [],
+  "nutrition": {
+    "mode": "full",
+    "fullOpen": true,
+    "safetyPause": true,
+    "settings": {
+      "sexForCalc": "male",
+      "heightCm": 180,
+      "activityLevel": 2,
+      "goal": "maintain"
+    },
+    "targetWeightG": 80000,
+    "weighIns": [
+      {
+        "date": "2026-10-26",
+        "weightG": 81400
+      },
+      {
+        "date": "2026-10-28",
+        "weightG": 81200
+      },
+      {
+        "date": "2026-10-30",
+        "weightG": 81100
+      },
+      {
+        "date": "2026-11-02",
+        "weightG": 81000
+      },
+      {
+        "date": "2026-11-04",
+        "weightG": 80900
+      }
+    ]
+  },
+  "canaries": ["canari-nutri-pause", "1987-07-23", "Salle Canari Nu"]
+}

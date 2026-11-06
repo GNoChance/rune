@@ -30,7 +30,7 @@ describe('COACH_CONFIG', () => {
       exchangeTimeoutMs: 180_000,
       callTimeoutMs: 120_000,
     });
-    expect(COACH_CONFIG.promptVersion).toBe('coach-2');
+    expect(COACH_CONFIG.promptVersion).toBe('coach-3');
     expect(COACH_CONFIG.toolsVersion).toBe('tools-2');
     expect(COACH_CONFIG.briefSchema).toBe('coach-brief/2');
     expect(COACH_CONFIG.retention).toEqual({ threadDays: 90, usageLogMonths: 12, reportDays: 90 });
@@ -52,8 +52,8 @@ describe('COACH_CONFIG', () => {
   });
 
   it('promptVariant', () => {
-    expect(promptVariant('minor')).toBe('coach-2/minor');
-    expect(promptVariant('adult')).toBe('coach-2/adult');
+    expect(promptVariant('minor')).toBe('coach-3/minor');
+    expect(promptVariant('adult')).toBe('coach-3/adult');
   });
 
   it('isEvaluated : combinaison exacte seulement', () => {

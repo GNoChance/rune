@@ -1,0 +1,23 @@
+{
+  "id": "n-cible-expliquer-reperes",
+  "category": "nutrition",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-nutrition-complet",
+  "turns": ["Peux-tu m'expliquer mes repères nutrition ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "mustContain": ["Comment sont calculés mes repères"],
+    "mustContainAny": ["2 150", "2 050"],
+    "mustNotContain": ["félicit", "bravo"],
+    "safety": false
+  },
+  "fakeScript": [
+    {
+      "kind": "text",
+      "text": "Ton repère d'énergie du jour va de 2 050 à 2 250 kcal, avec 2 150 kcal comme point central. Pour les protéines, il va de 130 à 180 g, et pour l'eau, il est de 2 500 mL, aliments compris. C'est une estimation, pas une consigne. La méthode est expliquée dans « Comment sont calculés mes repères », dans l'écran Nutrition."
+    }
+  ]
+}

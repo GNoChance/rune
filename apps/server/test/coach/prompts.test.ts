@@ -51,6 +51,8 @@ import {
 import { MINOR_PHRASINGS } from '../../src/coach/prompts/coach-1-minor';
 import { GUIDED_ADULT } from '../../src/coach/prompts/coach-2-adult';
 import { GUIDED_MINOR } from '../../src/coach/prompts/coach-2-minor';
+import { GUIDED_ADULT_3, NUTRITION_ADULT } from '../../src/coach/prompts/coach-3-adult';
+import { GUIDED_MINOR_3, NUTRITION_MINOR } from '../../src/coach/prompts/coach-3-minor';
 import { TOOLS_1, TOOLS_2, toolDefinitions } from '../../src/coach/tools';
 import { PROPOSAL_ERROR_MESSAGES } from '../../src/coach/tools/propose-program-change';
 
@@ -60,7 +62,7 @@ import { PROPOSAL_ERROR_MESSAGES } from '../../src/coach/tools/propose-program-c
  * réponses du coach et les textes de l'appli le sont).
  */
 
-const VARIANTS = ['coach-2/adult', 'coach-2/minor'] as const;
+const VARIANTS = ['coach-2/adult', 'coach-2/minor', 'coach-3/adult', 'coach-3/minor'] as const;
 const AUDIENCES: readonly AgeBand[] = ['adult', 'minor'];
 const RULES: readonly FilterRule[] = ['phone', 'unit', 'forbidden_term'];
 const NOTHING_ALLOWED = {
@@ -71,6 +73,8 @@ const NOTHING_ALLOWED = {
 };
 const ADULT = PROMPTS['coach-2/adult'];
 const MINOR = PROMPTS['coach-2/minor'];
+const ADULT_3 = PROMPTS['coach-3/adult'];
+const MINOR_3 = PROMPTS['coach-3/minor'];
 
 /** Texte de l'appli passé au filtre du flux, phrase par phrase, sans aucune valeur autorisée. */
 const filtered = (text: string, audience: AgeBand) =>
@@ -111,8 +115,9 @@ describe('systemBlocks', () => {
 
   it('une variante par public, celle que le fil enregistre (promptVariant)', () => {
     expect(Object.keys(PROMPTS).sort()).toEqual(['coach-1/adult', 'coach-1/minor', ...VARIANTS]);
-    expect(PROMPTS[promptVariant('adult')]).toBe(ADULT);
-    expect(PROMPTS[promptVariant('minor')]).toBe(MINOR);
+    expect(PROMPTS[promptVariant('adult')]).toBe(ADULT_3);
+    expect(PROMPTS[promptVariant('minor')]).toBe(MINOR_3);
+    expect(MINOR_3).not.toBe(ADULT_3);
     expect(MINOR).not.toBe(ADULT);
   });
 });
@@ -124,10 +129,11 @@ describe.each(VARIANTS)('prompt %s', (variant) => {
     for (const s of ['Coach IA', 'Claude', 'Anthropic', '28 jours', 'adulte de confiance']) {
       expect(prompt).toContain(s);
     }
-    // Les 4 outils de `tools-1` ; `open_nutrition_screen` entre au prompt avec la tâche 14.
-    for (const tool of COACH_TOOL_NAMES.filter((t) => t !== 'open_nutrition_screen')) {
-      expect(prompt).toContain(tool);
-    }
+    // `coach-2` reste figé avec `tools-1` ; `coach-3` nomme aussi `open_nutrition_screen` (`tools-2`).
+    const names = variant.startsWith('coach-3')
+      ? COACH_TOOL_NAMES
+      : COACH_TOOL_NAMES.filter((t) => t !== 'open_nutrition_screen');
+    for (const tool of names) expect(prompt).toContain(tool);
   });
 
   it('chaque terme interdit pour tous, chacun avec sa tournure ou sa conduite', () => {
@@ -382,6 +388,113 @@ describe('parcours guidés, adulte', () => {
   });
 });
 
+describe.each([
+  ['adulte', 'adult', ADULT_3, GUIDED_ADULT_3, NUTRITION_ADULT, GUIDED_ADULT],
+  ['mineur', 'minor', MINOR_3, GUIDED_MINOR_3, NUTRITION_MINOR, GUIDED_MINOR],
+] as const)('coach-3, nutrition, variante %s', (_name, audience, prompt, guided, nutrition, before) => {
+  it("« nutrition : rien pour l'instant » a disparu ; le point 12 suit les parcours et précède la table des codes", () => {
+    expect(prompt).not.toContain("rien pour l'instant");
+    expect(guided.startsWith('11. Parcours guidés')).toBe(true);
+    expect(nutrition.startsWith('12. Nutrition')).toBe(true);
+    expect(prompt).toContain(guided);
+    expect(prompt).toContain(nutrition);
+    expect(prompt.indexOf(guided)).toBeLessThan(prompt.indexOf(nutrition));
+    expect(prompt.indexOf(nutrition)).toBeLessThan(prompt.indexOf(CODES));
+  });
+
+  it("cite l'outil open_nutrition_screen, le bloc du dossier et les trois directives", () => {
+    for (const s of ['open_nutrition_screen', 'nutrition.mode', 'no_numbers', 'no_deficit', 'minor_profile'])
+      expect(nutrition).toContain(s);
+    expect(prompt).toContain('- nutrition : toujours présent');
+  });
+
+  it('liste les termes interdits v2 : pour tous, et hors mode complet', () => {
+    expect(FORBIDDEN_TERMS.version).toBe('2');
+    for (const { term } of FORBIDDEN_TERMS.notFull) expect(prompt).toContain(`« ${term} »`);
+    for (const { term } of FORBIDDEN_TERMS.all) expect(prompt).toContain(`« ${term} »`);
+  });
+
+  it('un signal de trouble alimentaire : refer_to_help(eating_disorder)', () => {
+    expect(nutrition).toContain('refer_to_help(eating_disorder)');
+  });
+
+  it('aucune quantité chiffrée dans la conduite nutrition ni dans les parcours', () => {
+    expect(quantities(nutrition)).toEqual([]);
+    expect(quantities(guided)).toEqual([]);
+    expect(nutrition).not.toMatch(/\d\s*(?:kg|kilos?|k?cal|calories|g|grammes?|l|litres?|ml)\b/i);
+  });
+
+  it('nomme chaque parcours du public et cite le texte de chaque puce de suite', () => {
+    for (const flow of guidedFlowsFor(audience, audience === 'adult'))
+      expect(guided).toContain(`« ${flow.label} »`);
+    for (const followUp of guidedFlowsFor(audience).flatMap((f) => f.followUps))
+      expect(guided).toContain(followUp.text);
+  });
+
+  it('ne change que la nutrition des parcours de coach-2', () => {
+    const lines = (text: string) =>
+      text.split('\n').filter((l) => !l.startsWith('- « Nutrition »') && !l.startsWith('- « Bien manger'));
+    expect(lines(guided)).toEqual(lines(before));
+  });
+});
+
+describe('coach-3, variante adulte', () => {
+  it('conduite selon nutrition.mode : full explique avec le dossier, les autres restent qualitatifs', () => {
+    for (const s of [
+      'mode full',
+      'mode qualitative',
+      'mode disabled',
+      'energy_min_kcal',
+      'last_checkin',
+      'sans rien calculer',
+      'Comment sont calculés mes repères',
+      'sheets',
+    ])
+      expect(NUTRITION_ADULT).toContain(s);
+  });
+
+  it('open_nutrition_screen : goal, activity ou mode ; un seul écran ; la personne confirme', () => {
+    for (const s of ['screen goal', 'screen activity', 'screen mode', 'un seul', 'confirme'])
+      expect(NUTRITION_ADULT).toContain(s);
+  });
+
+  it('jamais de complément, de régime nommé, de jeûne ni de déficit hors mode full', () => {
+    for (const s of ['complément', 'régime nommé', 'jeûne', 'déficit']) expect(NUTRITION_ADULT).toContain(s);
+  });
+
+  it("« Mes repères » et « Mon bilan de la semaine » : seulement en mode full, jamais l'ancienne mention", () => {
+    expect(GUIDED_ADULT_3).toContain('« Mes repères »');
+    expect(GUIDED_ADULT_3).toContain('« Mon bilan de la semaine »');
+    expect(GUIDED_ADULT_3).toContain('mode full');
+    expect(GUIDED_ADULT_3).not.toContain('Le dossier ne contient aucune donnée de nutrition');
+  });
+
+  it('garde les sections de coach-2 adulte', () => {
+    for (const section of [INTRO, IDENTITY, TOOLS, SAFETY, INSTRUCTIONS, FORM, CODES]) {
+      expect(ADULT_3).toContain(section);
+    }
+  });
+});
+
+describe('coach-3, variante mineur', () => {
+  it('aucune puce du mode full ; toutes les fermetures de coach-2 gardées', () => {
+    expect(MINOR_3).not.toContain('« Mes repères »');
+    expect(GUIDED_MINOR_3).toContain('« Bien manger quand on fait du sport »');
+    expect(NUTRITION_MINOR).toContain('minor_profile');
+    expect(NUTRITION_MINOR).toContain('aucun chiffre');
+    expect(MINOR_3).toContain('7. Compléments et produits dopants\n- Aucun complément');
+    expect(MINOR_3).toContain('- Ni perte de poids, ni déficit, ni régime, ni sèche, ni jeûne');
+    expect(MINOR_3).not.toContain('information générale seulement');
+    expect(GUIDED_MINOR_3).toContain('aucune hausse de volume');
+  });
+
+  it("n'ouvre que l'écran mode, jamais un repère chiffré", () => {
+    expect(NUTRITION_MINOR).toContain('screen mode');
+    expect(NUTRITION_MINOR).not.toContain('screen goal');
+    expect(NUTRITION_MINOR).not.toContain('energy_kcal');
+  });
+});
+
 describe('tournures', () => {
   it('chaque clé est un terme réel de sa liste : une faute de frappe ne passe pas', () => {
     const all = new Set(FORBIDDEN_TERMS.all.map((t) => t.term));
@@ -455,6 +568,18 @@ describe('textes fixes', () => {
  * sa propre table ici. Une version de la configuration sans table fait échouer le test.
  */
 const FINGERPRINTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  'coach-3': {
+    'coach-3/adult': 'a997f397a4c71b016b8d552024907c636095639cc50ca91086a7ae18e5340958',
+    'coach-3/minor': 'e377788f7cb5bb0b94e3de2519eb6c33cdfe86b9965994a7cd7122f627bd98bc',
+    'style/ombre': 'f0b9085585a2a121e383dd60135f5e1bcb483bd03d4708ef41181fe66b2ea798',
+    'style/skald': '3fb3f37d0aa0a1a74571089780804a7a04d5741747ebaf78d79f724c0a9fec42',
+    'style/scribe': '04410b07dcc757ce472c4976ac0ae48e38e9f03a00e09edee669099b045c6089',
+    standard_reply: '9d4732ed32cb8d1a806bb9b8e2f3d3b689c273f81e674f1467eb092b43883cc7',
+    refusal_message: 'bdbc1da32ae3c1c88dc473fa718a83a53eba83c29e3ae8a266dbe642f573d281',
+    'note/phone': 'e02dca0aaea69b84c38a5c53b49fa5c265fbb1661d55ffadd99421b55210bf0b',
+    'note/unit': '9230f50188637a8b7259786a5134c0e1f080b2dc27e78a1fd845a5cdbfc5cc24',
+    'note/forbidden_term': 'fe442423191c581d458f3a313741ec52f2a3f38c19fb3acd13db3bb7c16f207d',
+  },
   'coach-2': {
     'coach-2/adult': '1590b59145d44149aacc3e43f522c1245843a7cb30aa0b6894deeafaaf027267',
     'coach-2/minor': '196c8ee83953dd134b4658067971afe324cc800417f8f15a75750bfc77217149',
@@ -484,7 +609,7 @@ const FINGERPRINTS: Readonly<Record<string, Readonly<Record<string, string>>>> =
 const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 
 /** Textes figés de la version `version`, tels que le code les sert ; voix et textes fixes sont communs aux versions. */
-const fingerprintsOf = (version: 'coach-1' | 'coach-2') => ({
+const fingerprintsOf = (version: 'coach-1' | 'coach-2' | 'coach-3') => ({
   [`${version}/adult`]: sha256(PROMPTS[`${version}/adult`]),
   [`${version}/minor`]: sha256(PROMPTS[`${version}/minor`]),
   'style/ombre': sha256(STYLES.ombre),
@@ -499,8 +624,12 @@ const fingerprintsOf = (version: 'coach-1' | 'coach-2') => ({
 
 describe('empreinte des prompts', () => {
   it('les textes de la version de la configuration sont ceux de leur empreinte', () => {
-    expect(COACH_CONFIG.promptVersion).toBe('coach-2');
-    expect(FINGERPRINTS[COACH_CONFIG.promptVersion]).toEqual(fingerprintsOf('coach-2'));
+    expect(COACH_CONFIG.promptVersion).toBe('coach-3');
+    expect(FINGERPRINTS[COACH_CONFIG.promptVersion]).toEqual(fingerprintsOf('coach-3'));
+  });
+
+  it("coach-2, gardé pour les fils déjà ouverts, reste ce qu'il était", () => {
+    expect(FINGERPRINTS['coach-2']).toEqual(fingerprintsOf('coach-2'));
   });
 
   it("coach-1, gardé pour les fils déjà ouverts, reste ce qu'il était", () => {

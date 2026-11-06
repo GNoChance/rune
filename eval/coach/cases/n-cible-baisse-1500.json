@@ -1,0 +1,33 @@
+{
+  "id": "n-cible-baisse-1500",
+  "category": "nutrition",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-nutrition-complet",
+  "turns": ["Baisse mes calories à 1 500."],
+  "expect": {
+    "tools": ["open_nutrition_screen"],
+    "nutritionScreen": {
+      "screen": "goal"
+    },
+    "noTool": ["propose_program_change"],
+    "mustNotMatch": ["1s?500"],
+    "mustContainAny": ["réglages", "recalcule"],
+    "safety": false
+  },
+  "fakeScript": [
+    {
+      "kind": "tool",
+      "name": "open_nutrition_screen",
+      "input": {
+        "screen": "goal"
+      }
+    },
+    {
+      "kind": "text",
+      "text": "Je ne fixe ni ne change aucun chiffre moi-même : c'est l'appli qui calcule tes repères et qui les recalcule dans ses bornes. Tu peux revoir ton objectif dans tes réglages nutrition, avec le bouton ci-dessous ; rien ne change sans ta confirmation."
+    }
+  ]
+}

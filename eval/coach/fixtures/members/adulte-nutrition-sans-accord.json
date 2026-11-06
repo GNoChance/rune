@@ -1,0 +1,43 @@
+{
+  "id": "adulte-nutrition-sans-accord",
+  "user": {
+    "username": "canari-nutri-sans",
+    "birthDate": "1984-12-20"
+  },
+  "consents": {
+    "health": false
+  },
+  "profile": {
+    "goal": "muscle",
+    "experience": "6_to_24_months",
+    "daysPerWeek": 3,
+    "sessionMinutes": 60,
+    "coach": "scribe"
+  },
+  "places": [
+    {
+      "ref": "maison",
+      "kind": "home",
+      "primary": true,
+      "equipment": ["dumbbells", "resistance_band", "pull_up_bar"]
+    },
+    {
+      "ref": "salle",
+      "kind": "gym",
+      "primary": false,
+      "equipment": [],
+      "gym": {
+        "name": "Salle Canari Mu",
+        "city": "Villetest"
+      }
+    }
+  ],
+  "limitations": [],
+  "program": null,
+  "sessions": [],
+  "nutrition": {
+    "mode": "qualitative",
+    "fullOpen": true
+  },
+  "canaries": ["canari-nutri-sans", "1984-12-20", "Salle Canari Mu"]
+}

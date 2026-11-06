@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createFakeAiClient, fakeText } from '../../../apps/server/src/ai/index';
 import { CATALOG_STARTUP_TASK } from '../../../apps/server/src/catalog/loader';
 import { createTestContext } from '../../../apps/server/test/support';
-import { CATALOG_FIXTURE_DIR, loadCases } from '../../coach-eval/cases';
+import { CATALOG_FIXTURE_DIR, loadCases, loadMembers } from '../../coach-eval/cases';
 import { buildReport, type CaseRecord, type ReportInput, type RunRecord } from '../../coach-eval/report';
 import { askConfirmation, type MainDeps, main, type RunOutcome } from '../../coach-eval/run';
 
@@ -58,8 +58,8 @@ describe('pnpm coach:eval --fake', { timeout: 60_000 }, () => {
     expect(code).toBe(0);
     const files = (await readdir(dir)).filter((f) => f.endsWith('.md') || f.endsWith('.json')).sort();
     expect(files).toHaveLength(2);
-    expect(files[0]).toMatch(/^\d{4}-\d{2}-\d{2}-.+-coach-2\.json$/);
-    expect(files[1]).toMatch(/^\d{4}-\d{2}-\d{2}-.+-coach-2\.md$/);
+    expect(files[0]).toMatch(/^\d{4}-\d{2}-\d{2}-.+-coach-3.json$/);
+    expect(files[1]).toMatch(/^\d{4}-\d{2}-\d{2}-.+-coach-3.md$/);
   });
 
   it('fait passer tous leurs contrôles aux 5 cas « fake »', () => {
@@ -111,11 +111,24 @@ describe('pnpm coach:eval --fake', { timeout: 60_000 }, () => {
     ).toBe(true);
   });
 
-  it('ne laisse aucun terme interdit dans les sorties du faux pipeline', () => {
-    const terms = [...FORBIDDEN_TERMS.all, ...FORBIDDEN_TERMS.minor]
-      .flatMap((t) => [t.term, ...t.forms])
-      .map((t) => t.toLowerCase());
+  it('ne laisse aucun terme interdit v2 dans les sorties du faux pipeline (07 §5.10.4)', async () => {
+    const forms = (list: readonly { term: string; forms: readonly string[] }[]) =>
+      list.flatMap((t) => [t.term, ...t.forms]).map((t) => t.toLowerCase());
+    const members = await loadMembers();
+    const fullCases = new Set(
+      cases
+        .filter((c) => {
+          const nutrition = members.find((m) => m.id === c.fixture)?.nutrition;
+          return c.audience === 'adult' && c.consents.health && nutrition?.mode === 'full';
+        })
+        .map((c) => c.id),
+    );
+    expect(fullCases.size).toBeGreaterThanOrEqual(5);
     for (const r of outcome?.results ?? []) {
+      // Les valeurs en kcal d'un dossier en mode complet sont permises : les termes « hors mode complet » et ceux du mineur aussi.
+      const terms = fullCases.has(r.id)
+        ? forms(FORBIDDEN_TERMS.all)
+        : forms([...FORBIDDEN_TERMS.all, ...FORBIDDEN_TERMS.notFull, ...FORBIDDEN_TERMS.minor]);
       for (const reply of r.replies) {
         for (const term of terms) expect(reply.toLowerCase().includes(term), `${r.id} : ${term}`).toBe(false);
       }
@@ -196,7 +209,7 @@ describe('verdict du rapport', { timeout: 60_000 }, () => {
     date: '2026-11-05',
     model: 'claude-opus-5-5',
     effort: 'low',
-    promptVersion: 'coach-2',
+    promptVersion: 'coach-3',
     toolsVersion: 'tools-1',
     catalog: { name: 'repo', version: 'v'.repeat(64) },
     fake: false,
@@ -265,8 +278,8 @@ describe('verdict du rapport', { timeout: 60_000 }, () => {
 
   it('nomme le rapport par date, modèle et prompt, sans écraser une campagne réelle', () => {
     const found = [record('s', true, three())];
-    expect(buildReport(input(found)).name).toBe('2026-11-05-claude-opus-5-5-coach-2');
-    expect(buildReport(input(found, { fake: true })).name).toBe('2026-11-05-fake-claude-opus-5-5-coach-2');
+    expect(buildReport(input(found)).name).toBe('2026-11-05-claude-opus-5-5-coach-3');
+    expect(buildReport(input(found, { fake: true })).name).toBe('2026-11-05-fake-claude-opus-5-5-coach-3');
   });
 });
 

@@ -50,6 +50,35 @@ describe('table des parcours guidés', () => {
     expect(new Set(guidedFlowsFor('minor').map((f) => f.id))).toEqual(new Set(GUIDED_FLOW_IDS));
   });
 
+  it("en mode full, le parcours Nutrition de l'adulte gagne « Mes repères » et « Mon bilan de la semaine »", () => {
+    const labels = (full: boolean) =>
+      guidedFlowsFor('adult', full)
+        .find((f) => f.id === 'nutrition')
+        ?.steps[0]?.chips.map((c) => c.label);
+    const base = ['Avant la séance', 'Après la séance', 'Protéines', 'Hydratation'];
+    expect(labels(false)).toEqual(base);
+    expect(guidedFlowsFor('adult')).toEqual(guidedFlowsFor('adult', false));
+    expect(labels(true)).toEqual([...base, 'Mes repères', 'Mon bilan de la semaine']);
+    expect(composeGuidedMessage('nutrition', ['targets'], names, 'adult', true)).toBe(
+      'Explique-moi mes repères de nutrition.',
+    );
+    expect(composeGuidedMessage('nutrition', ['review'], names, 'adult', true)).toBe(
+      'Explique-moi mon bilan de la semaine.',
+    );
+    expect(composeGuidedMessage('nutrition', ['protein'], names, 'adult', true)).toBe(
+      'Donne-moi des repères de nutrition : les protéines.',
+    );
+  });
+
+  it('hors mode full ou pour un mineur, les puces du mode full sont inconnues', () => {
+    expect(() => compose('nutrition', ['targets'])).toThrow(GuidedInvalidError);
+    expect(() => compose('nutrition', ['review'])).toThrow(GuidedInvalidError);
+    expect(() => composeGuidedMessage('nutrition', ['targets'], names, 'minor', true)).toThrow(
+      GuidedInvalidError,
+    );
+    expect(guidedFlowsFor('minor', true)).toEqual(guidedFlowsFor('minor', false));
+  });
+
   it('lève une erreur sur un identifiant inconnu ou un nombre de choix faux', () => {
     expect(() => compose('inconnu', [])).toThrow(GuidedInvalidError);
     expect(() => compose('new_session', ['legs', 'enorme'])).toThrow(GuidedInvalidError);

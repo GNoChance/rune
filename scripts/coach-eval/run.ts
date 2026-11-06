@@ -23,6 +23,7 @@ import {
   CoachStreamEventSchema,
   CURRENT_CONSENT_TEXTS,
   PRIVACY_POLICY_VERSION,
+  SAFETY_SCREEN,
 } from '@rune/contracts';
 import { COACH_CONFIG, estimateTokens } from '@rune/domain';
 import type { FakeChatTurn } from '../../apps/server/src/ai/fake';
@@ -44,6 +45,7 @@ import { createApp } from '../../apps/server/src/app';
 import { createSession } from '../../apps/server/src/auth/session';
 import { currentCatalog } from '../../apps/server/src/catalog/bundle';
 import { CATALOG_STARTUP_TASK, loadCatalogFiles } from '../../apps/server/src/catalog/loader';
+import { nutritionModeOfBrief } from '../../apps/server/src/coach/nutrition-mode';
 import { refreshCoachConfig } from '../../apps/server/src/coach/state';
 import { loadConfig } from '../../apps/server/src/config';
 import { migrate } from '../../apps/server/src/db/migrate';
@@ -52,6 +54,8 @@ import { openDatabase } from '../../apps/server/src/db/open';
 import { initServerMeta } from '../../apps/server/src/db/server-meta';
 import { type AppDeps, createAppDeps, cryptoIds } from '../../apps/server/src/deps';
 import { createLogger } from '../../apps/server/src/logger';
+import { loadNutritionContext } from '../../apps/server/src/nutrition/context';
+import { createTarget, targetsInputFor } from '../../apps/server/src/nutrition/targets-service';
 import { grantConsent } from '../../apps/server/src/privacy/consent';
 import { insertInstance } from '../../apps/server/src/program/enroll';
 import { insertFixtureRow } from '../../apps/server/test/support/factories';
@@ -168,6 +172,9 @@ export function defaultScript(c: EvalCase): FakeTurnSpec[] {
       script.push({ kind: 'tool', name, input: { resource: c.expect.help } });
     } else if (name === 'read_training') script.push({ kind: 'tool', name, input: { since_days: 7 } });
     else if (name === 'search_exercises') script.push({ kind: 'tool', name, input: {} });
+    else if (name === 'open_nutrition_screen') {
+      script.push({ kind: 'tool', name, input: c.expect.nutritionScreen ?? { screen: 'mode' } });
+    }
   }
   const marks = [...(c.expect.mustContain ?? []), ...(c.expect.mustContainAny?.slice(0, 1) ?? [])];
   const keep = marks.length > 0 ? ` À retenir : ${marks.join(', ')}.` : '';
@@ -261,6 +268,40 @@ function failNoCatalog(): never {
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
+/**
+ * Profil nutrition fictif d'un membre (brique 5) : état du cercle, profil, pesées, cible calculée par le serveur
+ * (`createTarget`, comme à l'activation) et bilan de la semaine. Aucune réponse de l'écran de sécurité n'existe.
+ */
+async function loadNutrition(
+  deps: AppDeps,
+  userId: string,
+  n: NonNullable<MemberFixture['nutrition']>,
+): Promise<void> {
+  const { db } = deps;
+  const stamp = iso(deps.clock.now().getTime());
+  if (n.fullOpen === true) await db.updateTable('nutritionState').set({ fullOpen: 1 }).execute();
+  await insertFixtureRow(db, 'nutrition_profile', {
+    ownerId: userId,
+    mode: n.mode,
+    modeReason: 'choice',
+    safetyScreenVersion: SAFETY_SCREEN.version,
+    safetyScreenAt: stamp,
+    safetyPause: n.safetyPause === true ? 1 : 0,
+    ...n.settings,
+  });
+  for (const w of n.weighIns ?? []) {
+    await insertFixtureRow(db, 'weigh_in', { ownerId: userId, date: w.date, weightG: w.weightG });
+  }
+  if (n.targetWeightG !== undefined) {
+    const input = targetsInputFor(await loadNutritionContext(db, deps, userId), n.targetWeightG);
+    if (input === null) throw new Error('Fixture nutrition : réglages incomplets pour calculer la cible.');
+    await createTarget(db, deps, userId, 'initial', input);
+  }
+  if (n.checkin !== undefined) {
+    await insertFixtureRow(db, 'nutrition_checkin', { ownerId: userId, ...n.checkin });
+  }
+}
+
 /** Membre fictif en base : compte, accords, profil, lieux, limitations, programme suivi, séances. */
 async function loadMember(deps: AppDeps, m: MemberFixture, health: boolean): Promise<string> {
   const { db } = deps;
@@ -338,6 +379,8 @@ async function loadMember(deps: AppDeps, m: MemberFixture, health: boolean): Pro
       active: 1,
     });
   }
+
+  if (m.nutrition !== undefined) await loadNutrition(deps, userId, m.nutrition);
 
   let instanceId: string | null = null;
   if (m.program !== null) {
@@ -575,6 +618,7 @@ async function runCase(
   const events: CoachStreamEvent[] = [];
   const replies: string[] = [];
   let brief: unknown = {};
+  let safetyPause: boolean | null = null;
   let briefTokens = 0;
   const toolResults: unknown[] = [];
   const started = performance.now();
@@ -607,6 +651,12 @@ async function runCase(
       events.push(...turnEvents);
       replies.push(replyOf(turnEvents));
     }
+    const profile = await world.deps.db
+      .selectFrom('nutritionProfile')
+      .select('safetyPause')
+      .where('ownerId', '=', world.userId)
+      .executeTakeFirst();
+    safetyPause = profile === undefined ? null : profile.safetyPause === 1;
     const thread = await world.deps.db
       .selectFrom('coachThread')
       .select(['brief'])
@@ -641,6 +691,8 @@ async function runCase(
     calls: rec.calls,
     tools: toolTraces(rec),
     brief,
+    nutritionMode: nutritionModeOfBrief(brief),
+    safetyPause,
     briefTokens,
     toolResults,
     canaries: member.canaries,

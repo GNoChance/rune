@@ -16,14 +16,16 @@ import { traitsOn } from '../auth/me';
 import { currentCatalog } from '../catalog/bundle';
 import type { AppDeps } from '../deps';
 import { httpError } from '../http/errors';
+import { loadNutritionContext } from '../nutrition/context';
 import { loadReplayInput } from './brief-input';
+import { nutritionModeOf } from './nutrition-mode';
 import { currentThread } from './threads';
 
 /*
  * Message d'un parcours guidé (spec brique 4.1 §4.2) : le texte est recomposé par le serveur à partir des identifiants
  * (la table de `contracts`), avec les noms du catalogue servi ; le texte du client est ignoré. Un identifiant inconnu,
- * un nombre de choix faux, un parcours que le public n'a pas ou un exercice qui n'est pas au programme courant donnent
- * 400 `validation`. Le résultat est un message de la personne comme un autre : mêmes gardes, limite et filtre.
+ * un nombre de choix faux, un parcours (ou une puce de nutrition `full`) que le public n'a pas ou un exercice qui n'est
+ * pas au programme courant donnent 400 `validation`. Le résultat est un message de la personne comme un autre : mêmes gardes, limite et filtre.
  */
 
 /**
@@ -71,6 +73,11 @@ export async function composeForUser(
   const audience: AgeBand =
     traits.audience === 'minor' || (thread?.isOpen === 1 && thread.audience === 'minor') ? 'minor' : 'adult';
   try {
+    // « Mes repères » et « Mon bilan de la semaine » : mode nutrition full, aujourd'hui comme dans le dossier du fil ouvert.
+    const nutritionFull =
+      audience === 'adult' &&
+      (thread?.isOpen !== 1 || nutritionModeOf(thread) === 'full') &&
+      (await loadNutritionContext(deps.db, deps, userId)).effective.mode === 'full';
     const exerciseIds = guidedExerciseChoices(guided.flow, guided.choices, audience);
     const inProgram = exerciseIds.length === 0 ? null : await programExerciseIds(deps, userId, cautious);
     const catalog = exerciseIds.length === 0 ? null : (await currentCatalog(deps, deps.db)).exercises;
@@ -79,6 +86,7 @@ export async function composeForUser(
       guided.choices,
       (id) => (inProgram?.has(id) ? (catalog?.find((e) => e.id === id)?.name ?? null) : null),
       audience,
+      nutritionFull,
     );
   } catch (error) {
     if (error instanceof GuidedInvalidError) throw httpError('validation');

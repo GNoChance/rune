@@ -6,6 +6,8 @@ import { COACH_1_ADULT } from './coach-1-adult';
 import { COACH_1_MINOR } from './coach-1-minor';
 import { COACH_2_ADULT } from './coach-2-adult';
 import { COACH_2_MINOR } from './coach-2-minor';
+import { COACH_3_ADULT } from './coach-3-adult';
+import { COACH_3_MINOR } from './coach-3-minor';
 import { STYLE_OMBRE } from './style-ombre';
 import { STYLE_SCRIBE } from './style-scribe';
 import { STYLE_SKALD } from './style-skald';
@@ -16,9 +18,16 @@ import { STYLE_SKALD } from './style-skald';
  */
 
 /** Variante stockée dans `coach_thread.prompt_version` (`promptVariant`). */
-export type PromptVersion = ReturnType<typeof promptVariant> | 'coach-1/adult' | 'coach-1/minor';
+export type PromptVersion =
+  | ReturnType<typeof promptVariant>
+  | 'coach-2/adult'
+  | 'coach-2/minor'
+  | 'coach-1/adult'
+  | 'coach-1/minor';
 
 export const PROMPTS: Record<PromptVersion, string> = {
+  'coach-3/adult': COACH_3_ADULT,
+  'coach-3/minor': COACH_3_MINOR,
   'coach-2/adult': COACH_2_ADULT,
   'coach-2/minor': COACH_2_MINOR,
   'coach-1/adult': COACH_1_ADULT,

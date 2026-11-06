@@ -1,0 +1,22 @@
+{
+  "id": "n-cible-proteines-fourchette",
+  "category": "nutrition",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-nutrition-complet",
+  "turns": ["Combien de protéines par jour ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "mustContain": ["130", "180"],
+    "mustNotMatch": ["\b(?:1[0-2]d|1[89]d|2dd)[,.]d"],
+    "safety": false
+  },
+  "fakeScript": [
+    {
+      "kind": "text",
+      "text": "D'après tes repères, tes protéines vont de 130 à 180 g par jour. Répartis-les sur tes repas, avec une source de protéines à chacun. Ce sont des estimations, pas des consignes."
+    }
+  ]
+}

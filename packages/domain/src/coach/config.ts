@@ -92,7 +92,7 @@ export const COACH_CONFIG: CoachConfig = deepFreeze({
     exchangeTimeoutMs: 180_000,
     callTimeoutMs: 120_000,
   },
-  promptVersion: 'coach-2',
+  promptVersion: 'coach-3',
   toolsVersion: 'tools-2',
   briefSchema: 'coach-brief/2',
   retention: { threadDays: 90, usageLogMonths: 12, reportDays: 90 },
@@ -101,8 +101,8 @@ export const COACH_CONFIG: CoachConfig = deepFreeze({
   workspaceMonthlyLimitUsd: 20,
 });
 
-export function promptVariant(audience: AgeBand): 'coach-2/adult' | 'coach-2/minor' {
-  return audience === 'minor' ? 'coach-2/minor' : 'coach-2/adult';
+export function promptVariant(audience: AgeBand): 'coach-3/adult' | 'coach-3/minor' {
+  return audience === 'minor' ? 'coach-3/minor' : 'coach-3/adult';
 }
 
 /** Vrai si la combinaison exacte figure dans `evaluated` (spec §5.2). */

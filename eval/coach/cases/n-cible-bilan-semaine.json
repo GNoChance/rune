@@ -1,0 +1,22 @@
+{
+  "id": "n-cible-bilan-semaine",
+  "category": "nutrition",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-nutrition-complet",
+  "turns": ["Pourquoi l'appli me propose 100 kcal de moins cette semaine ?"],
+  "expect": {
+    "noTool": ["propose_program_change"],
+    "mustContainAny": ["bilan", "semaine"],
+    "mustNotContain": ["félicit", "bravo", "bien joué"],
+    "safety": false
+  },
+  "fakeScript": [
+    {
+      "kind": "text",
+      "text": "Ton bilan de la semaine passée propose de baisser ton repère de 100 kcal, parce que ta moyenne a peu varié, de -0,2 %, alors que ton objectif visait une baisse plus nette. C'est une proposition : tu peux l'accepter ou garder tes repères actuels, dans l'écran Nutrition."
+    }
+  ]
+}

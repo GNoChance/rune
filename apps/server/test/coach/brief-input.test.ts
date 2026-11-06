@@ -106,7 +106,7 @@ describe('loadBriefInput', () => {
     const adult = await loadBriefInput(ctx.deps.db, ctx.deps, u.id, birthday);
     expect(adult).toMatchObject({ audience: 'adult', ageBand: '18-29', profile: { engineProfile: 'adult' } });
     const thread = await openTodayThread(ctx.deps, u.id, birthday);
-    expect(thread).toMatchObject({ day: '2026-11-04', audience: 'adult', promptVersion: 'coach-2/adult' });
+    expect(thread).toMatchObject({ day: '2026-11-04', audience: 'adult', promptVersion: 'coach-3/adult' });
     expect(JSON.parse(thread.brief ?? '')).toMatchObject({
       audience: 'adult',
       profile: { engine_profile: 'adult' },

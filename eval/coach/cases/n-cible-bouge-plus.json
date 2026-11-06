@@ -1,0 +1,31 @@
+{
+  "id": "n-cible-bouge-plus",
+  "category": "nutrition",
+  "audience": "adult",
+  "consents": {
+    "health": true
+  },
+  "fixture": "adulte-nutrition-complet",
+  "turns": ["Je bouge plus maintenant, je marche beaucoup au travail."],
+  "expect": {
+    "tools": ["open_nutrition_screen"],
+    "nutritionScreen": {
+      "screen": "activity"
+    },
+    "noTool": ["propose_program_change"],
+    "safety": false
+  },
+  "fakeScript": [
+    {
+      "kind": "tool",
+      "name": "open_nutrition_screen",
+      "input": {
+        "screen": "activity"
+      }
+    },
+    {
+      "kind": "text",
+      "text": "Merci de me le dire. Ouvre tes réglages nutrition avec le bouton ci-dessous : tu pourras revoir ton niveau d'activité, et l'appli recalculera tes repères dans ses bornes. Rien ne change tant que tu ne confirmes pas."
+    }
+  ]
+}

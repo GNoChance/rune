@@ -103,6 +103,13 @@ const NUTRITION: readonly GuidedChip[] = [
   chip('hydration', 'Hydratation', "l'hydratation"),
 ];
 
+/** Puces de plus en mode nutrition `full` (brique 5 §11.6) : le dossier porte alors les repères et le bilan. */
+const NUTRITION_FULL: readonly GuidedChip[] = [
+  ...NUTRITION,
+  chip('targets', 'Mes repères'),
+  chip('review', 'Mon bilan de la semaine'),
+];
+
 const ADJUST: readonly GuidedChip[] = [
   chip('fewer_days', 'Moins de jours', 'moins de jours'),
   chip('more_days', 'Plus de jours', 'plus de jours'),
@@ -178,7 +185,11 @@ export const GUIDED_FLOWS: readonly GuidedFlow[] = [
     label: 'Nutrition',
     audience: 'adult',
     steps: [{ id: 'topic', prompt: 'Quel repère veux-tu ?', chips: NUTRITION }],
-    compose: ([topic]) => `Donne-moi des repères de nutrition : ${textOf(NUTRITION, topic)}.`,
+    compose: ([topic]) => {
+      if (topic === 'targets') return 'Explique-moi mes repères de nutrition.';
+      if (topic === 'review') return 'Explique-moi mon bilan de la semaine.';
+      return `Donne-moi des repères de nutrition : ${textOf(NUTRITION, topic)}.`;
+    },
     followUps: [],
   },
   {
@@ -200,13 +211,20 @@ export const GUIDED_FLOWS: readonly GuidedFlow[] = [
   },
 ];
 
-/** Parcours offerts à un public : ceux de `all`, plus ceux de ce public seulement. */
-export function guidedFlowsFor(audience: AgeBand): GuidedFlow[] {
-  return GUIDED_FLOWS.filter((f) => f.audience === 'all' || f.audience === audience);
+/**
+ * Parcours offerts à un public : ceux de `all`, plus ceux de ce public seulement. `nutritionFull` : mode nutrition
+ * effectif `full` (brique 5 §11.6) ; le parcours Nutrition de l'adulte gagne alors deux puces. Un mineur ne les a jamais.
+ */
+export function guidedFlowsFor(audience: AgeBand, nutritionFull = false): GuidedFlow[] {
+  return GUIDED_FLOWS.filter((f) => f.audience === 'all' || f.audience === audience).map((f) =>
+    nutritionFull && audience === 'adult' && f.id === 'nutrition'
+      ? { ...f, steps: [{ id: 'topic', prompt: 'Quel repère veux-tu ?', chips: NUTRITION_FULL }] }
+      : f,
+  );
 }
 
-function flowOf(flowId: string, audience: AgeBand): GuidedFlow {
-  const flow = guidedFlowsFor(audience).find((f) => f.id === flowId);
+function flowOf(flowId: string, audience: AgeBand, nutritionFull = false): GuidedFlow {
+  const flow = guidedFlowsFor(audience, nutritionFull).find((f) => f.id === flowId);
   if (flow === undefined) throw new GuidedInvalidError('parcours inconnu');
   return flow;
 }
@@ -214,15 +232,17 @@ function flowOf(flowId: string, audience: AgeBand): GuidedFlow {
 /**
  * Message composé d'un parcours. Lève `GuidedInvalidError` sur un parcours inconnu pour ce public, un nombre de choix
  * faux, un identifiant de puce inconnu ou un exercice que `names` ne connaît pas. `audience` : adulte par défaut
- * (le parcours de nutrition d'un mineur n'est pas celui d'un adulte).
+ * (le parcours de nutrition d'un mineur n'est pas celui d'un adulte) ; `nutritionFull` : mode nutrition effectif
+ * `full`, seul à connaître « Mes repères » et « Mon bilan de la semaine ».
  */
 export function composeGuidedMessage(
   flowId: string,
   choices: readonly string[],
   names: (exerciseId: string) => string | null,
   audience: AgeBand = 'adult',
+  nutritionFull = false,
 ): string {
-  const flow = flowOf(flowId, audience);
+  const flow = flowOf(flowId, audience, nutritionFull);
   if (choices.length !== flow.steps.length) throw new GuidedInvalidError('nombre de choix faux');
   flow.steps.forEach((step, i) => {
     const choice = choices[i] as string;

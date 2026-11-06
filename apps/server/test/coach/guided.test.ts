@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeText } from '../../src/ai';
 import { currentCatalog } from '../../src/catalog/bundle';
 import { currentVersions } from '../../src/coach/threads';
+import { fullMember, seedTarget } from '../nutrition/fixtures';
 import { insertFixtureRow } from '../support';
 import { sheetFixture, templateFixture } from '../support/catalog';
 import { type ExchangeKit, exchangeKit } from '../support/coach';
@@ -86,6 +87,34 @@ describe('message guidé', () => {
       expect(kit.fake.chatCalls).toHaveLength(0);
     },
   );
+
+  it('« Mes repères » et « Mon bilan de la semaine » : composés en mode nutrition full, 400 sinon', async () => {
+    kit = await exchangeKit({ chat: [fakeText(FINE), fakeText(FINE)] });
+    await expect(kit.ask('', { guided: { flow: 'nutrition', choices: ['targets'] } })).rejects.toMatchObject({
+      code: 'validation',
+      status: 400,
+    });
+    await fullMember(kit.ctx, kit.user.id);
+    await seedTarget(kit.ctx, kit.user.id, { validFrom: '2026-11-01' });
+    await kit.ask('', { guided: { flow: 'nutrition', choices: ['targets'] } });
+    await kit.ask('', { guided: { flow: 'nutrition', choices: ['review'] } });
+    const texts = messages()
+      .filter((m) => m.role === 'user')
+      .map((m) => m.display_text);
+    expect(texts).toEqual([
+      'Explique-moi mes repères de nutrition.',
+      'Explique-moi mon bilan de la semaine.',
+    ]);
+  });
+
+  it("un mineur n'a jamais ces puces, même avec un profil nutrition full", async () => {
+    kit = await exchangeKit({ birthDate: '2010-01-01', chat: [] });
+    await fullMember(kit.ctx, kit.user.id);
+    await expect(kit.ask('', { guided: { flow: 'nutrition', choices: ['targets'] } })).rejects.toMatchObject({
+      code: 'validation',
+      status: 400,
+    });
+  });
 
   it('« Mes charges » : le nom du catalogue, pour un exercice du programme courant', async () => {
     kit = await exchangeKit({ program: true, chat: [fakeText(FINE)] });

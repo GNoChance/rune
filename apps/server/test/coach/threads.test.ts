@@ -83,13 +83,13 @@ describe('openTodayThread', () => {
     await setup('2026-11-03T10:00:00.000Z');
     const user = await createUser(ctx, { birthDate: '2008-11-04' });
     const before = await open(user.id);
-    expect(before).toMatchObject({ day: '2026-11-03', audience: 'minor', promptVersion: 'coach-2/minor' });
+    expect(before).toMatchObject({ day: '2026-11-03', audience: 'minor', promptVersion: 'coach-3/minor' });
     expect(JSON.parse(before.brief ?? '')).toMatchObject({ audience: 'minor', age_band: '16-17' });
 
     // 23 h 30 UTC le 3 : déjà le 4 à Paris.
     ctx.clock.set('2026-11-03T23:30:00.000Z');
     const after = await open(user.id);
-    expect(after).toMatchObject({ day: '2026-11-04', audience: 'adult', promptVersion: 'coach-2/adult' });
+    expect(after).toMatchObject({ day: '2026-11-04', audience: 'adult', promptVersion: 'coach-3/adult' });
     expect(JSON.parse(after.brief ?? '')).toMatchObject({ audience: 'adult', age_band: '18-29' });
   });
 

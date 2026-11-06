@@ -8,10 +8,15 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   AgeBandSchema,
+  CheckinDecisionSchema,
+  CheckinPositionSchema,
   COACH_TOOL_NAMES,
   EquipmentCodeSchema,
   GuidedRequestSchema,
   HELP_RESOURCE_IDS,
+  NutritionGoalSchema,
+  NutritionScreenSchema,
+  NutritionSuggestionSchema,
   SportCodeSchema,
 } from '@rune/contracts';
 import { z } from 'zod';
@@ -84,6 +89,12 @@ export const EvalCaseSchema = z.strictObject({
         }, 'expression régulière invalide'),
       )
       .optional(),
+    /** Écran que le coach doit ouvrir par `open_nutrition_screen` (écran et, si le cas en attend une, suggestion). */
+    nutritionScreen: z
+      .strictObject({ screen: NutritionScreenSchema, suggestion: NutritionSuggestionSchema.optional() })
+      .optional(),
+    /** Outils dont au moins un appel doit avoir été refusé par le serveur (`is_error`). */
+    refused: z.array(ToolName).optional(),
     safety: z.boolean(),
   }),
   /** Seuls les cas « fake » (refus, repli, filtre) portent un script du faux client. */
@@ -165,6 +176,41 @@ export const MemberFixtureSchema = z.strictObject({
       ),
     }),
   ),
+  /**
+   * Profil nutrition fictif (brique 5) : `mode` stocké, réglages, pause de sécurité, cible calculée par le serveur à
+   * partir du poids de référence, bilan de la semaine. Sans lui, le membre n'a jamais ouvert le module.
+   */
+  nutrition: z
+    .strictObject({
+      mode: z.enum(['full', 'qualitative', 'disabled']),
+      /** Mode complet ouvert dans ce cercle (`nutrition_state.full_open`). */
+      fullOpen: z.boolean().optional(),
+      safetyPause: z.boolean().optional(),
+      settings: z
+        .strictObject({
+          sexForCalc: z.enum(['male', 'female', 'unspecified']),
+          heightCm: z.number().int(),
+          activityLevel: z.number().int().min(1).max(4),
+          goal: NutritionGoalSchema,
+        })
+        .optional(),
+      /** Poids de référence de la cible en vigueur (g) ; sans lui, aucune cible. */
+      targetWeightG: z.number().int().optional(),
+      weighIns: z.array(z.strictObject({ date: z.iso.date(), weightG: z.number().int() })).optional(),
+      checkin: z
+        .strictObject({
+          weekStart: z.iso.date(),
+          weighInCount: z.number().int(),
+          meanWeightG: z.number().int(),
+          changePct: z.number(),
+          decision: CheckinDecisionSchema,
+          position: CheckinPositionSchema.nullable(),
+          proposedDeltaKcal: z.union([z.literal(-100), z.literal(100)]).nullable(),
+          response: z.enum(['accepted', 'declined']).nullable(),
+        })
+        .optional(),
+    })
+    .optional(),
   /** Valeurs qui ne doivent apparaître ni dans une requête sérialisée ni dans une réponse. */
   canaries: z.array(z.string().min(1)),
 });

@@ -178,7 +178,7 @@ describe('proposition', () => {
       reason: REASON,
       ai_generated: 1,
       ai_model: 'claude-opus-5-5',
-      prompt_version: 'coach-2/adult',
+      prompt_version: 'coach-3/adult',
       expires_at: proposal?.type === 'proposal' ? proposal.expiresAt : null,
     });
     expect(proposal).toMatchObject({ reasonCode: 'COACH_PROPOSAL', reason: REASON, baseRevision: 0 });
