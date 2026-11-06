@@ -208,3 +208,44 @@ describe('réglages : « perte » jamais proposée si le calcul l’impose', () 
     expect(await screen.findByText("Cet objectif n'est pas proposé actuellement.", {}, LAZY)).toBeTruthy();
   });
 });
+
+describe('réglages : « perte » jamais ouverte par défaut pendant le chargement', () => {
+  const lowWeigh = [
+    {
+      id: 'w1',
+      ownerId: 'u-1',
+      serverRevSeen: 1,
+      deletedAt: null,
+      updatedAt: '2026-10-05T10:00:00.000Z',
+      date: '2026-10-05',
+      weightG: 47_000,
+    },
+  ];
+  /** Échoue si « Perte de gras » apparaît, ne serait-ce qu'un instant. */
+  function watchLose() {
+    const seen = { lose: false };
+    const look = () => {
+      if (document.body.textContent?.includes('Perte de gras')) seen.lose = true;
+    };
+    const observer = new MutationObserver(look);
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    return { seen, stop: () => observer.disconnect() };
+  }
+
+  it('160 cm / 47 kg, ?suggest=lose : jamais rendue, aucune requête avec goal lose', async () => {
+    const watch = watchLose();
+    const { api } = await open('/nutrition/settings?focus=goal&suggest=lose', {
+      settings: { heightCm: 160 },
+      weighIns: lowWeigh,
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    watch.stop();
+    expect(watch.seen.lose).toBe(false);
+    expect(JSON.stringify(api.calls.map((c) => c.body))).not.toContain('"lose"');
+  });
+
+  it('adulte sans contrainte : « Perte de gras » apparaît une fois les pesées lues', async () => {
+    await open('/nutrition/settings', { weighIns: [{ ...lowWeigh[0], weightG: 75_000 }] });
+    expect(await screen.findByRole('radio', { name: 'Perte de gras' }, LAZY)).toBeTruthy();
+  });
+});

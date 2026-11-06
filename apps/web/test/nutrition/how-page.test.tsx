@@ -57,3 +57,31 @@ describe('/nutrition/how', () => {
     await waitFor(() => expect(location()).toBe('/nutrition'), LAZY);
   });
 });
+
+describe('/nutrition/how : « perte » pendant le chargement', () => {
+  it('aucune ligne « perte » à aucun moment sous le seuil', async () => {
+    let seen = false;
+    const observer = new MutationObserver(() => {
+      if (/perte/i.test(document.body.textContent ?? '')) seen = true;
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    await open('/nutrition/how', {
+      settings: { heightCm: 160 },
+      weighIns: [
+        {
+          id: 'w1',
+          ownerId: 'u-1',
+          serverRevSeen: 1,
+          deletedAt: null,
+          updatedAt: '2026-10-05T10:00:00.000Z',
+          date: '2026-10-05',
+          weightG: 47_000,
+        },
+      ],
+    });
+    await screen.findByRole('heading', title, LAZY);
+    await new Promise((r) => setTimeout(r, 300));
+    observer.disconnect();
+    expect(seen).toBe(false);
+  });
+});

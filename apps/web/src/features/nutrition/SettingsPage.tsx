@@ -190,15 +190,17 @@ function ChoiceSetting<V extends string | number>(p: {
   requestedGoal: NutritionGoal | null;
   guard: Guard;
 }) {
-  const [draft, setDraft] = useState<V | null>(p.suggestion);
-  const value = draft ?? p.current;
+  const [draft, setDraft] = useState<V | null>(null);
+  // Un choix qui n'est plus proposé (« perte » écartée après lecture) est abandonné : jamais envoyé.
+  const offered = (v: V | null) => v !== null && p.options.some((o) => o.value === v);
+  const value = offered(draft) ? draft : offered(p.suggestion) ? p.suggestion : p.current;
   const label = (v: V | null) => p.options.find((o) => o.value === v)?.label ?? null;
   return (
     <SettingEditor
       title={p.title}
       current={label(p.current)}
       open={p.focused}
-      suggested={p.suggestion !== null && draft === p.suggestion}
+      suggested={offered(p.suggestion) && !offered(draft) && value === p.suggestion}
       changes={value !== null && value !== p.current ? p.build(value) : null}
       requestedGoal={p.requestedGoal}
       guard={p.guard}
