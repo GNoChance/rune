@@ -143,11 +143,14 @@ export function trailingWords(sentence: string, preceding: readonly string[] = [
   return scanNumbers(prepare(sentence), preceding).trailing;
 }
 
-// Règle 2. Hors mode nutrition complet, la famille nutrition est vide.
+// Règle 2. Hors mode nutrition complet, les familles nutrition et volume sont vides.
 function unitViolation(text: string, allowed: AllowedValues, nutritionOpen: boolean): string | null {
   for (const quantity of findQuantities(text)) {
-    const open = quantity.family !== 'nutrition' || nutritionOpen;
-    if (!open || !allowed[quantity.family].has(quantity.value)) return `${quantity.value} ${quantity.unit}`;
+    const open = (quantity.family !== 'nutrition' && quantity.family !== 'volume') || nutritionOpen;
+    if (!open || !allowed[quantity.family].has(quantity.value)) {
+      // Un volume est rendu en mL, l'unité dans laquelle il est comparé.
+      return quantity.family === 'volume' ? `${quantity.value} mL` : `${quantity.value} ${quantity.unit}`;
+    }
   }
   return null;
 }
@@ -191,7 +194,8 @@ const toWords = (terms: readonly ForbiddenTerm[]): WordTerm[] =>
   }));
 
 const FOR_ALL = toWords(FORBIDDEN_TERMS.all);
-const FOR_MINOR = [...FOR_ALL, ...toWords(FORBIDDEN_TERMS.minor)];
+const NOT_FULL = toWords(FORBIDDEN_TERMS.notFull);
+const MINOR_ONLY = toWords(FORBIDDEN_TERMS.minor);
 const ALLOWED_PHRASES = FORBIDDEN_TERMS.allowedForMinor.map(plainWords);
 
 /** Rang du premier mot où commence l'une des formes (nombre d'espaces avant lui), ou l'infini. */
@@ -223,8 +227,18 @@ function termViolation(text: string, terms: readonly WordTerm[]): string | null 
 }
 
 /**
- * Règles du §11.3 dans l'ordre, première violation rendue. Famille nutrition et termes levés seulement pour un adulte
- * en mode `full` ; tout autre public a les listes `all` et `minor` (côté fermé).
+ * Terme interdit d'un texte selon les listes retenues : `all` toujours, `notFull` hors mode complet, `minor` pour un
+ * mineur. Rend le terme dont une forme apparaît le plus tôt, ou `null`. Partagé avec le contrôle des fiches conseils.
+ */
+export function forbiddenTermIn(text: string, lists: { notFull: boolean; minor: boolean }): string | null {
+  const terms = [...FOR_ALL, ...(lists.notFull ? NOT_FULL : []), ...(lists.minor ? MINOR_ONLY : [])];
+  return termViolation(text, terms);
+}
+
+/**
+ * Règles du §11.3 dans l'ordre, première violation rendue. Familles nutrition et volume ouvertes (aux valeurs
+ * déclarées) pour un adulte en mode `full` seulement ; la liste « pour tous » s'applique dans tous les modes, la liste
+ * « hors mode complet » hors `full`, la liste des mineurs à tout public qui n'est pas « adult » (côté fermé).
  */
 export function outputFilter(sentence: string, ctx: FilterContext): FilterVerdict {
   const text = prepare(sentence);
@@ -236,10 +250,8 @@ export function outputFilter(sentence: string, ctx: FilterContext): FilterVerdic
   const unit = unitViolation(text, ctx.allowed, nutritionFull);
   if (unit !== null) return { ok: false, rule: 'unit', detail: unit };
 
-  if (!nutritionFull) {
-    const term = termViolation(text, ctx.audience === 'adult' ? FOR_ALL : FOR_MINOR);
-    if (term !== null) return { ok: false, rule: 'forbidden_term', detail: term };
-  }
+  const term = forbiddenTermIn(text, { notFull: !nutritionFull, minor: ctx.audience !== 'adult' });
+  if (term !== null) return { ok: false, rule: 'forbidden_term', detail: term };
   return { ok: true };
 }
 

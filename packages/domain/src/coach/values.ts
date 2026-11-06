@@ -1,4 +1,4 @@
-export type UnitFamily = 'mass' | 'percent' | 'nutrition';
+export type UnitFamily = 'mass' | 'percent' | 'nutrition' | 'volume';
 
 export interface Quantity {
   value: string;
@@ -13,24 +13,43 @@ export type AllowedValues = Readonly<Record<UnitFamily, ReadonlySet<string>>>;
 const SPACES = /[    ]+/g;
 const SP = '[ \\u00a0\\u202f\\u2009]';
 
-const UNIT_FAMILIES: Readonly<Record<string, UnitFamily>> = {
-  kg: 'mass',
-  kilo: 'mass',
-  kilos: 'mass',
-  kilogramme: 'mass',
-  kilogrammes: 'mass',
-  '%': 'percent',
-  'pour cent': 'percent',
-  pourcent: 'percent',
-  kcal: 'nutrition',
-  cal: 'nutrition',
-  calorie: 'nutrition',
-  calories: 'nutrition',
-  g: 'nutrition',
-  gr: 'nutrition',
-  gramme: 'nutrition',
-  grammes: 'nutrition',
+/** Unité normalisée rendue par `findUnitNumbers` ; les volumes sont convertis en mL. */
+export type UnitCode = 'kcal' | 'g' | 'kg' | 'pct' | 'ml';
+
+interface UnitInfo {
+  family: UnitFamily;
+  code: UnitCode;
+  /** Facteur vers l'unité du code (L → mL : 1000). */
+  factor: number;
+}
+
+const info = (family: UnitFamily, code: UnitCode, factor = 1): UnitInfo => ({ family, code, factor });
+
+const UNITS: Readonly<Record<string, UnitInfo>> = {
+  kg: info('mass', 'kg'),
+  kilo: info('mass', 'kg'),
+  kilos: info('mass', 'kg'),
+  kilogramme: info('mass', 'kg'),
+  kilogrammes: info('mass', 'kg'),
+  '%': info('percent', 'pct'),
+  'pour cent': info('percent', 'pct'),
+  pourcent: info('percent', 'pct'),
+  kcal: info('nutrition', 'kcal'),
+  cal: info('nutrition', 'kcal'),
+  calorie: info('nutrition', 'kcal'),
+  calories: info('nutrition', 'kcal'),
+  g: info('nutrition', 'g'),
+  gr: info('nutrition', 'g'),
+  gramme: info('nutrition', 'g'),
+  grammes: info('nutrition', 'g'),
+  l: info('volume', 'ml', 1000),
+  litre: info('volume', 'ml', 1000),
+  litres: info('volume', 'ml', 1000),
+  ml: info('volume', 'ml'),
+  cl: info('volume', 'ml', 10),
 };
+
+const unitInfo = (unit: string): UnitInfo | undefined => UNITS[unit.toLowerCase().replace(SPACES, ' ')];
 
 const NUMBER = `\\d+(?:${SP}\\d{3})*(?:[.,]\\d+)?`;
 // « 8 à 10 », « 10-15 », « 10–15 », « 10−15 », « entre 8 et 10 », « 60 ou 62,5 », « 60/62,5 » : les deux nombres
@@ -40,9 +59,15 @@ const RANGE_SEPARATOR = `${SP}*(?:[-/\\u2010-\\u2015\\u2212]|à|et|ou)${SP}*`;
 // ni d'un chiffre suivi d'un séparateur décimal.
 const QUANTITY = new RegExp(
   `(?<!\\d)(?<!\\d[.,])(?:(${NUMBER})${RANGE_SEPARATOR})?(${NUMBER})${SP}*` +
-    `(kilogrammes?|kilos?|kg|kcal|calories?|cal|grammes?|gr|g|%|pour${SP}*cent|pourcent)(?![\\p{L}\\d])`,
+    `(kilogrammes?|kilos?|kg|kcal|calories?|cal|grammes?|gr|g|litres?|ml|cl|l|%|pour${SP}*cent|pourcent)(?![\\p{L}\\d])`,
   'giud',
 );
+
+/** Valeur multipliée par `factor`, arrondie à 3 décimales (2,25 L → 2250 mL). */
+function convert(value: string, factor: number): string {
+  if (factor === 1) return value;
+  return normalizeNumber(String(Math.round(Number(value) * factor * 1000) / 1000));
+}
 
 export function normalizeNumber(raw: string): string {
   const compact = raw.replace(SPACES, '').replace(',', '.');
@@ -54,16 +79,29 @@ export function findQuantities(text: string): Quantity[] {
   const found: Quantity[] = [];
   for (const match of text.matchAll(QUANTITY)) {
     const unit = match[3] as string;
-    const family = UNIT_FAMILIES[unit.toLowerCase().replace(SPACES, ' ')];
-    if (!family) continue;
+    const meta = unitInfo(unit);
+    if (!meta) continue;
+    const { family, factor } = meta;
     for (const group of [1, 2]) {
       const raw = match[group];
       const at = match.indices?.[group];
       if (raw === undefined || at === undefined) continue;
-      found.push({ value: normalizeNumber(raw), unit, family, index: at[0] });
+      found.push({ value: convert(normalizeNumber(raw), factor), unit, family, index: at[0] });
     }
   }
   return found;
+}
+
+/**
+ * Nombres suivis d'une unité (kcal, g, kg, %, volumes), valeur normalisée et unité ramenée à un code ; volumes en mL.
+ * Expression partagée par le filtre du coach et le contrôle des fiches conseils (brique 5 §11.4).
+ */
+export function findUnitNumbers(text: string): { value: string; unit: UnitCode; index: number }[] {
+  return findQuantities(text).map(({ value, unit, index }) => ({
+    value,
+    unit: (unitInfo(unit) as UnitInfo).code,
+    index,
+  }));
 }
 
 function familyOfKey(key: string | undefined): UnitFamily | undefined {
@@ -71,6 +109,7 @@ function familyOfKey(key: string | undefined): UnitFamily | undefined {
   if (key.endsWith('_kg')) return 'mass';
   if (key.endsWith('_pct')) return 'percent';
   if (key.endsWith('_kcal') || key.endsWith('_g')) return 'nutrition';
+  if (key.endsWith('_ml')) return 'volume';
   return undefined;
 }
 
@@ -86,10 +125,11 @@ export function allowedValues(sources: {
     mass: new Set(),
     percent: new Set(),
     nutrition: new Set(),
+    volume: new Set(),
   };
   // Le signe est ignoré (comme dans `findQuantities`) ; arrondi à 3 décimales (0.1 + 0.2 -> 0.3).
   const addNumber = (family: UnitFamily, value: number) => {
-    if (family === 'nutrition' && !sources.nutritionFull) return;
+    if ((family === 'nutrition' || family === 'volume') && !sources.nutritionFull) return;
     sets[family].add(normalizeNumber(String(Math.abs(Math.round(value * 1000) / 1000))));
   };
 

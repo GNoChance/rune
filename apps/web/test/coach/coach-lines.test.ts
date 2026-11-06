@@ -102,7 +102,7 @@ describe('intros des coachs (tâche 27)', () => {
         const ctx: FilterContext = {
           audience,
           nutritionMode: 'none',
-          allowed: { mass: new Set(), percent: new Set(), nutrition: new Set() },
+          allowed: { mass: new Set(), percent: new Set(), nutrition: new Set(), volume: new Set() },
         };
         expect(outputFilterText(text, ctx), `${audience} : ${text}`).toEqual({ ok: true });
       }

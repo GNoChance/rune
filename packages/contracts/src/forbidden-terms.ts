@@ -1,6 +1,7 @@
 /*
- * Termes interdits v1 du filtre de sortie du coach (spec brique 4 §11.3 et §11.4, choix C10), tenus ensuite par la
- * brique 5 (07 §5.10.4). `term` : l'entrée de la spec telle quelle, dans l'ordre ; `forms` : le terme et ses formes
+ * Termes interdits v2 du filtre de sortie du coach (spec brique 4 §11.3 et §11.4, choix C10 ; brique 5 §11.5, choix
+ * C15) : la liste v1 « pour tous » et la liste des mineurs inchangées, la liste « hors mode complet » en plus
+ * (07 §5.10.4). `term` : l'entrée de la spec telle quelle, dans l'ordre ; `forms` : le terme et ses formes
  * fléchies (pluriel et féminin des noms et adjectifs ; infinitif, présent, participes et futur des verbes). Le filtre
  * compare ces formes au texte normalisé (NFKC, minuscules, accents retirés), aux limites de mots.
  */
@@ -102,13 +103,14 @@ const SE_MERITER = [
 ];
 
 export const FORBIDDEN_TERMS: {
-  version: '1';
+  version: '2';
   all: readonly ForbiddenTerm[];
+  notFull: readonly ForbiddenTerm[];
   minor: readonly ForbiddenTerm[];
   allowedForMinor: readonly string[];
 } = {
-  version: '1',
-  /** Pour tous (07 §5.10, colonne « Ne jamais utiliser », telle quelle). */
+  version: '2',
+  /** Pour tous, dans tous les modes (07 §5.10, colonne « Ne jamais utiliser », telle quelle). */
   all: [
     entry('régime', ['régimes']),
     entry('prescription', ['prescriptions']),
@@ -131,6 +133,14 @@ export const FORBIDDEN_TERMS: {
     entry('cheat meal', ['cheat meals']),
     entry('se mériter', SE_MERITER),
     entry('culpabiliser', firstGroup('culpabilis')),
+  ],
+  /** Hors mode complet (adultes en qualitatif ou désactivé, et tout mineur) ; « déficit calorique » est couvert par « déficit ». */
+  notFull: [
+    entry('déficit', ['déficits']),
+    entry('déficitaire', ['déficitaires']),
+    entry('jeûne', ['jeûnes']),
+    entry('jeûner', firstGroup('jeûn')),
+    entry('sécher', firstGroup('séch', 'sèch')),
   ],
   /** En plus pour un mineur. */
   minor: [

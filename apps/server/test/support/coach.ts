@@ -53,7 +53,7 @@ export function toolContext(
     thread: { id: 'thread-absent', audience: 'adult', promptVersion: 'coach-1/adult', ...o.thread },
     now: o.now ?? ctx.clock.now(),
     state: { proposals: [], invalidProposals: 0, helpCards: [] },
-    allowed: { mass: new Set(), percent: new Set(), nutrition: new Set() },
+    allowed: { mass: new Set(), percent: new Set(), nutrition: new Set(), volume: new Set() },
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allowedValues, findQuantities, normalizeNumber } from '../../src/coach/values';
+import { allowedValues, findQuantities, findUnitNumbers, normalizeNumber } from '../../src/coach/values';
 
 const NO_SOURCES = { brief: {}, toolResults: [], constants: [], nutritionFull: false };
 
@@ -235,5 +235,53 @@ describe('allowedValues, signe, arrondi et chaînes numériques', () => {
     const allowed = allowedValues({ ...NO_SOURCES, brief: { delta_kg: -2.5 } });
     const [quantity] = findQuantities('tu as pris 2,5 kg');
     expect(allowed[quantity?.family ?? 'mass'].has(quantity?.value ?? '')).toBe(true);
+  });
+});
+
+describe('findUnitNumbers', () => {
+  it('rend la valeur, une unité normalisée et la position', () => {
+    expect(findUnitNumbers('200 kcal, 5 kg, 10 %, 30 g')).toEqual([
+      { value: '200', unit: 'kcal', index: 0 },
+      { value: '5', unit: 'kg', index: 10 },
+      { value: '10', unit: 'pct', index: 16 },
+      { value: '30', unit: 'g', index: 22 },
+    ]);
+  });
+
+  it.each([
+    ['2,25 L', '2250'],
+    ['2 l', '2000'],
+    ['1 litre', '1000'],
+    ['3 litres', '3000'],
+    ['500 mL', '500'],
+    ['500 ml', '500'],
+    ['25 cL', '250'],
+    ['25 cl', '250'],
+  ])('convertit « %s » en mL', (text, value) => {
+    expect(findUnitNumbers(text)).toEqual([{ value, unit: 'ml', index: 0 }]);
+  });
+
+  it("n'accepte une unité de volume qu'en fin de mot", () => {
+    expect(findUnitNumbers('2 lundis')).toEqual([]);
+    expect(findUnitNumbers('3 clés')).toEqual([]);
+  });
+
+  it('lit une fourchette de volumes', () => {
+    expect(findUnitNumbers('entre 2 et 2,5 L').map((n) => n.value)).toEqual(['2000', '2500']);
+  });
+});
+
+describe('allowedValues : volume', () => {
+  it('range une clé _ml dans la famille volume, en mode complet seulement', () => {
+    const brief = { targets: { water_ml: 2500 } };
+    const full = allowedValues({ ...NO_SOURCES, brief, nutritionFull: true });
+    expect([...full.volume]).toEqual(['2500']);
+    expect(full.nutrition.size).toBe(0);
+    expect(allowedValues({ ...NO_SOURCES, brief }).volume.size).toBe(0);
+  });
+
+  it('lit un volume écrit dans une chaîne (« 2,25 L »)', () => {
+    const full = allowedValues({ ...NO_SOURCES, brief: { note: 'cible 2,25 L' }, nutritionFull: true });
+    expect([...full.volume]).toEqual(['2250']);
   });
 });

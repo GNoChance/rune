@@ -15,6 +15,7 @@ const values = (v: Partial<Record<UnitFamily, string[]>> = {}): AllowedValues =>
   mass: new Set(v.mass ?? []),
   percent: new Set(v.percent ?? []),
   nutrition: new Set(v.nutrition ?? []),
+  volume: new Set(v.volume ?? []),
 });
 
 const ctx = (audience: AgeBand, over: Partial<FilterContext> = {}): FilterContext => ({
@@ -248,13 +249,88 @@ describe('règle 3, termes interdits', () => {
     },
   );
 
-  it('lève les termes pour un adulte en mode full seulement', () => {
-    expect(outputFilter('Ta sèche avance.', ctx('adult', { nutritionMode: 'full' }))).toEqual({ ok: true });
-    expect(outputFilter('Ta sèche avance.', ctx('adult', { nutritionMode: 'qualitative' }))).toEqual(
-      blocked('forbidden_term', 'sèche'),
-    );
+  it('applique la liste « pour tous » dans tous les modes, mode full compris', () => {
+    for (const mode of ['none', 'qualitative', 'full'] as const) {
+      expect(outputFilter('Évite le régime.', ctx('adult', { nutritionMode: mode }))).toEqual(
+        blocked('forbidden_term', 'régime'),
+      );
+      expect(outputFilter('Ta sèche avance.', ctx('adult', { nutritionMode: mode }))).toEqual(
+        blocked('forbidden_term', 'sèche'),
+      );
+    }
     expect(outputFilter('Ta sèche avance.', ctx('minor', { nutritionMode: 'full' }))).toEqual(
       blocked('forbidden_term', 'sèche'),
+    );
+  });
+
+  it('bloque « jeûne » et « déficit » pour un adulte hors mode full, les permet en full', () => {
+    for (const mode of ['none', 'qualitative'] as const) {
+      expect(outputFilter('Un jeûne court.', ctx('adult', { nutritionMode: mode }))).toEqual(
+        blocked('forbidden_term', 'jeûne'),
+      );
+      expect(outputFilter('Reste en déficit.', ctx('adult', { nutritionMode: mode }))).toEqual(
+        blocked('forbidden_term', 'déficit'),
+      );
+    }
+    expect(outputFilter('Un jeûne court.', ctx('adult', { nutritionMode: 'full' }))).toEqual({ ok: true });
+    expect(outputFilter('Reste déficitaire.', ctx('adult', { nutritionMode: 'full' }))).toEqual({ ok: true });
+  });
+
+  it('bloque chaque forme de la liste « hors mode complet » hors full, la permet en full', () => {
+    const inAll = new Set(FORBIDDEN_TERMS.all.flatMap((t) => t.forms.map(normalizeForTerms)));
+    for (const { forms } of FORBIDDEN_TERMS.notFull) {
+      // « sèche » est dans la liste « pour tous » : « sèche » et « séché » (accents ignorés) sont bloqués dans tous les modes.
+      for (const form of forms.filter((f) => !inAll.has(normalizeForTerms(f)))) {
+        const sentence = `Parle de ${form} ici.`;
+        for (const mode of ['none', 'qualitative'] as const) {
+          expect(outputFilter(sentence, ctx('adult', { nutritionMode: mode }))).toMatchObject({
+            ok: false,
+            rule: 'forbidden_term',
+          });
+        }
+        expect(outputFilter(sentence, ctx('adult', { nutritionMode: 'full' }))).toEqual({ ok: true });
+      }
+    }
+  });
+
+  it('permet « perdre du poids » à un adulte en qualitatif, pas à un mineur', () => {
+    const sentence = 'Tu veux perdre du poids.';
+    expect(outputFilter(sentence, ctx('adult', { nutritionMode: 'qualitative' }))).toEqual({ ok: true });
+    expect(outputFilter(sentence, ctx('minor', { nutritionMode: 'qualitative' }))).toEqual(
+      blocked('forbidden_term', 'perdre du poids'),
+    );
+  });
+});
+
+describe('famille volume (§11.4)', () => {
+  const water = values({ volume: ['2500'] });
+  const full = ctx('adult', { nutritionMode: 'full', allowed: water });
+
+  it("laisse passer « 2,5 L d'eau » en full si water_ml 2500 est autorisé", () => {
+    expect(outputFilter("Bois 2,5 L d'eau.", full)).toEqual({ ok: true });
+    expect(outputFilter('Bois 2500 mL.', full)).toEqual({ ok: true });
+    expect(outputFilter('Bois 250 cl.', full)).toEqual({ ok: true });
+    expect(outputFilter('Bois 2,5 litres.', full)).toEqual({ ok: true });
+  });
+
+  it('bloque un volume non autorisé en full', () => {
+    expect(outputFilter('Bois 3 L.', full)).toEqual(blocked('unit', '3000 mL'));
+  });
+
+  it('bloque tout volume hors full, même déclaré', () => {
+    for (const mode of ['none', 'qualitative'] as const) {
+      expect(
+        outputFilter("Bois 2,5 L d'eau.", ctx('adult', { nutritionMode: mode, allowed: water })),
+      ).toEqual(blocked('unit', '2500 mL'));
+    }
+    expect(
+      outputFilter("Bois 2,5 L d'eau.", ctx('minor', { nutritionMode: 'full', allowed: water })),
+    ).toEqual(blocked('unit', '2500 mL'));
+  });
+
+  it('bloque « 2 l de lait » hors full', () => {
+    expect(outputFilter('Prends 2 l de lait.', ctx('adult', { nutritionMode: 'qualitative' }))).toEqual(
+      blocked('unit', '2000 mL'),
     );
   });
 });

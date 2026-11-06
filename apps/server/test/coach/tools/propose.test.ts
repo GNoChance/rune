@@ -427,6 +427,7 @@ describe('propose_program_change : corrections', () => {
       mass: new Set(),
       percent: new Set(),
       nutrition: new Set(),
+      volume: new Set(),
     });
   });
 

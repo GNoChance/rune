@@ -63,7 +63,12 @@ import { PROPOSAL_ERROR_MESSAGES } from '../../src/coach/tools/propose-program-c
 const VARIANTS = ['coach-2/adult', 'coach-2/minor'] as const;
 const AUDIENCES: readonly AgeBand[] = ['adult', 'minor'];
 const RULES: readonly FilterRule[] = ['phone', 'unit', 'forbidden_term'];
-const NOTHING_ALLOWED = { mass: new Set<string>(), percent: new Set<string>(), nutrition: new Set<string>() };
+const NOTHING_ALLOWED = {
+  mass: new Set<string>(),
+  percent: new Set<string>(),
+  nutrition: new Set<string>(),
+  volume: new Set<string>(),
+};
 const ADULT = PROMPTS['coach-2/adult'];
 const MINOR = PROMPTS['coach-2/minor'];
 
