@@ -179,6 +179,8 @@ export const DisplayExtras = z.strictObject({
   proposalIds: z.array(z.string()),
   links: z.array(CoachLinkSchema),
   replaced: z.boolean(),
+  /** Message de la personne venu d'un parcours guidé : la mention et les puces de suite (spec 4.1 §2.3). */
+  guided: GuidedRequestSchema.optional(),
 });
 export type DisplayExtras = z.infer<typeof DisplayExtras>;
 

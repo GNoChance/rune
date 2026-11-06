@@ -192,6 +192,11 @@ export async function recordExchange(
       blocks: [{ type: 'text', text: x.text }],
       displayText: x.text,
       clientMessageId: x.clientMessageId,
+      ...(x.guided === null
+        ? {}
+        : {
+            displayExtras: { helpCards: [], proposalIds: [], links: [], replaced: false, guided: x.guided },
+          }),
       aiGenerated: false,
     },
   ];

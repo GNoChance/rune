@@ -4,6 +4,8 @@ import {
   type CoachStreamEvent,
   cleanCoachText,
   coachTextLength,
+  type GuidedRequest,
+  guidedAllowedValues,
 } from '@rune/contracts';
 import {
   type ApiBlock,
@@ -22,6 +24,7 @@ import { httpError } from '../http/errors';
 import { isHealthConsentActive } from '../privacy/consent-state';
 import type { AttemptInput, AttemptOutcome, CallRecord } from './attempt';
 import { runAttempt } from './attempt';
+import { composeForUser } from './guided';
 import {
   type PromptVersion,
   REFUSAL_MESSAGE,
@@ -56,6 +59,8 @@ export interface PreparedExchange {
   clientMessageId: string;
   /** Texte nettoyé (`cleanCoachText`). */
   text: string;
+  /** Parcours guidé du message : son texte a été recomposé par le serveur (`composeForUser`). */
+  guided: GuidedRequest | null;
   lease: ExchangeLease;
   startedAt: Date;
   /** Jour de Paris du départ : celui du fil, de `coach_call.day` et des compteurs, même si l'échange passe minuit. */
@@ -89,7 +94,10 @@ export async function prepareExchange(
       : httpError(refusal.code);
   };
   await guard(false);
-  const text = cleanCoachText(body.text);
+  const text =
+    body.guided === undefined
+      ? cleanCoachText(body.text)
+      : await composeForUser(deps, userId, body.guided, now);
   if (text === '' || coachTextLength(text) > deps.coachConfig.limits.messageChars) {
     throw httpError('validation');
   }
@@ -118,6 +126,7 @@ export async function prepareExchange(
       thread,
       clientMessageId: body.clientMessageId,
       text,
+      guided: body.guided ?? null,
       lease,
       startedAt: now,
       day: parisDate(now),
@@ -268,6 +277,9 @@ export async function runExchange(
       ...historyForApi(stored),
       { role: 'user', content: [{ type: 'text', text: x.text }] },
     ];
+    // Durées de « Nouvelle séance » : autorisées pour cet échange seulement (spec 4.1 §4.3).
+    const durationsMin =
+      x.guided === null ? [] : guidedAllowedValues(x.guided.flow, x.guided.choices).duration_min;
     const month = parisMonthOf(x.day);
     const budgetMicros = deps.coachConfig.limits.personMonthlyBudgetUsd * 1_000_000;
     const request: AttemptInput['request'] = {
@@ -296,6 +308,7 @@ export async function runExchange(
           toolResults: threadToolResults,
           constants: deps.coachConfig.allowedConstants,
           nutritionFull: false,
+          durationsMin,
         }),
       };
       const outcome = await runAttempt({
@@ -305,7 +318,7 @@ export async function runExchange(
           note === null ? base : [...base, { role: 'system', content: [{ type: 'text', text: note }] }],
         tools: TOOLS_1,
         toolCtx,
-        filter: { audience: thread.audience, brief, threadToolResults },
+        filter: { audience: thread.audience, brief, threadToolResults, durationsMin },
         signal: x.lease.signal,
         async canCall(spentUsd) {
           const spentMicros = await monthSpentMicros(deps.db, x.userId, month);
