@@ -215,6 +215,27 @@ describe('messages et fils', () => {
     });
   });
 
+  it('coachThreads : plusieurs fils le même jour, le plus récent d’abord, puis par identifiant', async () => {
+    await setup();
+    const user = await createUser(ctx);
+    const thread = (createdAt: string, v: Row = {}) =>
+      insertFixtureRow(ctx.deps.db, 'coach_thread', {
+        userId: user.id,
+        day: '2026-11-05',
+        createdAt,
+        isOpen: 0,
+        closedReason: 'persona_change',
+        ...v,
+      });
+    const early = await thread('2026-11-05T08:00:00.000Z');
+    const tieA = await thread('2026-11-05T09:00:00.000Z');
+    const tieB = await thread('2026-11-05T09:00:00.000Z');
+    const latest = await thread('2026-11-05T10:00:00.000Z', { isOpen: 1, closedReason: null });
+    const { threads } = await coachThreads(ctx.deps.db, ctx.deps, user.id, ctx.clock.now());
+    const tied = [tieA.id, tieB.id].sort().reverse();
+    expect(threads.map((t) => t.id)).toEqual([latest.id, ...tied, early.id]);
+  });
+
   it('coachThreads : la fenêtre suit deps.coachConfig.retention.threadDays, comme la purge', async () => {
     await setup();
     const user = await createUser(ctx);
@@ -420,6 +441,19 @@ describe('coachBrief', () => {
     expect(ctx.deps.sqlite.prepare('SELECT id FROM coach_thread').all()).toEqual([]);
   });
 
+  it('après un changement de coach : le dossier de l’ancien fil n’est plus rendu', async () => {
+    await setup();
+    const user = await createUser(ctx);
+    const thread = await openTodayThread(ctx.deps, user.id, ctx.clock.now());
+    expect((await coachBrief(ctx.deps.db, ctx.deps, user.id, ctx.clock.now())).threadId).toBe(thread.id);
+    await insertFixtureRow(ctx.deps.db, 'training_profile', { ownerId: user.id, coach: 'skald' });
+    const response = await coachBrief(ctx.deps.db, ctx.deps, user.id, ctx.clock.now());
+    expect(response).toMatchObject({ threadId: null, preview: true, day: '2026-11-05' });
+    expect(ctx.deps.sqlite.prepare('SELECT is_open, closed_reason FROM coach_thread').all()).toEqual([
+      { is_open: 0, closed_reason: 'persona_change' },
+    ]);
+  });
+
   it('avec un fil : son dossier stocké, analysé ; null après le retrait santé', async () => {
     await setup();
     const user = await createUser(ctx);
@@ -455,6 +489,7 @@ describe('coachBrief', () => {
     const thread = await insertFixtureRow(ctx.deps.db, 'coach_thread', {
       userId: user.id,
       day: '2026-11-05',
+      persona: 'scribe',
       briefSchema: 'coach-brief/0',
       brief: stored,
     });

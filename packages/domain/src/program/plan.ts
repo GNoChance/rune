@@ -126,7 +126,7 @@ function resumeRule(days: number | null, rules: RulesSet): RulesSet['resume']['d
 /** `value` baissée de `pct` %, arrondie à l'entier inférieur (grammes, secondes). */
 const minusPct = (value: number, pct: number) => Math.floor((value * (100 - pct)) / 100);
 
-const findState = (states: readonly SlotState[], slotId: string, exerciseId: string) =>
+export const findState = (states: readonly SlotState[], slotId: string, exerciseId: string) =>
   states.find((s) => s.slotId === slotId && s.exerciseId === exerciseId) ?? null;
 
 /** Lignes d'une série : une, ou gauche puis droite en unilatéral. */

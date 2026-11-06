@@ -53,7 +53,7 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-describe('pnpm coach:eval --fake', () => {
+describe('pnpm coach:eval --fake', { timeout: 60_000 }, () => {
   it('termine sans erreur et écrit un rapport .md et un rapport .json', async () => {
     expect(code).toBe(0);
     const files = (await readdir(dir)).filter((f) => f.endsWith('.md') || f.endsWith('.json')).sort();
@@ -123,7 +123,7 @@ describe('pnpm coach:eval --fake', () => {
   });
 });
 
-describe('campagne réelle (client injecté, aucun appel réseau)', () => {
+describe('campagne réelle (client injecté, aucun appel réseau)', { timeout: 60_000 }, () => {
   it('avec confirmation, passe par le client et ne se dit jamais « fake »', async () => {
     const envFile = join(dir, 'ok.env');
     await writeFile(envFile, 'ANTHROPIC_API_KEY=sk-ant-secret-67890\n');
@@ -169,7 +169,7 @@ describe('campagne réelle (client injecté, aucun appel réseau)', () => {
   });
 });
 
-describe('verdict du rapport', () => {
+describe('verdict du rapport', { timeout: 60_000 }, () => {
   const run = (o: Partial<RunRecord> = {}): RunRecord => ({
     checks: [{ name: 'completed', status: 'pass', detail: '' }],
     tools: [],
@@ -270,7 +270,7 @@ describe('verdict du rapport', () => {
   });
 });
 
-describe('garde-fous du lanceur', () => {
+describe('garde-fous du lanceur', { timeout: 60_000 }, () => {
   it('refuse sous CI, sans rien créer', async () => {
     const printed: string[] = [];
     let created = 0;

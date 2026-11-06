@@ -1,3 +1,4 @@
+import { parisDate } from '@rune/domain';
 import type { Transaction } from 'kysely';
 import { logSecurityEvent } from '../auth/security-log';
 import { writeStamp } from '../db/rev';
@@ -15,15 +16,22 @@ import { deleteAllThreads } from './threads';
 
 /**
  * Entrée `coach_thread` de `HEALTH_WITHDRAW_HOOKS` (§6.3, choix C13) : fils ouverts de la personne clos
- * (`health_withdrawn`), `brief` à NULL sur tous ses fils, `blocks` à NULL sur tous ses messages. `display_text` et
+ * (`health_withdrawn`, ainsi que ceux du jour clos pour `persona_change` ou `version_change`), `brief` à NULL sur tous ses fils, `blocks` à NULL sur tous ses messages. `display_text` et
  * `coach_report.exchange_text` (copie choisie par la personne) restent. Tables de classe H : ni rev, ni tombstone.
  */
-export const coachHealthWithdrawHook: HealthWithdrawHook = async (trx, _deps, userId) => {
+export const coachHealthWithdrawHook: HealthWithdrawHook = async (trx, deps, userId) => {
+  // Aussi les fils du jour clos pour un changement de coach ou de réglage : sans cela le message suivant en rouvrirait un.
+  const today = parisDate(deps.clock.now());
   await trx
     .updateTable('coachThread')
     .set({ isOpen: 0, closedReason: 'health_withdrawn' })
     .where('userId', '=', userId)
-    .where('isOpen', '=', 1)
+    .where((eb) =>
+      eb.or([
+        eb('isOpen', '=', 1),
+        eb.and([eb('day', '=', today), eb('closedReason', 'in', ['persona_change', 'version_change'])]),
+      ]),
+    )
     .execute();
   await trx
     .updateTable('coachThread')

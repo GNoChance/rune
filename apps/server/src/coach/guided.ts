@@ -4,7 +4,13 @@ import {
   type GuidedRequest,
   guidedExerciseChoices,
 } from '@rune/contracts';
-import { parisDate, profileChain, replayInstance, UnknownRulesVersionError } from '@rune/domain';
+import {
+  currentChainExercise,
+  findState,
+  parisDate,
+  replayInstance,
+  UnknownRulesVersionError,
+} from '@rune/domain';
 import { traitsOn } from '../auth/me';
 import { currentCatalog } from '../catalog/bundle';
 import type { AppDeps } from '../deps';
@@ -32,10 +38,12 @@ async function programExerciseIds(deps: AppDeps, userId: string, cautious: boole
       program.template.workouts.flatMap((w) =>
         w.slots.flatMap((s) => {
           if (s.chain === undefined) return s.exercises ?? [];
-          const steps = profileChain(input.catalog, s.chain, cautious);
-          const state = slotStates.find((st) => st.slotId === s.id && st.exerciseId === s.chain);
-          const rank = Math.min(Math.max(state?.variantRank ?? 1, 1), steps.length);
-          const step = steps[rank - 1];
+          const step = currentChainExercise(
+            input.catalog,
+            s.chain,
+            cautious,
+            findState(slotStates, s.id, s.chain),
+          );
           return step === undefined ? [] : [step.id];
         }),
       ),

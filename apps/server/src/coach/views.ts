@@ -19,7 +19,7 @@ import { httpError } from '../http/errors';
 import { getConsentState } from '../privacy/consent-state';
 import { loadBriefInput } from './brief-input';
 import { readCoachState } from './state';
-import { currentThread, isReplaceable, personaOf, type ThreadRow, todayThread } from './threads';
+import { currentThread, isReplaceable, personaOf, type ThreadRow } from './threads';
 
 /*
  * Instantané de la garde (spec brique 4 §7.3) et vues des routes `/api/coach` (§7.1). Jours et mois de Paris. Les
@@ -205,6 +205,8 @@ export async function coachThreads(
     .where('userId', '=', userId)
     .where('day', '>=', since)
     .orderBy('day', 'desc')
+    .orderBy('createdAt', 'desc')
+    .orderBy('id', 'desc')
     .execute();
   return {
     threads: rows.map((r) => ({
@@ -251,8 +253,9 @@ export async function coachBrief(
   now: Date,
 ): Promise<CoachBriefResponse> {
   const day = parisDate(now);
-  const thread = await todayThread(db, userId, day);
-  if (thread !== undefined) {
+  // Même fil que `/today` : le dossier d'un fil périmé (changement de coach ou de réglage) n'est jamais rendu.
+  const thread = await currentThread(deps, userId, day);
+  if (thread !== undefined && !isReplaceable(thread)) {
     return { brief: storedBrief(deps, thread), threadId: thread.id, day, preview: false };
   }
   const { brief } = buildCoachBrief(await loadBriefInput(db, deps, userId, now));

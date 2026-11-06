@@ -66,6 +66,25 @@ export function profileChain<S extends CatalogSheet>(
   return stop === -1 ? steps : steps.slice(0, stop);
 }
 
+/** Rang visé (à partir de 1) dans `steps` : le `variantRank` de l'état, ramené dans la chaîne ; 1 sans état. */
+function aimedRank(steps: readonly unknown[], variantRank: number | null): number {
+  return Math.min(Math.max(variantRank ?? 1, 1), Math.max(steps.length, 1));
+}
+
+/**
+ * Exercice courant d'un slot `chain` (celui que `chainPlan` vise) : la variante du rang de l'état, dans la chaîne du
+ * profil ; `undefined` si la chaîne est vide ou coupée dès sa première variante (profil prudent).
+ */
+export function currentChainExercise<S extends CatalogSheet>(
+  catalog: readonly S[],
+  chainId: string,
+  cautious: boolean,
+  state: Pick<SlotState, 'variantRank'> | null,
+): S | undefined {
+  const steps = profileChain(catalog, chainId, cautious);
+  return steps[aimedRank(steps, state?.variantRank ?? null) - 1];
+}
+
 /** Ce que le slot prévoit avant de regarder le lieu : la référence, l'ordre de préférence et ses exercices propres. */
 interface SlotPlan<S extends PlanSheet> {
   plannedExerciseId: string | null;
@@ -91,7 +110,7 @@ function chainPlan<S extends PlanSheet>(
 ): SlotPlan<S> {
   const steps = profileChain(ctx.catalog, chainId, ctx.cautious);
   const full = ctx.cautious ? profileChain(ctx.catalog, chainId, false) : steps;
-  const rank = Math.min(Math.max(ctx.state?.variantRank ?? 1, 1), Math.max(steps.length, 1));
+  const rank = aimedRank(steps, ctx.state?.variantRank ?? null);
   const aimed = steps[rank - 1];
   // Chaîne coupée dès sa première variante (prudent) : rien de prévu, mais les remplaçants partent de la variante.
   const reference = aimed ?? full[Math.min(rank, full.length) - 1];

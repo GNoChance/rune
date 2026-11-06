@@ -4,7 +4,7 @@
  */
 import { type EquipmentCode, REFERENCE_PROFILES, type SlotSpec } from '@rune/contracts';
 import { describe, expect, it } from 'vitest';
-import { type PlanSheet, resolveSlot } from '../../src/program/resolve';
+import { currentChainExercise, type PlanSheet, resolveSlot } from '../../src/program/resolve';
 import { type SlotState, slotStateId } from '../../src/program/types';
 import { PUSH_UP_CHAIN } from '../fixtures/catalog';
 import { GYM_AB, PROGRAM_CATALOG, place, programSheet, slotOf } from '../fixtures/program';
@@ -285,5 +285,33 @@ describe('resolveSlot : chaîne (spec §4.3.6)', () => {
       'feet-elevated-push-up',
       'archer-push-up',
     ]);
+  });
+});
+
+describe('currentChainExercise', () => {
+  const current = (rank: number | null, cautious = false, catalog = [...PUSH_UP_CHAIN]) =>
+    currentChainExercise(catalog, 'push-up', cautious, rank === null ? null : { variantRank: rank })?.id;
+
+  it('sans état : première variante ; au-delà du rang 1 : la variante du rang, ramenée dans la chaîne', () => {
+    expect(current(null)).toBe('wall-push-up');
+    expect(current(3)).toBe('push-up');
+    expect(current(4)).toBe('feet-elevated-push-up');
+    expect(current(99)).toBe(PUSH_UP_CHAIN.at(-1)?.id);
+  });
+
+  it('profil prudent : chaîne coupée avant la première variante not_for_minors, rang ramené dedans', () => {
+    expect(current(5, true)).toBe('feet-elevated-push-up');
+    const catalog = PUSH_UP_CHAIN.map((s) => (s.id === 'wall-push-up' ? { ...s, not_for_minors: true } : s));
+    expect(current(3, true, catalog)).toBeUndefined();
+  });
+
+  it('suit le rang visé par resolveSlot', () => {
+    for (const rank of [1, 2, 4]) {
+      const planned = resolveSlot(
+        PUSH_UPS,
+        ctx({ catalog: [...PUSH_UP_CHAIN], place: HOME, state: chainState(rank) }),
+      );
+      expect(current(rank)).toBe(planned.plannedExerciseId);
+    }
   });
 });

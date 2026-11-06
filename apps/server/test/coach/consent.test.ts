@@ -362,6 +362,31 @@ describe('retrait de l’accord santé : crochet du coach (§6.3, choix C13)', (
     expect(lines.join('\n')).not.toContain(WITNESS);
   });
 
+  it('fil du jour clos pour un changement de coach ou de réglage : passé à health_withdrawn, pas de fil neuf le même jour', async () => {
+    const { u } = await setup();
+    expect((await grant(u, 'health')).status).toBe(200);
+    const mine = await equipCoach(u.id);
+    const second = await insert('coach_thread', {
+      userId: u.id,
+      day: '2026-11-05',
+      isOpen: 0,
+      closedReason: 'version_change',
+    });
+    ctx.deps.sqlite
+      .prepare("UPDATE coach_thread SET is_open = 0, closed_reason = 'persona_change' WHERE id = ?")
+      .run(String(mine.today.id));
+    expect((await withdraw(u, 'health')).status).toBe(200);
+    const states = ctx.deps.sqlite
+      .prepare('SELECT id, is_open, closed_reason FROM coach_thread WHERE day = ? ORDER BY id')
+      .all('2026-11-05') as Row[];
+    expect(states).toHaveLength(2);
+    expect(states.map((t) => [t.is_open, t.closed_reason])).toEqual([
+      [0, 'health_withdrawn'],
+      [0, 'health_withdrawn'],
+    ]);
+    expect(states.map((t) => t.id).sort()).toEqual([String(mine.today.id), String(second.id)].sort());
+  });
+
   it('plus aucune trace du dossier ni des blocs bruts dans la base', async () => {
     const { u } = await setup();
     expect((await grant(u, 'health')).status).toBe(200);

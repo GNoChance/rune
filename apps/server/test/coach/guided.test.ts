@@ -120,6 +120,21 @@ describe('message guidé', () => {
     expect(messages()[0]?.display_text).toContain(await nameOf('chain-a'));
   });
 
+  it('« Mes charges » sur une chaîne, profil prudent : chaîne coupée avant la variante not_for_minors, donc aucun exercice', async () => {
+    kit = await exchangeKit({ birthDate: '2010-01-01', chat: [fakeText(FINE)] });
+    await seedSheet(kit.ctx, sheetFixture('chain-a', { chain_id: 'rangee', not_for_minors: true }));
+    await seedSheet(kit.ctx, sheetFixture('chain-b', { chain_id: 'rangee', easier_id: 'chain-a' }));
+    const template = templateFixture('chain-program', [{ chain: 'rangee' }]);
+    await rebuild(kit.ctx, [template]);
+    await enroll(kit.ctx, kit.user.id, template);
+    for (const id of ['rangee', 'chain-a', 'chain-b']) {
+      await expect(kit.ask('', { guided: { flow: 'loads', choices: [id, 'why'] } })).rejects.toMatchObject({
+        code: 'validation',
+        status: 400,
+      });
+    }
+  });
+
   it('« Mes charges » sans programme actif : 400', async () => {
     kit = await exchangeKit({ chat: [] });
     await expect(
