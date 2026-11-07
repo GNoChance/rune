@@ -9,7 +9,8 @@ import type { ReactNode } from 'react';
 
 const INLINE = /!\[[^\]]*\]\([^)]*\)|\[([^\]]+)\]\(([^)\s]+)\)|\*\*(.+?)\*\*|`([^`]*)`|<\/?[a-zA-Z!][^>]*>/g;
 
-function isWebUrl(url: string): boolean {
+/** Adresse web (http ou https) : seule forme qui devient un lien, ici comme dans les sources d'une fiche. */
+export function isWebUrl(url: string): boolean {
   try {
     const { protocol } = new URL(url);
     return protocol === 'https:' || protocol === 'http:';

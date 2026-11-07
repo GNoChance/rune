@@ -4,7 +4,7 @@ import { createMonotonicUuidV7 } from '@rune/domain';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppDb } from '../../src/local-db/db';
 import { getMeta, setMeta } from '../../src/local-db/meta';
-import { localNutritionMode } from '../../src/local-db/nutrition';
+import { localNutritionMode, recordDescent } from '../../src/local-db/nutrition';
 import { createSyncEngine, type SyncEngine } from '../../src/sync/engine';
 import { writeLocal } from '../../src/sync/outbox';
 import { createFakeSyncServer, type FakeSyncServer } from '../support/fake-sync-server';
@@ -277,6 +277,104 @@ describe('intention de descente (spec §6.4 bis)', () => {
     await idle();
     expect(await db.mirror('weigh_in').count()).toBe(0);
     expect(count('GET /api/nutrition/rows')).toBe(0);
+    expect(await localNutritionMode(db)).toBe('qualitative');
+  });
+});
+
+describe('descente réglée par une 4xx alors que le serveur reste full', () => {
+  it('la purge ne laisse pas « full » comme mode lu : le pull suivant recharge l’instantané', async () => {
+    await seedCopies();
+    await setMeta(db, 'nutritionEffectiveMode', 'full');
+    await recordDescent(db, 'qualitative', NOW_ISO);
+    expect(await getMeta(db, 'nutritionEffectiveMode')).toBe('qualitative');
+    expect(await localNutritionMode(db)).toBe('qualitative');
+    server.on('PUT /api/nutrition/mode', () => server.json(422, { error: 'validation' }));
+    pulledMode = 'full';
+    await cycle();
+    expect(await getMeta(db, 'nutritionPendingMode')).toBeUndefined();
+    expect(count('GET /api/nutrition/rows')).toBe(1);
+    expect((await db.mirror('weigh_in').toArray()).map((r) => r.id)).toEqual(['w9']);
+    expect(await getMeta(db, 'nutritionEffectiveMode')).toBe('full');
+  });
+
+  it('une descente vers disabled depuis qualitative garde le plus strict', async () => {
+    await setMeta(db, 'nutritionEffectiveMode', 'qualitative');
+    await recordDescent(db, 'disabled', NOW_ISO);
+    expect(await getMeta(db, 'nutritionEffectiveMode')).toBe('disabled');
+  });
+});
+
+describe('page de pull pendant une descente en attente', () => {
+  const C2_ROWS = [
+    {
+      entity: 'weigh_in',
+      rev: 5,
+      row: { id: 'w5', ownerId: 'u1', date: '2026-10-03', weightG: 72000, deletedAt: null },
+    },
+    {
+      entity: 'nutrition_target',
+      rev: 6,
+      row: { id: 't5', ownerId: 'u1', validFrom: '2026-10-03', kcalTarget: 2300, deletedAt: null },
+    },
+    {
+      entity: 'nutrition_checkin',
+      rev: 7,
+      row: { id: 'c5', ownerId: 'u1', weekStart: '2026-09-28', decision: 'in_band', deletedAt: null },
+    },
+    {
+      entity: 'nutrition_profile',
+      rev: 8,
+      row: {
+        id: 'u1',
+        ownerId: 'u1',
+        mode: 'full',
+        modeReason: 'choice',
+        safetyScreenVersion: 1,
+        safetyScreenAt: NOW_ISO,
+        safetyPause: false,
+        sexForCalc: 'male',
+        heightCm: 181,
+        activityLevel: 2,
+        goal: 'gain',
+        cumulativeAdjustmentKcal: 0,
+        deletedAt: null,
+      },
+    },
+  ];
+
+  it('serveur encore full : aucune ligne C2 n’est jamais écrite, le profil garde ses colonnes C1', async () => {
+    await setMeta(db, 'nutritionEffectiveMode', 'full');
+    // La personne descend pendant que le pull est en vol : la page arrive avec les lignes du mode complet.
+    server.on('GET /api/sync/pull', async () => {
+      await setMeta(db, 'nutritionPendingMode', { mode: 'qualitative', at: NOW_ISO });
+      return server.json(200, {
+        rows: C2_ROWS,
+        nextWatermark: 'E1:8',
+        hasMore: false,
+        catalogVersion: null,
+        nutrition: { effective_mode: 'full', cause: 'stored' },
+      });
+    });
+    const written: string[] = [];
+    for (const t of ['weigh_in', 'nutrition_target', 'nutrition_checkin'])
+      db.mirror(t).hook('creating', (key) => {
+        written.push(`${t}:${String(key)}`);
+      });
+    const profileWrites: unknown[] = [];
+    db.mirror('nutrition_profile').hook('creating', (_key, obj) => {
+      profileWrites.push((obj as { heightCm?: unknown }).heightCm);
+    });
+    makeEngine();
+    await engine.pullNow();
+    await idle();
+    expect(count('GET /api/sync/pull')).toBe(1);
+    expect(written).toEqual([]);
+    expect(profileWrites).toEqual([null]);
+    expect(await db.mirror('nutrition_profile').get('u1')).toMatchObject({
+      mode: 'full',
+      heightCm: null,
+      goal: null,
+    });
     expect(await localNutritionMode(db)).toBe('qualitative');
   });
 });

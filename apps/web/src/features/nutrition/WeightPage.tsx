@@ -140,7 +140,7 @@ function WeightContent() {
       ) : (
         <>
           <div className={styles.chart}>
-            <LineChart values={averages} points={points} />
+            <LineChart values={averages} points={points} dates={ascending.map((w) => w.date)} neutral />
             <p className={styles.muted}>{T.page.chartNote}</p>
           </div>
           <table className={styles.table}>

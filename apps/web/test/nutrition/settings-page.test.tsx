@@ -39,6 +39,30 @@ describe('réglages : objectif, activité, sexe, taille', () => {
     expect(api.calls.find((c) => c.method === 'PUT')?.body).toEqual({ goal: 'gain' });
   });
 
+  it('« Réglage enregistré » reste quand la copie locale suit, jusqu’à la modification suivante', async () => {
+    const { api, db } = await open('/nutrition/settings');
+    api.on('POST', '/api/nutrition/settings/preview', { status: 200, body: { target: GAIN } });
+    api.on('PUT', '/api/nutrition/settings', { status: 200, body: FULL_STATE });
+    const section = screen.getByRole('group', { name: 'Objectif' });
+    const details = section.closest('details') as HTMLElement;
+    fireEvent.click(within(section).getByRole('radio', { name: 'Prise de muscle' }));
+    const save = within(details).getByRole('button', { name: 'Enregistrer' }) as HTMLButtonElement;
+    await waitFor(() => expect(save.disabled).toBe(false), LAZY);
+    fireEvent.click(save);
+    await within(details).findByText('Réglage enregistré', {}, LAZY);
+    // Le pull apporte le réglage enregistré : la valeur choisie devient la valeur en vigueur.
+    await db.mirror('nutrition_profile').update('u-1', { goal: 'gain' });
+    await waitFor(
+      () => expect(within(details).getByText('Prise de muscle', { selector: 'span' })).toBeTruthy(),
+      LAZY,
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    expect(within(details).getByText('Réglage enregistré')).toBeTruthy();
+    // Une nouvelle modification efface le message.
+    fireEvent.click(within(section).getByRole('radio', { name: 'Maintien' }));
+    await waitFor(() => expect(within(details).queryByText('Réglage enregistré')).toBeNull(), LAZY);
+  });
+
   it('?focus=activity&suggest=3 : la section est ouverte, 3 présélectionné, « Suggestion du coach »', async () => {
     const { api } = await open('/nutrition/settings?focus=activity&suggest=3');
     api.on('POST', '/api/nutrition/settings/preview', { status: 200, body: { target: GAIN } });

@@ -17,7 +17,12 @@ import { createMonotonicUuidV7 } from '@rune/domain';
 import { localHealthConsentActive } from '../local-db/consent';
 import { type AppDb, mirrorStoreNames, type OutboxOp } from '../local-db/db';
 import { deleteMeta, getMeta, setMeta } from '../local-db/meta';
-import { applyPulledNutritionMode, clearIntent, intentSettledBy } from '../local-db/nutrition';
+import {
+  applyPulledNutritionMode,
+  clearIntent,
+  intentSettledBy,
+  withoutNutritionData,
+} from '../local-db/nutrition';
 import { clearMirrors, purgeHealthData, wipeUserData } from '../local-db/wipe';
 import { applyNutritionSnapshot, applyPulledRows, NutritionSnapshot } from './apply-pull';
 import { refreshCatalog } from './catalog';
@@ -344,9 +349,16 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       }
       const page = PullResponse.parse(reply.body);
       await assertCurrent(cycle);
-      await applyPulledRows(db, page.rows);
-      snapshotNeeded = (await applyPulledNutritionMode(db, page.nutrition.effective_mode, rules))
-        .needsSnapshot;
+      // Mode d'abord, lignes ensuite, en une transaction : pendant une descente en attente, aucune ligne C2 servie par
+      // un serveur encore en mode complet n'est écrite, même un instant (spec brique 5 §6.4).
+      snapshotNeeded = await db.transaction('rw', db.tables, async () => {
+        const applied = await applyPulledNutritionMode(db, page.nutrition.effective_mode, rules);
+        await applyPulledRows(
+          db,
+          applied.mode === 'full' ? page.rows : withoutNutritionData(page.rows, rules),
+        );
+        return applied.needsSnapshot;
+      });
       if (full) {
         for (const { entity, row } of page.rows) {
           const ids = received.get(entity) ?? new Set<string>();

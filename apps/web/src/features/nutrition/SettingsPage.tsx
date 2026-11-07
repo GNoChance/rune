@@ -77,7 +77,10 @@ function useWeighInGate(): { guard: Guard; sheet: ReactNode } {
   return { guard, sheet };
 }
 
-/** Section repliable d'un réglage : aperçu de la nouvelle cible avant « Enregistrer ». */
+/**
+ * Section repliable d'un réglage : aperçu de la nouvelle cible avant « Enregistrer ». « Réglage enregistré » reste
+ * jusqu'à la modification suivante du brouillon : la copie locale qui rattrape le réglage enregistré ne l'efface pas.
+ */
 function SettingEditor(p: {
   title: string;
   current: string | null;
@@ -102,7 +105,6 @@ function SettingEditor(p: {
   useEffect(() => {
     setPreview(null);
     setPreviewError(null);
-    setDone(false);
     const changes = JSON.parse(key) as SettingsChanges | null;
     if (!changes) {
       setPreviewing(false);
@@ -143,7 +145,8 @@ function SettingEditor(p: {
       </summary>
       <div className={styles.settingBody}>
         {p.suggested ? <p className={styles.suggestion}>{T.suggestion}</p> : null}
-        {p.children}
+        {/* Les choix et le champ du réglage remontent ici leurs changements : la personne modifie son brouillon. */}
+        <div onChange={() => setDone(false)}>{p.children}</div>
         {previewing ? (
           <p role="status" className={styles.muted}>
             {T.previewing}

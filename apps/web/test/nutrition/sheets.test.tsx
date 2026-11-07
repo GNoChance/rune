@@ -1,5 +1,6 @@
-import { screen, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { SheetSource } from '../../src/features/nutrition/SheetPage';
 import type { AppDb } from '../../src/local-db/db';
 import { LAZY, openNutritionAt } from './full-setup';
 
@@ -78,5 +79,27 @@ describe('lecture d’une fiche', () => {
       await screen.findByRole('heading', { level: 1, name: 'Dormir pour récupérer' }, LAZY),
     ).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Sources' })).toBeTruthy();
+  });
+});
+
+describe('sources d’une fiche', () => {
+  it.each(['javascript:alert(1)', 'data:text/html,x', 'pas une adresse'])(
+    'une adresse qui n’est pas http(s) (%s) : titre en texte brut, sans lien',
+    (url) => {
+      const { container } = render(
+        <SheetSource source={{ title: 'Source', url, accessed_on: '2026-08-01' }} />,
+      );
+      expect(container.querySelector('a')).toBeNull();
+      expect(container.textContent).toBe('Source');
+    },
+  );
+
+  it('une adresse https : un lien qui s’ouvre à part', () => {
+    const { container } = render(
+      <SheetSource source={{ title: 'Source', url: 'https://example.org/s', accessed_on: '2026-08-01' }} />,
+    );
+    const link = container.querySelector('a');
+    expect(link?.getAttribute('href')).toBe('https://example.org/s');
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
   });
 });

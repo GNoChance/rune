@@ -231,6 +231,22 @@ describe('page /nutrition/weight', () => {
     expect(container.querySelector('[data-chart]')?.getAttribute('aria-hidden')).toBe('true');
   });
 
+  it('la courbe place les pesées selon leur date, pas leur rang', async () => {
+    const { container } = await open('/nutrition/weight', 'full', [
+      ['2026-09-20', 70_000],
+      ['2026-09-21', 70_200],
+      ['2026-10-05', 70_400],
+    ]);
+    await screen.findByRole('table', { name: 'Moyennes par semaine' }, LAZY);
+    const cx = [...container.querySelectorAll('[data-chart] circle')].map((d) =>
+      Number(d.getAttribute('cx')),
+    );
+    expect(cx).toHaveLength(3);
+    expect(((cx[2] ?? 0) - (cx[1] ?? 0)) / ((cx[1] ?? 0) - (cx[0] ?? 0))).toBeCloseTo(14, 5);
+    // Aucune durée de célébration sur la courbe du poids.
+    expect(container.querySelector('[data-chart] path')?.getAttribute('class')).toMatch(/chartLineNeutral/);
+  });
+
   it('corriger puis supprimer une pesée', async () => {
     const { db } = await open('/nutrition/weight', 'full', [['2026-10-05', 70_000]]);
     fireEvent.click(await screen.findByRole('button', { name: 'Corriger la pesée du 05/10/2026' }, LAZY));

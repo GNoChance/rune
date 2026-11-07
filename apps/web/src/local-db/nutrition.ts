@@ -1,4 +1,4 @@
-import { type EntityRulesMap, entityRules, type NutritionMode } from '@rune/contracts';
+import { type EntityRulesMap, entityRules, type NutritionMode, type PulledRow } from '@rune/contracts';
 import { isC2Value } from './c2';
 import type { AppDb } from './db';
 import { deleteMeta, getMeta, type MetaValues, setMeta } from './meta';
@@ -96,8 +96,30 @@ export async function purgeNutrition(db: AppDb, rules: EntityRulesMap = entityRu
 }
 
 /**
+ * Lignes d'une page de pull à écrire quand le mode appliqué n'est pas `full` (descente en attente alors que le serveur
+ * sert encore le mode complet) : ni les trois tables, ni les valeurs C2 du profil, mises à null comme à la purge.
+ */
+export function withoutNutritionData(
+  rows: readonly PulledRow[],
+  rules: EntityRulesMap = entityRules,
+): PulledRow[] {
+  const data: readonly string[] = NUTRITION_DATA_TABLES;
+  const rule = rules.nutrition_profile;
+  return rows.flatMap((r) => {
+    if (data.includes(r.entity)) return [];
+    if (r.entity !== 'nutrition_profile' || !rule) return [r];
+    const row = Object.fromEntries(
+      Object.entries(r.row).map(([k, v]) => [k, isC2Value(rule, k, v) ? null : v]),
+    );
+    return [{ ...r, row }];
+  });
+}
+
+/**
  * Descente demandée par la personne (D11) : l'intention est écrite (la plus restrictive des deux si une autre
- * attend) et les copies purgées, en une transaction.
+ * attend) et les copies purgées, en une transaction. Le mode lu suit la descente : sans copies, il ne reste pas
+ * `full`, et si l'intention est réglée par une 4xx alors que le serveur dit encore `full`, le pull suivant recharge
+ * l'instantané.
  */
 export async function recordDescent(
   db: AppDb,
@@ -111,6 +133,8 @@ export async function recordDescent(
       await setMeta(db, 'nutritionPendingMode', { mode, at });
     }
     await purgeNutrition(db, rules);
+    const read = await getMeta(db, 'nutritionEffectiveMode');
+    if (read !== undefined) await setMeta(db, 'nutritionEffectiveMode', stricterMode(read, mode));
   });
 }
 

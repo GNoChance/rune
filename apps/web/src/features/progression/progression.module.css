@@ -390,6 +390,11 @@
   animation: chart-draw var(--dur-celebrate) var(--ease) 200ms backwards;
 }
 
+/* Courbe du poids : durée neutre d'un changement d'écran, jamais celle d'une célébration. */
+.chartLineNeutral {
+  animation-duration: var(--dur-screen);
+}
+
 .chartPoint {
   fill: var(--accent);
   fill-opacity: 0.55;

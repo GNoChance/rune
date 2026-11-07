@@ -4,11 +4,24 @@ import { Redirect, useParams } from 'wouter';
 import { useNutritionView, useRepos } from '../../repos';
 import { Page } from '../../ui';
 import { formatLongDate } from './format';
-import { MarkdownLite } from './markdown-lite';
+import { isWebUrl, MarkdownLite } from './markdown-lite';
 import styles from './nutrition.module.css';
 import { NUTRITION_TEXTS } from './nutrition-texts';
 
 const T = NUTRITION_TEXTS.sheet;
+
+/**
+ * Une source en pied de fiche : un lien qui s'ouvre à part pour une adresse http(s), son titre en texte brut sinon
+ * (défense en profondeur : le schéma des sources n'admet déjà que http(s)).
+ */
+export function SheetSource({ source }: { source: ServedAdviceSheet['sources'][number] }) {
+  if (!isWebUrl(source.url)) return <>{source.title}</>;
+  return (
+    <a href={source.url} target="_blank" rel="noopener noreferrer" className={styles.textLink}>
+      {source.title}
+    </a>
+  );
+}
 
 /**
  * Lecture d'une fiche conseil (`/nutrition/sheets/:id`, spec brique 5 §10.2 à §10.5) : le corps en Markdown restreint,
@@ -57,9 +70,7 @@ export function SheetPage() {
             <ul className={styles.list}>
               {sheet.sources.map((source) => (
                 <li key={source.url}>
-                  <a href={source.url} target="_blank" rel="noopener noreferrer" className={styles.textLink}>
-                    {source.title}
-                  </a>
+                  <SheetSource source={source} />
                 </li>
               ))}
             </ul>
