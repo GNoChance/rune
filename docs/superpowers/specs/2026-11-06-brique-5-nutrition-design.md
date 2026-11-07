@@ -263,15 +263,17 @@ Entrée : `screen` ∈ `goal`, `activity`, `mode` ; `suggestion` facultative : u
 ### 11.3 Carte TCA et `safety_pause`
 
 `refer_to_help("eating_disorder")` : la carte d'aide de la brique 4, plus :
-1. profil nutrition existant (quel que soit son mode) et accord santé actif : `safety_pause = 1` (rev neuf), dans la transaction de l'échange ; un échange qui n'est pas enregistré (refus, erreur) le pose quand même, par une mise à jour à part de `nutrition_profile` dans sa propre transaction (choix C17). La pause survit à un changement de mode ; seuls l'écran de sécurité repassé ou le retrait de l'accord santé la lèvent ;
+1. profil nutrition existant (quel que soit son mode) et accord santé actif : `safety_pause = 1` (rev neuf), dans la transaction de l'échange ; un échange qui n'est pas enregistré (refus, erreur) le pose quand même, par une mise à jour à part de `nutrition_profile` dans sa propre transaction (choix C17). La pause survit à un changement de mode ; seuls l'écran de sécurité repassé ou le retrait de l'accord santé la lèvent. Une écriture de la pause en échec ne retient pas la carte : journal `coach_safety_pause_failed` sans contenu, l'outil rend la carte affichée ; une pause déjà posée n'est pas réécrite ;
 2. mode effectif `full` : bouton « Passer en mode sans chiffres » vers `/nutrition/settings?focus=mode&suggest=qualitative` ;
-3. l'admin n'est pas prévenu ; le compteur `help_eating_disorder` ne change pas.
+3. l'admin n'est pas prévenu ; le compteur `help_eating_disorder` ne change pas ;
+4. un échange refusé ou en erreur envoie quand même, avant `refused` ou `error`, les cartes d'aide déjà demandées, sans les enregistrer ; le téléphone les garde affichées jusqu'au message suivant (R14).
 
 ### 11.4 Filtre
 
-- `nutritionMode` et `nutritionFull` sont lus sur le fil (mode effectif à l'ouverture, figé), plus jamais codés en dur.
-- Famille nutrition : `_kcal`, `_g` du dossier et des résultats d'outils, en mode `full` seulement. Nouvelle famille volume : un nombre suivi de `L`, `l`, `litre(s)`, `mL`, `ml`, `cL`, `cl` est comparé en mL aux valeurs `_ml` autorisées (2 250 mL ↔ « 2,25 L ») ; hors mode `full`, tout volume est bloqué (choix C16).
-- Le contrôle des fiches (§10.3) et le filtre partagent l'expression des unités (`packages/domain/src/coach/values.ts`, exportée).
+- `nutritionMode` et `nutritionFull` sont lus sur le fil (mode effectif à l'ouverture, figé), plus jamais codés en dur. `safety_pause` est relue à chaque message : tant qu'elle est active, la liste « hors mode complet » s'applique même dans un fil `full`, motif des propositions compris ; le dossier figé n'est pas rouvert (R15).
+- Famille nutrition : `_kcal`, `_g` du dossier et des résultats d'outils, en mode `full` seulement ; une valeur nutrition ou un volume écrit dans un texte libre (note de séance, résultat d'outil) n'est jamais autorisé. Nouvelle famille volume : un nombre suivi de `L`, `l`, `litre(s)`, `mL`, `ml`, `cL`, `cl` est comparé en mL aux valeurs `_ml` autorisées (2 250 mL ↔ « 2,25 L ») ; hors mode `full`, tout volume est bloqué (choix C16).
+- Le contrôle des fiches (§10.3) et le filtre partagent l'expression des unités (`packages/domain/src/coach/values.ts`, exportée) et la préparation du texte (`prepare`, qui retire aussi les marques d'emphase `*`, `_`, `~` et l'accent grave). Synonymes reconnus : kcal, kcals, kilocalorie(s), cal(s), calorie(s) ; g, gr(s), gramme(s) ; L, litre(s), mL, millilitre(s), cL, centilitre(s), dL, décilitre(s).
+- Le dossier ne porte jamais de repères chiffrés pour un mineur, même si son mode lu est `full` (défense en profondeur).
 - Une phrase bloquée suit le chemin de la brique 4 (une régénération, puis la réponse type) ; aucun repli nouveau.
 
 ### 11.5 Termes interdits v2
