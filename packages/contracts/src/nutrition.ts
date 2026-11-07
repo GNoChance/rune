@@ -237,7 +237,8 @@ export type NutritionState = z.infer<typeof NutritionStateSchema>;
 
 const AdviceSourceSchema = z.strictObject({
   title: z.string().min(1),
-  url: z.string().url(),
+  /** Adresse web seulement : la fiche en fait un lien (`javascript:`, `data:`… refusés). */
+  url: z.url({ protocol: /^https?$/ }),
   accessed_on: isoDate,
 });
 

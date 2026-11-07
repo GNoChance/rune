@@ -27,28 +27,33 @@ export async function applyPulledRows(db: AppDb, rows: PulledRow[]): Promise<voi
   });
 }
 
-/** Réponse de `GET /api/nutrition/rows` : les lignes vivantes des trois tables, au format du pull. */
+/**
+ * Réponse de `GET /api/nutrition/rows` : les lignes vivantes des trois tables et le profil, au format du pull. Un
+ * serveur d'avant le profil dans l'instantané ne l'envoie pas : liste vide.
+ */
 export const NutritionSnapshot = z.object({
   weigh_in: z.array(PulledRow),
   nutrition_target: z.array(PulledRow),
   nutrition_checkin: z.array(PulledRow),
+  nutrition_profile: z.array(PulledRow).default([]),
 });
 export type NutritionSnapshot = z.infer<typeof NutritionSnapshot>;
 
 /**
  * Instantané du retour en mode complet (spec §6.4) : les copies des trois tables sont remplacées (les ops en
- * attente sont rejouées dessus) et `full` devient le mode lu, en une transaction. Une descente demandée entre-temps
- * l'emporte : rien n'est écrit, les copies restent purgées.
+ * attente sont rejouées dessus), le profil reprend ses colonnes C2, et `full` devient le mode lu, en une transaction.
+ * Une descente demandée entre-temps l'emporte : rien n'est écrit, les copies restent purgées.
  */
 export async function applyNutritionSnapshot(db: AppDb, snapshot: NutritionSnapshot): Promise<void> {
   const stores = NUTRITION_DATA_TABLES.map((t) => db.mirror(t));
-  await db.transaction('rw', [db.outbox, db.meta, ...stores], async () => {
+  await db.transaction('rw', [db.outbox, db.meta, db.mirror('nutrition_profile'), ...stores], async () => {
     if (await getMeta(db, 'nutritionPendingMode')) return;
     for (const store of stores) await store.clear();
     await applyPulledRows(db, [
       ...snapshot.weigh_in,
       ...snapshot.nutrition_target,
       ...snapshot.nutrition_checkin,
+      ...snapshot.nutrition_profile,
     ]);
     await setMeta(db, 'nutritionEffectiveMode', 'full');
   });

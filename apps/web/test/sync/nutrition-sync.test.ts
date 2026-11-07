@@ -155,6 +155,46 @@ describe('purge sur un pull dont le mode effectif n’est pas full (spec §6.4)'
     await cycle();
     expect(await getMeta(db, 'nutritionEffectiveMode')).toBe('full');
   });
+
+  it('l’instantané rend aussi les colonnes C2 du profil, que le pull ne renvoie pas seul', async () => {
+    await seedCopies();
+    pulledMode = 'qualitative';
+    await cycle();
+    expect(await db.mirror('nutrition_profile').get('u1')).toMatchObject({ heightCm: null, goal: null });
+    const profile = {
+      id: 'u1',
+      ownerId: 'u1',
+      mode: 'full',
+      modeReason: 'choice',
+      safetyScreenVersion: 1,
+      safetyScreenAt: NOW_ISO,
+      safetyPause: false,
+      sexForCalc: 'female',
+      heightCm: 168,
+      activityLevel: 3,
+      goal: 'maintain',
+      cumulativeAdjustmentKcal: 0,
+      deletedAt: null,
+    };
+    server.on('GET /api/nutrition/rows', undefined);
+    server.on('GET /api/nutrition/rows', () =>
+      server.json(200, {
+        weigh_in: [],
+        nutrition_target: [],
+        nutrition_checkin: [],
+        nutrition_profile: [{ entity: 'nutrition_profile', rev: 12, row: profile }],
+      }),
+    );
+    pulledMode = 'full';
+    await cycle();
+    expect(await db.mirror('nutrition_profile').get('u1')).toMatchObject({
+      heightCm: 168,
+      sexForCalc: 'female',
+      activityLevel: 3,
+      goal: 'maintain',
+      serverRevSeen: 12,
+    });
+  });
 });
 
 describe('intention de descente (spec §6.4 bis)', () => {

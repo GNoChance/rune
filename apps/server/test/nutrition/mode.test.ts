@@ -64,7 +64,12 @@ describe('PUT /api/nutrition/mode', () => {
     expect(opened).not.toContain('kcal');
     expect(opened).not.toContain('weight');
     const rows = await (await ctx.request('/api/nutrition/rows', { cookie: u.cookie })).json();
-    expect(rows).toEqual({ weigh_in: [], nutrition_target: [], nutrition_checkin: [] });
+    expect(rows).toEqual({
+      weigh_in: [],
+      nutrition_target: [],
+      nutrition_checkin: [],
+      nutrition_profile: [],
+    });
   });
 
   it('donne un rev neuf au profil', async () => {

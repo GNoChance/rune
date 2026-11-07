@@ -14,7 +14,17 @@ afterEach(() => ctx?.close());
 
 const NOW = '2026-11-09T09:00:00.000Z';
 type Pulled = { entity: string; rev: number; row: Record<string, unknown> };
-type Rows = Record<'weigh_in' | 'nutrition_target' | 'nutrition_checkin', Pulled[]>;
+type Rows = Record<'weigh_in' | 'nutrition_target' | 'nutrition_checkin' | 'nutrition_profile', Pulled[]>;
+/** Les trois tables vides ; le profil, s'il est servi, est celui de la session. */
+const onlyOwnProfile = (body: Rows, userId: string) => {
+  expect({ ...body, nutrition_profile: [] }).toEqual({
+    weigh_in: [],
+    nutrition_target: [],
+    nutrition_checkin: [],
+    nutrition_profile: [],
+  });
+  for (const r of body.nutrition_profile) expect(r.row.id).toBe(userId);
+};
 const rows = (cookie: string) => ctx.request('/api/nutrition/rows', { cookie });
 
 describe('GET /api/nutrition/rows', () => {
@@ -23,7 +33,7 @@ describe('GET /api/nutrition/rows', () => {
     expect((await ctx.request('/api/nutrition/rows')).status).toBe(401);
   });
 
-  it('en mode complet : les lignes vivantes des trois tables, décodées', async () => {
+  it('en mode complet : les lignes vivantes des trois tables et le profil entier, décodés', async () => {
     ctx = await createTestContext({ now: NOW });
     const u = await createUserAndLogin(ctx);
     await fullMember(ctx, u.id);
@@ -49,6 +59,13 @@ describe('GET /api/nutrition/rows', () => {
     expect(body.nutrition_target[0]?.row.inputs).toMatchObject({ ref_weight_g: 80_000 });
     expect(body.nutrition_checkin).toHaveLength(1);
     expect(body.nutrition_checkin[0]?.row.representative).toBe(true);
+    // Le profil revient avec ses colonnes C2 : après une fermeture puis réouverture du mode complet, le pull ne les
+    // renverrait pas seul (rev inchangé).
+    expect(body.nutrition_profile).toHaveLength(1);
+    expect(body.nutrition_profile[0]).toMatchObject({
+      entity: 'nutrition_profile',
+      row: { id: u.id, mode: 'full', heightCm: 180, goal: 'maintain', safetyPause: false },
+    });
   });
 
   it('hors mode complet : listes vides', async () => {
@@ -58,7 +75,12 @@ describe('GET /api/nutrition/rows', () => {
     await seedTarget(ctx, u.id, { validFrom: '2026-11-03' });
     await seedWeighIns(ctx, u.id, [['2026-11-03', 80_000]]);
     const body = (await (await rows(u.cookie)).json()) as Rows;
-    expect(body).toEqual({ weigh_in: [], nutrition_target: [], nutrition_checkin: [] });
+    expect(body).toEqual({
+      weigh_in: [],
+      nutrition_target: [],
+      nutrition_checkin: [],
+      nutrition_profile: [],
+    });
   });
 
   it("jamais les lignes d'autrui, admin compris", async () => {
@@ -76,11 +98,7 @@ describe('GET /api/nutrition/rows', () => {
       mode: 'full',
       safetyScreenVersion: 1,
     });
-    expect((await (await rows(b.cookie)).json()) as Rows).toEqual({
-      weigh_in: [],
-      nutrition_target: [],
-      nutrition_checkin: [],
-    });
+    onlyOwnProfile((await (await rows(b.cookie)).json()) as Rows, b.id);
 
     const admin = await createUser(ctx, { username: 'porteur', role: 'admin', password: 'quatorze carac' });
     const adminCookie = await login(ctx, 'porteur', admin.password);
@@ -94,10 +112,6 @@ describe('GET /api/nutrition/rows', () => {
       mode: 'full',
       safetyScreenVersion: 1,
     });
-    expect((await (await rows(adminCookie)).json()) as Rows).toEqual({
-      weigh_in: [],
-      nutrition_target: [],
-      nutrition_checkin: [],
-    });
+    onlyOwnProfile((await (await rows(adminCookie)).json()) as Rows, admin.id);
   });
 });

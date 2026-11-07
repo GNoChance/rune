@@ -19,12 +19,14 @@ export type NutritionCheckinRow = Selectable<NutritionCheckinTable>;
 export interface NutritionRows {
   /** Cible en vigueur. */
   target: NutritionTargetRow | null;
+  /** Cibles vivantes, de la plus ancienne à la plus récente (`valid_from`, puis `id`). */
+  targets: NutritionTargetRow[];
   /** Du plus ancien au plus récent (`week_start`). */
   checkins: NutritionCheckinRow[];
   weighIns: WeighIn[];
 }
 
-export const EMPTY_ROWS: NutritionRows = { target: null, checkins: [], weighIns: [] };
+export const EMPTY_ROWS: NutritionRows = { target: null, targets: [], checkins: [], weighIns: [] };
 
 const WEEKLY_MEANS_SHOWN = 12;
 
@@ -40,7 +42,7 @@ export async function loadNutritionRows(db: DbExecutor, ctx: NutritionContext): 
     .orderBy('weekStart', 'asc')
     .execute();
   const weighIns = await liveWeighIns(db, ctx.userId);
-  return { target: targets.at(-1) ?? null, checkins, weighIns };
+  return { target: targets.at(-1) ?? null, targets, checkins, weighIns };
 }
 
 export async function liveWeighIns(db: DbExecutor, userId: string): Promise<WeighIn[]> {
@@ -74,12 +76,39 @@ export function checkinView(row: NutritionCheckinRow): NutritionCheckin {
   };
 }
 
-/** Bilan à traiter : le plus récent seulement, proposition ou perte rapide, sans réponse. */
-function actionable(row: NutritionCheckinRow | undefined): row is NutritionCheckinRow {
+/**
+ * Bilan dont la proposition porte sur des repères remplacés : une cible qui n'est pas un recalibrage est née après
+ * lui (réglages, sécurité IMC, nouvelle version de l'algorithme). Les id de cible et de bilan sont des UUIDv7 du
+ * serveur, dans l'ordre de création ; le recalibrage et la cible de sécurité IMC d'un bilan naissent avant lui.
+ */
+export function checkinSuperseded(
+  row: Pick<NutritionCheckinRow, 'id'>,
+  targets: readonly Pick<NutritionTargetRow, 'id' | 'reason'>[],
+): boolean {
+  return targets.some((t) => t.reason !== 'weight_recalibration' && t.id > row.id);
+}
+
+/** Baisse proposée alors que la pause de sécurité est active (D14) : elle ne s'accepte pas. */
+export const decreaseDuringPause = (
+  row: Pick<NutritionCheckinRow, 'proposedDeltaKcal'>,
+  safetyPause: boolean,
+): boolean => safetyPause && row.proposedDeltaKcal === -100;
+
+/**
+ * Bilan à traiter : le plus récent seulement, proposition ou perte rapide, sans réponse ; ni une baisse pendant la
+ * pause de sécurité, ni une proposition aux repères remplacés.
+ */
+function actionable(
+  row: NutritionCheckinRow | undefined,
+  rows: NutritionRows,
+  safetyPause: boolean,
+): row is NutritionCheckinRow {
   return (
     row !== undefined &&
     row.response === null &&
-    (row.decision === 'proposal' || row.decision === 'rapid_loss')
+    (row.decision === 'proposal' || row.decision === 'rapid_loss') &&
+    !decreaseDuringPause(row, safetyPause) &&
+    !checkinSuperseded(row, rows.targets)
   );
 }
 
@@ -179,7 +208,7 @@ export function buildNutritionState(ctx: NutritionContext, rows: NutritionRows):
       reason: t.reason,
     },
     last_checkin: latest ? checkinView(latest) : null,
-    checkin: actionable(latest) ? checkinView(latest) : null,
+    checkin: actionable(latest, rows, profile?.safetyPause === 1) ? checkinView(latest) : null,
     weekly_means: weeklyMeans(rows.weighIns, ctx.today),
     reference_weight_g: refWeightG,
   };

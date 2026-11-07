@@ -128,6 +128,54 @@ async function closeIfNutritionModeDropped(
   return closeThread(deps, thread, holdsLease, 'nutrition_mode_change');
 }
 
+/** Clés chiffrées du bloc `nutrition` d'un dossier stocké, retirées par « Supprimer mes données nutrition ». */
+const NUTRITION_FIGURES = ['target', 'weekly_change', 'last_checkin'] as const;
+
+/** Dossier stocké sans cible, variations ni dernier bilan (JSON trié, comme à l'ouverture) ; `null` : rien à retirer. */
+function withoutNutritionFigures(brief: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(brief);
+  } catch {
+    return null;
+  }
+  const nutrition = (parsed as { nutrition?: unknown } | null)?.nutrition;
+  if (typeof nutrition !== 'object' || nutrition === null) return null;
+  const block = nutrition as Record<string, unknown>;
+  if (!NUTRITION_FIGURES.some((key) => Object.hasOwn(block, key))) return null;
+  for (const key of NUTRITION_FIGURES) delete block[key];
+  return sortedJson(parsed);
+}
+
+/**
+ * « Supprimer mes données nutrition » côté coach (brique 5 §6.5, R17), dans la transaction de l'appelant : le fil
+ * ouvert du jour dont le dossier est `full` est fermé (`nutrition_mode_change`, comme à la descente du mode ; supprimé
+ * s'il n'a aucun message), et tous les dossiers stockés de la personne perdent cible, variations et dernier bilan ; le
+ * bloc nutrition garde son mode, ses directives et ses fiches. Les messages déjà écrits restent.
+ */
+export async function forgetThreadNutrition(trx: DbExecutor, deps: AppDeps, userId: string): Promise<void> {
+  const today = parisDate(deps.clock.now());
+  const threads = await trx
+    .selectFrom('coachThread')
+    .selectAll()
+    .where('userId', '=', userId)
+    .where('brief', 'is not', null)
+    .execute();
+  for (const thread of threads) {
+    if (thread.isOpen === 1 && thread.day === today && nutritionModeOf(thread) === 'full') {
+      await trx
+        .updateTable('coachThread')
+        .set({ isOpen: 0, closedReason: 'nutrition_mode_change' })
+        .where('id', '=', thread.id)
+        .execute();
+      if (await deleteIfEmpty(trx, deps, thread, true)) continue;
+    }
+    const brief = withoutNutritionFigures(thread.brief as string);
+    if (brief !== null)
+      await trx.updateTable('coachThread').set({ brief }).where('id', '=', thread.id).execute();
+  }
+}
+
 /** Un fil remplacé sans aucun message et sans message compté n'a rien à relire : supprimé. Vrai s'il l'a été. */
 async function deleteIfEmpty(
   trx: DbExecutor,

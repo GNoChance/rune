@@ -83,7 +83,7 @@ Fonctions pures, sans horloge : la date du jour (Paris) et l'âge sont passés e
 |---|---|
 | `constants.ts` | `NUTRI_ALGO_VERSION = 'nutri-1.0.0'`, PAL, facteurs d'objectif, bornes, constante `unspecified`, seuils du bilan (bandes, −1,5 %, 2 kg, 3 pesées, pas de 100 kcal), domaines d'entrée. Seul module où vivent ces valeurs ; une modification change `NUTRI_ALGO_VERSION` et les cas de référence. |
 | `exact.ts` | rationnels `bigint` : addition, multiplication, comparaison, arrondi au multiple (moitié vers le haut), plancher et plafond au multiple. |
-| `mode.ts` | `effectiveNutritionMode({ stored, age, healthConsentActive, screenVersion, currentScreenVersion, fullOpen })` → `{ mode, cause }`, `cause` ∈ `stored`, `minor`, `over_max_age`, `no_health_consent`, `screen_outdated`, `full_closed`. Ordre : 07 §5.3, avec `full_closed` juste avant la règle 6. |
+| `mode.ts` | `effectiveNutritionMode({ stored, age, healthConsentActive, screenVersion, currentScreenVersion, fullOpen })` → `{ mode, cause }`, `cause` ∈ `stored`, `minor`, `over_max_age`, `no_health_consent`, `screen_outdated`, `full_closed`. Ordre : 07 §5.3, avec `full_closed` juste avant la dernière règle. |
 | `targets.ts` | `computeNutritionTargets(input)` → `NutritionTargets` ou `{ refusal: 'MODE_NOT_FULL' | 'INPUT_OUT_OF_RANGE' }` ; `bmiBelow(heightCm, weightG, threshold)` sans flottant. |
 | `weights.ts` | `movingAverage7(weighIns, day)`, `referenceWeight(weighIns, day)` (moyenne glissante, sinon dernière pesée de moins de 14 jours, sinon `null`), `weekMean(weighIns, monday)` (≥ 3 pesées), `saisieSuspecte(weighIns, weightG, day)` (écart > 3 kg avec la moyenne des 7 derniers jours). |
 | `checkin.ts` | `decideCheckin(input)` (§9) → décision, position, delta proposé, recalibrage à faire. |
@@ -105,7 +105,7 @@ Fonctions pures, sans horloge : la date du jour (Paris) et l'âge sont passés e
 Les tables de 09 §5, colonnes de synchro du socle comprises, SQLite STRICT, plus :
 - `nutrition_profile` : `CHECK` sur chaque énumération et domaine (07 §5.12), `cumulative_adjustment_kcal % 100 = 0`.
 - `weigh_in` : index unique partiel `(owner_id, date) WHERE deleted_at IS NULL` ; `weight_g BETWEEN 30000 AND 250000 AND weight_g % 100 = 0`.
-- `nutrition_target` : index `(owner_id, valid_from)`. `valid_from` est un instant UTC ; la cible en vigueur est la dernière par (`valid_from`, `id`).
+- `nutrition_target` : index `(owner_id, valid_from)`. `valid_from` est la date de Paris du jour de création ; la cible en vigueur est la dernière par (`valid_from`, `id`), les `id` étant des UUIDv7 du serveur, dans l'ordre de création (R16). Le téléphone trie de même.
 - `nutrition_checkin` : unique `(owner_id, week_start)`.
 - `advice_sheet` : 07 §5.12, plus `content_hash` (pour le chargeur) ; pas de colonne de synchro par propriétaire (C0 partagée).
 - `nutrition_state` : une ligne (`id` = 1, `full_open` 0, `updated_at`, `updated_by`), insérée par la migration, comme `coach_state`.
@@ -130,12 +130,15 @@ Dans l'ordre :
 3. `weight_g` hors domaine ou pas multiple de 100, `date` invalide ou postérieure à aujourd'hui (Paris) : `validation` (choix C18).
 4. Création à une date déjà occupée par une autre pesée vivante : l'ancienne passe en tombstone (rev neuf), la nouvelle est gardée, dans l'ordre d'arrivée (R-SYN-5).
 5. Patch : seul `weight_g` se corrige ; un patch de `date` est refusé (`validation`) ; le client supprime puis recrée (choix C18).
+6. `restore_upsert` (renvoi après une restauration du serveur) : mêmes contrôles qu'une création (1 à 4) ; une suppression renvoyée s'écrit en tombstone.
+
+Une tombstone de pesée (suppression, remplacement du même jour, suppression renvoyée) ne garde ni `date` ni `weight_g`.
 
 ### 6.4 Pull
 
 - `weigh_in`, `nutrition_target`, `nutrition_checkin` ne sont servies que si le mode effectif, calculé à la requête, vaut `full`.
 - `nutrition_profile` est servie avec ses colonnes C1 ; ses colonnes C2 seulement en mode effectif `full` (choix C19).
-- Chaque réponse porte `nutrition: { effective_mode, cause }` (D10). Le client purge les trois tables et les colonnes C2 du profil dès qu'il lit un mode ≠ `full` ; au passage de ≠ `full` à `full`, il charge l'instantané des trois tables (`GET /api/nutrition/rows`, lignes vivantes au format du pull) et remplace ses copies : le pull n'a qu'un curseur commun, et les lignes écartées pendant l'autre mode ne reviendraient pas seules.
+- Chaque réponse porte `nutrition: { effective_mode, cause }` (D10). Le client purge les trois tables et les colonnes C2 du profil dès qu'il lit un mode ≠ `full` ; au passage de ≠ `full` à `full`, il charge l'instantané des trois tables et du profil (`GET /api/nutrition/rows`, lignes vivantes au format du pull) et remplace ses copies : le pull n'a qu'un curseur commun, et les lignes ou colonnes C2 écartées pendant l'autre mode ne reviendraient pas seules. Une page de pull lue pendant une descente en attente est appliquée sans les trois tables ni les valeurs C2 du profil, dans la même transaction que le mode.
 
 ### 6.4 bis Descente de mode hors ligne (D11)
 
@@ -147,8 +150,8 @@ Dans l'ordre :
 ### 6.5 Retrait de l'accord santé, suppressions
 
 - **Retrait** (07 §5.4.4, 09 §8) : `weigh_in`, `nutrition_target`, `nutrition_checkin` passent par `clearTable` (tombstones sans contenu) ; le crochet `nutrition_profile` met à `NULL` les colonnes C2, efface `mode_reason = safety`, met `safety_pause` à 0, `cumulative_adjustment_kcal` à 0 et `mode` à `disabled`, avec un rev neuf. L'export est proposé avant, par l'écran existant.
-- **« Supprimer mes données nutrition »** (`DELETE /api/nutrition/data`) : mêmes effets sur les trois tables et sur les colonnes C2 du profil, sans toucher à l'accord ni au mode ; proposé après une sortie du mode complet et toujours présent dans les réglages, confirmé dans une feuille du bas, sans mot de passe (choix C20).
-- **Suppression du compte et export** : génériques, par le registre.
+- **« Supprimer mes données nutrition »** (`DELETE /api/nutrition/data`) : mêmes effets sur les trois tables et sur les colonnes C2 du profil, sans toucher à l'accord ni au mode ; proposé après une sortie du mode complet et toujours présent dans les réglages, confirmé dans une feuille du bas, sans mot de passe (choix C20). La version de l'écran de sécurité et `safety_pause` restent : effacer la pause lèverait le verrou d'un signal de trouble alimentaire (D14), et l'écran passé n'est pas une saisie de la personne (R8). Côté coach, dans la même transaction (R17) : le fil ouvert du jour dont le dossier est `full` est fermé (`nutrition_mode_change`, supprimé s'il n'a aucun message) et les dossiers stockés de la personne perdent `target`, `weekly_change` et `last_checkin` (le bloc garde mode, directives et fiches) ; les messages déjà écrits restent, « Supprimer mes conversations » existe.
+- **Suppression du compte et export** : génériques, par le registre. L'export rend toutes les données nutrition de la personne quel que soit son mode effectif : c'est son droit d'accès (03, R18).
 
 ## 7. API du serveur
 
@@ -161,7 +164,7 @@ Toutes les routes exigent une session ; une session admin reçoit 404 sur les do
 | `PUT /api/nutrition/mode` | `{ mode }` vers `qualitative` ou `disabled` ; de `disabled` vers `qualitative` sans écran (choix C21) | vers `full` : `422 screen_required` |
 | `POST /api/nutrition/settings/preview` | `{ changes }` → cible qui en résulterait, sans écriture | mode effectif `full` ; `409 weigh_in_required` sans poids de référence |
 | `PUT /api/nutrition/settings` | `{ sex_for_calc?, height_cm?, activity_level?, goal? }` → nouvelle cible (`profile_change`, ou `low_bmi_safety`) | idem ; `goal = lose` pendant `safety_pause` ou avec IMC < 18,5 : `422 goal_not_allowed` |
-| `POST /api/nutrition/checkins/:weekStart/respond` | `{ response: accepted | declined }` | bilan le plus récent seulement, décision `proposal` ou `rapid_loss`, sans réponse : sinon `409 checkin_not_actionable` |
+| `POST /api/nutrition/checkins/:weekStart/respond` | `{ response: accepted | declined }` | bilan le plus récent seulement, décision `proposal` ou `rapid_loss`, sans réponse, sans cible plus récente que lui qui ne soit pas un recalibrage (réglages, sécurité IMC : la proposition portait sur des repères remplacés) ; une baisse ne s'accepte pas pendant `safety_pause` : sinon `409 checkin_not_actionable`. L'état rendu ne montre pas ces bilans dans `checkin` |
 | `POST /api/nutrition/checkins/:weekStart/non-representative` | marque la semaine et recalcule la décision | bilan le plus récent, sans réponse |
 | `DELETE /api/nutrition/data` | §6.5 | — |
 | `GET /api/nutrition/rows` | lignes vivantes de `weigh_in`, `nutrition_target`, `nutrition_checkin` (format `PulledRow`) | mode effectif `full`, sinon liste vide |

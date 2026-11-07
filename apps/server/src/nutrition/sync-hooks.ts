@@ -9,7 +9,9 @@ import { loadNutritionContext } from './context';
  * Contrôles du serveur au push des pesées (spec brique 5 §6.3), dans l'ordre de la spec, en plus des règles
  * génériques de la synchro. Le 1 (accord santé absent : `applied_partial`, rien d'écrit, aucun rejet) est celui de
  * la table C2 dans `applyOp`. Un patch ne corrige que `weight_g` : `date` n'est donc pas une colonne immuable (elle
- * serait retirée en silence avant tout contrôle), le hook la refuse.
+ * serait retirée en silence avant tout contrôle), le hook la refuse. Un `restore_upsert` (renvoi après une
+ * restauration du serveur) passe les mêmes contrôles qu'une création. Une tombstone de pesée ne garde ni date ni
+ * poids (09 §5).
  */
 
 type Fields = Record<string, unknown>;
@@ -20,7 +22,8 @@ const WEIGHT_STEP_G = 100;
 
 function isCalendarDate(value: unknown): value is string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  return new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value;
+  const d = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
 }
 
 function assertWeight(value: unknown): void {
@@ -48,6 +51,12 @@ async function beforeApply({ trx, deps, userId, op }: HookCtx, fields: Fields): 
     if (Object.hasOwn(fields, 'weight_g')) assertWeight(fields.weight_g);
     return;
   }
+  // Suppression renvoyée par un restore_upsert : la tombstone s'écrit sans contenu, rien à contrôler.
+  if (op.kind === 'restore_upsert' && fields.deleted_at != null) {
+    fields.date = null;
+    fields.weight_g = null;
+    return;
+  }
   assertWeight(fields.weight_g);
   const date = fields.date;
   if (!isCalendarDate(date) || date > parisDate(deps.clock.now()))
@@ -64,15 +73,24 @@ async function beforeApply({ trx, deps, userId, op }: HookCtx, fields: Fields): 
     .execute();
   for (const { id } of previous) {
     const stamp = await writeStamp(trx, deps, userId);
-    await sql`update weigh_in set deleted_at = ${stamp.updatedAt}, rev = ${stamp.rev}, updated_at = ${stamp.updatedAt}, updated_by = ${stamp.updatedBy} where id = ${id}`.execute(
+    await sql`update weigh_in set deleted_at = ${stamp.updatedAt}, date = null, weight_g = null, rev = ${stamp.rev}, updated_at = ${stamp.updatedAt}, updated_by = ${stamp.updatedBy} where id = ${id}`.execute(
       trx,
     );
   }
 }
 
+/** Une pesée écrite en tombstone (suppression, ou suppression renvoyée) perd sa date et son poids, même rev. */
+async function afterApply({ trx, op }: HookCtx): Promise<void> {
+  await sql`update weigh_in set date = null, weight_g = null
+    where id = ${op.id} and deleted_at is not null and (date is not null or weight_g is not null)`.execute(
+    trx,
+  );
+}
+
 const weighIn: EntitySyncHooks = {
-  allowedKinds: ['create', 'patch', 'delete'],
+  allowedKinds: ['create', 'patch', 'delete', 'restore_upsert'],
   beforeApply,
+  afterApply,
 };
 
 export const NUTRITION_SYNC_HOOKS: SyncHooksMap = { weigh_in: weighIn };

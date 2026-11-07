@@ -353,3 +353,35 @@ describe('weighInRepo', () => {
     expect((await repo.list()).map((w) => w.date)).toEqual(['2026-10-05', '2026-10-03']);
   });
 });
+
+describe('nutritionRepo.view', () => {
+  it('deux cibles le même jour (mise en place puis réglage) : la dernière par (validFrom, id)', async () => {
+    const { services: s, db } = await services();
+    // Les id de cible sont des UUIDv7 du serveur, dans l'ordre de création ; l'ordre d'écriture locale n'y est pour rien.
+    await seedMirror(db, 'nutrition_target', [
+      {
+        id: '0192f5a0-0000-7000-8000-000000000002',
+        ...base,
+        validFrom: '2026-10-05',
+        reason: 'profile_change',
+        kcalTarget: 2500,
+      },
+      {
+        id: '0192f5a0-0000-7000-8000-000000000001',
+        ...base,
+        validFrom: '2026-10-05',
+        reason: 'initial',
+        kcalTarget: 2200,
+      },
+      {
+        id: '0192f5a0-0000-7000-8000-000000000000',
+        ...base,
+        validFrom: '2026-10-04',
+        reason: 'initial',
+        kcalTarget: 2000,
+      },
+    ]);
+    const view = await nutritionRepoFor(s).view();
+    expect(view.target).toMatchObject({ reason: 'profile_change', kcalTarget: 2500 });
+  });
+});

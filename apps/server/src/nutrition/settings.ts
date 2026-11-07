@@ -2,6 +2,7 @@ import type { NutritionState, NutritionTargets, SettingsChanges } from '@rune/co
 import { bmiBelow, computeNutritionTargets, referenceWeight, type TargetsInput } from '@rune/domain';
 import { sql } from 'kysely';
 import type { SessionUser } from '../app-env';
+import { forgetThreadNutrition } from '../coach/threads';
 import { writeStamp } from '../db/rev';
 import type { DbExecutor } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -94,7 +95,9 @@ export async function saveSettings(
 /**
  * « Supprimer mes données nutrition » (spec §6.5) : tombstones sans contenu des trois tables (bilans d'abord, ils
  * référencent les cibles), réglages C2 du profil effacés. L'accord, le mode, la version de l'écran de sécurité et la
- * pause de sécurité restent : la personne retrouve `needs = setup`, jamais un écran de sécurité à repasser.
+ * pause de sécurité restent : la personne retrouve `needs = setup`, jamais un écran de sécurité à repasser. Côté
+ * coach, dans la même transaction : le fil `full` du jour est fermé et les dossiers stockés perdent leurs repères
+ * (R17), les messages déjà écrits restent.
  */
 export async function deleteNutritionData(
   deps: AppDeps,
@@ -128,6 +131,7 @@ export async function deleteNutritionData(
         .where('ownerId', '=', user.id)
         .execute();
     }
+    await forgetThreadNutrition(trx, deps, user.id);
     return readNutritionState(trx, deps, user.id);
   });
 }

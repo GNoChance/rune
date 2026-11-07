@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { fakeText, fakeToolUse } from '../../src/ai';
 import { nutritionModeOf } from '../../src/coach/nutrition-mode';
 import { openTodayThread } from '../../src/coach/threads';
+import { deleteNutritionData } from '../../src/nutrition/settings';
 import { fullMember, seedTarget } from '../nutrition/fixtures';
+import { insertFixtureRow } from '../support';
 import { type ExchangeKit, exchangeKit } from '../support/coach';
 
 /*
@@ -79,6 +81,54 @@ describe('descente du mode nutrition', () => {
     await kit.ask('Encore');
     expect(threads()).toHaveLength(1);
     expect(threads()[0]).toMatchObject({ is_open: 1, closed_reason: null });
+  });
+
+  it('« Supprimer mes données nutrition » ferme le fil full du jour et retire les repères des dossiers stockés', async () => {
+    await fullKit([fakeText(FINE), fakeText(FINE)]);
+    await insertFixtureRow(kit.ctx.deps.db, 'nutrition_checkin', {
+      ownerId: kit.user.id,
+      weekStart: '2026-10-27',
+      weighInCount: 3,
+      meanWeightG: 80_000,
+      changePct: -0.3,
+      decision: 'in_band',
+    });
+    await kit.ask('Salut');
+    const [first] = threads();
+    const before = JSON.parse(String(first?.brief)) as { nutrition: Record<string, unknown> };
+    expect(Object.keys(before.nutrition)).toEqual(
+      expect.arrayContaining(['target', 'weekly_change', 'last_checkin']),
+    );
+    // Un fil d'un autre jour, clos, garde aussi son dossier : ses repères partent de même.
+    await insertFixtureRow(kit.ctx.deps.db, 'coach_thread', {
+      userId: kit.user.id,
+      day: '2026-11-04',
+      isOpen: 0,
+      closedReason: 'day_over',
+      briefSchema: 'coach-brief/2',
+      brief: first?.brief,
+    });
+
+    await deleteNutritionData(kit.ctx.deps, kit.user);
+
+    const all = threads();
+    const closed = all.find((t) => t.id === first?.id);
+    expect(closed).toMatchObject({ is_open: 0, closed_reason: 'nutrition_mode_change' });
+    for (const t of all) {
+      const { nutrition } = JSON.parse(String(t.brief)) as { nutrition: Record<string, unknown> };
+      expect(nutrition).toEqual({
+        mode: 'full',
+        directives: before.nutrition.directives,
+        sheets: before.nutrition.sheets,
+      });
+    }
+    // Les messages déjà écrits restent (« Supprimer mes conversations » existe).
+    expect(kit.rows('SELECT id FROM coach_message WHERE thread_id = ?', String(first?.id))).toHaveLength(2);
+
+    await kit.ask('Et maintenant ?');
+    const reopened = threads().find((t) => t.is_open === 1);
+    expect(reopened?.id).not.toBe(first?.id);
+    expect(JSON.parse(String(reopened?.brief)).nutrition.target).toBeUndefined();
   });
 
   it('un fil non full n’est pas fermé par une montée en full', async () => {

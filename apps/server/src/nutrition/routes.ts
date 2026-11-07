@@ -20,7 +20,11 @@ import { openNutrition } from './open';
 import { changeMode, submitScreen } from './screen';
 import { deleteNutritionData, previewSettings, saveSettings } from './settings';
 
-const MIRRORED_TABLES = ['weigh_in', 'nutrition_target', 'nutrition_checkin'] as const;
+/**
+ * Instantané du retour en mode complet : les trois tables et le profil, dont les colonnes C2 ne reviennent pas seules
+ * par le pull (rev inchangé pendant l'autre mode, curseur commun).
+ */
+const MIRRORED_TABLES = ['weigh_in', 'nutrition_target', 'nutrition_checkin', 'nutrition_profile'] as const;
 
 /**
  * Monté sous /api/nutrition (spec brique 5 §7) : session exigée, `Origin` des écritures contrôlée par `originGuard`.
@@ -92,7 +96,7 @@ export function nutritionRoutes(deps: AppDeps): Hono<AppEnv> {
 
   routes.delete('/data', async (c) => c.json(await deleteNutritionData(deps, userOf(c))));
 
-  // Lignes vivantes des trois tables au format du pull ; vides hors mode effectif `full`.
+  // Lignes vivantes des trois tables et du profil au format du pull ; vides hors mode effectif `full`.
   routes.get('/rows', async (c) => {
     const user = userOf(c);
     const ctx = await loadNutritionContext(deps.db, deps, user.id);

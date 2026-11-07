@@ -7,7 +7,7 @@ import {
   login,
   type TestContext,
 } from '../support';
-import { fullMember, seedTarget, seedWeighIns } from './fixtures';
+import { fullMember, open, seedTarget, seedWeighIns } from './fixtures';
 
 /* Réponses au bilan (spec brique 5 §7, §8, §9) : acceptation, refus, semaine non représentative, isolement. */
 
@@ -122,6 +122,64 @@ describe('POST /checkins/:weekStart/respond', () => {
     const u = await member();
     expect((await respond(u.cookie, '2026-10-26', 'accepted')).status).toBe(404);
     expect((await respond(u.cookie, WEEK, 'maybe')).status).toBe(400);
+  });
+
+  it('pause de sécurité posée après une baisse proposée : accepter → 409, plus de bilan à traiter', async () => {
+    const u = await member();
+    await ctx.deps.db.updateTable('nutritionProfile').set({ safetyPause: 1 }).execute();
+    const res = await respond(u.cookie, WEEK, 'accepted');
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'checkin_not_actionable' });
+    expect(await targets()).toHaveLength(1);
+    expect(await profileOf(u.id)).toMatchObject({ cumulativeAdjustmentKcal: 0 });
+    const state = (await (await open(ctx, u.cookie)).json()) as { checkin: unknown; last_checkin: unknown };
+    expect(state.checkin).toBeNull();
+    expect(state.last_checkin).toMatchObject({ decision: 'proposal', proposed_delta_kcal: -100 });
+    // Garder ses repères reste possible.
+    expect((await respond(u.cookie, WEEK, 'declined')).status).toBe(200);
+  });
+
+  it('pause de sécurité : une hausse proposée reste à traiter', async () => {
+    const u = await member({ proposedDeltaKcal: 100, position: 'below', changePct: -1.2 });
+    await ctx.deps.db.updateTable('nutritionProfile').set({ safetyPause: 1 }).execute();
+    const state = (await (await open(ctx, u.cookie)).json()) as { checkin: unknown };
+    expect(state.checkin).toMatchObject({ proposed_delta_kcal: 100 });
+    expect((await respond(u.cookie, WEEK, 'accepted')).status).toBe(200);
+  });
+
+  it('objectif changé après le bilan : la proposition décidée avant ne se traite plus (409)', async () => {
+    const u = await member();
+    // Les fixtures ont leur propre suite d'UUIDv7 : la cible et le bilan reçoivent des id plus anciens que ceux du
+    // serveur, comme s'ils étaient nés avant le réglage (en production, une seule suite).
+    await ctx.deps.db
+      .updateTable('nutritionTarget')
+      .set({ id: '0190aaaa-0000-7000-8000-000000000001' })
+      .execute();
+    await ctx.deps.db
+      .updateTable('nutritionCheckin')
+      .set({ id: '0190aaaa-0000-7000-8000-000000000002' })
+      .execute();
+    const saved = await ctx.request('/api/nutrition/settings', {
+      method: 'PUT',
+      cookie: u.cookie,
+      json: { goal: 'maintain' },
+    });
+    expect(saved.status).toBe(200);
+    expect(((await saved.json()) as { checkin: unknown }).checkin).toBeNull();
+    for (const response of ['accepted', 'declined']) {
+      const res = await respond(u.cookie, WEEK, response);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ error: 'checkin_not_actionable' });
+    }
+    expect(await checkinOf(WEEK)).toMatchObject({ response: null });
+  });
+
+  it('un recalibrage plus récent que le bilan ne le périme pas', async () => {
+    const u = await member();
+    await seedTarget(ctx, u.id, { validFrom: '2026-11-09', reason: 'weight_recalibration' });
+    const state = (await (await open(ctx, u.cookie)).json()) as { checkin: unknown };
+    expect(state.checkin).toMatchObject({ proposed_delta_kcal: -100 });
+    expect((await respond(u.cookie, WEEK, 'accepted')).status).toBe(200);
   });
 });
 

@@ -8,8 +8,14 @@ import type { AppDeps } from '../deps';
 import { httpError } from '../http/errors';
 import { parseJson } from '../http/validate';
 import { loadNutritionContext } from './context';
-import { liveWeighIns, type NutritionCheckinRow, readNutritionState } from './state';
-import { createTarget, targetsInputFor } from './targets-service';
+import {
+  checkinSuperseded,
+  decreaseDuringPause,
+  liveWeighIns,
+  type NutritionCheckinRow,
+  readNutritionState,
+} from './state';
+import { createTarget, listTargets, targetsInputFor } from './targets-service';
 
 /**
  * Bilan à traiter pour la semaine demandée : celui de la session seulement (un autre compte, admin compris, n'y
@@ -53,7 +59,9 @@ async function actionableCheckin(
 /**
  * Réponse à une proposition (spec brique 5 §9). Accepter : l'ajustement cumulé bouge de la proposition, une cible
  * `checkin` est calculée au poids de référence du jour et liée au bilan. Refuser : seule la réponse est écrite ;
- * dans les deux cas le point de départ du bilan repart (cible créée, ou date du refus).
+ * dans les deux cas le point de départ du bilan repart (cible créée, ou date du refus). Une proposition aux repères
+ * remplacés par une cible plus récente (réglages, sécurité IMC) ne se traite plus, et une baisse ne s'accepte pas
+ * pendant la pause de sécurité : `checkin_not_actionable`.
  */
 async function respond(
   deps: AppDeps,
@@ -63,10 +71,13 @@ async function respond(
 ): Promise<NutritionState> {
   return deps.db.transaction().execute(async (trx) => {
     const { row, ctx } = await actionableCheckin(trx, deps, userId, weekStart, ['proposal', 'rapid_loss']);
+    if (checkinSuperseded(row, await listTargets(trx, userId))) throw httpError('checkin_not_actionable');
     let createdTargetId = row.createdTargetId;
     if (response === 'accepted') {
       const profile = ctx.profile;
-      if (!profile || row.proposedDeltaKcal === null) throw httpError('checkin_not_actionable');
+      if (!profile || row.proposedDeltaKcal === null || decreaseDuringPause(row, profile.safetyPause === 1)) {
+        throw httpError('checkin_not_actionable');
+      }
       const weight = referenceWeight(await liveWeighIns(trx, userId), ctx.today);
       if (weight === null) throw httpError('weigh_in_required');
       const cumulative = profile.cumulativeAdjustmentKcal + row.proposedDeltaKcal;

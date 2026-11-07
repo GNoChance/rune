@@ -119,6 +119,22 @@ describe('AdviceSheetFileSchema', () => {
   it.each(['Bien-Manger', 'eat_well'])("refuse l'id %s", (id) => {
     expect(AdviceSheetFileSchema.safeParse({ id, ...file }).success).toBe(false);
   });
+  const withUrl = (url: string) => ({
+    id: 'eat-well',
+    ...file,
+    sources: [{ title: 'PNNS', url, accessed_on: '2026-11-01' }],
+  });
+  it.each([
+    'javascript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'ftp://example.org/fiche',
+    'mailto:x@example.org',
+  ])('refuse une source qui ne pointe pas vers le web : %s', (url) => {
+    expect(AdviceSheetFileSchema.safeParse(withUrl(url)).success).toBe(false);
+  });
+  it.each(['https://example.org/a?b=1', 'http://example.org'])('accepte une source http(s) : %s', (url) => {
+    expect(AdviceSheetFileSchema.safeParse(withUrl(url)).success).toBe(true);
+  });
 });
 
 describe('APPLIED_RULES', () => {

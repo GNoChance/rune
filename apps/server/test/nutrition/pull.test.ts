@@ -90,4 +90,27 @@ describe('GET /api/sync/pull et le mode nutrition', () => {
     expect(res.status).toBe(200);
     expect(res.body.nutrition).toMatchObject({ effective_mode: 'disabled' });
   });
+
+  it('deux membres en mode complet : aucune ligne nutrition de l’un chez l’autre', async () => {
+    const a = await seed();
+    const b = await createUserAndLogin(ctx);
+    await fullMember(ctx, b.id, { heightCm: 165 });
+    const bTarget = await seedTarget(ctx, b.id, { validFrom: '2026-11-03' });
+    await seedWeighIns(ctx, b.id, [['2026-11-08', 61_200]]);
+    await insertFixtureRow(ctx.deps.db, 'nutrition_checkin', { ownerId: b.id, weekStart: '2026-11-02' });
+    for (const [me, other] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      const res = await syncPull(ctx, me.cookie);
+      const rows = res.body.rows as Pulled[];
+      const nutrition = rows.filter((r) => [...NUTRITION_TABLES, 'nutrition_profile'].includes(r.entity));
+      expect(nutrition.length).toBeGreaterThanOrEqual(4);
+      for (const r of nutrition) expect(r.row.ownerId).toBe(me.id);
+      expect(rows.some((r) => r.row.id === other.id && r.entity === 'nutrition_profile')).toBe(false);
+    }
+    const aRows = (await syncPull(ctx, a.cookie)).body.rows as Pulled[];
+    expect(aRows.some((r) => r.row.id === (bTarget as { id: string }).id)).toBe(false);
+    expect(JSON.stringify(aRows)).not.toContain('61200');
+  });
 });

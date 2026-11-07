@@ -55,6 +55,7 @@ describe('push de weigh_in', () => {
     ['29 900 g', { date: '2026-11-09', weightG: 29_900 }],
     ['date de demain (Paris)', { date: '2026-11-10', weightG: 80_000 }],
     ['date impossible', { date: '2026-02-31', weightG: 80_000 }],
+    ['mois et jour hors calendrier', { date: '2026-13-45', weightG: 80_000 }],
     ['date absente', { weightG: 80_000 }],
   ])('3. %s : validation', async (_name, fields) => {
     const u = await setup();
@@ -83,6 +84,8 @@ describe('push de weigh_in', () => {
     const old = all.find((r) => r.id === first.id);
     const kept = all.find((r) => r.id === second.id);
     expect(old?.deletedAt).not.toBeNull();
+    // Tombstone sans contenu : ni date ni poids ne restent 90 jours.
+    expect(old).toMatchObject({ date: null, weightG: null });
     expect(old?.rev).toBeGreaterThan(firstRev);
     expect(kept).toMatchObject({ deletedAt: null, weightG: 79_500, date: '2026-11-08' });
   });
@@ -136,6 +139,7 @@ describe('push de weigh_in', () => {
     const del = makeOp({ userId: u.id, entity: 'weigh_in', id: c.id, kind: 'delete' });
     expect((await syncPush(ctx, u.cookie, [del])).body.results[0].status).toBe('applied');
     expect((await rows())[0]?.deletedAt).not.toBeNull();
+    expect((await rows())[0]).toMatchObject({ date: null, weightG: null });
     await insertFixtureRow(ctx.deps.db, 'consent_event', {
       ownerId: u.id,
       type: 'health',
@@ -145,19 +149,59 @@ describe('push de weigh_in', () => {
     expect((await syncPush(ctx, u.cookie, [again])).body.results[0].status).not.toBe('rejected');
     expect(await rejections()).toHaveLength(0);
   });
+});
 
-  it('restore_upsert refusé', async () => {
+describe('restore_upsert de weigh_in (renvoi après une restauration du serveur)', () => {
+  const restore = (userId: string, fields: Record<string, unknown>, id = ids.uuidv7()) =>
+    makeOp({ userId, entity: 'weigh_in', id, kind: 'restore_upsert', fields });
+
+  it('une pesée que le serveur n’a plus est réinsérée', async () => {
     const u = await setup();
-    const op = makeOp({
-      userId: u.id,
-      entity: 'weigh_in',
-      id: ids.uuidv7(),
-      kind: 'restore_upsert',
-      fields: { date: '2026-11-08', weightG: 80_000 },
+    const op = restore(u.id, { date: '2026-11-08', weightG: 80_000 });
+    expect((await syncPush(ctx, u.cookie, [op])).body.results[0]).toMatchObject({ status: 'applied' });
+    expect(await rows()).toMatchObject([{ id: op.id, date: '2026-11-08', weightG: 80_000, deletedAt: null }]);
+  });
+
+  it.each([
+    ['poids hors domaine', { date: '2026-11-08', weightG: 250_100 }],
+    ['date de demain (Paris)', { date: '2026-11-10', weightG: 80_000 }],
+    ['date hors calendrier', { date: '2026-13-45', weightG: 80_000 }],
+  ])('mêmes contrôles que create : %s → validation', async (_name, fields) => {
+    const u = await setup();
+    const res = await syncPush(ctx, u.cookie, [restore(u.id, fields)]);
+    expect(res.body.results[0]).toMatchObject({ status: 'rejected', code: 'validation' });
+    expect(await rows()).toHaveLength(0);
+  });
+
+  it('hors mode complet : forbidden', async () => {
+    const u = await setup();
+    await ctx.deps.db.updateTable('nutritionProfile').set({ mode: 'qualitative' }).execute();
+    const res = await syncPush(ctx, u.cookie, [restore(u.id, { date: '2026-11-08', weightG: 80_000 })]);
+    expect(res.body.results[0]).toMatchObject({ status: 'rejected', code: 'forbidden' });
+  });
+
+  it('même jour qu’une pesée vivante : l’ancienne passe en tombstone sans contenu', async () => {
+    const u = await setup();
+    const first = create(u.id, { date: '2026-11-08', weightG: 80_000 });
+    await syncPush(ctx, u.cookie, [first]);
+    const op = restore(u.id, { date: '2026-11-08', weightG: 79_500 });
+    expect((await syncPush(ctx, u.cookie, [op])).body.results[0].status).toBe('applied');
+    const all = await rows();
+    expect(all.find((r) => r.id === first.id)).toMatchObject({ date: null, weightG: null });
+    expect(all.find((r) => r.id === first.id)?.deletedAt).not.toBeNull();
+    expect(all.find((r) => r.id === op.id)).toMatchObject({
+      date: '2026-11-08',
+      weightG: 79_500,
+      deletedAt: null,
     });
-    expect((await syncPush(ctx, u.cookie, [op])).body.results[0]).toMatchObject({
-      status: 'rejected',
-      code: 'forbidden',
-    });
+  });
+
+  it('une suppression renvoyée : tombstone sans contenu', async () => {
+    const u = await setup();
+    const op = restore(u.id, { date: '2026-11-08', weightG: 80_000, deletedAt: '2026-11-09T08:00:00.000Z' });
+    expect((await syncPush(ctx, u.cookie, [op])).body.results[0].status).toBe('applied');
+    const [row] = await rows();
+    expect(row).toMatchObject({ id: op.id, date: null, weightG: null });
+    expect(row?.deletedAt).not.toBeNull();
   });
 });

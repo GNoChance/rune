@@ -212,8 +212,11 @@ export function createNutritionRepo(s: AppServices): NutritionRepo {
     const owned = (r: { deletedAt?: unknown; ownerId?: unknown }) =>
       r.deletedAt == null && r.ownerId === userId;
     const profile = await db.mirror('nutrition_profile').get(userId);
-    const targets = (await db.mirror('nutrition_target').filter(owned).toArray()).sort((a, b) =>
-      String(b.validFrom).localeCompare(String(a.validFrom)),
+    // Cible en vigueur : la dernière par (`validFrom`, `id`), comme au serveur ; deux cibles du même jour (mise en
+    // place puis réglage) se départagent par l'id, UUIDv7 du serveur dans l'ordre de création.
+    const desc = (x: unknown, y: unknown) => (String(x) === String(y) ? 0 : String(x) > String(y) ? -1 : 1);
+    const targets = (await db.mirror('nutrition_target').filter(owned).toArray()).sort(
+      (a, b) => desc(a.validFrom, b.validFrom) || desc(a.id, b.id),
     );
     const checkins = (await db.mirror('nutrition_checkin').filter(owned).toArray()).sort((a, b) =>
       String(b.weekStart).localeCompare(String(a.weekStart)),
