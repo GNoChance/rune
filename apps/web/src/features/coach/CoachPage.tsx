@@ -360,6 +360,8 @@ export function CoachPage() {
               {pending.nutritionScreen ? <NutritionScreenButton offer={pending.nutritionScreen} /> : null}
             </>
           ) : null}
+          {/* Échange refusé ou en erreur : ses cartes d'aide restent (R14), jusqu'au message suivant. */}
+          {phase !== 'streaming' ? cardsOf(state.unrecordedHelpCards, []) : null}
           <div ref={end} />
         </div>
         {errorBanner}

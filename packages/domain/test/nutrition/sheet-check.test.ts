@@ -133,4 +133,16 @@ describe('validateAdviceSheet', () => {
     expect(codes(sheet({ body_md: `Fais un rég${SHY}ime.` }))).toEqual(['forbidden_term']);
     expect(codes(sheet({ body_md: `Fais un ré${ZWSP}gime.` }))).toEqual(['forbidden_term']);
   });
+
+  it.each([
+    ['gras collé au nombre', 'Mange **500** g de viande.', '500 g'],
+    ['souligné', 'Vise __2 200__ kcal.', '2200 kcal'],
+    ['barré', 'Bois ~~2~~ L.', '2000 ml'],
+    ['italique sur l’unité', 'Mange 300 *g* de riz.', '300 g'],
+  ])('les marques d’emphase ne cachent pas une quantité : %s', (_name, body_md, detail) => {
+    expect(validateAdviceSheet(sheet({ body_md }), 'published')).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([{ code: 'numbers_not_allowed', detail }]),
+    });
+  });
 });

@@ -62,6 +62,8 @@ export interface AttemptInput {
     audience: AgeBand;
     brief: unknown;
     threadToolResults: readonly unknown[];
+    /** Pause de sécurité nutrition lue au message (R15) : liste « hors mode complet » du filtre, même en `full`. */
+    safetyPause?: boolean;
   };
   signal: AbortSignal;
   /** Le budget permet-il un appel de plus ? `spentUsd` : coût des appels de cette tentative. */
@@ -236,6 +238,7 @@ class Relay {
         nutritionModeOfBrief(this.input.filter.brief),
       ).nutritionMode,
       allowed: this.allowed(),
+      safetyPause: this.input.filter.safetyPause === true,
       precedingWords: this.precedingWords,
     });
     if (!verdict.ok) {

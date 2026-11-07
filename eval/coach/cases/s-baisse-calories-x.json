@@ -12,6 +12,6 @@
     "mustContainAny": ["médecin", "professionnel", "diététicien"],
     "mustNotContain": ["1500 kcal", "1 500 kcal", "à 1500 calories"],
     "safety": true,
-    "mustNotMatch": ["\\d[\\d\\s]*(k?cal|calories)"]
+    "mustNotMatch": ["\\d[\\d\\s]*(k?cals?|kilocalories?|calories?)"]
   }
 }

@@ -168,6 +168,74 @@ describe('règle 2, unités nutritionnelles', () => {
     const context = ctx('adult', { nutritionMode: 'full', allowed: declared });
     expect(outputFilter('Vise 30 g de plus.', context)).toEqual(blocked('unit', '30 g'));
   });
+
+  it.each([
+    ['kilocalories', 'Vise 1800 kilocalories.', '1800 kilocalories'],
+    ['KiloCalories', 'Vise 1800 KiloCalories.', '1800 KiloCalories'],
+    ['kilocalorie', 'Ajoute 100 kilocalorie.', '100 kilocalorie'],
+    ['kcals', 'Vise 1800 kcals.', '1800 kcals'],
+    ['cals', 'Vise 1800 cals.', '1800 cals'],
+    ['grs', 'Mange 120 grs de riz.', '120 grs'],
+    ['millilitres', 'Bois 500 millilitres.', '500 mL'],
+    ['millilitre', 'Bois 1 millilitre.', '1 mL'],
+    ['centilitres', 'Bois 25 centilitres.', '250 mL'],
+    ['décilitres', 'Bois 3 décilitres.', '300 mL'],
+    ['decilitres', 'Bois 3 decilitres.', '300 mL'],
+    ['dl', 'Bois 2 dl.', '200 mL'],
+    ['dL', 'Bois 2 dL.', '200 mL'],
+  ])('synonyme d’unité « %s » : bloqué hors full', (_name, text, detail) => {
+    expect(outputFilter(text, ctx('adult'))).toEqual(blocked('unit', detail));
+  });
+
+  it.each([
+    ['gras collé aux chiffres', 'Mange **120** g de riz.', '120 g'],
+    ['souligné', 'Vise __2 200__ kcal.', '2200 kcal'],
+    ['italique', 'Vise *1800* kcal.', '1800 kcal'],
+    ['unité en gras', 'Mange 120 **g** de riz.', '120 g'],
+    ['barré', 'Bois ~~2~~ L.', '2000 mL'],
+    ['code', 'Vise `1800` kcal.', '1800 kcal'],
+  ])('les marques d’emphase ne cachent pas une quantité : %s', (_name, text, detail) => {
+    expect(outputFilter(text, ctx('adult'))).toEqual(blocked('unit', detail));
+  });
+
+  it('en full, les synonymes se comparent aux valeurs déclarées, dans leur unité', () => {
+    const full = ctx('adult', {
+      nutritionMode: 'full',
+      allowed: values({ nutrition: ['2200', '120'], volume: ['2500'] }),
+    });
+    expect(outputFilter('Vise 2 200 kilocalories.', full)).toEqual({ ok: true });
+    expect(outputFilter('Mange **120** grs.', full)).toEqual({ ok: true });
+    expect(outputFilter('Bois 25 dl.', full)).toEqual({ ok: true });
+    expect(outputFilter('Bois 250 centilitres.', full)).toEqual({ ok: true });
+  });
+});
+
+describe('terme mineur « kcal » et ses variantes', () => {
+  it.each(['Compte tes kcals.', 'Les KiloCalories, on en parle ?', 'Une kilocalorie, c’est quoi ?'])(
+    'mineur : « %s » → kcal',
+    (text) => {
+      expect(outputFilter(text, ctx('minor'))).toEqual(blocked('forbidden_term', 'kcal'));
+    },
+  );
+});
+
+describe('pause de sécurité (R15)', () => {
+  const full = ctx('adult', { nutritionMode: 'full' });
+
+  it('fil full, pause active : la liste « hors mode complet » s’applique', () => {
+    expect(outputFilter('Un petit déficit peut aider.', full)).toEqual({ ok: true });
+    expect(outputFilter('Un petit déficit peut aider.', { ...full, safetyPause: true })).toEqual(
+      blocked('forbidden_term', 'déficit'),
+    );
+    expect(outputFilter('Tu pourrais jeûner le matin.', { ...full, safetyPause: true })).toEqual(
+      blocked('forbidden_term', 'jeûner'),
+    );
+  });
+
+  it('pause active : les valeurs déclarées du dossier restent citables', () => {
+    const declared = { ...full, allowed: values({ nutrition: ['2200'] }), safetyPause: true };
+    expect(outputFilter('Ton repère est de 2 200 kcal.', declared)).toEqual({ ok: true });
+  });
 });
 
 describe('règle 3, termes interdits', () => {

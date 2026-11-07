@@ -33,6 +33,20 @@ export function nutritionFilterOf(
   return { nutritionMode, nutritionFull: audience === 'adult' && mode === 'full' };
 }
 
+/**
+ * Pause de sécurité nutrition de `userId`, relue en base à chaque message (brique 5 R15) : tant qu'elle est active, le
+ * filtre applique la liste « hors mode complet » même dans un fil `full`. Fausse sans profil vivant.
+ */
+export async function safetyPauseOf(db: DbExecutor, userId: string): Promise<boolean> {
+  const row = await db
+    .selectFrom('nutritionProfile')
+    .select('safetyPause')
+    .where('ownerId', '=', userId)
+    .where('deletedAt', 'is', null)
+    .executeTakeFirst();
+  return row?.safetyPause === 1;
+}
+
 /** Mode nutrition du fil `threadId` de `userId`, relu en base ; `disabled` si le fil n'existe pas (plus). */
 export async function storedThreadNutritionMode(
   db: DbExecutor,

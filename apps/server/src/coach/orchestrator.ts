@@ -5,6 +5,7 @@ import {
   cleanCoachText,
   coachTextLength,
   type GuidedRequest,
+  type HelpResourceId,
 } from '@rune/contracts';
 import {
   type ApiBlock,
@@ -24,7 +25,7 @@ import { isHealthConsentActive } from '../privacy/consent-state';
 import type { AttemptInput, AttemptOutcome, CallRecord } from './attempt';
 import { runAttempt } from './attempt';
 import { composeForUser } from './guided';
-import { nutritionFilterOf, nutritionModeOfBrief } from './nutrition-mode';
+import { nutritionFilterOf, nutritionModeOfBrief, safetyPauseOf } from './nutrition-mode';
 import {
   type PromptVersion,
   REFUSAL_MESSAGE,
@@ -67,6 +68,8 @@ export interface PreparedExchange {
   day: string;
   /** Accord santé lu par `prepareExchange` ; l'enregistrement relit le sien dans sa transaction (§8.7). */
   healthConsent: boolean;
+  /** Pause de sécurité nutrition lue à ce message (brique 5 R15) : le filtre applique la liste « hors mode complet ». */
+  safetyPause: boolean;
 }
 
 /**
@@ -135,6 +138,7 @@ export async function prepareExchange(
       startedAt: now,
       day: parisDate(now),
       healthConsent: await isHealthConsentActive(deps.db, userId),
+      safetyPause: await safetyPauseOf(deps.db, userId),
     };
   } catch (error) {
     lease.done();
@@ -195,7 +199,8 @@ type Attempted = { outcome: AttemptOutcome; state: AttemptToolState; held: Coach
  * - Au plus une régénération, après `retry` : mêmes messages, suivis du message `system` de `regenerationNote`.
  *   Chaque tentative a son état d'outils neuf ; ses cartes `proposal` ne partent qu'à la fin de la tentative
  *   retenue, et seulement si la ligne est écrite `proposed` ; les cartes `help_card` de toutes les tentatives partent, sans
- *   doublon (§8.5). Un second blocage donne la réponse type.
+ *   doublon (§8.5), y compris avant `refused` ou `error` (sans être enregistrées, R14). Un second blocage donne la
+ *   réponse type.
  * - Plafonds : avant chaque appel, dépense du mois + coût de l'échange (régénération comprise) contre le budget.
  * - Un échec d'écriture, ou un fil disparu : rien du fil n'est écrit, seule la ligne `coach_call` l'est.
  */
@@ -212,6 +217,17 @@ export async function runExchange(
     }
   };
   const tally = { calls: [] as CallRecord[], toolRounds: 0, filterBlocks: 0 };
+  /** États d'outils des tentatives, dès leur création : une tentative qui échoue a pu demander une carte d'aide. */
+  const states: AttemptToolState[] = [];
+  const helpSent = new Set<HelpResourceId>();
+  /** Cartes d'aide demandées et pas encore envoyées, dans l'ordre et sans doublon (§8.5, R14). */
+  const sendHelpCards = (): void => {
+    for (const resource of states.flatMap((state) => state.helpCards)) {
+      if (helpSent.has(resource)) continue;
+      helpSent.add(resource);
+      send({ type: 'help_card', resource });
+    }
+  };
   const summarize = (
     o: Partial<Pick<CallSummary, 'firstTextLatencyMs' | 'stopReason' | 'refusalCategory' | 'errorCode'>> & {
       received?: boolean;
@@ -268,6 +284,8 @@ export async function runExchange(
       logError('coach_call_failed', { event: errorName(error) });
     }
     log('error', summary);
+    // La sécurité l'emporte sur « rien d'un échange non enregistré » : la carte d'aide part quand même (R14).
+    sendHelpCards();
     send({ type: 'error', code });
   };
 
@@ -301,6 +319,7 @@ export async function runExchange(
         helpCards: [],
         nutritionScreens: [],
       };
+      states.push(state);
       const held: CoachStreamEvent[] = [];
       const toolCtx: ToolContext = {
         db: deps.db,
@@ -323,7 +342,7 @@ export async function runExchange(
           note === null ? base : [...base, { role: 'system', content: [{ type: 'text', text: note }] }],
         tools: TOOLS_2,
         toolCtx,
-        filter: { audience: thread.audience, brief, threadToolResults },
+        filter: { audience: thread.audience, brief, threadToolResults, safetyPause: x.safetyPause },
         signal: x.lease.signal,
         async canCall(spentUsd) {
           const spentMicros = await monthSpentMicros(deps.db, x.userId, month);
@@ -361,6 +380,7 @@ export async function runExchange(
       const summary = summarize({ stopReason: 'refusal', refusalCategory: outcome.category, received: true });
       await deps.db.transaction().execute((trx) => recordCallOnly(trx, deps, x, summary));
       log('refused', summary);
+      sendHelpCards();
       send({ type: 'refused', message: REFUSAL_MESSAGE });
       return;
     }
@@ -419,7 +439,7 @@ export async function runExchange(
       logError('coach_remaining_failed', { event: errorName(error) });
     }
     log(outcome.kind === 'answered' ? 'answered' : 'replaced', summary);
-    for (const resource of helpCards) send({ type: 'help_card', resource });
+    sendHelpCards();
     if (outcome.kind === 'answered') {
       // Seules les propositions écrites `proposed` ont une carte, dont le motif suit l'accord santé de l'enregistrement.
       // Le bouton des réglages nutrition (au plus un par message) ne part qu'avec une réponse enregistrée.

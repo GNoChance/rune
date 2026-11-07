@@ -848,10 +848,13 @@ function fit(brief: CoachBrief, max: number): CoachBrief {
 
 type BriefNutrition = CoachBrief['nutrition'];
 
-/** Bloc `nutrition` (brique 5 §11.1) : repères chiffrés en mode effectif `full` seulement ; clés sans champ nul. */
+/**
+ * Bloc `nutrition` (brique 5 §11.1) : repères chiffrés en mode effectif `full` seulement, et jamais pour un mineur
+ * (défense en profondeur : le mode effectif d'un mineur n'est jamais `full`) ; clés sans champ nul.
+ */
 function briefNutrition(input: CoachBriefInput): BriefNutrition {
   const n = input.nutrition;
-  const full = n.mode === 'full';
+  const full = n.mode === 'full' && !n.minor && input.audience !== 'minor';
   const directives: BriefNutrition['directives'] = [];
   if (n.minor) directives.push('minor_profile');
   if (!full || n.safetyPause || n.target?.effectiveGoal !== 'lose') directives.push('no_deficit');

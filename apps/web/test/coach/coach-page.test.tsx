@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { CoachProposalEvent, CoachTodayResponse } from '@rune/contracts';
+import { type CoachProposalEvent, type CoachTodayResponse, HELP_RESOURCES } from '@rune/contracts';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useSyncExternalStore } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -134,6 +134,7 @@ function init(patch: Partial<CoachState> = {}) {
     phase: 'idle',
     error: null,
     refusalMessage: null,
+    unrecordedHelpCards: [],
     nutritionScreens: {},
     ...patch,
   };
@@ -466,6 +467,16 @@ describe('CoachPage : états du §16.2', () => {
     await renderPage();
     expect(screen.getByText('Message du serveur, neutre.')).toBeTruthy();
     expect(screen.queryByText('Le coach ne peut pas répondre à cette demande.')).toBeNull();
+  });
+
+  it.each([
+    ['refus', { phase: 'refused', refusalMessage: null }],
+    ['erreur', { phase: 'error', error: 'internal', pending: PENDING }],
+  ] as const)('%s après une carte d’aide : la carte reste affichée (R14)', async (_name, patch) => {
+    init({ ...patch, draft: 'Q', unrecordedHelpCards: ['eating_disorder'] });
+    await renderPage();
+    const help = HELP_RESOURCES.find((r) => r.id === 'eating_disorder');
+    expect(screen.getByText(help?.label as string)).toBeTruthy();
   });
 
   it('refus sans message : le texte du §16.2', async () => {

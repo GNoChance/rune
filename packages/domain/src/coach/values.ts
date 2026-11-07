@@ -35,18 +35,32 @@ const UNITS: Readonly<Record<string, UnitInfo>> = {
   'pour cent': info('percent', 'pct'),
   pourcent: info('percent', 'pct'),
   kcal: info('nutrition', 'kcal'),
+  kcals: info('nutrition', 'kcal'),
+  kilocalorie: info('nutrition', 'kcal'),
+  kilocalories: info('nutrition', 'kcal'),
   cal: info('nutrition', 'kcal'),
+  cals: info('nutrition', 'kcal'),
   calorie: info('nutrition', 'kcal'),
   calories: info('nutrition', 'kcal'),
   g: info('nutrition', 'g'),
   gr: info('nutrition', 'g'),
+  grs: info('nutrition', 'g'),
   gramme: info('nutrition', 'g'),
   grammes: info('nutrition', 'g'),
   l: info('volume', 'ml', 1000),
   litre: info('volume', 'ml', 1000),
   litres: info('volume', 'ml', 1000),
   ml: info('volume', 'ml'),
+  millilitre: info('volume', 'ml'),
+  millilitres: info('volume', 'ml'),
   cl: info('volume', 'ml', 10),
+  centilitre: info('volume', 'ml', 10),
+  centilitres: info('volume', 'ml', 10),
+  dl: info('volume', 'ml', 100),
+  décilitre: info('volume', 'ml', 100),
+  décilitres: info('volume', 'ml', 100),
+  decilitre: info('volume', 'ml', 100),
+  decilitres: info('volume', 'ml', 100),
 };
 
 const unitInfo = (unit: string): UnitInfo | undefined => UNITS[unit.toLowerCase().replace(SPACES, ' ')];
@@ -59,7 +73,8 @@ const RANGE_SEPARATOR = `${SP}*(?:[-/\\u2010-\\u2015\\u2212]|à|et|ou)${SP}*`;
 // ni d'un chiffre suivi d'un séparateur décimal.
 const QUANTITY = new RegExp(
   `(?<!\\d)(?<!\\d[.,])(?:(${NUMBER})${RANGE_SEPARATOR})?(${NUMBER})${SP}*` +
-    `(kilogrammes?|kilos?|kg|kcal|calories?|cal|grammes?|gr|g|litres?|ml|cl|l|%|pour${SP}*cent|pourcent)(?![\\p{L}\\d])`,
+    `(kilogrammes?|kilos?|kg|kilocalories?|kcals?|calories?|cals?|grammes?|grs?|g|millilitres?|centilitres?|` +
+    `d[ée]cilitres?|litres?|ml|cl|dl|l|%|pour${SP}*cent|pourcent)(?![\\p{L}\\d])`,
   'giud',
 );
 
@@ -144,7 +159,11 @@ export function allowedValues(sources: {
       if (family && NUMERIC_STRING.test(text)) {
         addNumber(family, Number(normalizeNumber(text)));
       } else {
+        // Texte libre (note de séance, résultat d'outil) : masse et pourcentage seulement. Une valeur nutrition ou un
+        // volume n'est citable que s'il vient d'une clé à unité (repères du dossier) : « j'ai mangé 800 kcal » dans une
+        // note ne l'autorise pas.
         for (const quantity of findQuantities(node)) {
+          if (quantity.family === 'nutrition' || quantity.family === 'volume') continue;
           addNumber(quantity.family, Number(quantity.value));
         }
       }

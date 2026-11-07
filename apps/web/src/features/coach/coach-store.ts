@@ -55,6 +55,11 @@ export interface CoachState {
   /** Message neutre du serveur après un refus (`refused`), non enregistré ; nul sinon. */
   refusalMessage: string | null;
   /**
+   * Cartes d'aide d'un échange fini en refus ou en erreur (brique 5 R14) : non enregistrées, elles restent affichées
+   * jusqu'au message suivant ; la sécurité l'emporte sur « rien d'un échange non enregistré ».
+   */
+  unrecordedHelpCards: readonly HelpResourceId[];
+  /**
    * Bouton « Ouvrir mes réglages nutrition » des réponses finies de cette session, par `seq` du message. L'événement
    * n'est pas enregistré côté serveur : le bouton n'est pas rejoué quand le fil est relu, il ne vit qu'ici.
    */
@@ -107,6 +112,7 @@ const INITIAL: CoachState = {
   phase: 'idle',
   error: null,
   refusalMessage: null,
+  unrecordedHelpCards: [],
   nutritionScreens: {},
 };
 
@@ -183,8 +189,17 @@ export function createCoachStore(s: AppServices): CoachStore {
   const given = (pending: PendingExchange) =>
     pending.chip || state.draft !== '' ? state.draft : pending.text;
 
+  /** Cartes d'aide reçues pendant l'échange en cours (l'état du flux, pas l'envoi d'origine). */
+  const receivedHelpCards = (): readonly HelpResourceId[] => state.pending?.helpCards ?? [];
+
   async function fail(gen: number, pending: PendingExchange, code: CoachError): Promise<void> {
-    set({ pending: emptied(pending), draft: given(pending), phase: 'error', error: code });
+    set({
+      pending: emptied(pending),
+      draft: given(pending),
+      phase: 'error',
+      error: code,
+      unrecordedHelpCards: receivedHelpCards(),
+    });
     if (code !== 'offline') await reloadToday(gen);
     // Accord retiré pendant l'échange (ailleurs, ou par une restauration) : `status` le dit et l'écran propose de le
     // redonner, au lieu d'une bannière sans issue.
@@ -196,7 +211,7 @@ export function createCoachStore(s: AppServices): CoachStore {
     answerRecorded = false;
     // Le champ est libre dès l'envoi : ce qui y est tapé pendant le flux est à la personne.
     const draft = !pending.chip && state.draft === pending.text ? '' : state.draft;
-    set({ pending, draft, phase: 'streaming', error: null, refusalMessage: null });
+    set({ pending, draft, phase: 'streaming', error: null, refusalMessage: null, unrecordedHelpCards: [] });
     // Le cycle de synchro n'est lancé que s'il y a quelque chose à envoyer (changement de coach, charges).
     if (flushFirst && (await repo.pendingOps().catch(() => 0)) > 0) await flush();
     if (gen !== generation) return;
@@ -274,7 +289,14 @@ export function createCoachStore(s: AppServices): CoachStore {
     const { done, error, refused } = seen;
     if (error !== null) return fail(gen, pending, error);
     if (refused !== null) {
-      set({ pending: null, draft: given(pending), phase: 'refused', error: null, refusalMessage: refused });
+      set({
+        pending: null,
+        draft: given(pending),
+        phase: 'refused',
+        error: null,
+        refusalMessage: refused,
+        unrecordedHelpCards: receivedHelpCards(),
+      });
       return;
     }
     // Un flux fermé sans `done` ni `error` : la réponse s'est peut-être enregistrée, `today` le dira.

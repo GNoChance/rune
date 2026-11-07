@@ -153,7 +153,7 @@ export const FORBIDDEN_TERMS: {
     entry('jeûne', ['jeûnes']),
     entry('jeûner', firstGroup('jeûn')),
     entry('calories', ['calorie']),
-    entry('kcal'),
+    entry('kcal', ['kcals', 'kilocalorie', 'kilocalories']),
     entry('complément alimentaire', ['compléments alimentaires']),
     entry('créatine', ['créatines']),
     entry('whey', ['wheys']),

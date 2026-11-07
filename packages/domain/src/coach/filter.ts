@@ -13,6 +13,11 @@ export interface FilterContext {
   audience: AgeBand;
   nutritionMode: 'none' | 'qualitative' | 'full';
   allowed: AllowedValues;
+  /**
+   * Pause de sécurité nutrition active (D14), lue à chaque message : la liste « hors mode complet » s'applique alors
+   * même dans un fil `full` (R15) ; les valeurs déclarées restent citables.
+   */
+  safetyPause?: boolean;
   /** Derniers mots du morceau précédent, rendus par `trailingWords` : le contexte d'un numéro franchit les phrases. */
   precedingWords?: readonly string[];
 }
@@ -46,9 +51,20 @@ export function normalizeForTerms(text: string): string {
 // Signe numéro (n°, nº, №) réécrit en mot avant NFKC, qui ferait de « nº » et « № » un simple « no ».
 const NUMERO_SIGN = /(?<![\p{L}\p{N}])n[°º]|№/giu;
 
-/** Texte lu par les règles : signe numéro en mot, NFKC, invisibles et marques retirés. */
+// Marques d'emphase Markdown (`*`, `_`, `~`, accent grave), retirées après NFKC (qui ramène leurs formes pleine
+// chasse) : collées à un nombre ou à son unité, elles les sépareraient (« **500** g », « __2 200__ kcal »).
+const EMPHASIS = /[*_~`]/g;
+
+/**
+ * Texte lu par les règles : signe numéro en mot, NFKC, invisibles, marques et emphase retirés. Partagé avec le
+ * contrôle des fiches conseils.
+ */
 export function prepare(sentence: string): string {
-  return sentence.replace(NUMERO_SIGN, ' numero ').normalize('NFKC').replace(INVISIBLE_OR_MARK, '');
+  return sentence
+    .replace(NUMERO_SIGN, ' numero ')
+    .normalize('NFKC')
+    .replace(INVISIBLE_OR_MARK, '')
+    .replace(EMPHASIS, '');
 }
 
 // Règle 1. Une suite de chiffres séparés par des espaces, des points, des tirets (ceux de DASHES), le point médian ou
@@ -238,7 +254,8 @@ export function forbiddenTermIn(text: string, lists: { notFull: boolean; minor: 
 /**
  * Règles du §11.3 dans l'ordre, première violation rendue. Familles nutrition et volume ouvertes (aux valeurs
  * déclarées) pour un adulte en mode `full` seulement ; la liste « pour tous » s'applique dans tous les modes, la liste
- * « hors mode complet » hors `full`, la liste des mineurs à tout public qui n'est pas « adult » (côté fermé).
+ * « hors mode complet » hors `full` et pendant une pause de sécurité, la liste des mineurs à tout public qui n'est pas
+ * « adult » (côté fermé).
  */
 export function outputFilter(sentence: string, ctx: FilterContext): FilterVerdict {
   const text = prepare(sentence);
@@ -250,7 +267,10 @@ export function outputFilter(sentence: string, ctx: FilterContext): FilterVerdic
   const unit = unitViolation(text, ctx.allowed, nutritionFull);
   if (unit !== null) return { ok: false, rule: 'unit', detail: unit };
 
-  const term = forbiddenTermIn(text, { notFull: !nutritionFull, minor: ctx.audience !== 'adult' });
+  const term = forbiddenTermIn(text, {
+    notFull: !nutritionFull || ctx.safetyPause === true,
+    minor: ctx.audience !== 'adult',
+  });
   if (term !== null) return { ok: false, rule: 'forbidden_term', detail: term };
   return { ok: true };
 }

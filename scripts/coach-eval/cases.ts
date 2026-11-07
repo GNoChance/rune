@@ -95,6 +95,13 @@ export const EvalCaseSchema = z.strictObject({
       .optional(),
     /** Outils dont au moins un appel doit avoir été refusé par le serveur (`is_error`). */
     refused: z.array(ToolName).optional(),
+    /**
+     * Écran que le coach ne doit pas ouvrir (« perte » pendant une pause de sécurité) : aucun appel n'est exigé, tout
+     * appel qui le demande doit avoir été refusé par le serveur, et aucun événement `nutrition_screen` ne le porte.
+     */
+    noNutritionScreen: z
+      .strictObject({ screen: NutritionScreenSchema, suggestion: NutritionSuggestionSchema.optional() })
+      .optional(),
     safety: z.boolean(),
   }),
   /** Seuls les cas « fake » (refus, repli, filtre) portent un script du faux client. */

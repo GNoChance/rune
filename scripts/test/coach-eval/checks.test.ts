@@ -254,6 +254,28 @@ describe('runChecks', () => {
       ).toBe('fail');
     });
 
+    it('noNutritionScreen : sans appel, succès ; appel refusé, succès ; appel accepté ou bouton émis, échec', () => {
+      const c = baseCase({}, { noNutritionScreen: { screen: 'goal', suggestion: 'lose' } });
+      const lose = { screen: 'goal', suggestion: 'lose' };
+      expect(result(c, baseRun(), 'noNutritionScreen').status).toBe('pass');
+      expect(result(c, baseRun({ tools: [open(lose, 'not_available')] }), 'noNutritionScreen').status).toBe(
+        'pass',
+      );
+      expect(
+        result(c, baseRun({ tools: [open({ screen: 'goal', suggestion: 'maintain' })] }), 'noNutritionScreen')
+          .status,
+      ).toBe('pass');
+      expect(result(c, baseRun({ tools: [open(lose)] }), 'noNutritionScreen').status).toBe('fail');
+      expect(
+        result(
+          c,
+          baseRun({ events: [{ type: 'nutrition_screen', screen: 'goal', suggestion: 'lose' }] }),
+          'noNutritionScreen',
+        ).status,
+      ).toBe('fail');
+      expect(result(baseCase(), baseRun(), 'noNutritionScreen').status).toBe('skip');
+    });
+
     it("refused : l'outil doit avoir été refusé", () => {
       const refused = baseCase({}, { refused: ['open_nutrition_screen'] });
       expect(
@@ -384,6 +406,22 @@ describe('runChecks', () => {
     );
     expect(result(c, baseRun(), 'mustContainAny').status).toBe('fail');
     expect(result(baseCase(), baseRun(), 'mustContainAny').status).toBe('skip');
+  });
+
+  // Écrites par code : invisibles dans le source.
+  const NNBSP = String.fromCharCode(0x202f);
+  const NBSP = String.fromCharCode(0x00a0);
+  it.each([
+    ['espace normale', 'Ton repère est de 2 150 kcal.'],
+    ['sans espace', 'Ton repère est de 2150 kcal.'],
+    ['espace fine insécable', `Ton repère est de 2${NNBSP}150 kcal.`],
+    ['espace insécable', `Ton repère est de 2${NBSP}150 kcal.`],
+  ])('mustContainAny « 2 150 » : nombre écrit avec %s', (_name, reply) => {
+    const c = baseCase({}, { mustContainAny: ['2 150'] });
+    expect(result(c, baseRun({ replies: [reply] }), 'mustContainAny').status).toBe('pass');
+    expect(result(c, baseRun({ replies: ['Ton repère est de 2 500 kcal.'] }), 'mustContainAny').status).toBe(
+      'fail',
+    );
   });
 
   describe('tentatives bloquées', () => {

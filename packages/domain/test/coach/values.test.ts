@@ -84,13 +84,27 @@ describe('allowedValues', () => {
     expect(allowed.nutrition.size).toBe(0);
   });
 
-  it('remplit la nutrition en mode complet (_kcal, _g, chaînes)', () => {
+  it('remplit la nutrition en mode complet par les clés à unité (_kcal, _g), jamais par le texte libre', () => {
     const allowed = allowedValues({
       ...NO_SOURCES,
       nutritionFull: true,
       brief: { target_kcal: 2000, protein_g: 140, note: 'environ 150 g de riz' },
     });
-    expect([...allowed.nutrition].sort()).toEqual(['140', '150', '2000']);
+    expect([...allowed.nutrition].sort()).toEqual(['140', '2000']);
+  });
+
+  it("en mode complet, « j'ai mangé 800 kcal » d'une note ou d'un résultat d'outil ne rend pas 800 kcal citable", () => {
+    const allowed = allowedValues({
+      ...NO_SOURCES,
+      nutritionFull: true,
+      brief: { history: { sessions: [{ note: "j'ai mangé 800 kcal et bu 1,5 L, soulevé 60 kg à 80 %" }] } },
+      toolResults: [{ sessions: [{ note: 'repas de 120 g de pâtes' }] }],
+    });
+    expect(allowed.nutrition.size).toBe(0);
+    expect(allowed.volume.size).toBe(0);
+    // Masse et pourcentage restent lus dans le texte.
+    expect(allowed.mass.has('60')).toBe(true);
+    expect(allowed.percent.has('80')).toBe(true);
   });
 
   it("donne la position 0 d'un tuple de série à la masse, pas les répétitions", () => {
@@ -280,8 +294,8 @@ describe('allowedValues : volume', () => {
     expect(allowedValues({ ...NO_SOURCES, brief }).volume.size).toBe(0);
   });
 
-  it('lit un volume écrit dans une chaîne (« 2,25 L »)', () => {
+  it('ne lit pas un volume écrit dans une chaîne (« 2,25 L »), même en mode complet', () => {
     const full = allowedValues({ ...NO_SOURCES, brief: { note: 'cible 2,25 L' }, nutritionFull: true });
-    expect([...full.volume]).toEqual(['2250']);
+    expect([...full.volume]).toEqual([]);
   });
 });

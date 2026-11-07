@@ -8,7 +8,9 @@ import { defineTool } from './types';
  * de `HELP_RESOURCES`, jamais du modèle ; la ressource rejoint l'état de la tentative, une fois par ressource (la carte
  * et le compteur `help_<resource>` suivent l'enregistrement de l'échange, C26). Rien n'est écrit en base, l'admin n'est
  * pas prévenu. `eating_disorder` pose aussi la pause de sécurité nutrition (brique 5 §11.3, D14), tout de suite et à
- * part de l'enregistrement de l'échange : un échange refusé ou en erreur la pose quand même.
+ * part de l'enregistrement de l'échange : un échange refusé ou en erreur la pose quand même. Une écriture de la pause
+ * en échec ne retient pas la carte : elle est journalisée sans contenu (`coach_safety_pause_failed`) et l'outil rend
+ * la carte affichée.
  */
 
 const DESCRIPTION = [
@@ -28,8 +30,20 @@ export const referToHelp = defineTool({
     if (help === undefined) throw new Error('help_resource_missing');
     if (!ctx.state.helpCards.includes(resource)) ctx.state.helpCards.push(resource);
     // Sans profil nutrition (`setSafetyPause` ne fait rien) ou sans accord santé, rien n'est écrit.
-    if (resource === 'eating_disorder' && (await isHealthConsentActive(ctx.db, ctx.userId))) {
-      await setSafetyPause(ctx.db, ctx.deps, ctx.userId, true);
+    if (resource === 'eating_disorder') {
+      try {
+        if (await isHealthConsentActive(ctx.db, ctx.userId)) {
+          await ctx.deps.db.transaction().execute((trx) => setSafetyPause(trx, ctx.deps, ctx.userId, true));
+        }
+      } catch (error) {
+        try {
+          ctx.deps.logger.error('coach_safety_pause_failed', {
+            event: error instanceof Error ? error.name : 'unknown',
+          });
+        } catch {
+          // Journal en panne : la carte part quand même.
+        }
+      }
     }
     return { isError: false, result: { shown: true, resource, label: help.label, phone: help.phone } };
   },

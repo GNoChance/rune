@@ -81,6 +81,7 @@ const DONE = (proposalIds: string[] = []) =>
 const TEXT = (text: string) => `event: text\ndata: ${JSON.stringify({ text })}\n\n`;
 const ERROR = (code: string) => `event: error\ndata: ${JSON.stringify({ code })}\n\n`;
 const REFUSED = 'event: refused\ndata: {"message":"non"}\n\n';
+const HELP = (resource: string) => `event: help_card\ndata: ${JSON.stringify({ resource })}\n\n`;
 
 const PROPOSAL: CoachProposalEvent = {
   type: 'proposal',
@@ -329,6 +330,36 @@ describe('CoachStore', () => {
       pending: null,
       refusalMessage: 'non',
     });
+  });
+
+  it('refus après une carte d’aide : la carte reste affichée, non enregistrée (R14)', async () => {
+    const { store, api } = await setup();
+    api.on('POST', '/api/coach/messages', sse(`${HELP('eating_disorder')}${REFUSED}`));
+    await store.load();
+    store.setDraft('Je ne mange plus.');
+    await store.send();
+    expect(store.getState()).toMatchObject({
+      phase: 'refused',
+      pending: null,
+      unrecordedHelpCards: ['eating_disorder'],
+    });
+    // Elle reste au rechargement de l'écran, et part avec le message suivant.
+    await store.load();
+    expect(store.getState().unrecordedHelpCards).toEqual(['eating_disorder']);
+    api.on('POST', '/api/coach/messages', sse(`${TEXT('Bonjour')}${DONE()}`));
+    store.setDraft('Merci');
+    await store.send();
+    expect(store.getState().unrecordedHelpCards).toEqual([]);
+  });
+
+  it('erreur après une carte d’aide : la carte reste affichée (R14)', async () => {
+    const { store, api } = await setup();
+    api.on('POST', '/api/coach/messages', sse(`${HELP('distress')}${ERROR('internal')}`));
+    await store.load();
+    store.setDraft('Ça ne va pas.');
+    await store.send();
+    expect(store.getState()).toMatchObject({ phase: 'error', unrecordedHelpCards: ['distress'] });
+    expect(store.getState().pending?.helpCards).toEqual([]);
   });
 
   it('refusalMessage est remis à null par un nouvel envoi et par load', async () => {

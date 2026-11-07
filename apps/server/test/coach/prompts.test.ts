@@ -458,6 +458,12 @@ describe('coach-3, variante adulte', () => {
       expect(NUTRITION_ADULT).toContain(s);
   });
 
+  it('no_numbers renvoie vers Profil › Nutrition sans pousser vers le mode complet (07 §5.4)', () => {
+    expect(NUTRITION_ADULT).toContain('renvoie vers Profil › Nutrition ou vers un médecin ou un diététicien');
+    expect(NUTRITION_ADULT).not.toContain('les activer');
+    expect(ADULT_3).not.toContain('si son compte le permet');
+  });
+
   it('jamais de complément, de régime nommé, de jeûne ni de déficit hors mode full', () => {
     for (const s of ['complément', 'régime nommé', 'jeûne', 'déficit']) expect(NUTRITION_ADULT).toContain(s);
   });
@@ -569,7 +575,8 @@ describe('textes fixes', () => {
  */
 const FINGERPRINTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   'coach-3': {
-    'coach-3/adult': 'a997f397a4c71b016b8d552024907c636095639cc50ca91086a7ae18e5340958',
+    // Vague finale de la brique 5 : no_numbers ne pousse plus vers le mode complet (coach-3 non encore évalué).
+    'coach-3/adult': '5d0c1a3444e6272d2f0067cdfdbe31a5f16f9b1b80d3051aa03ad35933cfa997',
     'coach-3/minor': 'e377788f7cb5bb0b94e3de2519eb6c33cdfe86b9965994a7cd7122f627bd98bc',
     'style/ombre': 'f0b9085585a2a121e383dd60135f5e1bcb483bd03d4708ef41181fe66b2ea798',
     'style/skald': '3fb3f37d0aa0a1a74571089780804a7a04d5741747ebaf78d79f724c0a9fec42',

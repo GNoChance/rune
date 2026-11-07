@@ -41,7 +41,8 @@ async function upsertProfile(
 
 /**
  * Pause de sécurité (spec brique 5 §D14), posée par le coach (`refer_to_help("eating_disorder")`) : rev neuf, et
- * seulement si le profil vivant existe, sans quoi rien n'est écrit. `deps` fournit l'horloge du rev.
+ * seulement si le profil vivant existe et que la pause change, sans quoi rien n'est écrit. `deps` fournit l'horloge
+ * du rev.
  */
 export async function setSafetyPause(
   db: DbExecutor,
@@ -51,11 +52,11 @@ export async function setSafetyPause(
 ): Promise<void> {
   const row = await db
     .selectFrom('nutritionProfile')
-    .select('id')
+    .select(['id', 'safetyPause'])
     .where('ownerId', '=', userId)
     .where('deletedAt', 'is', null)
     .executeTakeFirst();
-  if (!row) return;
+  if (!row || row.safetyPause === (on ? 1 : 0)) return;
   const stamp = await writeStamp(db, deps, userId);
   await db
     .updateTable('nutritionProfile')

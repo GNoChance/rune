@@ -67,6 +67,23 @@ describe('dossier coach-brief/2 : bloc nutrition', () => {
     expect(n.directives).toEqual(['minor_profile', 'no_deficit', 'no_numbers']);
   });
 
+  it.each([
+    ['minor vrai', { ...FULL, minor: true }, 'adult', '30-39'],
+    ['public mineur', FULL, 'minor', '16-17'],
+  ] as const)(
+    'mineur même en mode full (%s) : aucun repère chiffré, directives fermées',
+    (_n, nutrition, audience, ageBand) => {
+      const n = nutritionOf(nutrition, (i) => {
+        i.audience = audience;
+        i.ageBand = ageBand;
+      }).nutrition;
+      expect(n).not.toHaveProperty('target');
+      expect(n).not.toHaveProperty('weekly_change');
+      expect(n).not.toHaveProperty('last_checkin');
+      expect(n.directives).toEqual(expect.arrayContaining(['no_deficit', 'no_numbers']));
+    },
+  );
+
   it('directives : adulte qualitatif -> no_deficit, no_numbers', () => {
     expect(nutritionOf({ mode: 'qualitative' }).nutrition.directives).toEqual(['no_deficit', 'no_numbers']);
   });

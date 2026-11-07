@@ -5,6 +5,8 @@ import { openTodayThread } from '../../../src/coach/threads';
 import { runTool } from '../../../src/coach/tools';
 import { PROPOSAL_ERROR_MESSAGES, slotRefs } from '../../../src/coach/tools/propose-program-change';
 import type { ToolContext } from '../../../src/coach/tools/types';
+import { setSafetyPause } from '../../../src/nutrition/screen';
+import { fullMember, seedTarget } from '../../nutrition/fixtures';
 import {
   createLogger,
   createTestContext,
@@ -353,6 +355,23 @@ describe("propose_program_change : refus, dans l'ordre du §12.2", () => {
     expect(codes((outcome.result as Refusal).errors)).toEqual([[-1, 'reason_blocked']]);
     expect(JSON.stringify(outcome.result)).not.toMatch(/sèche/i);
     expect(tc.state.proposals).toEqual([]);
+  });
+
+  it('fil full : « déficit » passe au motif, sauf pendant une pause de sécurité (R15)', async () => {
+    const u = await setup();
+    await enroll(ctx, u.id, TEMPLATE);
+    await fullMember(ctx, u.id);
+    await seedTarget(ctx, u.id, { validFrom: '2026-11-01' });
+    const thread = await openTodayThread(ctx.deps, u.id, ctx.clock.now());
+    const reason = 'Un repos plus court aide même avec un léger déficit.';
+    const free = await propose(
+      toolContext(ctx, u.id, { thread: { id: thread.id } }),
+      input([REST], { reason }),
+    );
+    expect(free.isError).toBe(false);
+    await setSafetyPause(ctx.deps.db, ctx.deps, u.id, true);
+    const paused = toolContext(ctx, u.id, { thread: { id: thread.id } });
+    expect(codes(await refused(paused, input([REST], { reason })))).toEqual([[-1, 'reason_blocked']]);
   });
 
   it('motif de plusieurs phrases : la seconde est filtrée aussi (outputFilterText)', async () => {
