@@ -385,11 +385,9 @@ function writeContent(dir: string, sheets: ExerciseSheet[], templates: ProgramTe
   write('illustrations/manifest.json', `${JSON.stringify(manifest, null, 2)}\n`);
   for (const { entry, body } of poses) write(`illustrations/files/${entry.file}`, body);
   for (const advice of E2E_ADVICE) {
-    write(
-      `advice/${advice.id}.json`,
-      `${JSON.stringify(advice, null, 2)}
-`,
-    );
+    const text = `${JSON.stringify(advice, null, 2)}
+`;
+    write(`advice/${advice.id}.json`, text);
   }
   for (const template of templates) {
     write(`programs/${template.id}.json`, `${JSON.stringify(template, null, 2)}\n`);
