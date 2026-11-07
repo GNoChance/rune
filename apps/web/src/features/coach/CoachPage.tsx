@@ -9,14 +9,14 @@ import {
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import { useMe, useSyncState } from '../../app-services';
-import { useProgramEditContext, useProgramView } from '../../repos';
+import { useNutritionView, useProgramEditContext, useProgramView } from '../../repos';
 import { Banner, BottomSheet, Button, CoachAvatar, Page, SystemPanel } from '../../ui';
 import { PreparingCard, ProposalCard } from '../program/ProposalCard';
 import { programNames } from '../program/program-model';
 import { ChatBubble } from './ChatBubble';
 import { Composer } from './Composer';
 import styles from './coach-page.module.css';
-import { type CoachState, useCoachStore } from './coach-store';
+import { type CoachState, type NutritionScreenOffer, useCoachStore } from './coach-store';
 import {
   AI_BANNER,
   BUDGET_FROM_PCT,
@@ -35,6 +35,7 @@ import { guidedAudience, liveToday } from './coach-thread';
 import { GuidedFlow } from './GuidedFlow';
 import { programExercises } from './guided-exercises';
 import { HelpCard } from './HelpCard';
+import { NutritionScreenButton } from './NutritionScreenButton';
 import { ReportSheet } from './ReportSheet';
 
 /** Erreurs qu'un second essai ne change pas : pas de « Réessayer ». */
@@ -174,7 +175,9 @@ export function CoachPage() {
   const names = useMemo(() => (program && ctx ? programNames(program, ctx) : null), [program, ctx]);
   const audience = guidedAudience(today, status);
   const minor = audience === 'minor';
-  const flows = useMemo(() => guidedFlowsFor(audience), [audience]);
+  // « Mes repères » et « Mon bilan de la semaine » : adulte en mode `full` sur l'appareil ; le serveur le revérifie.
+  const nutritionFull = useNutritionView()?.mode === 'full' && audience === 'adult';
+  const flows = useMemo(() => guidedFlowsFor(audience, nutritionFull), [audience, nutritionFull]);
   // null tant que le programme se charge : « Mes charges » ne dit pas « pas de programme » trop tôt.
   const exercises = useMemo(
     () =>
@@ -185,7 +188,7 @@ export function CoachPage() {
   const chooseGuided = (guided: GuidedRequest) => {
     setGuidedOpen(false);
     setRefocus((n) => n + 1);
-    void store.sendGuided(guided, exerciseName);
+    void store.sendGuided(guided, exerciseName, nutritionFull);
   };
   // Puces de suite : sous la dernière réponse, si elle est finie, d'un message venu d'un parcours, et seulement alors.
   const lastReply = messages.at(-1);
@@ -332,6 +335,9 @@ export function CoachPage() {
                   m.helpCards,
                   m.proposalIds.map((id) => ({ id })),
                 )}
+                {state.nutritionScreens[m.seq] ? (
+                  <NutritionScreenButton offer={state.nutritionScreens[m.seq] as NutritionScreenOffer} />
+                ) : null}
               </Fragment>
             ),
           )}
@@ -351,6 +357,7 @@ export function CoachPage() {
                 pending.helpCards,
                 pending.proposals.map((event) => ({ id: event.id, event })),
               )}
+              {pending.nutritionScreen ? <NutritionScreenButton offer={pending.nutritionScreen} /> : null}
             </>
           ) : null}
           <div ref={end} />

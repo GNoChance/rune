@@ -127,6 +127,11 @@ export const HELP_OPEN = "Ouvrir l'aide";
 export const PARENT_LINE = 'Parles-en aussi à un parent ou à un adulte de confiance.';
 /** Note d'une ressource, sous ses numéros (à relire par le propriétaire). */
 export const HELP_NOTES = { eating_disorder: "Un médecin peut aussi t'aider." } as const;
+/** Boutons sous une bulle ou sur la carte TCA (spec brique 5 §11.2, §11.3) : liens vers les réglages nutrition. */
+export const NUTRITION_BUTTONS = {
+  openSettings: 'Ouvrir mes réglages nutrition',
+  noNumbers: 'Passer en mode sans chiffres',
+} as const;
 /** Libellé d'un lien `tel:` ; `label` est le numéro tel que `helpPhones` le rend. */
 export const callText = (label: string) => `Appeler le ${label}`;
 
@@ -225,6 +230,26 @@ export const BRIEF_TEXTS = {
   gone: "Ce dossier n'est plus disponible : il a été effacé quand tu as retiré ton accord santé.",
   legacy: "Ce dossier date d'une ancienne version du coach : voici son JSON exact.",
   nutrition: "Nutrition : rien pour l'instant",
+  nutritionTitle: 'Nutrition',
+  nutritionMode: 'Mode',
+  nutritionModes: {
+    disabled: 'Désactivée',
+    qualitative: 'Conseils sans chiffres',
+    full: 'Repères chiffrés',
+  },
+  nutritionDirectives: 'Consignes',
+  nutritionNoDirective: 'Aucune',
+  nutritionDirectiveLabels: {
+    minor_profile: 'Profil mineur : conseils sans chiffres',
+    no_deficit: 'Aucune baisse proposée',
+    no_numbers: 'Aucun chiffre',
+  },
+  nutritionSheets: 'Fiches',
+  nutritionNoSheet: 'Aucune fiche',
+  nutritionTarget: 'Repères du jour',
+  nutritionWeekly: 'Variation des dernières semaines',
+  nutritionCheckin: 'Dernier bilan',
+  nutritionGoals: { lose: 'Perte de gras', maintain: 'Maintien', gain: 'Prise de muscle' },
   neverSentTitle: 'Jamais envoyé',
   neverSent: [
     'Ton pseudo.',

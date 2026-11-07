@@ -108,7 +108,7 @@ describe('BriefPage : Ce que le coach voit (spec brique 4 §16.5)', () => {
     expect(CoachBriefSchema.safeParse({ ...BRIEF, health: HEALTH }).error?.issues).toBeUndefined();
   });
 
-  it('sections dans l’ordre, nutrition « rien pour l’instant », puis JSON et « Jamais envoyé »', async () => {
+  it('sections dans l’ordre, puis JSON et « Jamais envoyé »', async () => {
     await renderBrief(reply(BRIEF));
     await screen.findByRole('heading', { level: 2, name: 'Profil' });
     expect(h2()).toEqual([
@@ -121,7 +121,72 @@ describe('BriefPage : Ce que le coach voit (spec brique 4 §16.5)', () => {
       'Voir le JSON exact',
       'Jamais envoyé',
     ]);
+  });
+
+  it('Nutrition en clair : le mode, les consignes, les fiches ; aucun repère hors du mode full', async () => {
+    await renderBrief(reply(BRIEF));
+    const nutrition = within(await screen.findByRole('region', { name: 'Nutrition' }));
+    const value = (label: string) => nutrition.getByText(label).nextElementSibling?.textContent;
+    expect(value('Mode')).toBe('Désactivée');
+    expect(value('Consignes')).toBe('Aucune baisse proposée, Aucun chiffre');
+    expect(value('Fiches')).toBe('Aucune fiche');
+    expect(nutrition.queryByText('Repères du jour')).toBeNull();
+  });
+
+  it('Nutrition en full : repères du jour, variation des semaines et dernier bilan, en clair', async () => {
+    const full = {
+      ...BRIEF,
+      nutrition: {
+        directives: [],
+        last_checkin: { decision: 'proposal', proposed_delta_kcal: -100, response: 'accepted', weeks_ago: 1 },
+        mode: 'full',
+        sheets: [{ id: 'protein-basics', title: 'Les protéines au quotidien' }],
+        target: {
+          algo_version: 'nutri-1.0.0',
+          applied_rules: ['maintenance_band'],
+          carbs_g: 250,
+          days_ago: 2,
+          effective_goal: 'maintain',
+          energy_kcal: 2450,
+          energy_max_kcal: 2550,
+          energy_min_kcal: 2350,
+          fat_min_g: 65,
+          fiber_g: 30,
+          protein_max_g: 150,
+          protein_min_g: 110,
+          water_ml: 2250,
+        },
+        weekly_change: [
+          { change_pct: -0.45, weeks_ago: 1 },
+          { change_pct: null, weeks_ago: 2 },
+        ],
+      },
+    };
+    expect(CoachBriefSchema.safeParse(full).error?.issues).toBeUndefined();
+    await renderBrief(reply(full));
+    const nutrition = within(await screen.findByRole('region', { name: 'Nutrition' }));
+    const value = (label: string) => nutrition.getByText(label).nextElementSibling?.textContent;
+    expect(value('Mode')).toBe('Repères chiffrés');
+    expect(value('Consignes')).toBe('Aucune');
+    expect(value('Fiches')).toBe('Les protéines au quotidien');
+    expect(value('Énergie')).toBe('2 450 kcal (2 350 à 2 550)');
+    expect(value('Protéines')).toBe('110 à 150 g');
+    expect(value('Lipides')).toBe('65 g au moins');
+    expect(value('Eau')).toBe('2,25 L');
+    expect(value('Objectif')).toBe('Maintien');
+    expect(nutrition.getByText('il y a 1 sem. : −0,5 %')).toBeTruthy();
+    expect(nutrition.getByText('il y a 2 sem. : —')).toBeTruthy();
+    expect(value('Proposition')).toBe('−100 kcal');
+    expect(value('Réponse')).toBe('accepted');
+  });
+
+  it('dossier v1 (avant la brique 5) : les sections, Nutrition « rien pour l’instant », pas le JSON brut seul', async () => {
+    const v1 = { ...BRIEF, nutrition: null, schema: 'coach-brief/1' };
+    await renderBrief(reply(v1));
+    await screen.findByRole('heading', { level: 2, name: 'Profil' });
+    expect(h2()).toContain('Nutrition');
     expect(screen.getByText("Nutrition : rien pour l'instant")).toBeTruthy();
+    expect(screen.queryByText(BRIEF_TEXTS.legacy)).toBeNull();
   });
 
   it('une clé absente du dossier s’affiche « — », un booléen absent « non »', async () => {

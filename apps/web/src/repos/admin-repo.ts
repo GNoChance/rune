@@ -1,4 +1,5 @@
 import {
+  AdminNutritionSchema,
   CoachAdminView,
   CoachReportDetail,
   CoachReportSummary,
@@ -39,6 +40,9 @@ export interface AdminRepo {
   coachReport(id: string): Promise<CoachReportDetail>;
   /** Classer : supprime la ligne du signalement. */
   classifyCoachReport(id: string): Promise<void>;
+  /** Interrupteur « Repères chiffrés » (spec brique 5 §7, D4) : `full_open`, fermé à l'installation. */
+  nutritionFullOpen(): Promise<boolean>;
+  setNutritionFullOpen(open: boolean): Promise<boolean>;
 }
 
 export function createAdminRepo(s: AppServices): AdminRepo {
@@ -72,6 +76,13 @@ export function createAdminRepo(s: AppServices): AdminRepo {
     coachReport: (id) => api.get(`/api/admin/coach/reports/${encodeURIComponent(id)}`, CoachReportDetail),
     async classifyCoachReport(id) {
       await sendThenPull(s, 'DELETE', `/api/admin/coach/reports/${encodeURIComponent(id)}`);
+    },
+    async nutritionFullOpen() {
+      return (await api.get('/api/admin/nutrition', AdminNutritionSchema)).full_open;
+    },
+    async setNutritionFullOpen(open) {
+      const saved = await api.send('PUT', '/api/admin/nutrition', { full_open: open }, AdminNutritionSchema);
+      return saved.full_open;
     },
     async deleteGym(id) {
       await sendThenPull(s, 'DELETE', `/api/admin/gyms/${encodeURIComponent(id)}`);

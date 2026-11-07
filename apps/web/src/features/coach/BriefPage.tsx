@@ -1,8 +1,7 @@
 import {
   BODY_AREA_LABELS,
-  type CoachBrief,
   type CoachBriefResponse,
-  CoachBriefSchema,
+  CoachBriefStoredSchema,
   EQUIPMENT_LABELS,
   GOAL_LABELS,
   LIMITATION_SEVERITY_LABELS,
@@ -11,15 +10,20 @@ import {
 import { sortedJson } from '@rune/domain';
 import { Fragment, type ReactNode, useEffect, useId, useState } from 'react';
 import { useLocation } from 'wouter';
+import type { z } from 'zod';
 import { ApiError } from '../../api/client';
 import { useRepos } from '../../repos';
 import { Banner, Button, errorMessage, Page, SystemPanel } from '../../ui';
+import { formatGrams, formatKcal, formatLitres, formatPct } from '../nutrition/format';
 import { EFFORT_LABELS } from '../workout/EffortSheet';
 import styles from './brief.module.css';
 import { BRIEF_TEXTS, STATE_TEXTS } from './coach-texts';
 
 /** Clé absente du dossier : « — » (le dossier omet les champs nuls et ceux à leur valeur par défaut). */
 const DASH = '—';
+
+/** Dossier stocké, v1 (`nutrition` nul) ou v2. */
+type CoachBrief = z.infer<typeof CoachBriefStoredSchema>;
 const show = (value: string | number | null | undefined): string =>
   value === null || value === undefined ? DASH : String(value);
 /** Booléen absent : « non ». */
@@ -251,6 +255,99 @@ function HealthSection({ health }: { health: NonNullable<CoachBrief['health']> }
   );
 }
 
+type BriefNutrition = NonNullable<CoachBrief['nutrition']>;
+
+/**
+ * Nutrition, en clair (brique 5 §11.1) : le mode, les consignes, les fiches et, en mode `full`, les repères chiffrés
+ * du jour, la variation des dernières semaines et le dernier bilan. Un dossier v1 : « rien pour l'instant ».
+ */
+function NutritionSection({ nutrition }: { nutrition: CoachBrief['nutrition'] }) {
+  const T = BRIEF_TEXTS;
+  if (nutrition === null) {
+    return (
+      <BriefSection title={T.nutritionTitle}>
+        <p className={styles.muted}>{T.nutrition}</p>
+      </BriefSection>
+    );
+  }
+  return (
+    <BriefSection title={T.nutritionTitle}>
+      <Fields
+        rows={[
+          [T.nutritionMode, T.nutritionModes[nutrition.mode]],
+          [
+            T.nutritionDirectives,
+            nutrition.directives.length === 0
+              ? T.nutritionNoDirective
+              : nutrition.directives.map((d) => T.nutritionDirectiveLabels[d]).join(', '),
+          ],
+          [
+            T.nutritionSheets,
+            nutrition.sheets.length === 0
+              ? T.nutritionNoSheet
+              : nutrition.sheets.map((sheet) => sheet.title).join(', '),
+          ],
+        ]}
+      />
+      {nutrition.target ? <TargetFields target={nutrition.target} /> : null}
+      {nutrition.weekly_change && nutrition.weekly_change.length > 0 ? (
+        <>
+          <h3>{T.nutritionWeekly}</h3>
+          <ul className={styles.list}>
+            {nutrition.weekly_change.map((w) => (
+              <li key={w.weeks_ago}>
+                {`il y a ${w.weeks_ago} sem. : ${w.change_pct === null ? DASH : `${formatPct(w.change_pct)} %`}`}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {nutrition.last_checkin ? (
+        <>
+          <h3>{T.nutritionCheckin}</h3>
+          <Fields
+            rows={[
+              ['Il y a', `${nutrition.last_checkin.weeks_ago} sem.`],
+              ['Décision', nutrition.last_checkin.decision],
+              [
+                'Proposition',
+                nutrition.last_checkin.proposed_delta_kcal === undefined
+                  ? DASH
+                  : `${nutrition.last_checkin.proposed_delta_kcal > 0 ? '+' : '−'}100 kcal`,
+              ],
+              ['Réponse', show(nutrition.last_checkin.response)],
+            ]}
+          />
+        </>
+      ) : null}
+    </BriefSection>
+  );
+}
+
+function TargetFields({ target }: { target: NonNullable<BriefNutrition['target']> }) {
+  return (
+    <>
+      <h3>{BRIEF_TEXTS.nutritionTarget}</h3>
+      <Fields
+        rows={[
+          [
+            'Énergie',
+            `${formatKcal(target.energy_kcal)} kcal (${formatKcal(target.energy_min_kcal)} à ${formatKcal(target.energy_max_kcal)})`,
+          ],
+          ['Protéines', `${formatGrams(target.protein_min_g)} à ${formatGrams(target.protein_max_g)} g`],
+          ['Lipides', `${formatGrams(target.fat_min_g)} g au moins`],
+          ['Glucides', `${formatGrams(target.carbs_g)} g`],
+          ['Fibres', `${formatGrams(target.fiber_g)} g`],
+          ['Eau', `${formatLitres(target.water_ml)} L`],
+          ['Objectif', BRIEF_TEXTS.nutritionGoals[target.effective_goal]],
+          ['Règles appliquées', target.applied_rules.length === 0 ? DASH : target.applied_rules.join(', ')],
+          ['Calculé il y a', `${target.days_ago} j`],
+        ]}
+      />
+    </>
+  );
+}
+
 /** Le JSON exact : les clés triées comme à l'envoi, en bloc à défilement et à chasse fixe. */
 function JsonSection({ brief }: { brief: unknown }) {
   return (
@@ -278,7 +375,7 @@ function NeverSentSection() {
 function Content({ response }: { response: CoachBriefResponse }) {
   const { brief, preview } = response;
   // Un dossier d'un ancien `brief_schema` ne passe pas le schéma courant : son JSON exact seul, sans erreur.
-  const parsed = brief === null ? null : CoachBriefSchema.safeParse(brief);
+  const parsed = brief === null ? null : CoachBriefStoredSchema.safeParse(brief);
   return (
     <div className={styles.stack}>
       <p className={styles.lead}>{BRIEF_TEXTS.intro}</p>
@@ -292,9 +389,7 @@ function Content({ response }: { response: CoachBriefResponse }) {
           <HistorySection brief={parsed.data} />
           <RecordsSection brief={parsed.data} />
           {parsed.data.health ? <HealthSection health={parsed.data.health} /> : null}
-          <BriefSection title="Nutrition">
-            <p className={styles.muted}>{BRIEF_TEXTS.nutrition}</p>
-          </BriefSection>
+          <NutritionSection nutrition={parsed.data.nutrition} />
         </>
       ) : null}
       {parsed && !parsed.success ? <p className={styles.lead}>{BRIEF_TEXTS.legacy}</p> : null}

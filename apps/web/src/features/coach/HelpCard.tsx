@@ -1,8 +1,9 @@
 import { HELP_RESOURCES, type HelpResourceId, helpPhones } from '@rune/contracts';
 import { useId } from 'react';
 import { Link } from 'wouter';
+import { useNutritionView } from '../../repos';
 import styles from './coach-page.module.css';
-import { callText, HELP_NOTES, HELP_OPEN, PARENT_LINE } from './coach-texts';
+import { callText, HELP_NOTES, HELP_OPEN, NUTRITION_BUTTONS, PARENT_LINE } from './coach-texts';
 
 /**
  * Carte d'aide du fil (spec brique 4 §16.4) : la ressource de `HELP_RESOURCES` (le coach n'écrit jamais un numéro),
@@ -11,6 +12,7 @@ import { callText, HELP_NOTES, HELP_OPEN, PARENT_LINE } from './coach-texts';
  */
 export function HelpCard(p: { resource: HelpResourceId; minor: boolean }) {
   const titleId = useId();
+  const mode = useNutritionView()?.mode;
   const resource = HELP_RESOURCES.find((r) => r.id === p.resource);
   if (resource === undefined) return null;
   const note = p.resource === 'eating_disorder' ? HELP_NOTES.eating_disorder : null;
@@ -31,6 +33,12 @@ export function HelpCard(p: { resource: HelpResourceId; minor: boolean }) {
         <Link href="/help" className={styles.action}>
           {HELP_OPEN}
         </Link>
+        {/* Spec brique 5 §11.3 : seulement en mode `full` sur l'appareil, vers le mode sans chiffres. */}
+        {p.resource === 'eating_disorder' && mode === 'full' ? (
+          <Link href="/nutrition/settings?focus=mode&suggest=qualitative" className={styles.action}>
+            {NUTRITION_BUTTONS.noNumbers}
+          </Link>
+        ) : null}
       </div>
     </section>
   );

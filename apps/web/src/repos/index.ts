@@ -73,6 +73,11 @@ export {
 } from './program-view';
 export type { RejectionsRepo, RejectionView } from './rejections-repo';
 export {
+  type AdviceAction,
+  type AdviceDetail,
+  type AdviceIssue,
+  type AdviceSummary,
+  adviceIssuesOf,
   type CatalogExport,
   type CommentDraft,
   commentDraft,

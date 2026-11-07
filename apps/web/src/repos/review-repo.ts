@@ -1,4 +1,6 @@
 import {
+  ADVICE_AUDIENCES,
+  ADVICE_STATUSES,
   type CreateCommentRequest,
   type DraftSheet,
   IllustrationEntry,
@@ -58,6 +60,44 @@ export class ReviewAccessLostError extends ApiError {
 /** Accès à la relecture perdu en pleine session (`lostAccess`). */
 export const isLostAccess = (e: unknown): e is ReviewAccessLostError => e instanceof ReviewAccessLostError;
 
+/*
+ * Fiches conseils de la nutrition (spec brique 5 §10.2), admin seul : lues et écrites en ligne par `/api/review/advice`,
+ * comme les fiches d'exercice rien n'est gardé sur l'appareil.
+ */
+const AdviceSummary = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: z.enum(ADVICE_STATUSES),
+  version: z.number().int(),
+  audience: z.enum(ADVICE_AUDIENCES),
+});
+export type AdviceSummary = z.infer<typeof AdviceSummary>;
+
+const AdviceDetail = AdviceSummary.extend({
+  body_md: z.string(),
+  visible_modes: z.array(z.string()),
+  tags: z.array(z.string()),
+  sources: z.array(z.object({ title: z.string(), url: z.string(), accessed_on: z.string() })),
+  reviewed_at: z.string().nullable(),
+  published_at: z.string().nullable(),
+  retired_at: z.string().nullable(),
+});
+export type AdviceDetail = z.infer<typeof AdviceDetail>;
+
+export type AdviceAction = 'review' | 'publish' | 'retire';
+
+const AdviceIssues = z.object({
+  issues: z.array(z.object({ code: z.string(), detail: z.string() })),
+});
+export type AdviceIssue = z.infer<typeof AdviceIssues>['issues'][number];
+
+/** Contrôles refusés d'un 422 `transition_blocked` d'une fiche conseil, dans l'ordre reçu ; null sinon. */
+export function adviceIssuesOf(e: unknown): AdviceIssue[] | null {
+  if (!(e instanceof ApiError) || e.code !== 'transition_blocked') return null;
+  const parsed = AdviceIssues.safeParse(e.body);
+  return parsed.success ? parsed.data.issues : null;
+}
+
 /** Fiche courante d'un 409 `revision_conflict` (validation, enregistrement, transition) ; null sinon. */
 export function revisionConflictOf(e: unknown): DraftSheet | null {
   if (!(e instanceof ApiError) || e.code !== 'revision_conflict') return null;
@@ -112,6 +152,13 @@ export interface ReviewRepo {
   illustrationManifest(): Promise<IllustrationEntry[]>;
   /** Admin : drapeaux d'un membre et mot de passe de l'admin (P-AUT-5) ; le `MemberSummary` à jour. */
   setReviewerFlags(memberId: string, req: SetReviewerFlagsRequest): Promise<MemberSummary>;
+  /** Admin : fiches conseils de la nutrition. */
+  adviceList(): Promise<AdviceSummary[]>;
+  adviceGet(id: string): Promise<AdviceDetail>;
+  /** Modifier le texte remet la fiche en brouillon (nouvelle version). */
+  adviceSave(id: string, text: { title: string; body_md: string }): Promise<AdviceDetail>;
+  /** 422 `transition_blocked` : `adviceIssuesOf`. */
+  adviceTransition(id: string, action: AdviceAction): Promise<AdviceDetail>;
   /** « Comment relire » déjà vu par le compte de l'appareil. */
   introSeen(): Promise<boolean>;
   markIntroSeen(): Promise<void>;
@@ -123,6 +170,8 @@ export function createReviewRepo(s: AppServices): ReviewRepo {
     `/api/review/exercises/${encodeURIComponent(id)}${action ? `/${action}` : ''}`;
   const adminExercise = (id: string, action = '') =>
     `/api/admin/exercises/${encodeURIComponent(id)}${action ? `/${action}` : ''}`;
+
+  const advice = (id: string) => `/api/review/advice/${encodeURIComponent(id)}`;
 
   /** Profil relu sur le serveur (sans toucher à `meta.me`) : encore relecteur effectif ? */
   async function stillReviewer(): Promise<boolean> {
@@ -201,6 +250,11 @@ export function createReviewRepo(s: AppServices): ReviewRepo {
           schema: MemberSummary,
         }),
       ),
+    adviceList: () => guarded(() => api.get('/api/review/advice', z.array(AdviceSummary))),
+    adviceGet: (id) => guarded(() => api.get(advice(id), AdviceDetail)),
+    adviceSave: (id, text) => guarded(() => api.send('PUT', advice(id), text, AdviceDetail)),
+    adviceTransition: (id, action) =>
+      guarded(() => api.send('POST', `${advice(id)}/${action}`, {}, AdviceDetail)),
     async introSeen() {
       const accountId = await getMeta(db, 'userId');
       return accountId !== undefined && (await getMeta(db, 'reviewIntroSeen')) === accountId;

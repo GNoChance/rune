@@ -134,6 +134,7 @@ function init(patch: Partial<CoachState> = {}) {
     phase: 'idle',
     error: null,
     refusalMessage: null,
+    nutritionScreens: {},
     ...patch,
   };
 }

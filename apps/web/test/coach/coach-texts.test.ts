@@ -21,6 +21,7 @@ import {
   HELP_NOTES,
   HELP_OPEN,
   MY_COACH_TEXTS,
+  NUTRITION_BUTTONS,
   PARENT_LINE,
   PROGRAM_PREFILL,
   REPORT_TEXTS,
@@ -138,6 +139,21 @@ const TEXTS: [string, string, string[], string[]?][] = [
   ...Object.entries(BRIEF_TEXTS).flatMap(([k, t]): [string, string, string[]][] =>
     typeof t === 'string' ? [[`BRIEF_TEXTS.${k}`, t, []]] : [],
   ),
+  ...Object.entries(NUTRITION_BUTTONS).map(([k, t]): [string, string, string[]] => [
+    `NUTRITION_BUTTONS.${k}`,
+    t,
+    [],
+  ]),
+  ...Object.values(BRIEF_TEXTS.nutritionModes).map((t, i): [string, string, string[]] => [
+    `BRIEF_TEXTS.nutritionModes[${i}]`,
+    t,
+    [],
+  ]),
+  ...Object.values(BRIEF_TEXTS.nutritionDirectiveLabels).map((t, i): [string, string, string[]] => [
+    `BRIEF_TEXTS.nutritionDirectiveLabels[${i}]`,
+    t,
+    [],
+  ]),
   ...BRIEF_TEXTS.neverSent.map((t, i): [string, string, string[]] => [`BRIEF_TEXTS.neverSent[${i}]`, t, []]),
   ...COACH_HELP_TEXTS.map((t, i): [string, string, string[]] => [`COACH_HELP_TEXTS[${i}]`, t, []]),
   ...MINORS_TABLE_TEXTS.map((t, i): [string, string, string[]] => [`minors table[${i}]`, t, []]),

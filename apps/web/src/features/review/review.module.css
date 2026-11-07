@@ -646,3 +646,47 @@
     transition: none;
   }
 }
+
+/* Fiches conseils de la nutrition : lignes-boutons, corps de la fiche, contrôles refusés. */
+.adviceRow {
+  appearance: none;
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.adviceBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.adviceBody :is(h2, h3, p, ul) {
+  margin: 0;
+}
+
+.adviceActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.adviceForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.adviceForm :is(input, textarea) {
+  width: 100%;
+  font: inherit;
+}
+
+.issueList {
+  margin: 0;
+  padding-left: var(--space-4);
+}

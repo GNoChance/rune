@@ -2,12 +2,15 @@ import type { ReviewBatchProgress, ReviewListItem, ReviewListResponse } from '@r
 import { CORE_BATCHES } from '@rune/domain';
 import { useCallback, useId } from 'react';
 import { Link, useSearchParams } from 'wouter';
+import { useMe } from '../../app-services';
 import { useRepos } from '../../repos';
 import { Badge, Chips, EmptyState, errorMessage, Page, plural } from '../../ui';
 import { AdminListTools } from './AdminListTools';
+import { AdviceReview } from './AdviceReview';
 import styles from './review.module.css';
 import { LoadFailure, Loading, useReviewData } from './review-data';
 import {
+  ADVICE_TEXTS,
   type AdminFilters,
   adminFiltersOf,
   inAdminFilters,
@@ -184,6 +187,8 @@ function filterOptions(list: ReviewListResponse, adminFilters: AdminFilters) {
  */
 export function ReviewList() {
   const repos = useRepos();
+  // Segment « Fiches conseils » de la nutrition : l'admin seul (les relectrices d'exercices n'y ont pas accès).
+  const isAdmin = useMe()?.role === 'admin';
   const [params, setParams] = useSearchParams();
   const filter = listFilterOf(params.get('queue'));
   const load = useCallback(() => repos.review.list(), [repos]);
@@ -214,12 +219,39 @@ export function ReviewList() {
       { replace: true },
     );
 
+  const section = isAdmin && params.get('section') === 'advice' ? 'advice' : 'exercises';
+  const chooseSection = (next: string) =>
+    setParams(
+      (prev) => {
+        const out = new URLSearchParams(prev);
+        if (next === 'advice') out.set('section', 'advice');
+        else out.delete('section');
+        return out;
+      },
+      { replace: true },
+    );
+
   const shown = data ? data.items.filter((item) => inFilter(item, filter, adminFilters)) : [];
   return (
     <Page title="Relecture" back="/profile">
-      {loading ? <Loading /> : null}
-      {error !== null ? <LoadFailure message={errorMessage(error)} onRetry={() => void reload()} /> : null}
-      {data ? (
+      {isAdmin ? (
+        <Chips
+          name="review-section"
+          legend={ADVICE_TEXTS.segmentLegend}
+          options={[
+            { value: 'exercises', label: ADVICE_TEXTS.exercises },
+            { value: 'advice', label: ADVICE_TEXTS.advice },
+          ]}
+          value={section}
+          onChange={chooseSection}
+        />
+      ) : null}
+      {section === 'advice' ? <AdviceReview /> : null}
+      {section === 'advice' ? null : loading ? <Loading /> : null}
+      {section === 'exercises' && error !== null ? (
+        <LoadFailure message={errorMessage(error)} onRetry={() => void reload()} />
+      ) : null}
+      {section === 'exercises' && data ? (
         <>
           <BatchProgress progress={data.progress} />
           <Chips

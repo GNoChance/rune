@@ -1,9 +1,10 @@
 import type { CoachAdminView, OpsStatus, OpsStatusResponse } from '@rune/contracts';
-import { type CSSProperties, type ReactNode, useCallback, useId } from 'react';
+import { type CSSProperties, type ReactNode, useCallback, useId, useState } from 'react';
 import { useServices } from '../../app-services';
 import { useRepos } from '../../repos';
-import { Badge, Banner, formatAge, formatDate, plural } from '../../ui';
+import { Badge, Banner, formatAge, formatDate, plural, Switch } from '../../ui';
 import { COACH_ADMIN_TEXTS, coachStateLine } from '../coach/coach-texts';
+import { NUTRITION_ADMIN_TEXTS } from '../nutrition/nutrition-texts';
 import { AdminPage } from './AdminPage';
 import styles from './admin.module.css';
 import { LoadFailure, Loading, useServerData } from './admin-ui';
@@ -87,6 +88,7 @@ export function ServerHealthPage() {
       {error ? <LoadFailure message={error} onRetry={() => void reload()} /> : null}
       {data ? <HealthReport status={data} /> : null}
       <CoachState />
+      <NutritionSwitch />
     </AdminPage>
   );
 }
@@ -102,6 +104,51 @@ function CoachState() {
     <section aria-labelledby={id} className={styles.section}>
       <h2 id={id}>{COACH_ADMIN_TEXTS.healthTitle}</h2>
       <p className={`${styles.card} ${styles.coachCard}`}>{coachStateLine(data.state)}</p>
+    </section>
+  );
+}
+
+/**
+ * Interrupteur « Repères chiffrés » (spec brique 5 §7) : lu en ligne, écrit par `PUT /api/admin/nutrition`. Une lecture
+ * qui échoue n'enlève rien au reste de la page ; une écriture refusée laisse l'état affiché et le dit.
+ */
+function NutritionSwitch() {
+  const repos = useRepos();
+  const T = NUTRITION_ADMIN_TEXTS;
+  const load = useCallback(() => repos.admin.nutritionFullOpen(), [repos]);
+  const { data, update } = useServerData(load);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const id = useId();
+  const switchId = useId();
+  if (data === null) return null;
+  const change = async (open: boolean) => {
+    setBusy(true);
+    setFailed(false);
+    try {
+      const saved = await repos.admin.setNutritionFullOpen(open);
+      update(() => saved);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section aria-labelledby={id} className={styles.section}>
+      <h2 id={id}>{T.title}</h2>
+      <div className={`${styles.card} ${styles.coachCard}`}>
+        <Switch
+          id={switchId}
+          label={T.switchLabel}
+          help={T.help}
+          checked={data}
+          disabled={busy}
+          onChange={(on) => void change(on)}
+        />
+        <p>{data ? T.open : T.closed}</p>
+        {failed ? <Banner tone="error">{T.failed}</Banner> : null}
+      </div>
     </section>
   );
 }

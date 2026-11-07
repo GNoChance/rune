@@ -13,6 +13,16 @@ import { parseJson } from '../http/validate';
 export function adminNutritionRoutes(deps: AppDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
 
+  // Lecture de l'état pour la page « Serveur » : un booléen, aucune donnée personnelle.
+  routes.get('/', async (c) => {
+    const state = await deps.db
+      .selectFrom('nutritionState')
+      .select('fullOpen')
+      .where('id', '=', 1)
+      .executeTakeFirst();
+    return c.json({ full_open: state?.fullOpen === 1 });
+  });
+
   routes.put('/', async (c) => {
     const admin = c.get('user');
     if (!admin) throw httpError('unauthenticated');

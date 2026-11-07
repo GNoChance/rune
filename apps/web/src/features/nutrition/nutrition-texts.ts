@@ -16,6 +16,16 @@ interface CauseText {
   action: { label: string; href: string } | null;
 }
 
+/** Interrupteur d'administration (Admin › Serveur, spec brique 5 §7, §2.1 prérequis 2). */
+export const NUTRITION_ADMIN_TEXTS = {
+  title: 'Nutrition',
+  switchLabel: 'Repères chiffrés',
+  help: "Fermé à l'installation. Ouvrir ce mode est ta décision : les seuils déduits sont à faire relire par un·e diététicien·ne avant (prérequis 2). Le fermer sert d'arrêt d'urgence : chaque membre repasse en conseils sans chiffres.",
+  open: 'Repères chiffrés ouverts',
+  closed: 'Repères chiffrés fermés',
+  failed: "L'interrupteur n'a pas été modifié.",
+} as const;
+
 export const NUTRITION_TEXTS = {
   title: 'Nutrition',
 

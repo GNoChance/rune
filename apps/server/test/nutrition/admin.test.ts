@@ -29,6 +29,20 @@ async function boot() {
   return { adminCookie: await login(ctx, 'porteur', admin.password), admin };
 }
 
+describe('GET /api/admin/nutrition', () => {
+  it('rend l’état de l’interrupteur à l’admin, refuse un non-admin (403)', async () => {
+    const { adminCookie } = await boot();
+    const get = (cookie: string) => ctx.request('/api/admin/nutrition', { cookie });
+    const res = await get(adminCookie);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ full_open: false });
+    await put(adminCookie, { full_open: true });
+    expect(await (await get(adminCookie)).json()).toEqual({ full_open: true });
+    const m = await createUserAndLogin(ctx);
+    expect((await get(m.cookie)).status).toBe(403);
+  });
+});
+
 describe('PUT /api/admin/nutrition', () => {
   it('refuse un non-admin (403) sans toucher à l’état', async () => {
     await boot();

@@ -10,6 +10,8 @@ import {
   composeGuidedMessage,
   type GuidedRequest,
   type HelpResourceId,
+  type NutritionScreen,
+  type NutritionSuggestion,
 } from '@rune/contracts';
 import { useMemo, useSyncExternalStore } from 'react';
 import { ApiError, NetworkRequiredError } from '../../api/client';
@@ -17,6 +19,12 @@ import { type AppServices, useServices } from '../../app-services';
 import { coachRepoFor } from '../../repos/coach-repo';
 import { SseSilenceError } from '../../repos/sse-reader';
 import { guidedAudience, liveToday } from './coach-thread';
+
+/** Écran de réglages nutrition ouvert par le coach (événement `nutrition_screen`, spec brique 5 §11.2). */
+export interface NutritionScreenOffer {
+  screen: NutritionScreen;
+  suggestion?: NutritionSuggestion;
+}
 
 /** Réponse en cours : ce que le flux a déjà apporté, avant que `today` ne la contienne. */
 export interface PendingExchange {
@@ -26,6 +34,8 @@ export interface PendingExchange {
   tool: CoachToolName | null;
   helpCards: HelpResourceId[];
   proposals: CoachProposalEvent[];
+  /** Un seul bouton par message : le premier événement `nutrition_screen` reçu. */
+  nutritionScreen?: NutritionScreenOffer;
   /** Parcours guidé d'où vient le message (spec brique 4.1) : le serveur recompose le texte à partir de lui. */
   guided?: GuidedRequest;
   /** Message venu d'une puce (parcours ou suite), non du champ : le brouillon de la personne n'y est pas touché. */
@@ -44,6 +54,11 @@ export interface CoachState {
   error: CoachError | null;
   /** Message neutre du serveur après un refus (`refused`), non enregistré ; nul sinon. */
   refusalMessage: string | null;
+  /**
+   * Bouton « Ouvrir mes réglages nutrition » des réponses finies de cette session, par `seq` du message. L'événement
+   * n'est pas enregistré côté serveur : le bouton n'est pas rejoué quand le fil est relu, il ne vit qu'ici.
+   */
+  nutritionScreens: Readonly<Record<number, NutritionScreenOffer>>;
 }
 
 export interface CoachStore {
@@ -57,9 +72,14 @@ export interface CoachStore {
   /**
    * Envoie le message composé d'un parcours (spec brique 4.1 §4.1) : texte composé ici avec la table de `contracts`
    * (affichage immédiat, le serveur fait foi), puis le chemin de `send()`. `names` rend le nom d'un exercice du
-   * programme. Sans effet pendant un échange, ou si les choix ne composent rien. Le brouillon n'est pas touché.
+   * programme. `nutritionFull` : mode nutrition effectif `full` de l'appareil (puces « Mes repères »). Sans effet
+   * pendant un échange, ou si les choix ne composent rien. Le brouillon n'est pas touché.
    */
-  sendGuided(guided: GuidedRequest, names: (exerciseId: string) => string | null): Promise<void>;
+  sendGuided(
+    guided: GuidedRequest,
+    names: (exerciseId: string) => string | null,
+    nutritionFull?: boolean,
+  ): Promise<void>;
   /** Envoie un texte tel quel, hors du champ (puce de suite d'un parcours). Sans effet pendant un échange. */
   sendText(text: string): Promise<void>;
   /** Renvoie le dernier message avec le même identifiant (« Réessayer »). */
@@ -87,6 +107,7 @@ const INITIAL: CoachState = {
   phase: 'idle',
   error: null,
   refusalMessage: null,
+  nutritionScreens: {},
 };
 
 function errorOf(e: unknown): CoachError {
@@ -97,7 +118,8 @@ function errorOf(e: unknown): CoachError {
 }
 
 function emptied(p: PendingExchange): PendingExchange {
-  return { ...p, bubble: '', tool: null, helpCards: [], proposals: [] };
+  const { nutritionScreen: _dropped, ...rest } = p;
+  return { ...rest, bubble: '', tool: null, helpCards: [], proposals: [] };
 }
 
 /**
@@ -199,6 +221,19 @@ export function createCoachStore(s: AppServices): CoachStore {
         case 'help_card':
           updatePending((p) => ({ ...p, helpCards: [...p.helpCards, e.resource] }));
           break;
+        case 'nutrition_screen':
+          updatePending((p) =>
+            p.nutritionScreen
+              ? p
+              : {
+                  ...p,
+                  nutritionScreen: {
+                    screen: e.screen,
+                    ...(e.suggestion === undefined ? {} : { suggestion: e.suggestion }),
+                  },
+                },
+          );
+          break;
         case 'retry':
           updatePending(emptied);
           break;
@@ -260,7 +295,9 @@ export function createCoachStore(s: AppServices): CoachStore {
     }
     // Sans la relecture, la bulle reste affichée et l'erreur est rendue.
     answerRecorded = today === null;
+    const offer = state.pending?.nutritionScreen;
     set({
+      ...(offer ? { nutritionScreens: { ...state.nutritionScreens, [done.assistantSeq]: offer } } : {}),
       today: today ?? state.today,
       status: status ?? state.status,
       pending: today ? null : state.pending,
@@ -342,13 +379,13 @@ export function createCoachStore(s: AppServices): CoachStore {
       if (state.draft.trim() === '') return;
       await submit({ text: state.draft });
     },
-    async sendGuided(guided, names) {
+    async sendGuided(guided, names, nutritionFull = false) {
       if (state.phase === 'streaming') return;
       // Public du fil du jour : le parcours de nutrition d'un mineur n'est pas celui d'un adulte.
       const audience = guidedAudience(liveToday(state.today), state.status);
       let text: string;
       try {
-        text = composeGuidedMessage(guided.flow, guided.choices, names, audience);
+        text = composeGuidedMessage(guided.flow, guided.choices, names, audience, nutritionFull);
       } catch {
         return;
       }

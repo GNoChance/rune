@@ -311,3 +311,31 @@ export const LOAD_MODE_LABELS = {
   bodyweight: 'Poids du corps',
   band: 'Élastique',
 } as const satisfies Record<LoadMode, string>;
+
+/** Fiches conseils de la nutrition (spec brique 5 §10.2), relues par l'admin seul. */
+export const ADVICE_TEXTS = {
+  segmentLegend: 'Relecture',
+  exercises: 'Exercices',
+  advice: 'Fiches conseils',
+  empty: 'Aucune fiche conseil pour le moment.',
+  open: 'Ouvrir',
+  back: 'Retour aux fiches',
+  edit: 'Modifier',
+  titleField: 'Titre',
+  bodyField: 'Texte',
+  save: 'Enregistrer',
+  cancel: 'Annuler',
+  editNote: 'Modifier le texte remet la fiche en brouillon : elle sera à relire de nouveau.',
+  sources: 'Sources',
+  actions: { review: 'Marquer relue', publish: 'Publier', retire: 'Retirer' },
+  issuesTitle: 'La fiche ne peut pas passer à cette étape',
+  issueLabels: {
+    no_source: 'Aucune source',
+    numbers_not_allowed: 'Nombre avec unité non permis dans cette fiche',
+    forbidden_term: 'Terme interdit',
+    markdown_not_allowed: 'Mise en forme non permise',
+    link_not_in_sources: 'Lien absent des sources',
+  } as Record<string, string>,
+  audiences: { adults: 'Adultes', minors: 'Mineurs', all: 'Tous' },
+  version: (n: number) => `Version ${n}`,
+} as const;
