@@ -215,7 +215,12 @@ test('mineur : conseils seulement, aucun chiffre dans la page', async ({ server,
 
   await test.step('le serveur ne sert aucune ligne chiffrée', async () => {
     const res = await youth.request.get(`${server.url}/api/nutrition/rows`);
-    expect(await res.json()).toEqual({ weigh_in: [], nutrition_target: [], nutrition_checkin: [] });
+    expect(await res.json()).toEqual({
+      weigh_in: [],
+      nutrition_target: [],
+      nutrition_checkin: [],
+      nutrition_profile: [],
+    });
   });
 });
 
