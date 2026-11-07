@@ -86,3 +86,14 @@ Une fiche a 1 à 3 entrées. La première couvre le risque principal de l'exerci
 3. Aucun mot refusé du glossaire, aucune marque, aucun chiffre de charge.
 4. Chaque entrée de sécurité dit quand s'arrêter, sans vocabulaire médical.
 5. `not_for_minors` et le niveau suivent le §5 ; les doutes sont dans `review_notes`.
+
+## 8. Fiches conseils
+
+Les fiches de `data/advice/` (nutrition, brique 5) suivent ce guide en plus des règles de ton du §2 (tutoiement, apostrophe droite, guillemets « », pas d'émoji). Spec : brique 5 §10 et 07 §5.8 et §5.10.
+
+- **Vocabulaire** : repère, estimation, fourchette, tendance, source de protéines, repas, collation. Jamais : régime, prescription, sèche, détox, brûler les graisses, bon ou mauvais aliment, aliment interdit, triche, culpabiliser, poids idéal, échec, raté. Pas de rouge ni de vert sur le poids, aucune félicitation liée au poids, pas de nom de maladie hors orientation. La ligne d'écoute n'est pas écrite dans les fiches : l'appli l'affiche.
+- **Structure** : 250 à 450 mots ; une phrase d'accroche, des titres `##` courts, des listes, du gras pour l'essentiel ; une section sur ce que la fiche n'est pas ou sur le moment de demander un avis (médecin, diététicien·ne). Ni tableau, ni image, ni HTML, ni code, ni citation.
+- **Chiffres** : une fiche visible en mode qualitatif, ou d'audience `minors` ou `all`, ne contient aucun nombre suivi d'une unité (g, kg, kcal, %, L, mL…) ni de terme réservé au mode complet. Une fiche d'audience `minors` ou `all` évite aussi la liste des mineurs (perte de poids, déficit, jeûne, créatine, poudre, compléments…). Seules les fiches pour adultes en mode complet seul peuvent citer des repères chiffrés du PNNS.
+- **Sources** : au moins une par fiche, avec `title`, `url` et `accessed_on` (date de vérification). On ne cite que ce qu'on a ouvert et lu : l'adresse répond et dit ce que la fiche affirme. Une affirmation sans source se retire. Les liens du texte ne pointent que vers les `sources`.
+- **Brouillons** : `draft_origin` vaut `ai` pour un texte rédigé par l'IA. La fiche entre en `draft` ; l'admin la relit dans l'écran « Fiches conseils », la marque relue puis la publie. Aucune fiche n'est servie avant cette relecture.
+- **Fiches de test** : titre préfixé « [Test] », contenu fictif, mêmes contrôles que les vraies.

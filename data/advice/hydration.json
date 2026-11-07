@@ -1,0 +1,21 @@
+{
+  "id": "hydration",
+  "title": "S'hydrater",
+  "body_md": "L'eau intervient dans presque tout ce que fait ton corps : la température, la digestion, la circulation, les muscles. Quand tu t'entraînes, tu transpires et tu en perds davantage. Bien s'hydrater n'a rien de compliqué.\n\n## L'eau, première boisson\n\nPour la plupart des gens, l'eau est la seule boisson dont on a vraiment besoin. Le PNNS la place au premier rang. L'eau du robinet convient très bien dans la majorité des cas ; l'eau gazeuse ou aromatisée avec une infusion ou un peu de citron aussi.\n\n## D'où vient l'eau que tu absorbes\n\nD'après l'avis de l'EFSA (2010), l'eau totale vient des boissons mais aussi des aliments : fruits, légumes, soupes et laitages en apportent une part non négligeable. Les besoins varient d'une personne à l'autre, selon la taille, la chaleur, l'activité et l'alimentation.\n\n## Comment savoir si tu bois assez\n\n- Ta soif est un bon guide au quotidien : bois quand tu as soif, sans attendre qu'elle soit très forte.\n- Des urines claires, jaune pâle, sont en général bon signe ; très foncées, c'est le moment de boire.\n- Un mal de tête ou une fatigue inhabituelle par temps chaud peut venir d'un manque d'eau.\n\n## Autour de la séance\n\n1. Bois un verre d'eau avant de commencer si tu n'as pas bu depuis un moment.\n2. Garde une gourde à portée de main et bois par petites gorgées entre les séries.\n3. Après la séance, bois pour compenser la transpiration, surtout quand il fait chaud.\n4. Pour une séance habituelle, l'eau suffit : pas besoin de boisson spéciale pour le sport.\n\n## Les autres boissons\n\nLes sodas, les jus et les boissons sucrées ont leur place de temps en temps, mais pas en remplacement de l'eau. Le café et le thé comptent aussi dans ce que tu bois ; garde-les à des moments où ils ne gênent pas ton sommeil. Les boissons énergisantes ne sont pas recommandées pour les plus jeunes.\n\n## Quand demander un avis\n\nSi tu as très soif en permanence, si tu urines beaucoup plus que d'habitude, ou si une maladie ou des médicaments touchent à ce que tu peux boire, parles-en à un médecin.",
+  "audience": "all",
+  "visible_modes": ["full", "qualitative"],
+  "tags": ["eau", "boissons"],
+  "sources": [
+    {
+      "title": "EFSA 2010 : avis scientifique sur les apports de référence pour l'eau",
+      "url": "https://www.efsa.europa.eu/en/efsajournal/pub/1459",
+      "accessed_on": "2026-11-07"
+    },
+    {
+      "title": "Santé publique France, PNNS 2019 : recommandations relatives à l'alimentation, à l'activité physique et à la sédentarité pour les adultes",
+      "url": "https://www.santepubliquefrance.fr/nutrition-et-activite-physique/rapportsynthese/recommandations-relatives-a-lalimentation-a-lactivite-physique-et-a-la-sedentarite-pour-les-adultes",
+      "accessed_on": "2026-11-07"
+    }
+  ],
+  "draft_origin": "ai"
+}

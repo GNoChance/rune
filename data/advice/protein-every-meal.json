@@ -1,0 +1,21 @@
+{
+  "id": "protein-every-meal",
+  "title": "Des protéines à chaque repas",
+  "body_md": "Les protéines servent à construire et à réparer les muscles, mais aussi la peau, les os et bien d'autres tissus. Quand tu t'entraînes, elles comptent encore plus. Bonne nouvelle : pas besoin de produits spéciaux, une alimentation courante suffit.\n\n## L'idée : répartir sur la journée\n\nLes spécialistes de la nutrition sportive (position de l'ISSN, 2017) conseillent de répartir les apports en protéines sur la journée, plutôt que de tout concentrer au dîner. Concrètement : une source de protéines à chaque repas, et une aussi à la collation si tu en prends une. Ce qui compte le plus reste le total sur la journée et la semaine, pas la minute exacte à laquelle tu manges.\n\n## Des sources animales\n\n- Œufs\n- Poisson et fruits de mer\n- Volaille, viande maigre\n- Yaourt, fromage blanc, lait, fromage\n\n## Des sources végétales\n\n- Lentilles, pois chiches, haricots secs\n- Tofu, tempeh, boissons et desserts au soja\n- Fruits à coque et graines\n- Céréales complètes, qui complètent les légumineuses\n\nSi tu manges peu de produits animaux, associer légumineuses et céréales dans la même journée aide à couvrir tous les besoins. Pense aussi à varier les sources.\n\n## Des idées simples\n\n1. Petit-déjeuner : œufs, yaourt ou fromage blanc, ou tartines avec du houmous.\n2. Déjeuner et dîner : une portion de poisson, de volaille, d'œufs, de tofu ou de légumineuses, avec des légumes et un féculent.\n3. Collation : yaourt, poignée de noix, fromage, un œuf dur.\n\n## À retenir\n\n- Pas besoin de peser ni de compter pour y arriver : repère simplement la source de protéines de ton assiette.\n- Les besoins varient selon l'âge, la taille et l'entraînement. Tes repères dans l'appli sont des estimations.\n- Si tu as une maladie, une allergie ou un doute sur ton alimentation, parles-en à un médecin ou à un·e diététicien·ne.",
+  "audience": "all",
+  "visible_modes": ["full", "qualitative"],
+  "tags": ["protéines", "repas"],
+  "sources": [
+    {
+      "title": "ISSN 2017 : position sur les protéines et l'exercice",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/28642676/",
+      "accessed_on": "2026-11-07"
+    },
+    {
+      "title": "ISSN 2017 : position sur le moment des apports nutritionnels (nutrient timing)",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5596471/",
+      "accessed_on": "2026-11-07"
+    }
+  ],
+  "draft_origin": "ai"
+}

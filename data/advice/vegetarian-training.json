@@ -1,0 +1,26 @@
+{
+  "id": "vegetarian-training",
+  "title": "S'entraîner en mangeant végétarien",
+  "body_md": "Manger végétarien et s'entraîner, c'est tout à fait possible. Il suffit de bien organiser tes repas pour couvrir tes besoins, en particulier en protéines et en quelques vitamines et minéraux.\n\n## Les protéines\n\n- **Légumineuses** : lentilles, pois chiches, haricots secs, pois cassés. Le PNNS les recommande déjà pour tout le monde, et les repères de l'ANSES pour les personnes végétariennes leur font une place importante.\n- **Soja** : tofu, tempeh, boissons au soja nature.\n- **Œufs et produits laitiers**, si tu en manges.\n- **Céréales complètes, fruits à coque et graines** : ils complètent les légumineuses.\n\nAssocier des légumineuses et des céréales dans la même journée (par exemple riz et lentilles, pain complet et houmous) aide à couvrir tous les besoins en acides aminés. Comme pour tout le monde, répartis tes sources de protéines sur les repas de la journée, comme le conseille l'ISSN.\n\n## Les points de vigilance\n\nSelon l'avis de l'ANSES (2025), les personnes végétariennes ont un statut moins favorable en fer, en iode, en vitamine B12 et en vitamine D. La vitamine B12 est en particulier difficile à couvrir sans produits animaux, et les oméga-3 posent question.\n\n1. Fer : associe tes sources végétales de fer (légumineuses, légumes verts, céréales complètes) à un aliment riche en vitamine C, comme un fruit ou des crudités.\n2. Vitamine B12 : si tu ne manges ni viande ni poisson, ni œufs ni produits laitiers de façon régulière, demande conseil à un médecin ou à un·e diététicien·ne.\n3. Vitamine D : un peu de lumière du jour aide ; ton médecin peut faire le point.\n4. Oméga-3 : noix, graines de lin et de chia, huile de colza.\n\n## Dans l'assiette\n\n- Prépare une base de légumineuses, d'un féculent et de légumes à chaque repas principal.\n- Garde des conserves et des produits simples pour les jours pressés.\n- Après la séance, un repas avec une source de protéines et un féculent fait très bien l'affaire.\n\n## Un suivi, si tu en ressens le besoin\n\nSi tu te sens souvent fatigué·e, ou si tu supprimes beaucoup d'aliments, un bilan avec un médecin ou un·e diététicien·ne est un bon réflexe. Les repères de l'appli restent des estimations.",
+  "audience": "adults",
+  "visible_modes": ["full", "qualitative"],
+  "tags": ["végétarien", "protéines"],
+  "sources": [
+    {
+      "title": "ANSES 2025 : effets sur la santé des alimentations végétariennes et repères associés",
+      "url": "https://www.anses.fr/en/news/health-effects-vegetarian-diets-and-associated-dietary-guidelines",
+      "accessed_on": "2026-11-07"
+    },
+    {
+      "title": "ISSN 2017 : position sur les protéines et l'exercice",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/28642676/",
+      "accessed_on": "2026-11-07"
+    },
+    {
+      "title": "Santé publique France, PNNS 2019 : recommandations relatives à l'alimentation, à l'activité physique et à la sédentarité pour les adultes",
+      "url": "https://www.santepubliquefrance.fr/nutrition-et-activite-physique/rapportsynthese/recommandations-relatives-a-lalimentation-a-lactivite-physique-et-a-la-sedentarite-pour-les-adultes",
+      "accessed_on": "2026-11-07"
+    }
+  ],
+  "draft_origin": "ai"
+}

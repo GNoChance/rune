@@ -1,0 +1,16 @@
+{
+  "id": "test-full-only",
+  "title": "[Test] Pourquoi le poids varie",
+  "body_md": "Fiche fictive réservée au mode complet.\n\nTon poids bouge avec l'eau et le sel : **regarde la tendance**, pas le chiffre du jour.",
+  "audience": "adults",
+  "visible_modes": ["full"],
+  "tags": ["test"],
+  "sources": [
+    {
+      "title": "Source fictive (test)",
+      "url": "https://example.org/rune-test",
+      "accessed_on": "2026-11-07"
+    }
+  ],
+  "draft_origin": "human"
+}

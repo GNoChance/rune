@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type {
+  AdviceSheetFile,
   ExerciseSheet,
   IllustrationEntry,
   MovementPattern,
@@ -9,7 +10,7 @@ import type {
   SetSpec,
   SlotSpec,
 } from '@rune/contracts';
-import { canonicalJson, validateCatalog, validateTemplate } from '@rune/domain';
+import { canonicalJson, validateAdviceSheet, validateCatalog, validateTemplate } from '@rune/domain';
 
 /*
  * Dossier de contenu de test (`RUNE_CONTENT_DIR`) : le `data/` du dépôt n'a que des brouillons, jamais servis. Ici,
@@ -18,6 +19,60 @@ import { canonicalJson, validateCatalog, validateTemplate } from '@rune/domain';
  * plutôt qu'en un catalogue vide. Le contenu des séances y ajoute un modèle de programme, vérifié aussi par
  * `validateTemplate` (les règles de `pnpm data:validate`).
  */
+
+/** Fiches conseils fictives, titrées « [Test] » : adulte (deux modes), mineur (qualitatif), mode complet seul. */
+export const E2E_ADVICE: readonly AdviceSheetFile[] = [
+  {
+    id: 'test-adults-both',
+    title: '[Test] Repères pour adultes',
+    body_md: "Fiche fictive pour les tests.\n\n## Repères\n\n- Mange varié.\n- Bois de l'eau.",
+    audience: 'adults',
+    visible_modes: ['full', 'qualitative'],
+    tags: ['test'],
+    sources: [
+      {
+        title: 'Source fictive (test)',
+        url: 'https://example.org/rune-test',
+        accessed_on: '2026-11-07',
+      },
+    ],
+    draft_origin: 'human',
+  },
+  {
+    id: 'test-minors-qualitative',
+    title: '[Test] Repères pour jeunes',
+    body_md:
+      'Fiche fictive pour les tests, destinée aux mineurs.\n\n- Fais des repas réguliers.\n- Prends une collation.',
+    audience: 'minors',
+    visible_modes: ['qualitative'],
+    tags: ['test'],
+    sources: [
+      {
+        title: 'Source fictive (test)',
+        url: 'https://example.org/rune-test',
+        accessed_on: '2026-11-07',
+      },
+    ],
+    draft_origin: 'human',
+  },
+  {
+    id: 'test-full-only',
+    title: '[Test] Pourquoi le poids varie',
+    body_md:
+      "Fiche fictive réservée au mode complet.\n\nTon poids bouge avec l'eau et le sel : **regarde la tendance**, pas le chiffre du jour.",
+    audience: 'adults',
+    visible_modes: ['full'],
+    tags: ['test'],
+    sources: [
+      {
+        title: 'Source fictive (test)',
+        url: 'https://example.org/rune-test',
+        accessed_on: '2026-11-07',
+      },
+    ],
+    draft_origin: 'human',
+  },
+];
 
 /** Pompe publiée, illustrée (positions de départ et de fin) : la fiche ouverte hors ligne. */
 export const E2E_PUSH_UP = { id: 'e2e-push-up', name: 'Pompe' } as const;
@@ -329,6 +384,12 @@ function writeContent(dir: string, sheets: ExerciseSheet[], templates: ProgramTe
   const manifest = poses.map((p) => p.entry);
   write('illustrations/manifest.json', `${JSON.stringify(manifest, null, 2)}\n`);
   for (const { entry, body } of poses) write(`illustrations/files/${entry.file}`, body);
+  for (const a of E2E_ADVICE)
+    write(
+      `advice/${a.id}.json`,
+      `${JSON.stringify(a, null, 2)}
+`,
+    );
   for (const template of templates) {
     write(`programs/${template.id}.json`, `${JSON.stringify(template, null, 2)}\n`);
   }
@@ -341,6 +402,10 @@ function writeContent(dir: string, sheets: ExerciseSheet[], templates: ProgramTe
       validateTemplate(t, all).map((i) => `programs/${t.id}.json ${i.code} ${i.path} ${i.message}`),
     ),
   ];
+  for (const a of E2E_ADVICE) {
+    const verdict = validateAdviceSheet(a, 'published');
+    if (!verdict.ok) refused.push(...verdict.issues.map((i) => `advice/${a.id}.json ${i.code} ${i.detail}`));
+  }
   if (refused.length > 0) throw new Error(`Contenu de test refusé :\n${refused.join('\n')}`);
   return dir;
 }

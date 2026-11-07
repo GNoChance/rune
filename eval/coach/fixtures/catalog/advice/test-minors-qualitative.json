@@ -1,0 +1,16 @@
+{
+  "id": "test-minors-qualitative",
+  "title": "[Test] Repères pour jeunes",
+  "body_md": "Fiche fictive pour les tests, destinée aux mineurs.\n\n- Fais des repas réguliers.\n- Prends une collation.",
+  "audience": "minors",
+  "visible_modes": ["qualitative"],
+  "tags": ["test"],
+  "sources": [
+    {
+      "title": "Source fictive (test)",
+      "url": "https://example.org/rune-test",
+      "accessed_on": "2026-11-07"
+    }
+  ],
+  "draft_origin": "human"
+}

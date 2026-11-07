@@ -1,0 +1,21 @@
+{
+  "id": "weight-fluctuations",
+  "title": "Pourquoi mon poids varie d'un jour à l'autre",
+  "body_md": "Ton poids sur la balance n'est pas ton poids « de gras » ou « de muscle » : c'est la somme de tout ce que ton corps contient à cet instant. Il est normal qu'il bouge d'un jour à l'autre, même quand tu manges et t'entraînes comme d'habitude.\n\n## Ce qui fait bouger le chiffre\n\n- **L'eau** : ton corps en contient beaucoup, et sa quantité varie selon ce que tu bois, ta transpiration, la chaleur ou ton cycle.\n- **Le sel** : un repas plus salé fait retenir de l'eau pendant un jour ou deux.\n- **Les glucides stockés** : le corps garde des glucides (le glycogène) avec de l'eau. Après un repas riche en féculents ou une grosse séance, le stock change et le poids aussi.\n- **Le contenu de ton ventre** : repas, boissons, transit : tout cela pèse, et se vide ou se remplit au fil de la journée.\n- **L'heure et les conditions de la pesée** : vêtements, moment de la journée, passage aux toilettes.\n- **Le cycle menstruel**, chez les personnes concernées : la rétention d'eau varie selon les phases.\n\nCes écarts ne disent rien de ta santé ni de ce que tu as « fait » de bien ou de mal. Ils ne sont pas de la graisse gagnée ou perdue.\n\n## Ce que montre la recherche\n\nLes travaux de Hall (2011) sur la dynamique du poids montrent que le poids suit, sur le long terme, l'écart entre ce que tu manges et ce que tu dépenses, et que les premiers changements sont en partie liés à l'eau et aux réserves de glucides. Le poids du jour est donc un bruit autour d'une tendance plus lente.\n\n## Comment lire ton poids\n\n1. Pèse-toi dans les mêmes conditions, quand tu choisis de le faire, par exemple le matin après les toilettes.\n2. Regarde la tendance sur la semaine plutôt que le chiffre du jour : l'appli la calcule pour toi.\n3. Un écart d'un jour ne demande aucune réaction : ne change rien à tes repas à cause d'une seule pesée.\n4. Si le chiffre te met mal à l'aise, tu peux faire une pause dans les pesées sans rien perdre du reste.\n\n## Quand en parler\n\nSi tu penses souvent à ton poids, si tu te sens mal après une pesée, ou si tu as perdu du poids sans l'avoir cherché, parles-en à ton médecin.",
+  "audience": "adults",
+  "visible_modes": ["full"],
+  "tags": ["poids", "tendance"],
+  "sources": [
+    {
+      "title": "Hall et coll. 2011 : effet d'un déséquilibre énergétique sur le poids corporel",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/21872751/",
+      "accessed_on": "2026-11-07"
+    },
+    {
+      "title": "Santé publique France, PNNS 2019 : recommandations relatives à l'alimentation, à l'activité physique et à la sédentarité pour les adultes",
+      "url": "https://www.santepubliquefrance.fr/nutrition-et-activite-physique/rapportsynthese/recommandations-relatives-a-lalimentation-a-lactivite-physique-et-a-la-sedentarite-pour-les-adultes",
+      "accessed_on": "2026-11-07"
+    }
+  ],
+  "draft_origin": "ai"
+}

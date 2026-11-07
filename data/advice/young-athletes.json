@@ -1,0 +1,21 @@
+{
+  "id": "young-athletes",
+  "title": "Jeunes sportifs : bien manger pour grandir et s'entraîner",
+  "body_md": "À ton âge, ton corps grandit et se transforme tout en s'entraînant. Il a donc besoin de carburant, de beaucoup de variété et de régularité. Cette fiche s'appuie sur les repères du HCSP (2020) pour les jeunes et sur ceux du PNNS.\n\n## L'essentiel : manger assez\n\n- Le sport demande de l'énergie, et la croissance aussi. Manger trop peu peut te fatiguer, te rendre irritable, ralentir tes progrès et ta récupération.\n- Il n'y a pas de corps modèle. Chacun grandit à son rythme, et la forme de ton corps change beaucoup pendant l'adolescence.\n- Ton appli ne te demande pas de peser, de compter ou de contrôler tes repas.\n\n## Des repas réguliers\n\n1. Prends un vrai petit-déjeuner, même rapide : tartines, fruit, yaourt, flocons d'avoine.\n2. Déjeune et dîne à des heures assez régulières, avec des légumes, un féculent et une source de protéines.\n3. Prévois une collation pour l'après-midi ou avant le sport : un fruit, un laitage, du pain, des fruits à coque.\n4. Ne saute pas de repas parce que tu t'entraînes le soir ou que tu es pressé·e.\n\n## Une assiette variée\n\n- Des fruits et des légumes à chaque repas.\n- Des produits laitiers chaque jour, pour tes os, qui se construisent encore.\n- Des féculents, complets de temps en temps.\n- De la viande, du poisson, des œufs ou des légumineuses.\n- Les aliments sucrés ou gras ont leur place de temps en temps, sans que ce soit un sujet.\n\n## Boire\n\nL'eau est la boisson de base. Bois régulièrement dans la journée et pendant l'entraînement quand tu as soif. Évite les boissons énergisantes.\n\n## Ce dont tu n'as pas besoin\n\nPas de poudre, pas de produit spécial, pas de méthode trouvée sur les réseaux : une alimentation variée suffit à ton âge. Si quelqu'un te pousse à changer ton corps ou à manger moins, parles-en à un adulte de confiance.\n\n## Quand en parler à quelqu'un\n\nSi manger te stresse, si tu penses souvent à ton poids ou à ton corps, ou si tu sautes des repas pour des raisons que tu n'oses pas dire, parles-en à un parent, à ton médecin ou à un adulte en qui tu as confiance. Tu n'as pas à gérer ça seul·e.",
+  "audience": "minors",
+  "visible_modes": ["qualitative"],
+  "tags": ["jeunes", "croissance"],
+  "sources": [
+    {
+      "title": "HCSP, avis du 30 juin 2020 : repères alimentaires pour les enfants et adolescents de 4 à 17 ans",
+      "url": "https://www.hcsp.fr/Explore.cgi/Telecharger?NomFichier=hcspa20200630_rvisidesreprealimepourlesenfan.pdf",
+      "accessed_on": "2026-11-07"
+    },
+    {
+      "title": "Santé publique France, PNNS 2019 : recommandations relatives à l'alimentation, à l'activité physique et à la sédentarité pour les adultes",
+      "url": "https://www.santepubliquefrance.fr/nutrition-et-activite-physique/rapportsynthese/recommandations-relatives-a-lalimentation-a-lactivite-physique-et-a-la-sedentarite-pour-les-adultes",
+      "accessed_on": "2026-11-07"
+    }
+  ],
+  "draft_origin": "ai"
+}
