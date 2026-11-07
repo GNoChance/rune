@@ -7,7 +7,7 @@ import { createApp } from './app';
 import { runCli } from './cli';
 import { isUsableModel } from './coach/state';
 import { type AppConfig, loadConfig } from './config';
-import { type AppDeps, createAppDeps } from './deps';
+import { type AppDeps, type Clock, createAppDeps } from './deps';
 import { DAILY_JOBS } from './jobs/registry';
 import { type DailyJob, startDailyJobs } from './jobs/scheduler';
 import { createLogger, type Logger } from './logger';
@@ -40,6 +40,8 @@ export async function startServer(
     /** Seuls les points d'entrée de test injectent un client (le faux n'entre jamais dans `server.mjs`). */
     ai?: AiClient;
     thinkingBinding?: 'drop_block' | 'error';
+    /** Seuls les points d'entrée de test injectent une horloge (E2E : semaines avancées sans attendre). */
+    clock?: Clock;
   } = {},
 ): Promise<RunningServer> {
   const config = loadConfig(env);
@@ -53,6 +55,7 @@ export async function startServer(
       config,
       logger,
       ai: opts.ai ?? defaultAiClient(config),
+      ...(opts.clock ? { clock: opts.clock } : {}),
       ...(opts.thinkingBinding ? { coachThinkingBinding: opts.thinkingBinding } : {}),
     });
     for (const task of opts.startupTasks ?? STARTUP_TASKS) await task.run(deps);

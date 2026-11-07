@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { createFakeAiClient, type FakeChatTurn, fakeText, fakeToolUse } from '../../../server/src/ai';
+import type { Clock } from '../../../server/src/deps';
 import { main, startServer } from '../../../server/src/main';
 import { STARTUP_TASKS, type StartupTask } from '../../../server/src/startup';
 
@@ -9,6 +10,11 @@ import { STARTUP_TASKS, type StartupTask } from '../../../server/src/startup';
  * `E2E_COACH_SCRIPT` n'existe que pour lui. Le coach est activé avant l'écoute (sans cela, `coach_state.enabled = 0`
  * rend `coach_unavailable`) ; la combinaison n'étant pas évaluée, l'environnement pose `COACH_DEV_ALLOW_UNEVALUATED=1`
  * (origine `http://localhost`) : le mode dev est actif.
+ *
+ * Horloge (E2E de la nutrition, spec brique 5 §16 point 6) : `E2E_CLOCK_FILE`, s'il est posé, désigne un fichier dont le
+ * contenu est un décalage en millisecondes ajouté à l'heure réelle, relu à chaque appel ; le test avance ainsi le serveur
+ * d'une ou de plusieurs semaines sans attendre. Fichier absent ou vide : décalage nul. Seul ce fichier injecte l'horloge
+ * (`startServer` ne la prend qu'en option), aucun bundle de production n'en porte la trace.
  */
 
 /** Un tour du scénario, joué à l'appel de même rang ; `delayMs` retient la fin du tour (les phrases arrivent une à une). */
@@ -44,7 +50,22 @@ const ENABLE_COACH: StartupTask = {
   },
 };
 
+/** Heure réelle plus le décalage lu dans `E2E_CLOCK_FILE` ; l'heure réelle seule sans fichier. */
+function clockFrom(path: string | undefined): Clock | undefined {
+  if (path === undefined || path === '') return undefined;
+  const offsetMs = (): number => {
+    try {
+      const n = Number(readFileSync(path, 'utf8').trim());
+      return Number.isFinite(n) ? n : 0;
+    } catch {
+      return 0;
+    }
+  };
+  return { now: () => new Date(Date.now() + offsetMs()) };
+}
+
 const script = readScript(process.env.E2E_COACH_SCRIPT);
+const clock = clockFrom(process.env.E2E_CLOCK_FILE);
 
 main([], (env) =>
   startServer(env, {
@@ -59,6 +80,7 @@ main([], (env) =>
       },
     }),
     thinkingBinding: 'error',
+    ...(clock ? { clock } : {}),
     startupTasks: [...STARTUP_TASKS, ENABLE_COACH],
   }),
 ).then(

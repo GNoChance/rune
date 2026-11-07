@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
 import { type BrowserContext, expect, type Locator, type Page } from '@playwright/test';
 import {
   type Effort,
@@ -144,7 +145,7 @@ export async function loginViaUi(page: Page, username: string): Promise<void> {
 export async function callApi<T = unknown>(
   page: Page,
   server: E2EServer,
-  o: { method: 'GET' | 'POST' | 'PATCH'; path: string; data?: unknown; status: number },
+  o: { method: 'GET' | 'POST' | 'PATCH' | 'PUT'; path: string; data?: unknown; status: number },
 ): Promise<T> {
   const res = await page.request.fetch(`${server.url}${o.path}`, {
     method: o.method,
@@ -157,14 +158,16 @@ export async function callApi<T = unknown>(
 
 /**
  * Administrateur créé par l'API (invitation, profil avec son coach, maison principale sans matériel, onboarding
- * fini) ; le contexte de `page` garde sa session. Rend son identifiant et celui de la maison.
+ * fini) ; le contexte de `page` garde sa session. Rend son identifiant et celui de la maison. Avec `code` (invitation
+ * d'un membre, voir `inviteViaApi`), c'est ce membre qui est créé à la place de l'administrateur.
  */
 export async function createMemberViaApi(
   server: E2EServer,
   page: Page,
   username = 'camille',
+  o: { code?: string } = {},
 ): Promise<{ userId: string; placeId: string }> {
-  const { code } = await bootstrapAdmin(server);
+  const code = o.code ?? (await bootstrapAdmin(server)).code;
   const me = await callApi<{ id: string }>(page, server, {
     method: 'POST',
     path: '/api/invitations/accept',
@@ -192,6 +195,17 @@ export async function createMemberViaApi(
   });
   await callApi(page, server, { method: 'POST', path: '/api/me/onboarding/complete', data: {}, status: 200 });
   return { userId: me.id, placeId: place.id };
+}
+
+/** Invitation d'un membre né le `birthDate`, créée par l'administrateur de `admin` ; rend son code. */
+export async function inviteViaApi(server: E2EServer, admin: Page, birthDate: string): Promise<string> {
+  const created = await callApi<{ code: string }>(admin, server, {
+    method: 'POST',
+    path: '/api/admin/invitations',
+    data: { birthDate },
+    status: 201,
+  });
+  return created.code;
 }
 
 /** Inscription au modèle `templateId` (`POST /api/program/enroll`) ; rend l'instance créée. */
@@ -370,4 +384,100 @@ export async function chooseEffort(
       includeHidden: true,
     }),
   ).toBeAttached();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Nutrition (spec brique 5 §16 point 6)
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Un chiffre suivi d'une unité de la nutrition (kcal, g, kg, L) : ce que le mode sans chiffres ne montre jamais. */
+export const FIGURE_AFTER_NUMBER = /\d[\s  ]*(?:kcal|kg|g|L)(?![\p{L}\d])/u;
+
+/** Mode complet ouvert pour le cercle (`PUT /api/admin/nutrition`), par l'administrateur de `admin`. */
+export async function openFullViaApi(server: E2EServer, admin: Page): Promise<void> {
+  await callApi(admin, server, {
+    method: 'PUT',
+    path: '/api/admin/nutrition',
+    data: { full_open: true },
+    status: 200,
+  });
+}
+
+/** Les fiches conseils de test (brouillons) relues puis publiées par l'administrateur de `admin`. */
+export async function publishAdviceViaApi(server: E2EServer, admin: Page): Promise<void> {
+  const sheets = await callApi<{ id: string }[]>(admin, server, {
+    method: 'GET',
+    path: '/api/review/advice',
+    status: 200,
+  });
+  expect(sheets.length).toBeGreaterThan(0);
+  for (const { id } of sheets) {
+    for (const action of ['review', 'publish']) {
+      await callApi(admin, server, {
+        method: 'POST',
+        path: `/api/review/advice/${id}/${action}`,
+        data: {},
+        status: 200,
+      });
+    }
+  }
+}
+
+/** Ce que la pesée de départ et les réglages de l'activation complète recueillent. */
+export interface FullSetup {
+  sex: 'Homme' | 'Femme';
+  heightCm: number;
+  /** Écrit comme à l'écran, virgule décimale (« 80,0 »). */
+  weight: string;
+  activity: RegExp;
+  goal: 'Perte de gras' | 'Maintien' | 'Prise de muscle';
+}
+
+/**
+ * Activation complète par les écrans : « Activer », accord santé, trois réponses « Non », mode « Repères chiffrés »,
+ * réglages de départ, « Valider ». Finit sur le module Nutrition en mode complet.
+ */
+export async function activateFullViaUi(server: E2EServer, page: Page, setup: FullSetup): Promise<void> {
+  await page.goto(`${server.url}/nutrition`);
+  await page.getByRole('link', { name: 'Activer', exact: true }).click();
+  await button(page, 'Commencer').click();
+  await page.getByRole('checkbox').check();
+  await button(page, "J'accepte").click();
+  for (let i = 0; i < 3; i++) await button(page, 'Non').click();
+  await page.getByRole('radio', { name: 'Repères chiffrés', exact: true }).check();
+  await button(page, 'Continuer').click();
+  await page.getByRole('radio', { name: setup.sex, exact: true }).check();
+  await page.getByLabel('Taille (cm)', { exact: true }).fill(String(setup.heightCm));
+  await page.getByLabel('Première pesée (kg)').fill(setup.weight);
+  await page.getByRole('radio', { name: setup.activity }).check();
+  await page.getByRole('radio', { name: setup.goal, exact: true }).check();
+  await button(page, 'Valider').click();
+  await page.waitForURL((url) => url.pathname === '/nutrition');
+  await expect(page.getByRole('heading', { name: 'Tes repères', exact: true })).toBeVisible();
+}
+
+/**
+ * Opérations `create` de pesées (`weigh_in`), comme un autre appareil les pousserait : une par `[date, kilos]`.
+ * Le serveur refuse une date future : avancer son horloge d'abord.
+ */
+export function weighInOps(userId: string, entries: readonly (readonly [string, number])[]): SyncOp[] {
+  return entries.map(([date, kg]) => ({
+    opId: newId(),
+    userId,
+    entity: 'weigh_in',
+    id: newId(),
+    kind: 'create',
+    fields: { date, weightG: Math.round(kg * 1000) },
+    clientTs: new Date().toISOString(),
+    protocol: SYNC_PROTOCOL,
+    attempts: 0,
+  }));
+}
+
+/**
+ * Horloge du serveur de test (point d'entrée `coach-server-entry.ts`, variable `E2E_CLOCK_FILE`) avancée à `to` :
+ * le fichier porte le décalage avec l'heure réelle, relu par le serveur à chaque appel.
+ */
+export function setServerClock(clockFile: string, to: Date): void {
+  writeFileSync(clockFile, String(to.getTime() - Date.now()));
 }
