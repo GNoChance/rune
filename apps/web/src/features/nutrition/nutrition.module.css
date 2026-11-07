@@ -268,3 +268,61 @@
   border: 1px solid var(--border);
   background: var(--surface-strong);
 }
+
+/* Bilan de la semaine : résumé chiffré, phrase de la décision, actions (cibles de 48 px au moins). */
+.checkinActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.pastCheckins {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Fiches : liste de liens, puis lecture avec le corps en Markdown restreint et le pied de sources. */
+.sheetLinks {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sheetBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  line-height: 1.5;
+}
+
+.sheetBody h2,
+.sheetBody h3 {
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-display);
+  line-height: 1.25;
+}
+
+.sheetBody p {
+  margin: 0;
+}
+
+.sheetBody ul,
+.sheetBody ol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.sheetBody a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

@@ -105,6 +105,12 @@ export const NUTRITION_TEXTS = {
       nonRepresentative: "Cette semaine n'était pas représentative (maladie, voyage…)",
       whyWeightVaries: 'Pourquoi mon poids varie',
       noFollowUp: 'Sans suite',
+      week: (date: string) => `Semaine du ${date}`,
+      mean: (kg: string) => `Moyenne : ${kg} kg`,
+      change: (pct: string) => `${pct} % sur la semaine`,
+      accepted: 'Proposition acceptée.',
+      declined: 'Tu as gardé tes repères.',
+      none: 'Aucun bilan pour le moment.',
     },
     weight: {
       title: 'Poids',
@@ -154,6 +160,13 @@ export const NUTRITION_TEXTS = {
       remove: (date: string) => `Supprimer la pesée du ${date}`,
       chartNote: 'Trait : moyenne sur 7 jours. Points : tes pesées.',
     },
+  },
+
+  /** Lecture d'une fiche conseil (§10.2 à §10.5). */
+  sheet: {
+    sources: 'Sources',
+    reviewedOn: (date: string) => `Relue le ${date}`,
+    unavailable: "Cette fiche n'est pas disponible.",
   },
 
   /** Phrases des décisions du bilan (§13). */

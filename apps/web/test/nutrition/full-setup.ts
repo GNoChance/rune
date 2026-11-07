@@ -1,6 +1,6 @@
 import type { AppDb } from '../../src/local-db/db';
 import { setMeta } from '../../src/local-db/meta';
-import { createFakeApi } from '../support/fake-api';
+import { createFakeApi, type FakeSyncEngine } from '../support/fake-api';
 import { createTestLocalDb } from '../support/local-db';
 import { seedProfile } from '../support/onboarding';
 import { makeMe, renderApp } from '../support/render';
@@ -38,6 +38,12 @@ export interface FullOptions {
   safetyPause?: boolean;
   /** Pesées du miroir. */
   weighIns?: Record<string, unknown>[];
+  /** Bilans du miroir (camelCase), `ownerId` et révision ajoutés. */
+  checkins?: Record<string, unknown>[];
+  /** Fiches servies par `GET /api/nutrition/sheets` (forme du contrat). */
+  sheets?: Record<string, unknown>[];
+  /** Moteur de synchro simulé (par exemple hors ligne). */
+  sync?: FakeSyncEngine;
 }
 
 /** Ouvre `path` avec un appareil au mode demandé (`full` par défaut) et la cible A en copie locale. */
@@ -84,14 +90,22 @@ export async function openNutritionAt(path: string, o: FullOptions = {}) {
     }
   }
   if (o.weighIns) await seedMirror(db, 'weigh_in', o.weighIns);
+  if (mode === 'full' && o.checkins) {
+    await seedMirror(
+      db,
+      'nutrition_checkin',
+      o.checkins.map((c, i) => ({ id: `c${i}`, ...base, ...c })),
+    );
+  }
   const api = createFakeApi();
+  if (o.sheets) api.on('GET', '/api/nutrition/sheets', { status: 200, body: o.sheets });
   const me = makeMe({
     consents: {
       health: { active: true, textVersion: '1.0', at: '2026-10-01T10:00:00.000Z' },
       aiCoach: { active: false, textVersion: null, at: null },
     },
   });
-  const view = await renderApp({ db, api, path, me });
+  const view = await renderApp({ db, api, path, me, sync: o.sync });
   return { ...view, db, api };
 }
 

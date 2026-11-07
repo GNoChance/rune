@@ -5,9 +5,11 @@ import { useLive, useMe } from '../../app-services';
 import { type NutritionView, useNutritionView, useRepos } from '../../repos';
 import { Button, CoachBubble, Page, useAction } from '../../ui';
 import { coachText } from '../coach/coach-lines';
+import { CheckinCard } from './CheckinCard';
 import { NutritionFooter } from './NutritionFooter';
 import styles from './nutrition.module.css';
 import { NUTRITION_TEXTS } from './nutrition-texts';
+import { type SheetEntry, SheetsList } from './SheetsList';
 import { TargetsCard } from './TargetsCard';
 import { WeightSummary } from './WeightSummary';
 
@@ -70,19 +72,7 @@ function CauseLine(p: { state: NutritionState | null }) {
   );
 }
 
-/** Titres des fiches visibles dans le mode de l'appareil (réseau puis dernière copie) ; leur lecture viendra plus tard. */
-function SheetList(p: { titles: readonly string[] | null }) {
-  if (p.titles === null || p.titles.length === 0) return null;
-  return (
-    <ul className={styles.list}>
-      {p.titles.map((title) => (
-        <li key={title}>{title}</li>
-      ))}
-    </ul>
-  );
-}
-
-function QualitativeView(p: { state: NutritionState | null; sheets: readonly string[] | null }) {
+function QualitativeView(p: { state: NutritionState | null; sheets: readonly SheetEntry[] | null }) {
   return (
     <>
       <section className={styles.section}>
@@ -90,7 +80,7 @@ function QualitativeView(p: { state: NutritionState | null; sheets: readonly str
         <CauseLine state={p.state} />
       </section>
       <Section title={T.qualitative.sheets}>
-        <SheetList titles={p.sheets} />
+        <SheetsList sheets={p.sheets} />
       </Section>
       <Section title={T.qualitative.settings}>
         <Link href="/nutrition/settings" className={styles.textLink}>
@@ -102,21 +92,23 @@ function QualitativeView(p: { state: NutritionState | null; sheets: readonly str
 }
 
 /**
- * Mode `full` : les sections du §12.2 (repères, bilan, poids, fiches, réglages) avec leurs points d'entrée. Leur
+ * Mode `full` : les sections du §12.2 (repères, bilan, poids, fiches, réglages) avec leurs points d'entrée.
  * contenu chiffré est branché par les composants des tâches suivantes (repères, bilan, courbe, fiches).
  */
-function FullView(p: { view: NutritionView; sheets: readonly string[] | null }) {
+function FullView(p: { view: NutritionView; sheets: readonly SheetEntry[] | null }) {
   return (
     <>
       <Section title={T.full.targets.title}>
         <TargetsCard target={p.view.target} requestedGoal={p.view.settings?.goal ?? null} />
       </Section>
-      <Section title={T.full.checkin.title} />
+      <Section title={T.full.checkin.title}>
+        <CheckinCard view={p.view} sheets={p.sheets} />
+      </Section>
       <Section title={T.full.weight.title} id="poids">
         <WeightSummary />
       </Section>
       <Section title={T.full.sheets}>
-        <SheetList titles={p.sheets} />
+        <SheetsList sheets={p.sheets} />
       </Section>
       <Section title={T.full.settings}>
         <Link href="/nutrition/settings" className={styles.textLink}>
@@ -139,7 +131,7 @@ export function NutritionPage() {
   const view: NutritionView | undefined = useNutritionView();
   const profile = useLive(() => repos.profile.get(), [repos]);
   const [state, setState] = useState<NutritionState | null>(null);
-  const [sheets, setSheets] = useState<readonly string[] | null>(null);
+  const [sheets, setSheets] = useState<readonly SheetEntry[] | null>(null);
   const mode = view?.mode;
 
   useEffect(() => {
@@ -160,7 +152,7 @@ export function NutritionPage() {
     }
     let live = true;
     repos.nutrition.sheets().then(
-      (list) => live && setSheets(list.map((sheet) => sheet.title)),
+      (list) => live && setSheets(list.map((sheet) => ({ id: sheet.id, title: sheet.title }))),
       () => live && setSheets([]),
     );
     return () => {

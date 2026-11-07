@@ -74,6 +74,9 @@ const StartFlow = lazy(() =>
 const WeightPage = lazy(() =>
   import('./features/nutrition/WeightPage').then((m) => ({ default: m.WeightPage })),
 );
+const SheetPage = lazy(() =>
+  import('./features/nutrition/SheetPage').then((m) => ({ default: m.SheetPage })),
+);
 const HowPage = lazy(() => import('./features/nutrition/HowPage').then((m) => ({ default: m.HowPage })));
 const NutritionSettingsPage = lazy(() =>
   import('./features/nutrition/SettingsPage').then((m) => ({ default: m.SettingsPage })),
@@ -232,6 +235,7 @@ function ConnectedRoutes() {
       <Route path="/nutrition/start" component={StartFlow} />
       <Route path="/nutrition/weight" component={WeightPage} />
       <Route path="/nutrition/how" component={HowPage} />
+      <Route path="/nutrition/sheets/:id" component={SheetPage} />
       <Route path="/nutrition/settings" component={NutritionSettingsPage} />
       <Route path="/profile" component={ProfileHub} />
       <Route path="/profile/edit" component={ProfilePage} />
