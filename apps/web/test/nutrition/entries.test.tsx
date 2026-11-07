@@ -133,4 +133,20 @@ describe("carte de l'accueil : fiche du jour et bilan à traiter", () => {
     expect(checkinToHandle(view({ ...open, decision: 'in_band' }))).toBe(false);
     expect(checkinToHandle(view({ ...open, decision: 'proposal', response: 'accepted' }))).toBe(false);
   });
+
+  it('pendant une pause de sécurité, une baisse proposée n’est pas à traiter ; une hausse l’est', () => {
+    const base = { weekStart: '2026-09-28', weighInCount: 4, meanWeightG: 70_000, changePct: -0.4 };
+    const paused = (c: object) =>
+      ({
+        mode: 'full',
+        descentPending: false,
+        safetyPause: true,
+        settings: null,
+        target: null,
+        checkins: [c],
+      }) as never;
+    const open = { ...base, representative: true, position: 'in', response: null, decision: 'proposal' };
+    expect(checkinToHandle(paused({ ...open, proposedDeltaKcal: -100 }))).toBe(false);
+    expect(checkinToHandle(paused({ ...open, proposedDeltaKcal: 100 }))).toBe(true);
+  });
 });

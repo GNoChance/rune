@@ -10,13 +10,17 @@ import { WeighInSheet } from './WeighInSheet';
 const T = NUTRITION_TEXTS.home;
 const DAY_MS = 86_400_000;
 
-/** Un bilan attend la réponse de la personne : le plus récent, avec une proposition, sans réponse. */
+/**
+ * Un bilan attend la réponse de la personne : le plus récent, avec une proposition, sans réponse ; jamais une baisse
+ * pendant la pause de sécurité, que le serveur refuse (D14).
+ */
 export function checkinToHandle(view: NutritionView): boolean {
   const latest = view.checkins[0];
   return (
     latest !== undefined &&
     latest.response === null &&
-    (latest.decision === 'proposal' || latest.decision === 'rapid_loss')
+    (latest.decision === 'proposal' || latest.decision === 'rapid_loss') &&
+    !(view.safetyPause && latest.proposedDeltaKcal === -100)
   );
 }
 
