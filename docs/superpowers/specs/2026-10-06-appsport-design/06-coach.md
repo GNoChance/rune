@@ -104,7 +104,7 @@ Tous en `strict: true`. Le mode strict ne gère ni `minimum` ni `maximum` : chaq
 | `read_training` | `since_days` (≤ 90), `exercise_id` facultatif | Instance courante (`revision`, séances, cibles), séances, séries, décisions du moteur, records ; douleurs seulement avec consentement santé. Environ 4 000 tokens au plus. |
 | `propose_program_change` | `base_revision`, `operations[]` (≤ 5), `reason` | Crée une `InstanceChange` au statut `proposed` (§8) ou renvoie la liste des erreurs. N'applique rien. |
 | `refer_to_help` | `resource` : `emergency`, `pain`, `eating_disorder`, `doping`, `pregnancy`, `distress` | La PWA affiche une carte d'aide avec le texte et le numéro lus dans `HELP_RESOURCES` (via `coachConfig`), jamais produits par le modèle. Effet propre à `eating_disorder` : voir ci-dessous. |
-| `open_nutrition_screen` (brique 5) | `screen` : `goal` \| `activity` \| `mode` (`goal` et `activity` en mode nutrition complet seulement) | La PWA affiche un bouton vers cet écran de l'appli. Le coach ne modifie aucun réglage nutritionnel : l'écran recalcule dans ses bornes et l'utilisateur confirme. |
+| `open_nutrition_screen` (brique 5) | `screen` : `goal` \| `activity` \| `mode` (`goal` et `activity` en mode nutrition complet seulement) ; `suggestion` facultative (valeur à présélectionner, validée par le code ; spec de la brique 5, §3.1, écart 7) | La PWA affiche un bouton vers cet écran de l'appli. Le coach ne modifie aucun réglage nutritionnel : l'écran recalcule dans ses bornes et l'utilisateur confirme. |
 
 **`refer_to_help("eating_disorder")`**, exigence de la section Nutrition :
 1. la carte affiche la ligne Anorexie Boulimie Info Écoute **09 69 325 900** (lien `tel:`) et l'orientation vers un médecin ;
@@ -122,7 +122,7 @@ Le serveur relaie le texte au fil de l'eau, **phrase par phrase, après contrôl
 
 1. Toute suite qui ressemble à un numéro de téléphone doit être un numéro de `HELP_RESOURCES`.
 2. Un nombre suivi de `kcal`, `calories`, `g`, `grammes`, `kg` ou `%` est bloqué s'il ne fait pas partie des valeurs autorisées. Hors mode nutrition `full` (donc toujours pour un mineur et avant la brique 5), aucune valeur nutritionnelle ne figure parmi les valeurs autorisées : elles sont toutes bloquées ; les charges d'entraînement du dossier restent autorisées.
-3. Pour un mineur ou hors mode nutrition `full`, les termes de la liste interdite (fichier versionné tenu par la section Nutrition) sont bloqués.
+3. Pour un mineur ou hors mode nutrition `full`, les termes de la liste interdite (fichier versionné tenu par la section Nutrition) sont bloqués. *(brique 5)* La liste « pour tous » s'applique dans tous les modes, y compris `full` (spec de la brique 5, §3.1, écart 6).
 
 **En cas de blocage :**
 1. le relais s'arrête, la PWA reçoit `retry` et efface la bulle partielle ;

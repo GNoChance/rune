@@ -34,7 +34,8 @@ Le mode stocké (`nutrition_profile.mode`) est un choix de l'utilisateur. Le **m
 3. âge > 78 ans → `qualitative` *(déduit : Mifflin-St Jeor n'est validée que de 19 à 78 ans)*.
 4. `mode = full` sans consentement santé actif → `qualitative`.
 5. `mode = full` avec `safety_screen_version` différente de la version en vigueur → `qualitative` jusqu'à ce que l'écran soit repassé.
-6. Sinon → le mode stocké.
+6. *(brique 5)* `mode = full` alors que le mode complet n'est pas ouvert dans le cercle (`full_open` à 0) → `qualitative`, cause `full_closed` ; le mode stocké ne change pas (spec de la brique 5, §3.1, écart 2).
+7. Sinon → le mode stocké.
 
 L'âge est calculé à la lecture à partir de la date de naissance complète saisie par l'admin dans l'invitation (fonction d'âge du socle, Europe/Paris). L'âge de 18 ans est inclus dans le mode complet, alors que la formule est validée dès 19 ans *(écart jugé négligeable)*.
 
@@ -261,6 +262,8 @@ Autres cas : v = −1,2 puis −1,3 → `proposal` +100 ; v = −1,6 une seule s
 | Comment sont calculés mes repères | adultes / complet | texte fixe + valeurs de la cible en vigueur insérées par le code |
 | Demander de l'aide | tous / tous les modes, page Aide comprise | ligne TCA, médecin, diététicien·ne (§5.11) |
 
+*(brique 5)* « Comment sont calculés mes repères » et « Demander de l'aide » sont des pages de l'appli, au texte dans le code, et non des fiches du catalogue ; les 8 fiches du catalogue sont listées au §10.5 de la spec de la brique 5 (spec de la brique 5, §3.1, écart 3).
+
 Note : « Bien manger au quotidien » visible en qualitatif doit respecter la règle 4 ; la version en mode complet peut citer les repères PNNS chiffrés. On publie donc deux fiches (`id` distincts, l'`id` étant le slug) plutôt qu'une fiche à variantes.
 
 ### 5.9 Coach IA et nutrition
@@ -306,7 +309,7 @@ L'admin n'est pas prévenu.
 1. L'IMC sert au calcul mais n'est jamais affiché.
 2. Ni rouge ni vert sur le poids ou sa tendance ; aucune félicitation liée au poids.
 3. Les maladies ne sont nommées que dans l'écran de sécurité et dans les messages d'orientation.
-4. La liste des termes interdits est un fichier versionné ; un test parcourt les textes de l'interface, les fiches publiées et les sorties du jeu d'évaluation du coach.
+4. La liste des termes interdits est un fichier versionné ; un test parcourt les textes de l'interface, les fiches publiées et les sorties du jeu d'évaluation du coach. *(brique 5)* Le fichier est `FORBIDDEN_TERMS` v2 (`packages/contracts/src/forbidden-terms.ts`), en trois listes : tous les modes, hors mode complet, mineurs (spec de la brique 5, §3.1, écart 6).
 
 ### 5.11 Ligne d'écoute et orientation
 
@@ -409,7 +412,7 @@ Voir le [glossaire FR → EN](10-glossaire.md) (termes métier : mode complet �
 - FAO/OMS/UNU 2004 (PAL) : https://openknowledge.fao.org/server/api/core/bitstreams/65875dc7-f8c5-4a70-b0e1-f429793860ae/content
 - Hall 2011 : https://pubmed.ncbi.nlm.nih.gov/21872751/ ; Helms 2014 : https://pmc.ncbi.nlm.nih.gov/articles/PMC4033492/ ; ISSN : https://pmc.ncbi.nlm.nih.gov/articles/PMC5470183/ ; Iraki 2019 : https://www.mdpi.com/2075-4663/7/7/154 ; Delany 2025 : https://pubmed.ncbi.nlm.nih.gov/40841871/
 - ISSN 2017 protéines : https://pubmed.ncbi.nlm.nih.gov/28642676/ ; Morton 2018 : https://pubmed.ncbi.nlm.nih.gov/28698222/
-- ANSES 2016 (lipides, fibres) via CERIN : https://www.cerin.org/articles/references-nutritionnelles-proteines-lipides-glucides-fibres-adultes-personnes-agees/ ; EFSA 2010 (eau) : https://www.sennutricion.org/media/Docs_Consenso/Scientific_Opinion_Dietary_Reference_Values_for_water-EFSA_2010.pdf
+- ANSES 2016 (lipides, fibres) via CERIN : https://www.cerin.org/articles/references-nutritionnelles-proteines-lipides-glucides-fibres-adultes-personnes-agees/ ; EFSA 2010 (eau) : https://www.efsa.europa.eu/en/efsajournal/pub/1459 (à revérifier : l'ancienne adresse, sennutricion.org, renvoyait 404 le 2026-11-07 ; voir `docs/catalog/fiches-conseils-a-verifier.md`)
 - CNIL, donnée de santé : https://www.cnil.fr/fr/quest-ce-ce-quune-donnee-de-sante
 - Bilen 2026 : https://pubmed.ncbi.nlm.nih.gov/41909033/ ; Anderberg 2025 : https://pubmed.ncbi.nlm.nih.gov/39671845/ ; Levinson 2017 : https://pubmed.ncbi.nlm.nih.gov/28843591/
 - CSP L4371-1 : https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000006072665/LEGISCTA000006155074/

@@ -306,7 +306,7 @@ En tête, la bulle du coach avec l'avatar « nutrition » de la refonte et une p
 
 | Mode effectif | Contenu |
 |---|---|
-| `disabled` | Explication (ce que fait le module, ce qu'il ne fait pas : ni régime, ni avis médical), bouton « Activer ». Pour un mineur : « Activer les conseils », qui passe en qualitatif sans rien demander. |
+| `disabled` | Explication (ce que fait le module, ce qu'il ne fait pas : ni un plan à suivre à la lettre, ni un avis médical), bouton « Activer ». Pour un mineur : « Activer les conseils », qui passe en qualitatif sans rien demander. |
 | `qualitative` | « Conseils sans chiffres », liste des fiches, Réglages (mode). Si la cause n'est pas le choix de la personne, une ligne neutre l'explique (mineur, plus de 78 ans, accord santé absent, écran à repasser, mode complet pas encore ouvert) avec l'action possible. |
 | `full` | Repères du jour ; bilan ; poids ; fiches ; réglages. |
 
