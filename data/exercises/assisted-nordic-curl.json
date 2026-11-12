@@ -1,10 +1,14 @@
 {
   "id": "assisted-nordic-curl",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Nordic assisté",
+  "aliases": [
+    "Nordic curl assisté",
+    "Assisted Nordic curl"
+  ],
   "movement_pattern": "knee_flexion",
   "mechanics": "isolation",
   "unilateral": false,
@@ -21,6 +25,50 @@
   ],
   "level": 1,
   "not_for_minors": false,
+  "stressed_joints": [
+    "knees"
+  ],
+  "instructions": [
+    "Mets-toi à genoux sur un coussin, chevilles bloquées sous un meuble lourd ou tenues par un partenaire.",
+    "Gaine le tronc et serre les fessiers pour aligner genoux, hanches et épaules.",
+    "Penche-toi lentement vers l'avant d'un seul bloc, en freinant avec l'arrière des cuisses.",
+    "Quand tu ne peux plus retenir la descente, réceptionne-toi sur les mains, bras fléchis.",
+    "Pousse sur les mains pour revenir à genoux, en t'aidant le moins possible."
+  ],
+  "key_points": [
+    "Descends le plus lentement possible : c'est le freinage qui fait le travail.",
+    "Garde les hanches en avant : le corps bouge d'un seul bloc, des genoux à la tête.",
+    "Les mains amortissent et t'aident à remonter ; elles ne remplacent pas le freinage."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Les hanches reculent et tu te plies en deux.",
+      "fix": "Serre les fessiers et garde les hanches en avant pendant toute la descente."
+    },
+    {
+      "mistake": "Tu tombes vite dès le début.",
+      "fix": "Freine dès le départ, et pose les mains plus tôt si tu ne contrôles plus."
+    },
+    {
+      "mistake": "Les chevilles se soulèvent pendant la descente.",
+      "fix": "Bloque-les sous un meuble plus lourd, ou demande au partenaire d'appuyer davantage."
+    }
+  ],
+  "safety": [
+    "Vérifie que le meuble ne bouge pas ; arrête si tes chevilles se libèrent.",
+    "Arrête la série si tu sens une douleur vive ou un tiraillement soudain à l'arrière de la cuisse.",
+    "Arrête si la pression sur les genoux devient douloureuse, même avec un coussin."
+  ],
+  "breathing": "Inspire à genoux, souffle lentement pendant la descente, puis inspire en revenant à genoux.",
   "chain_id": "nordic-curl",
-  "harder_id": "nordic-curl"
+  "harder_id": "nordic-curl",
+  "easier_tip": "Arrête la descente plus tôt, quand le freinage devient difficile, et reviens à genoux.",
+  "harder_tip": "Descends plus bas avant de poser les mains, puis passe au Nordic.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Matériel « sans matériel » : il faut bloquer les chevilles (meuble lourd ou partenaire), à confirmer. Assistance choisie : réception et poussée des mains ; un élastique d'assistance existe aussi. Mollets en secondaire discutables. Courbatures fortes les premières fois.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

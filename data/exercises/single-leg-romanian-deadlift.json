@@ -1,10 +1,14 @@
 {
   "id": "single-leg-romanian-deadlift",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Soulevé de terre roumain unipodal",
+  "aliases": [
+    "Single-leg Romanian deadlift",
+    "Soulevé de terre roumain sur une jambe"
+  ],
   "movement_pattern": "hip_hinge",
   "mechanics": "compound",
   "unilateral": true,
@@ -21,5 +25,55 @@
     []
   ],
   "level": 2,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "hips",
+    "ankles"
+  ],
+  "instructions": [
+    "Tiens-toi debout sur la jambe droite, genou légèrement plié, bras le long du corps.",
+    "Gaine le tronc et garde le dos neutre, ni rond ni creusé.",
+    "Penche le buste en avant et tends la jambe gauche vers l'arrière, dans le prolongement du dos.",
+    "Laisse les bras descendre vers le sol, sous les épaules.",
+    "Arrête quand l'arrière de la cuisse d'appui tire fort ou que le buste approche l'horizontale.",
+    "Remonte en poussant la hanche d'appui vers l'avant, sans poser le pied gauche si tu peux.",
+    "Fais toutes tes répétitions sur la jambe droite, puis change de côté."
+  ],
+  "key_points": [
+    "Ton bassin reste face au sol : la hanche de la jambe levée ne s'ouvre pas.",
+    "Buste et jambe arrière bougent d'un bloc, comme une balançoire.",
+    "Le genou d'appui garde la même légère flexion du début à la fin."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Le bassin pivote et la hanche de la jambe levée monte vers le plafond.",
+      "fix": "Pointe les orteils de la jambe arrière vers le sol pour garder le bassin de face."
+    },
+    {
+      "mistake": "Le dos s'arrondit pour aller chercher le sol.",
+      "fix": "Descends moins bas et garde le dos neutre, même si tes mains restent loin du sol."
+    },
+    {
+      "mistake": "Tu perds l'équilibre et poses le pied à chaque répétition.",
+      "fix": "Ralentis, fixe un point au sol devant toi, ou passe à la version avec appui."
+    },
+    {
+      "mistake": "Le genou d'appui se plie de plus en plus.",
+      "fix": "Garde la même légère flexion et recule davantage la hanche."
+    }
+  ],
+  "safety": [
+    "Arrête la série si tu perds souvent l'équilibre, et entraîne-toi près d'un mur.",
+    "Arrête si tu sens une douleur vive dans le bas du dos, la hanche ou l'arrière de la cuisse."
+  ],
+  "breathing": "Inspire en penchant le buste, souffle en remontant, sans bloquer ta respiration.",
+  "easier_tip": "Pose une main sur un mur, comme dans le soulevé de terre roumain unipodal avec appui.",
+  "harder_tip": "Descends en 3 secondes, marque une pause en bas, puis remonte sans poser le pied.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Hors chaîne, alors que la version avec appui (niveau 1) en serait la marche plus facile : chaîne à créer ? Niveau 2 discutable sans charge. Bas du dos non retenu en articulation car sans charge, chevilles retenues pour l'équilibre : à confirmer.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

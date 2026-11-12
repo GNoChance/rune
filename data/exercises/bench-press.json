@@ -1,10 +1,15 @@
 {
   "id": "bench-press",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Développé couché",
+  "aliases": [
+    "Développé couché à la barre",
+    "Bench press",
+    "Barbell bench press"
+  ],
   "movement_pattern": "horizontal_push",
   "mechanics": "compound",
   "unilateral": false,
@@ -25,5 +30,57 @@
     ]
   ],
   "level": 2,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "shoulders",
+    "elbows",
+    "wrists"
+  ],
+  "instructions": [
+    "Allonge-toi sur le banc plat, les yeux sous la barre, les pieds à plat au sol.",
+    "Prends la barre un peu plus large que tes épaules, poignets alignés avec les avant-bras.",
+    "Serre les omoplates et descends-les vers le bas du dos, puis décroche la barre bras tendus.",
+    "Amène la barre au-dessus de tes épaules, puis descends-la lentement vers le bas de la poitrine.",
+    "Touche légèrement la poitrine, les coudes en diagonale vers l'arrière, sans rebond.",
+    "Pousse la barre jusqu'à tendre les bras, puis repose-la sur les supports en fin de série."
+  ],
+  "key_points": [
+    "Les omoplates restent serrées et les fesses restent sur le banc.",
+    "Les poignets restent au-dessus des coudes, sans se casser vers l'arrière.",
+    "Les pieds poussent dans le sol pour te stabiliser."
+  ],
+  "mistakes": [
+    {
+      "mistake": "La barre rebondit sur la poitrine.",
+      "fix": "Freine la descente et marque un contact léger avant de pousser."
+    },
+    {
+      "mistake": "Les coudes partent sur les côtés, à hauteur des épaules.",
+      "fix": "Rapproche les coudes du corps pour qu'ils partent en diagonale vers l'arrière."
+    },
+    {
+      "mistake": "Les fesses décollent du banc pendant la poussée.",
+      "fix": "Garde les fesses posées, quitte à alléger la barre."
+    },
+    {
+      "mistake": "Les poignets se cassent vers l'arrière.",
+      "fix": "Place la barre au creux de la paume, juste au-dessus des avant-bras."
+    }
+  ],
+  "safety": [
+    "Règle les sécurités ou fais-toi surveiller ; arrête avant une répétition que tu ne finirais pas.",
+    "Arrête la série si tu sens une douleur vive à l'épaule, au coude ou au poignet.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Inspire en descendant la barre, souffle en poussant, sans bloquer ta respiration longtemps.",
+  "setup": "Règle les supports pour attraper la barre bras presque tendus. Règle les sécurités juste sous le niveau de ta poitrine allongée.",
+  "easier_tip": "Allège la barre, ou passe au développé couché aux haltères ou à la machine.",
+  "harder_tip": "Marque une pause d'une seconde sur la poitrine avant de pousser, sans rebond.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Muscles : triceps en principal ici, mais en secondaire dans les versions haltères et machine ; à harmoniser.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

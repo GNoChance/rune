@@ -1,10 +1,14 @@
 {
   "id": "reverse-lunge",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Fente arrière",
+  "aliases": [
+    "Fente en arrière",
+    "Reverse lunge"
+  ],
   "movement_pattern": "lunge",
   "mechanics": "compound",
   "unilateral": true,
@@ -22,7 +26,55 @@
   ],
   "level": 1,
   "not_for_minors": false,
+  "stressed_joints": [
+    "knees",
+    "hips"
+  ],
+  "instructions": [
+    "Tiens-toi debout, pieds écartés à largeur de hanches, les mains sur les hanches.",
+    "Fais un grand pas en arrière avec une jambe, en posant seulement l'avant du pied.",
+    "Plie les deux genoux pour descendre jusqu'à ce que le genou arrière frôle le sol.",
+    "Pousse dans le pied avant pour ramener la jambe arrière à côté de l'autre.",
+    "Fais toutes tes répétitions du même côté, puis change de jambe."
+  ],
+  "key_points": [
+    "La jambe avant fait le travail : pousse dans tout le pied, talon au sol.",
+    "Garde le buste vertical et le tronc gainé.",
+    "Le genou avant reste dans l'axe du pied, sans rentrer vers l'intérieur."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Le pas est trop court et le genou avant part loin devant.",
+      "fix": "Recule davantage la jambe pour garder le tibia avant presque vertical."
+    },
+    {
+      "mistake": "Le genou arrière tape le sol.",
+      "fix": "Freine la descente et arrête-toi juste au-dessus du sol."
+    },
+    {
+      "mistake": "Tu perds l'équilibre en reculant.",
+      "fix": "Garde les pieds écartés comme sur deux rails, ou tiens un mur d'une main."
+    },
+    {
+      "mistake": "Le buste se penche loin vers l'avant.",
+      "fix": "Redresse la poitrine et descends le genou arrière à la verticale."
+    }
+  ],
+  "safety": [
+    "Arrête la série si tu sens une douleur vive au genou ou à la hanche.",
+    "Arrête si tu perds l'équilibre plusieurs fois ; reprends en tenant un mur d'une main."
+  ],
+  "breathing": "Inspire en reculant et en descendant, souffle en poussant pour revenir debout.",
   "chain_id": "bodyweight-squat",
   "easier_id": "bodyweight-squat",
-  "harder_id": "bulgarian-split-squat"
+  "harder_id": "bulgarian-split-squat",
+  "easier_tip": "Reviens au squat au poids du corps, ou tiens un mur d'une main pour l'équilibre.",
+  "harder_tip": "Passe à la fente bulgare, le pied arrière posé sur une chaise ou un banc stable.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

@@ -1,10 +1,14 @@
 {
   "id": "kneeling-pike-push-up",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "B",
   "name": "Pompe pike sur les genoux",
+  "aliases": [
+    "Pompe pike à genoux",
+    "Kneeling pike push-up"
+  ],
   "movement_pattern": "vertical_push",
   "mechanics": "compound",
   "unilateral": false,
@@ -22,5 +26,49 @@
     []
   ],
   "level": 1,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "shoulders",
+    "wrists"
+  ],
+  "instructions": [
+    "Mets-toi à genoux, puis pose les mains au sol à largeur d'épaules, devant tes genoux.",
+    "Recule les mains et monte les hanches pour que le buste penche fortement vers le sol.",
+    "Plie les coudes pour amener le haut de ta tête vers le sol, devant tes mains.",
+    "Garde les coudes en diagonale vers l'arrière, pas sur les côtés.",
+    "Pousse dans le sol pour revenir bras tendus."
+  ],
+  "key_points": [
+    "Les hanches restent hautes : le buste descend vers le sol, pas vers l'avant.",
+    "Ta tête vise un point devant tes mains, pour former un triangle avec elles.",
+    "Descends seulement aussi bas que tu peux remonter proprement."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Les hanches descendent et le mouvement devient une pompe.",
+      "fix": "Rapproche tes mains de tes genoux et garde les hanches hautes."
+    },
+    {
+      "mistake": "Les coudes partent sur les côtés.",
+      "fix": "Garde les coudes en diagonale vers l'arrière."
+    },
+    {
+      "mistake": "La tête touche le sol entre les mains.",
+      "fix": "Vise un point devant tes mains et descends moins bas."
+    }
+  ],
+  "safety": [
+    "Arrête la série si tu sens une douleur vive à l'épaule, au coude ou au poignet.",
+    "Arrête si tu as la tête qui tourne en te relevant."
+  ],
+  "breathing": "Inspire en descendant, souffle en poussant pour remonter, sans bloquer ta respiration.",
+  "easier_tip": "Descends moins bas, ou pose un coussin sous tes genoux pour rester à l'aise.",
+  "harder_tip": "Passe à la pompe pike, genoux décollés et pieds au sol.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Hors chaîne alors qu'elle précède naturellement la pompe pike : la rattacher à la chaîne pike-push-up serait cohérent.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

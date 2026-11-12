@@ -1,10 +1,14 @@
 {
   "id": "machine-chest-press",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Développé couché à la machine",
+  "aliases": [
+    "Chest press",
+    "Presse à pectoraux"
+  ],
   "movement_pattern": "horizontal_push",
   "mechanics": "compound",
   "unilateral": false,
@@ -23,5 +27,50 @@
     ]
   ],
   "level": 1,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "shoulders"
+  ],
+  "instructions": [
+    "Assieds-toi, le dos plaqué contre le dossier, les pieds à plat au sol.",
+    "Saisis les poignées, poignets alignés avec les avant-bras.",
+    "Serre légèrement les omoplates contre le dossier.",
+    "Pousse les poignées devant toi jusqu'à tendre les bras, sans verrouiller les coudes.",
+    "Reviens lentement jusqu'à avoir les mains près de la poitrine, sans laisser la charge se poser."
+  ],
+  "key_points": [
+    "Le dos reste plaqué contre le dossier pendant toute la série.",
+    "Les coudes restent un peu sous la hauteur des épaules.",
+    "Le retour est aussi lent que la poussée, voire plus."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Le dos décolle du dossier pendant la poussée.",
+      "fix": "Allège la charge et garde les omoplates contre le dossier."
+    },
+    {
+      "mistake": "La charge claque à chaque retour.",
+      "fix": "Freine le retour et arrête-toi juste avant que les plaques se touchent."
+    },
+    {
+      "mistake": "Les épaules montent vers les oreilles.",
+      "fix": "Descends les épaules et serre légèrement les omoplates avant de pousser."
+    }
+  ],
+  "safety": [
+    "Arrête la série si tu sens une douleur vive à l'épaule, au coude ou au poignet.",
+    "Arrête si l'avant de l'épaule tire fort en fin de retour ; réduis l'amplitude.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Inspire pendant le retour, souffle en poussant, sans bloquer ta respiration.",
+  "setup": "Règle le siège pour que les poignées arrivent au milieu de ta poitrine. Si la machine le permet, règle le départ pour ne pas trop étirer les épaules.",
+  "easier_tip": "Allège la charge, ou arrête le retour un peu avant la poitrine.",
+  "harder_tip": "Reviens en 3 secondes et marque une pause d'une seconde mains près de la poitrine.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

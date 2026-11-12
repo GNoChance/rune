@@ -1,10 +1,14 @@
 {
   "id": "copenhagen-plank-short-lever",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Planche de Copenhague genou en appui",
+  "aliases": [
+    "Planche de Copenhague courte",
+    "Short lever Copenhagen plank"
+  ],
   "movement_pattern": "hip_adduction_abduction",
   "mechanics": "isolation",
   "unilateral": true,
@@ -27,6 +31,52 @@
   ],
   "level": 1,
   "not_for_minors": false,
+  "stressed_joints": [
+    "hips"
+  ],
+  "instructions": [
+    "Allonge-toi sur le côté gauche près d'un banc plat ou d'une chaise stable, l'avant-bras gauche au sol sous l'épaule.",
+    "Pose l'intérieur du genou droit sur le banc, jambe droite pliée.",
+    "Laisse la jambe gauche sous le banc, posée au sol.",
+    "Pousse dans l'avant-bras et serre le genou droit vers le banc pour soulever les hanches.",
+    "Décolle la jambe gauche du sol et aligne tête, bassin et genoux, tronc gainé.",
+    "Tiens le temps prévu, puis redescends doucement et fais la même chose sur le côté droit."
+  ],
+  "key_points": [
+    "C'est le genou posé sur le banc qui te porte : serre-le vers le bas.",
+    "Les hanches restent hautes, empilées l'une au-dessus de l'autre.",
+    "L'épaule d'appui reste au-dessus du coude, sans s'affaisser."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Les hanches tombent vers le sol pendant le maintien.",
+      "fix": "Raccourcis le maintien et serre davantage le genou contre le banc."
+    },
+    {
+      "mistake": "Le bassin bascule vers l'avant ou vers l'arrière.",
+      "fix": "Empile les hanches l'une au-dessus de l'autre, le ventre face au mur d'en face."
+    },
+    {
+      "mistake": "L'épaule d'appui s'enfonce et remonte vers l'oreille.",
+      "fix": "Pousse le sol avec l'avant-bras pour éloigner l'épaule de l'oreille."
+    }
+  ],
+  "safety": [
+    "Arrête tout de suite si tu sens une douleur vive à l'intérieur de la cuisse, à l'aine ou au genou.",
+    "Vérifie que le banc ou la chaise ne glisse pas ; arrête s'il bouge.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Respire calmement et régulièrement pendant tout le maintien, sans bloquer ta respiration.",
+  "setup": "Cale le banc ou la chaise contre un mur pour qu'il ne glisse pas. Pose une serviette pliée sous le genou si l'appui est dur.",
   "chain_id": "copenhagen-plank",
-  "harder_id": "copenhagen-plank"
+  "harder_id": "copenhagen-plank",
+  "easier_tip": "Laisse le pied du dessous effleurer le sol pour t'aider, ou raccourcis le maintien.",
+  "harder_tip": "Pose la cheville sur le banc au lieu du genou : c'est la planche de Copenhague.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Hanches seules en articulation sollicitée ; l'épaule d'appui travaille aussi, à trancher. La jambe du dessous décolle du sol dans cette version ; à confirmer pour un niveau 1.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

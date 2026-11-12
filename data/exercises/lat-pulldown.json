@@ -1,10 +1,14 @@
 {
   "id": "lat-pulldown",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Tirage vertical",
+  "aliases": [
+    "Tirage poitrine",
+    "Lat pulldown"
+  ],
   "movement_pattern": "vertical_pull",
   "mechanics": "compound",
   "unilateral": false,
@@ -26,5 +30,55 @@
     ]
   ],
   "level": 1,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "shoulders",
+    "elbows"
+  ],
+  "instructions": [
+    "Saisis la barre mains plus écartées que les épaules, paumes vers l'avant.",
+    "Assieds-toi en tenant la barre, cuisses calées sous le boudin, bras tendus.",
+    "Penche le buste très légèrement en arrière et sors la poitrine.",
+    "Abaisse les épaules, puis tire la barre vers le haut de ta poitrine, coudes vers tes flancs.",
+    "Remonte la barre lentement jusqu'à avoir les bras tendus.",
+    "En fin de série, laisse la barre remonter jusqu'au bout avant de te lever."
+  ],
+  "key_points": [
+    "La barre descend devant ton visage, jamais derrière la nuque.",
+    "Tire avec les coudes, pas avec les mains.",
+    "Le buste reste presque immobile pendant toute la série."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Tu te jettes en arrière pour descendre la barre.",
+      "fix": "Choisis une charge plus légère et garde le buste presque fixe."
+    },
+    {
+      "mistake": "La barre descend derrière la tête.",
+      "fix": "Tire-la devant toi, vers le haut de la poitrine."
+    },
+    {
+      "mistake": "Les épaules montent vers les oreilles en haut.",
+      "fix": "Abaisse les épaules avant chaque tirage."
+    },
+    {
+      "mistake": "La charge remonte d'un coup et les plaques claquent.",
+      "fix": "Freine la remontée sur 2 secondes."
+    }
+  ],
+  "safety": [
+    "Arrête la série si tu sens une douleur vive à l'épaule ou au coude.",
+    "Arrête si des picotements apparaissent dans les mains ou les bras."
+  ],
+  "breathing": "Souffle en tirant la barre vers la poitrine, inspire en la laissant remonter.",
+  "setup": "Règle le boudin pour qu'il bloque le haut de tes cuisses, pieds à plat au sol. Sur une poulie réglable, place-la tout en haut avec une barre longue.",
+  "easier_tip": "Choisis une charge plus légère, ou passe au tirage vertical à l'élastique.",
+  "harder_tip": "Marque une pause d'une seconde barre en bas, puis remonte en 3 secondes.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Option poulie réglable : le boudin de cuisses n'existe pas toujours, le setup le signale à peine.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

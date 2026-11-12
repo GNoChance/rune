@@ -1,10 +1,14 @@
 {
   "id": "jump-landing",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Réception de saut",
+  "aliases": [
+    "Atterrissage de saut",
+    "Jump landing"
+  ],
   "movement_pattern": "plyometrics",
   "mechanics": "compound",
   "unilateral": false,
@@ -23,6 +27,52 @@
   ],
   "level": 1,
   "not_for_minors": false,
+  "stressed_joints": [
+    "knees",
+    "ankles"
+  ],
+  "instructions": [
+    "Tiens-toi debout, pieds à largeur de hanches, bras le long du corps.",
+    "Plie un peu les genoux et les hanches, en lançant les bras vers l'arrière.",
+    "Saute vers le haut, à faible hauteur, en lançant les bras vers l'avant.",
+    "Reçois-toi sur l'avant des pieds, puis pose les talons.",
+    "Amortis en pliant genoux et hanches, comme pour t'asseoir un peu.",
+    "Fige la position 2 secondes, genoux dans l'axe des pieds, puis redresse-toi."
+  ],
+  "key_points": [
+    "Vise une réception silencieuse : plus elle est douce, mieux c'est.",
+    "Les genoux restent dans l'axe des pieds, sans rentrer vers l'intérieur.",
+    "Saute bas : c'est la réception que tu travailles, pas la hauteur."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Tu atterris jambes raides, avec un bruit sourd.",
+      "fix": "Plie davantage les genoux et les hanches dès que les pieds touchent le sol."
+    },
+    {
+      "mistake": "Les genoux rentrent vers l'intérieur à la réception.",
+      "fix": "Pousse les genoux vers l'extérieur, dans l'axe des pieds."
+    },
+    {
+      "mistake": "Le buste plonge vers l'avant à la réception.",
+      "fix": "Garde la poitrine haute et le regard devant toi."
+    }
+  ],
+  "safety": [
+    "Arrête si tu sens une douleur vive au genou, à la cheville ou au pied.",
+    "Saute sur un sol plat et non glissant, en chaussures ; arrête si tu perds l'équilibre.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Inspire avant de sauter, souffle à la réception, puis respire calmement pendant le maintien.",
   "chain_id": "jump-landing",
-  "harder_id": "squat-jump"
+  "harder_id": "squat-jump",
+  "easier_tip": "Ne saute pas : monte sur la pointe des pieds, puis redescends en amortissant.",
+  "harder_tip": "Passe au squat sauté, en enchaînant les sauts.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Saut bas sur place, réception maintenue 2 secondes : faible impact, niveau 1 et ouvert aux mineurs cohérents. Genoux et chevilles en articulations (fiche sensible).",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

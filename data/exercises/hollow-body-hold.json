@@ -1,10 +1,14 @@
 {
   "id": "hollow-body-hold",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Hollow body",
+  "aliases": [
+    "Hollow hold",
+    "Hollow body hold"
+  ],
   "movement_pattern": "core_anti_extension",
   "mechanics": "isolation",
   "unilateral": false,
@@ -21,6 +25,48 @@
   ],
   "level": 1,
   "not_for_minors": false,
+  "stressed_joints": [],
+  "instructions": [
+    "Allonge-toi sur le dos, bras le long du corps, jambes tendues.",
+    "Serre le ventre pour plaquer le bas du dos au sol.",
+    "Décolle les épaules et la tête du sol, le menton légèrement rentré.",
+    "Lève les jambes tendues, pieds joints, juste assez haut pour garder le bas du dos plaqué.",
+    "Allonge les bras au-dessus de la tête si le bas du dos reste au sol.",
+    "Tiens la position le temps prévu, puis repose doucement jambes et épaules."
+  ],
+  "key_points": [
+    "Le bas du dos reste plaqué au sol pendant toute la tenue.",
+    "Plus les bras et les jambes sont loin et bas, plus la position est dure.",
+    "Garde la nuque relâchée, le regard vers tes pieds."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Le bas du dos se décolle du sol.",
+      "fix": "Monte les jambes plus haut ou plie les genoux jusqu'à le plaquer de nouveau."
+    },
+    {
+      "mistake": "Tu tires sur la nuque pour lever la tête.",
+      "fix": "Relâche la nuque et décolle les épaules en serrant le ventre."
+    },
+    {
+      "mistake": "Tu bloques ta respiration.",
+      "fix": "Respire par petites inspirations, sans relâcher le ventre."
+    }
+  ],
+  "safety": [
+    "Arrête si tu sens une douleur vive dans le bas du dos ou dans la nuque.",
+    "Arrête la tenue dès que le bas du dos se décolle et que tu ne peux plus le plaquer."
+  ],
+  "breathing": "Respire calmement par petites inspirations, sans relâcher le ventre ni bloquer ta respiration.",
   "chain_id": "front-plank",
-  "easier_id": "front-plank"
+  "easier_id": "front-plank",
+  "easier_tip": "Plie les genoux à angle droit et garde les bras le long du corps, ou reviens à la planche.",
+  "harder_tip": "Tends les bras au-dessus de la tête et descends les jambes plus près du sol.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Aucune articulation fortement sollicitée selon moi ; le bas du dos peut se discuter s'il se décolle. Niveau 1 discutable : la position complète est exigeante pour un débutant.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

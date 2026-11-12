@@ -1,10 +1,14 @@
 {
   "id": "band-pallof-press",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Pallof press à l'élastique",
+  "aliases": [
+    "Anti-rotation à l'élastique",
+    "Band Pallof press"
+  ],
   "movement_pattern": "core_anti_rotation",
   "mechanics": "isolation",
   "unilateral": true,
@@ -21,5 +25,49 @@
     ]
   ],
   "level": 1,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [],
+  "instructions": [
+    "Tiens-toi de profil à l'ancrage, pieds à largeur de hanches, genoux légèrement pliés.",
+    "Saisis l'élastique à deux mains et ramène-les contre le milieu de ta poitrine.",
+    "Écarte-toi de l'ancrage jusqu'à sentir l'élastique tirer, mains contre la poitrine.",
+    "Gaine le tronc et serre les fessiers, épaules face à l'avant.",
+    "Tends les bras droit devant toi, sans laisser le buste tourner vers l'ancrage.",
+    "Tiens 2 secondes bras tendus, puis ramène les mains contre la poitrine.",
+    "Fais toutes tes répétitions, puis place l'ancrage de l'autre côté et recommence."
+  ],
+  "key_points": [
+    "Le travail, c'est de ne pas tourner : buste et bassin restent face à l'avant.",
+    "Les mains partent et reviennent en ligne droite, au centre de la poitrine.",
+    "Écarte-toi de l'ancrage pour plus de tension, rapproche-toi pour moins."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Le buste tourne vers l'ancrage quand les bras se tendent.",
+      "fix": "Rapproche-toi de l'ancrage pour réduire la tension et serre davantage le ventre."
+    },
+    {
+      "mistake": "Les mains dérivent vers l'ancrage.",
+      "fix": "Vise un point droit devant toi et garde les mains alignées dessus."
+    },
+    {
+      "mistake": "Les épaules montent vers les oreilles.",
+      "fix": "Abaisse les épaules et garde le cou relâché."
+    }
+  ],
+  "safety": [
+    "Vérifie l'élastique et son attache avant la série ; arrête s'il est fendu ou s'il glisse.",
+    "Arrête la série si tu sens une douleur vive dans le dos ou à l'épaule."
+  ],
+  "breathing": "Souffle en tendant les bras, inspire en les ramenant, sans bloquer ta respiration.",
+  "setup": "Attache l'élastique à un point fixe solide, à hauteur de poitrine : poteau, espalier ou ancrage de porte bien fermée.",
+  "easier_tip": "Rapproche-toi de l'ancrage, ou écarte un peu plus les pieds.",
+  "harder_tip": "Écarte-toi de l'ancrage, rapproche les pieds, ou tiens plus longtemps bras tendus.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Le matériel ne liste que l'élastique, alors qu'il faut un point d'ancrage à hauteur de poitrine. Aucune articulation retenue : à confirmer.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

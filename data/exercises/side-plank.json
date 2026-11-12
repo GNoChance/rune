@@ -1,10 +1,14 @@
 {
   "id": "side-plank",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Planche latérale",
+  "aliases": [
+    "Gainage latéral",
+    "Side plank"
+  ],
   "movement_pattern": "core_anti_rotation",
   "mechanics": "isolation",
   "unilateral": true,
@@ -21,5 +25,48 @@
     []
   ],
   "level": 1,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "shoulders"
+  ],
+  "instructions": [
+    "Allonge-toi sur le côté, le coude sous l'épaule, jambes tendues et pieds l'un sur l'autre.",
+    "Gaine le tronc et serre les fessiers.",
+    "Soulève les hanches jusqu'à aligner chevilles, hanches et épaules.",
+    "Tiens la position la durée prévue en respirant calmement.",
+    "Repose les hanches, puis tourne-toi et fais la même durée de l'autre côté."
+  ],
+  "key_points": [
+    "Tes hanches restent hautes : chevilles, hanches et épaules forment une ligne.",
+    "Pousse le sol avec l'avant-bras pour éloigner l'épaule de l'oreille.",
+    "Garde le bassin de profil, sans le laisser tourner vers le sol."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Les hanches s'affaissent vers le sol.",
+      "fix": "Remonte les hanches et serre les fessiers ; raccourcis la tenue si besoin."
+    },
+    {
+      "mistake": "Les fesses partent en arrière et le corps se plie.",
+      "fix": "Avance les hanches pour les aligner avec les chevilles et les épaules."
+    },
+    {
+      "mistake": "L'épaule s'écrase vers l'oreille.",
+      "fix": "Pousse le sol avec l'avant-bras et garde le coude sous l'épaule."
+    }
+  ],
+  "safety": [
+    "Arrête si tu sens une douleur vive à l'épaule, au coude ou dans le bas du dos.",
+    "Pose un tapis sous le coude ; arrête si l'appui reste douloureux."
+  ],
+  "breathing": "Respire calmement pendant toute la tenue, sans bloquer ta respiration.",
+  "easier_tip": "Pose les genoux au sol, pieds derrière toi, comme dans la planche latérale sur les genoux.",
+  "harder_tip": "Lève la jambe du dessus et tiens-la tendue, les hanches toujours hautes.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Épaules retenues pour l'épaule d'appui : à confirmer. Hors chaîne alors que la version sur les genoux la précède naturellement : chaîne à créer ?",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

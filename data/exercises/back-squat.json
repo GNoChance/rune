@@ -1,10 +1,14 @@
 {
   "id": "back-squat",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Squat barre",
+  "aliases": [
+    "Back squat",
+    "Squat à la barre"
+  ],
   "movement_pattern": "squat",
   "mechanics": "compound",
   "unilateral": false,
@@ -25,5 +29,57 @@
     ]
   ],
   "level": 2,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "knees",
+    "hips",
+    "lower_back"
+  ],
+  "instructions": [
+    "Place-toi sous la barre, posée sur le haut du dos sous la nuque, et serre-la à deux mains.",
+    "Pousse avec les jambes pour décrocher la barre, puis recule de deux ou trois petits pas.",
+    "Écarte les pieds à largeur d'épaules, pointes légèrement vers l'extérieur, et gaine le tronc.",
+    "Descends en poussant les hanches en arrière et en pliant les genoux, dos neutre, ni rond ni creusé.",
+    "Descends jusqu'aux cuisses à peu près parallèles au sol, tant que ton dos reste neutre.",
+    "Pousse dans tout le pied pour remonter, puis avance pour reposer la barre sur les supports."
+  ],
+  "key_points": [
+    "La barre reste au-dessus du milieu du pied, à la descente comme à la remontée.",
+    "Les genoux suivent la direction des pointes de pieds.",
+    "Garde le tronc gainé et la poitrine face à l'avant pendant toute la répétition."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Le dos s'arrondit en bas du mouvement.",
+      "fix": "Descends moins bas et allège la barre jusqu'à garder le dos neutre."
+    },
+    {
+      "mistake": "Les genoux rentrent vers l'intérieur en remontant.",
+      "fix": "Pousse les genoux dans l'axe des pieds."
+    },
+    {
+      "mistake": "Les hanches remontent avant la poitrine.",
+      "fix": "Monte poitrine et hanches ensemble, en poussant le haut du dos contre la barre."
+    },
+    {
+      "mistake": "La barre appuie sur la nuque.",
+      "fix": "Pose-la plus bas, sur le haut du dos, omoplates serrées pour lui faire une base."
+    }
+  ],
+  "safety": [
+    "Règle toujours les sécurités ; si tu bloques en bas, pose la barre dessus et arrête.",
+    "Arrête la série si tu sens une douleur vive au genou, à la hanche ou dans le bas du dos.",
+    "Arrête si une douleur descend dans la jambe ou si tu as la tête qui tourne."
+  ],
+  "breathing": "Inspire et gaine le tronc avant de descendre, puis souffle une fois passé le point dur de la remontée.",
+  "setup": "Règle les supports de la cage à hauteur du haut de ta poitrine. Règle les sécurités juste sous ta position la plus basse.",
+  "easier_tip": "Travaille d'abord le squat goblet, ou descends jusqu'à une box placée derrière toi.",
+  "harder_tip": "Descends en 3 secondes et marque une pause d'une seconde en bas, sans relâcher le gainage.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Bas du dos en articulation sollicitée (barre sur le dos). Box en option dans easier_tip, absente du matériel de la fiche.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

@@ -1,10 +1,14 @@
 {
   "id": "negative-pull-up",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Traction négative",
+  "aliases": [
+    "Traction excentrique",
+    "Negative pull-up"
+  ],
   "movement_pattern": "vertical_pull",
   "mechanics": "compound",
   "unilateral": false,
@@ -24,6 +28,52 @@
   ],
   "level": 1,
   "not_for_minors": false,
+  "stressed_joints": [
+    "shoulders",
+    "elbows"
+  ],
+  "instructions": [
+    "Place une chaise ou un banc stable sous la barre de traction.",
+    "Monte dessus et attrape la barre, mains un peu plus écartées que les épaules, paumes vers l'avant.",
+    "Pousse sur tes jambes pour amener le menton au-dessus de la barre, coudes pliés.",
+    "Quitte le support, gaine le tronc et serre les jambes sous toi.",
+    "Descends le plus lentement possible, en 3 à 5 secondes, jusqu'à tendre les bras.",
+    "Remets les pieds sur le support et remonte en position haute pour la répétition suivante."
+  ],
+  "key_points": [
+    "La descente reste régulière du début à la fin, sans chute à mi-chemin.",
+    "Les épaules restent basses, même bras tendus.",
+    "Ne saute pas depuis le sol pour monter : utilise le support."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Tu freines au début, puis tu tombes d'un coup en fin de descente.",
+      "fix": "Garde la même vitesse jusqu'en bas ; arrête la série quand tu ne contrôles plus la fin."
+    },
+    {
+      "mistake": "Les épaules remontent vers les oreilles en bas du mouvement.",
+      "fix": "Garde les épaules basses et arrête la descente juste avant qu'elles ne lâchent."
+    },
+    {
+      "mistake": "Le corps se balance pendant la descente.",
+      "fix": "Serre les jambes, gaine le tronc et quitte le support doucement."
+    }
+  ],
+  "safety": [
+    "Vérifie que le support et la barre sont stables ; arrête si l'un d'eux bouge.",
+    "Arrête la série si tu sens une douleur vive à l'épaule ou au coude.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Inspire en haut, puis souffle doucement pendant toute la descente.",
   "chain_id": "pull-up",
-  "harder_id": "band-assisted-pull-up"
+  "harder_id": "band-assisted-pull-up",
+  "easier_tip": "Descends en 2 secondes seulement, ou garde un pied qui frôle le support pour t'aider.",
+  "harder_tip": "Passe à la traction assistée à l'élastique pour travailler aussi la montée.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. La chaise ou le banc pour monter n'est pas dans les options de matériel ([[pull_up_bar]]). Épaules et coudes en articulations sollicitées (fiche sensible) ; la descente lente charge beaucoup les coudes, courbatures fortes possibles les premières fois.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

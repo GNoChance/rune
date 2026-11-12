@@ -1,10 +1,14 @@
 {
   "id": "copenhagen-plank",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Planche de Copenhague",
+  "aliases": [
+    "Copenhagen plank",
+    "Gainage de Copenhague"
+  ],
   "movement_pattern": "hip_adduction_abduction",
   "mechanics": "isolation",
   "unilateral": true,
@@ -27,7 +31,54 @@
   ],
   "level": 2,
   "not_for_minors": false,
+  "stressed_joints": [
+    "hips",
+    "knees"
+  ],
+  "instructions": [
+    "Allonge-toi sur le côté gauche près d'un banc plat ou d'une chaise stable, l'avant-bras gauche au sol sous l'épaule.",
+    "Pose l'intérieur de la cheville droite sur le banc, jambe droite tendue.",
+    "Laisse la jambe gauche sous le banc, posée au sol.",
+    "Pousse dans l'avant-bras et serre la jambe droite vers le banc pour soulever les hanches.",
+    "Décolle la jambe gauche du sol et aligne tête, bassin et pieds, tronc gainé.",
+    "Tiens le temps prévu, puis redescends doucement et fais la même chose sur le côté droit."
+  ],
+  "key_points": [
+    "C'est la jambe posée sur le banc qui te porte : serre-la vers le bas.",
+    "Les hanches restent hautes, le corps en ligne de la tête aux pieds.",
+    "L'épaule d'appui reste au-dessus du coude, sans s'affaisser."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Les hanches tombent vers le sol pendant le maintien.",
+      "fix": "Raccourcis le maintien ou reviens à la version genou en appui."
+    },
+    {
+      "mistake": "Le bassin bascule vers l'avant ou vers l'arrière.",
+      "fix": "Empile les hanches l'une au-dessus de l'autre, le ventre face au mur d'en face."
+    },
+    {
+      "mistake": "Le genou de la jambe posée se plie ou se tord.",
+      "fix": "Garde la jambe du dessus tendue, la cheville bien à plat sur le banc."
+    }
+  ],
+  "safety": [
+    "Arrête tout de suite si tu sens une douleur vive à l'intérieur de la cuisse, à l'aine ou au genou.",
+    "Vérifie que le banc ou la chaise ne glisse pas ; arrête s'il bouge.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Respire calmement et régulièrement pendant tout le maintien, sans bloquer ta respiration.",
+  "setup": "Cale le banc ou la chaise contre un mur pour qu'il ne glisse pas. Pose une serviette pliée sous la cheville si l'appui est dur.",
   "chain_id": "copenhagen-plank",
   "easier_id": "copenhagen-plank-short-lever",
-  "harder_id": "copenhagen-plank-leg-raise"
+  "harder_id": "copenhagen-plank-leg-raise",
+  "easier_tip": "Pose l'intérieur du genou sur le banc au lieu de la cheville : c'est la version genou en appui.",
+  "harder_tip": "Monte la jambe du dessous jusqu'au banc et garde-la là : c'est la version avec levée de jambe.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Appui à la cheville, jambe tendue : le genou de la jambe posée est très sollicité sur le côté, d'où genoux en articulations (fiche sensible). Épaule d'appui non retenue, à trancher.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

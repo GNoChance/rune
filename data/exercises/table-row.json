@@ -1,10 +1,14 @@
 {
   "id": "table-row",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Rowing sous la table",
+  "aliases": [
+    "Tirage sous la table",
+    "Table row"
+  ],
   "movement_pattern": "horizontal_pull",
   "mechanics": "compound",
   "unilateral": false,
@@ -24,5 +28,50 @@
     ]
   ],
   "level": 1,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "shoulders"
+  ],
+  "instructions": [
+    "Allonge-toi sur le dos sous la table, la poitrine juste sous le bord.",
+    "Attrape le bord à deux mains, un peu plus large que les épaules.",
+    "Plie les genoux, pieds à plat au sol, et soulève les hanches pour aligner genoux, bassin et épaules.",
+    "Gaine le tronc et serre les fessiers pour garder cette ligne.",
+    "Tire la poitrine vers le bord en ramenant les coudes vers l'arrière.",
+    "Redescends lentement jusqu'à tendre les bras, sans poser les fesses."
+  ],
+  "key_points": [
+    "Le corps monte d'un seul bloc, la poitrine en premier.",
+    "Les épaules restent basses, loin des oreilles.",
+    "Plus tes pieds sont loin, plus l'exercice est dur."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Les fesses tombent vers le sol pendant la montée.",
+      "fix": "Serre les fessiers et le ventre ; rapproche les pieds si la ligne casse encore."
+    },
+    {
+      "mistake": "Le menton part vers le bord avant la poitrine.",
+      "fix": "Garde la nuque longue et amène la poitrine vers le bord."
+    },
+    {
+      "mistake": "Tu ne plies les bras qu'à moitié.",
+      "fix": "Monte jusqu'à ce que la poitrine frôle le bord, quitte à rapprocher les pieds."
+    }
+  ],
+  "safety": [
+    "Arrête tout de suite si la table bouge, bascule ou craque.",
+    "Arrête la série si tu sens une douleur vive aux doigts, au coude ou à l'épaule."
+  ],
+  "breathing": "Souffle en tirant la poitrine vers le bord, inspire en redescendant.",
+  "setup": "Choisis une table lourde et solide, sans rallonge. Avant la série, tire sur le bord pour vérifier qu'elle ne bascule pas.",
+  "easier_tip": "Rapproche les pieds des fesses, ou fais le rowing à l'élastique.",
+  "harder_tip": "Tends les jambes, talons au sol, ou marque une pause de 2 secondes en haut.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Le risque principal est la table qui bascule sur la personne : à valider par la relecture. Épaules en articulation sollicitée, à confirmer.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

@@ -1,10 +1,14 @@
 {
   "id": "chair-squat",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Squat sur chaise",
+  "aliases": [
+    "Assis-debout",
+    "Chair squat"
+  ],
   "movement_pattern": "squat",
   "mechanics": "compound",
   "unilateral": false,
@@ -30,6 +34,52 @@
   ],
   "level": 1,
   "not_for_minors": false,
+  "stressed_joints": [
+    "knees",
+    "hips"
+  ],
+  "instructions": [
+    "Tiens-toi debout devant l'assise, dos à elle, pieds écartés à largeur d'épaules.",
+    "Tends les bras devant toi ou croise-les sur la poitrine.",
+    "Descends en poussant les hanches en arrière et en pliant les genoux, le buste légèrement penché.",
+    "Touche l'assise du bout des fesses, sans t'asseoir ni relâcher les jambes.",
+    "Pousse dans tout le pied pour te relever jusqu'à te tenir debout, fessiers serrés."
+  ],
+  "key_points": [
+    "Garde les talons au sol, à la descente comme à la remontée.",
+    "Les genoux suivent la direction des pointes de pieds.",
+    "L'assise te sert de repère de profondeur, pas de siège pour te reposer."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Tu te laisses tomber sur l'assise.",
+      "fix": "Freine la descente jusqu'au contact, en 2 secondes environ."
+    },
+    {
+      "mistake": "Les genoux rentrent vers l'intérieur quand tu te relèves.",
+      "fix": "Pousse les genoux dans l'axe des pieds pendant toute la remontée."
+    },
+    {
+      "mistake": "Tu te balances vers l'avant pour te relever.",
+      "fix": "Recule un peu les pieds vers l'assise et pousse dans le sol, sans élan."
+    }
+  ],
+  "safety": [
+    "Vérifie que l'assise ne bouge pas ; arrête si elle glisse ou bascule.",
+    "Arrête la série si tu sens une douleur vive au genou ou à la hanche.",
+    "Arrête si tu as la tête qui tourne en te relevant."
+  ],
+  "breathing": "Inspire en descendant vers l'assise, souffle en te relevant, sans bloquer ta respiration.",
+  "setup": "Place la chaise, le banc plat ou la box contre un mur pour qu'il ne glisse pas. L'assise arrive à peu près à hauteur de tes genoux.",
   "chain_id": "bodyweight-squat",
-  "harder_id": "bodyweight-squat"
+  "harder_id": "bodyweight-squat",
+  "easier_tip": "Choisis une assise plus haute, ou aide-toi des mains sur les cuisses pour te relever.",
+  "harder_tip": "Choisis une assise plus basse, puis passe au squat au poids du corps, sans assise.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Genoux et hanches repris du reste de la chaîne ; à confirmer pour cette version facile, peu chargée.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

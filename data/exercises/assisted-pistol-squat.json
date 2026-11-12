@@ -1,10 +1,14 @@
 {
   "id": "assisted-pistol-squat",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Squat sur une jambe assisté",
+  "aliases": [
+    "Pistol squat assisté",
+    "Assisted pistol squat"
+  ],
   "movement_pattern": "lunge",
   "mechanics": "compound",
   "unilateral": true,
@@ -22,6 +26,57 @@
   ],
   "level": 2,
   "not_for_minors": false,
+  "stressed_joints": [
+    "knees",
+    "hips",
+    "ankles"
+  ],
+  "instructions": [
+    "Tiens-toi face à un encadrement de porte ou un support fixe que tu peux agripper à deux mains.",
+    "Passe le poids sur une jambe et tends l'autre devant toi, pied décollé du sol.",
+    "Descends lentement sur la jambe d'appui, hanches en arrière, en te retenant avec les mains.",
+    "Descends aussi bas que tu peux en gardant le talon au sol et le dos neutre, ni rond ni creusé.",
+    "Pousse dans tout le pied pour remonter, en tirant le moins possible avec les bras.",
+    "Fais toutes tes répétitions sur cette jambe, puis change de côté."
+  ],
+  "key_points": [
+    "Les bras aident, la jambe d'appui travaille : tire juste ce qu'il faut pour réussir.",
+    "Le genou d'appui suit la direction du pied, sans rentrer vers l'intérieur.",
+    "Garde le talon d'appui au sol pendant toute la descente."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Tu te laisses tomber en bas du mouvement.",
+      "fix": "Freine toute la descente avec la jambe et les mains, en 2 à 3 secondes."
+    },
+    {
+      "mistake": "Les bras font presque tout le travail pour remonter.",
+      "fix": "Descends moins bas, là où ta jambe peut encore te remonter."
+    },
+    {
+      "mistake": "Le talon d'appui décolle.",
+      "fix": "Descends moins bas et recule un peu plus les hanches."
+    },
+    {
+      "mistake": "Le pied libre traîne au sol.",
+      "fix": "Lève la jambe libre un peu plus haut, ou plie-la légèrement devant toi."
+    }
+  ],
+  "safety": [
+    "Vérifie que ta prise est solide ; arrête si le support bouge ou si tes mains glissent.",
+    "Arrête la série si tu sens une douleur vive au genou, à la hanche ou à la cheville.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Inspire en descendant, souffle en poussant pour remonter, sans bloquer ta respiration.",
   "chain_id": "bodyweight-squat",
-  "easier_id": "bulgarian-split-squat"
+  "easier_id": "bulgarian-split-squat",
+  "easier_tip": "Reviens à la fente bulgare, ou descends seulement jusqu'à une chaise placée derrière toi.",
+  "harder_tip": "Tiens-toi d'une seule main, puis du bout des doigts, pour réduire l'aide des bras.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Matériel « sans matériel » : il faut tout de même un support fixe à agripper (encadrement de porte, rampe), à confirmer. Chevilles ajoutées pour la grande flexion en bas. Le pistol complet serait de niveau 3 ; le niveau 2 me paraît juste pour la version assistée.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

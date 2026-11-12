@@ -1,10 +1,14 @@
 {
   "id": "romanian-deadlift",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Soulevé de terre roumain",
+  "aliases": [
+    "Romanian deadlift",
+    "Soulevé de terre roumain à la barre"
+  ],
   "movement_pattern": "hip_hinge",
   "mechanics": "compound",
   "unilateral": false,
@@ -24,5 +28,57 @@
     ]
   ],
   "level": 2,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "lower_back",
+    "hips"
+  ],
+  "instructions": [
+    "Tiens-toi debout, pieds à largeur de hanches, la barre en mains devant les cuisses.",
+    "Garde les mains juste à l'extérieur des cuisses, paumes vers toi, bras tendus.",
+    "Plie légèrement les genoux, puis garde cette flexion pendant toute la série.",
+    "Gaine le tronc et garde le dos neutre, ni rond ni creusé.",
+    "Recule les hanches et penche le buste en avant, la barre glissant le long des cuisses.",
+    "Arrête la descente quand l'arrière des cuisses tire fort ou que ton dos commence à s'arrondir.",
+    "Remonte en poussant les hanches vers l'avant jusqu'à te tenir debout, fessiers serrés."
+  ],
+  "key_points": [
+    "C'est une charnière de hanche : les hanches reculent, les genoux restent presque fixes.",
+    "La barre frôle les jambes du début à la fin.",
+    "La souplesse de l'arrière de tes cuisses fixe la profondeur, pas le sol."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Le dos s'arrondit en bas du mouvement.",
+      "fix": "Descends moins bas : arrête-toi juste avant que le dos ne s'arrondisse."
+    },
+    {
+      "mistake": "Les genoux se plient de plus en plus, comme dans un squat.",
+      "fix": "Garde la même légère flexion des genoux et recule davantage les hanches."
+    },
+    {
+      "mistake": "La barre s'éloigne des jambes et tire le buste vers l'avant.",
+      "fix": "Fais-la glisser le long des cuisses, bras tendus et relâchés."
+    },
+    {
+      "mistake": "Tu te penches en arrière en haut du mouvement.",
+      "fix": "Arrête-toi debout, fessiers serrés, le buste à la verticale."
+    }
+  ],
+  "safety": [
+    "Arrête la série si tu sens une douleur vive dans le bas du dos.",
+    "Arrête si une douleur descend dans la jambe ou si des picotements apparaissent dans les pieds.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Inspire et gaine le tronc avant de descendre, puis souffle en remontant.",
+  "setup": "Prends la barre sur des supports réglés à mi-cuisse si tu peux. Sinon, soulève-la du sol en pliant les genoux, dos neutre.",
+  "easier_tip": "Arrête la descente au niveau des genoux, ou apprends d'abord le mouvement aux haltères.",
+  "harder_tip": "Descends en 3 secondes et marque une pause d'une seconde en bas, dos neutre.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Le setup cite des supports réglés à mi-cuisse alors que seule la barre est listée en matériel : à garder ou à retirer ?",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

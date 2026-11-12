@@ -1,10 +1,14 @@
 {
   "id": "elevated-pike-push-up",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Pompe pike pieds surélevés",
+  "aliases": [
+    "Pompe pike déclinée",
+    "Elevated pike push-up"
+  ],
   "movement_pattern": "vertical_push",
   "mechanics": "compound",
   "unilateral": false,
@@ -31,6 +35,52 @@
   ],
   "level": 2,
   "not_for_minors": false,
+  "stressed_joints": [
+    "shoulders",
+    "wrists"
+  ],
+  "instructions": [
+    "Place une chaise stable, un banc ou une box contre un mur pour qu'ils ne glissent pas.",
+    "Pose les mains au sol à largeur d'épaules, puis les pieds sur l'appui.",
+    "Rapproche les mains de l'appui et monte les hanches au-dessus des épaules.",
+    "Plie les coudes pour amener le haut de ta tête vers le sol, devant tes mains.",
+    "Garde les coudes en diagonale vers l'arrière, pas sur les côtés.",
+    "Pousse dans le sol pour revenir bras tendus."
+  ],
+  "key_points": [
+    "Les hanches restent hautes, au-dessus des épaules.",
+    "Ta tête vise un point devant tes mains, pour former un triangle avec elles.",
+    "Descends seulement aussi bas que tu peux remonter proprement."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Les hanches descendent et le mouvement devient une pompe.",
+      "fix": "Rapproche tes mains de l'appui et remonte les hanches."
+    },
+    {
+      "mistake": "Les coudes partent sur les côtés.",
+      "fix": "Garde les coudes en diagonale vers l'arrière."
+    },
+    {
+      "mistake": "La tête touche lourdement le sol.",
+      "fix": "Descends moins bas et contrôle chaque descente."
+    }
+  ],
+  "safety": [
+    "Vérifie que l'appui ne bouge pas ; arrête s'il glisse ou bascule.",
+    "Arrête la série si tu sens une douleur vive à l'épaule, au poignet ou à la nuque.",
+    "Arrête si tu as la tête qui tourne en te relevant."
+  ],
+  "breathing": "Inspire en descendant, souffle en poussant pour remonter, sans bloquer ta respiration.",
   "chain_id": "pike-push-up",
-  "easier_id": "pike-push-up"
+  "easier_id": "pike-push-up",
+  "easier_tip": "Choisis un appui plus bas, ou reviens à la pompe pike, pieds au sol.",
+  "harder_tip": "Descends en 3 secondes, ou choisis un appui plus haut.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Tête en bas : nuque à surveiller, elle n'est pas dans les articulations sollicitées. À trancher par la relectrice santé.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

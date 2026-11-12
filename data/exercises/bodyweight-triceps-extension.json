@@ -1,10 +1,14 @@
 {
   "id": "bodyweight-triceps-extension",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "B",
   "name": "Extension triceps au poids du corps",
+  "aliases": [
+    "Extension triceps à la table",
+    "Bodyweight triceps extension"
+  ],
   "movement_pattern": "elbow_extension",
   "mechanics": "isolation",
   "unilateral": false,
@@ -29,5 +33,49 @@
     ]
   ],
   "level": 1,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "elbows",
+    "wrists"
+  ],
+  "instructions": [
+    "Place une table solide, une chaise, un banc ou une box contre un mur pour qu'ils ne glissent pas.",
+    "Pose les mains sur le bord, écartées à largeur d'épaules.",
+    "Recule les pieds pour former une ligne droite des talons à la tête, et gaine le tronc.",
+    "Plie seulement les coudes pour amener ton front vers le bord, coudes pointés vers le bas.",
+    "Pousse sur tes mains en tendant les coudes pour revenir au départ."
+  ],
+  "key_points": [
+    "Seuls les coudes bougent : les épaules restent au-dessus des mains.",
+    "Ton corps reste d'un seul bloc, sans casser au niveau des hanches.",
+    "Plus l'appui est haut, plus l'exercice est facile."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Les coudes partent sur les côtés.",
+      "fix": "Garde les coudes serrés et pointés vers le sol."
+    },
+    {
+      "mistake": "Les épaules avancent et le mouvement devient une pompe.",
+      "fix": "Garde les épaules au-dessus des mains et laisse plier seulement les coudes."
+    },
+    {
+      "mistake": "Les hanches s'affaissent.",
+      "fix": "Serre le ventre et les fessiers, ou choisis un appui plus haut."
+    }
+  ],
+  "safety": [
+    "Vérifie que l'appui ne bouge pas ; arrête s'il glisse ou bascule.",
+    "Arrête la série si tu sens une douleur vive au coude ou au poignet."
+  ],
+  "breathing": "Inspire en pliant les coudes, souffle en poussant pour revenir, sans bloquer ta respiration.",
+  "easier_tip": "Choisis un appui plus haut, ou rapproche les pieds de l'appui.",
+  "harder_tip": "Choisis un appui plus bas, ou descends en 3 secondes.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Niveau 1 discutable : sur un appui bas, l'exercice charge fort les coudes. Le front s'approche du bord, risque de choc à signaler.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

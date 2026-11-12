@@ -1,10 +1,15 @@
 {
   "id": "one-arm-dumbbell-row",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Rowing haltère à un bras",
+  "aliases": [
+    "Rowing unilatéral à l'haltère",
+    "One-arm dumbbell row",
+    "Single-arm dumbbell row"
+  ],
   "movement_pattern": "horizontal_pull",
   "mechanics": "compound",
   "unilateral": true,
@@ -27,5 +32,49 @@
     ]
   ],
   "level": 1,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "shoulders"
+  ],
+  "instructions": [
+    "Place-toi en fente courte, pied gauche devant, l'haltère ou la kettlebell dans la main droite.",
+    "Penche le buste en avant et appuie ta main gauche sur un banc, une chaise stable ou ta cuisse.",
+    "Garde le dos neutre, ni rond ni creusé, le bras droit tendu sous l'épaule.",
+    "Tire la charge vers ta hanche en ramenant le coude vers l'arrière, près du corps.",
+    "Redescends lentement jusqu'à tendre le bras, sans tourner le buste.",
+    "Fais toutes tes répétitions, puis change de côté en inversant pieds et mains."
+  ],
+  "key_points": [
+    "Le buste reste face au sol : il ne pivote pas pour aider le bras.",
+    "Pense à tirer le coude vers la hanche, pas la main vers l'épaule.",
+    "L'épaule qui travaille reste basse, loin de l'oreille."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Le buste pivote et l'épaule libre s'ouvre vers le plafond.",
+      "fix": "Allège la charge et garde les deux épaules à la même hauteur."
+    },
+    {
+      "mistake": "Le dos s'arrondit pendant la série.",
+      "fix": "Appuie-toi davantage sur ta main libre et gaine le tronc avant chaque répétition."
+    },
+    {
+      "mistake": "Tu donnes un coup d'épaule pour lancer la charge.",
+      "fix": "Monte et descends en contrôlant, sans élan."
+    }
+  ],
+  "safety": [
+    "Arrête la série si tu sens une douleur vive à l'épaule, au coude ou dans le bas du dos.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Souffle en tirant la charge vers la hanche, inspire en redescendant.",
+  "easier_tip": "Pose le genou et la main du côté libre sur un banc pour soutenir le dos. Allège aussi la charge.",
+  "harder_tip": "Marque une pause d'une seconde coude en haut, puis redescends en 3 secondes.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Le banc ou la chaise d'appui ne sont pas dans les options de matériel : la fiche propose aussi l'appui sur la cuisse. Ajouter un banc plat ou une chaise aux options ? Bas du dos non retenu dans les articulations grâce à l'appui ; à confirmer.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

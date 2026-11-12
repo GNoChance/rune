@@ -1,10 +1,14 @@
 {
   "id": "leg-press-calf-raise",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Mollets à la presse",
+  "aliases": [
+    "Extension mollets à la presse",
+    "Leg press calf raise"
+  ],
   "movement_pattern": "calf_raise",
   "mechanics": "isolation",
   "unilateral": false,
@@ -20,5 +24,51 @@
     ]
   ],
   "level": 1,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "ankles"
+  ],
+  "instructions": [
+    "Assieds-toi sur la presse, dos bien contre le dossier.",
+    "Place l'avant de tes pieds sur le bas de la plateforme, talons dans le vide.",
+    "Tends les jambes sans verrouiller les genoux, puis ouvre les sécurités.",
+    "Pousse sur la pointe des pieds pour éloigner la plateforme le plus loin possible.",
+    "Reviens lentement en laissant les talons descendre, sans plier les genoux.",
+    "Remets les sécurités en fin de série, avant de lâcher la charge."
+  ],
+  "key_points": [
+    "Seules les chevilles bougent : les genoux gardent la même position.",
+    "Va du plus bas au plus haut, sans rebondir en bas.",
+    "Garde l'avant des pieds bien posé sur la plateforme."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Les genoux se plient et se tendent à chaque répétition.",
+      "fix": "Garde les genoux presque tendus et fixes, et allège la charge."
+    },
+    {
+      "mistake": "Tu rebondis en bas du mouvement.",
+      "fix": "Marque une pause d'une seconde en bas avant de pousser."
+    },
+    {
+      "mistake": "Les pieds glissent vers le bas de la plateforme.",
+      "fix": "Arrête-toi, remets les sécurités et replace tes pieds."
+    }
+  ],
+  "safety": [
+    "Arrête la série si tes pieds glissent sur la plateforme.",
+    "Arrête si tu sens une douleur vive au mollet, à la cheville ou au talon.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Souffle en poussant sur la pointe des pieds, inspire en revenant, sans bloquer ta respiration.",
+  "setup": "Règle le dossier pour avoir les jambes presque tendues. Garde les sécurités prêtes à être remises.",
+  "easier_tip": "Baisse la charge et réduis un peu l'amplitude.",
+  "harder_tip": "Marque une pause de 2 secondes en haut, ou reviens en 3 secondes.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Talons dans le vide et genoux tendus : la consigne de ne pas verrouiller les genoux est à valider par la relectrice santé.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

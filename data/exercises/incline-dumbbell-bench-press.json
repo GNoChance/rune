@@ -1,10 +1,14 @@
 {
   "id": "incline-dumbbell-bench-press",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Développé incliné aux haltères",
+  "aliases": [
+    "Développé incliné avec haltères",
+    "Incline dumbbell press"
+  ],
   "movement_pattern": "horizontal_push",
   "mechanics": "compound",
   "unilateral": false,
@@ -24,5 +28,53 @@
     ]
   ],
   "level": 1,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "shoulders",
+    "elbows"
+  ],
+  "instructions": [
+    "Assieds-toi sur le banc inclinable, un haltère posé debout sur chaque cuisse.",
+    "Allonge-toi contre le dossier en gardant les haltères contre la poitrine, pieds à plat au sol.",
+    "Pousse les haltères au-dessus du haut de la poitrine, bras tendus.",
+    "Serre les omoplates, puis descends les haltères lentement sur les côtés du haut de la poitrine.",
+    "Arrête la descente quand tes coudes passent juste sous la hauteur du dossier.",
+    "Pousse pour remonter, en rapprochant un peu les haltères en haut.",
+    "En fin de série, ramène les haltères sur la poitrine et redresse-toi en les reposant sur les cuisses."
+  ],
+  "key_points": [
+    "Les avant-bras restent verticaux, les poignets au-dessus des coudes.",
+    "Le dos et les fesses restent plaqués contre le banc.",
+    "Les haltères montent au-dessus du haut de la poitrine, pas au-dessus du visage."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Les coudes partent sur les côtés, à hauteur des épaules.",
+      "fix": "Rapproche les coudes du corps pour qu'ils partent en diagonale vers l'arrière."
+    },
+    {
+      "mistake": "Le bas du dos se creuse et les fesses décollent.",
+      "fix": "Garde les fesses sur le banc, quitte à prendre des haltères plus légers."
+    },
+    {
+      "mistake": "Les haltères descendent vite et rebondissent en bas.",
+      "fix": "Freine la descente et marque un temps d'arrêt avant de pousser."
+    }
+  ],
+  "safety": [
+    "Arrête la série si tu sens une douleur vive à l'épaule, au coude ou au poignet.",
+    "Arrête une répétition avant de ne plus contrôler les haltères au-dessus de toi.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Inspire en descendant les haltères, souffle en poussant, sans bloquer ta respiration.",
+  "setup": "Règle le dossier du banc inclinable sur un angle faible, autour de 30°. Plus le dossier est relevé, plus les épaules prennent le relais.",
+  "easier_tip": "Prends des haltères plus légers, ou baisse un peu le dossier du banc.",
+  "harder_tip": "Descends en 3 secondes et marque une pause d'une seconde en bas.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Angle indicatif de 30° dans le réglage, à confirmer.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

@@ -1,10 +1,14 @@
 {
   "id": "decline-push-up",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Pompe pieds surélevés",
+  "aliases": [
+    "Pompe déclinée",
+    "Decline push-up"
+  ],
   "movement_pattern": "horizontal_push",
   "mechanics": "compound",
   "unilateral": false,
@@ -31,7 +35,53 @@
   ],
   "level": 2,
   "not_for_minors": false,
+  "stressed_joints": [
+    "shoulders",
+    "wrists"
+  ],
+  "instructions": [
+    "Place une chaise stable, un banc ou une box contre un mur pour qu'ils ne glissent pas.",
+    "Pose les mains au sol, un peu plus écartées que tes épaules, les doigts vers l'avant.",
+    "Pose les pieds sur l'appui un à un, pour former une ligne droite des talons à la tête.",
+    "Gaine le tronc : serre le ventre et les fessiers pour garder cette ligne.",
+    "Plie les coudes pour descendre la poitrine près du sol, les coudes en diagonale vers l'arrière.",
+    "Pousse dans le sol pour remonter bras tendus, sans casser la ligne du corps."
+  ],
+  "key_points": [
+    "Ton corps bouge d'un seul bloc : les fesses ne montent pas, le bas du dos ne se creuse pas.",
+    "Garde la nuque dans le prolongement du dos ; la poitrine arrive en premier près du sol.",
+    "Plus l'appui est haut, plus l'exercice est dur : commence bas."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Les hanches s'affaissent et le bas du dos se creuse.",
+      "fix": "Serre davantage le ventre et les fessiers, ou choisis un appui plus bas."
+    },
+    {
+      "mistake": "Les coudes partent sur les côtés, à hauteur des épaules.",
+      "fix": "Rapproche les coudes du corps pour qu'ils partent en diagonale vers l'arrière."
+    },
+    {
+      "mistake": "La tête plonge vers le sol avant la poitrine.",
+      "fix": "Garde la nuque longue et laisse la poitrine arriver en premier."
+    }
+  ],
+  "safety": [
+    "Vérifie que l'appui ne bouge pas ; arrête s'il glisse ou bascule.",
+    "Arrête la série si tu sens une douleur vive à l'épaule, au coude ou au poignet.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Inspire en descendant, souffle en poussant pour remonter, sans bloquer ta respiration.",
   "chain_id": "push-up",
   "easier_id": "push-up",
-  "harder_id": "archer-push-up"
+  "harder_id": "archer-push-up",
+  "easier_tip": "Choisis un appui plus bas, ou reviens à la pompe au sol.",
+  "harder_tip": "Passe à la pompe archer, en gardant tes pieds au sol.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Le conseil plus dur renvoie à la pompe archer, faite pieds au sol : la progression saute l'appui surélevé, à confirmer.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

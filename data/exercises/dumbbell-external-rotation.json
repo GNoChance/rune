@@ -1,10 +1,14 @@
 {
   "id": "dumbbell-external-rotation",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "B",
   "name": "Rotation externe à l'haltère allongé sur le côté",
+  "aliases": [
+    "Rotation externe couché sur le côté",
+    "Side-lying external rotation"
+  ],
   "movement_pattern": "shoulder_isolation",
   "mechanics": "isolation",
   "unilateral": true,
@@ -22,5 +26,49 @@
     ]
   ],
   "level": 1,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "shoulders"
+  ],
+  "instructions": [
+    "Allonge-toi sur le côté, au sol ou sur un banc, la tête posée sur ton bras du dessous.",
+    "Prends l'haltère dans la main du dessus, coude plié à angle droit et collé contre tes côtes.",
+    "Pose l'avant-bras devant ton ventre pour partir.",
+    "Lève l'haltère en tournant l'avant-bras vers le plafond, coude toujours contre toi.",
+    "Redescends lentement devant ton ventre.",
+    "Fais toutes tes répétitions, puis allonge-toi sur l'autre côté."
+  ],
+  "key_points": [
+    "Le coude reste collé au corps : seul l'avant-bras tourne, comme une porte sur ses gonds.",
+    "Choisis un haltère léger : le mouvement est petit et doit rester lent.",
+    "Garde le corps immobile, sans rouler vers l'arrière."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Le coude se soulève du corps pour aller plus haut.",
+      "fix": "Glisse une serviette roulée entre ton coude et tes côtes, et ne la lâche pas."
+    },
+    {
+      "mistake": "Le corps roule vers l'arrière en montant l'haltère.",
+      "fix": "Arrête la montée plus tôt et garde les hanches l'une sur l'autre."
+    },
+    {
+      "mistake": "L'haltère retombe d'un coup.",
+      "fix": "Redescends en 2 secondes, ou prends un haltère plus léger."
+    }
+  ],
+  "safety": [
+    "Arrête la série si tu sens une douleur vive ou un pincement dans l'épaule.",
+    "Arrête si l'épaule du dessous te fait mal ; glisse un coussin sous ta tête."
+  ],
+  "breathing": "Souffle en levant l'haltère, inspire en redescendant, sans bloquer ta respiration.",
+  "easier_tip": "Fais le mouvement sans haltère pour apprendre le geste, ou réduis l'amplitude.",
+  "harder_tip": "Marque une pause de 2 secondes en haut, ou redescends en 3 secondes.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Niveau B mais fiche simple. L'appui sur l'épaule du dessous peut gêner certaines personnes : à confirmer.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

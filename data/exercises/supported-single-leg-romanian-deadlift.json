@@ -1,10 +1,14 @@
 {
   "id": "supported-single-leg-romanian-deadlift",
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "status": "draft",
   "batch": "B",
   "name": "Soulevé de terre roumain unipodal avec appui",
+  "aliases": [
+    "Soulevé de terre roumain sur une jambe avec appui",
+    "Supported single-leg Romanian deadlift"
+  ],
   "movement_pattern": "hip_hinge",
   "mechanics": "compound",
   "unilateral": true,
@@ -21,5 +25,50 @@
     []
   ],
   "level": 1,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "hips"
+  ],
+  "instructions": [
+    "Place-toi de profil à un mur, à une longueur d'avant-bras, la main côté mur posée dessus.",
+    "Porte ton poids sur la jambe côté mur, genou légèrement plié.",
+    "Gaine le tronc et garde le dos neutre, ni rond ni creusé.",
+    "Penche le buste en avant et tends l'autre jambe vers l'arrière, la main glissant le long du mur.",
+    "Arrête quand l'arrière de la cuisse d'appui tire fort ou que ton dos commence à s'arrondir.",
+    "Remonte en poussant la hanche d'appui vers l'avant, jusqu'à te tenir debout.",
+    "Fais toutes tes répétitions sur cette jambe, puis tourne-toi et change de côté."
+  ],
+  "key_points": [
+    "Le mur t'aide à tenir l'équilibre ; ne t'appuie pas dessus pour remonter.",
+    "Ton bassin reste face au sol : la hanche de la jambe levée ne s'ouvre pas.",
+    "Buste et jambe arrière bougent d'un bloc."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Tu pousses fort sur le mur pour remonter.",
+      "fix": "Pose juste le bout des doigts et laisse la jambe d'appui faire le travail."
+    },
+    {
+      "mistake": "Le bassin pivote et la hanche de la jambe levée monte vers le plafond.",
+      "fix": "Pointe les orteils de la jambe arrière vers le sol pour garder le bassin de face."
+    },
+    {
+      "mistake": "Le dos s'arrondit en bas du mouvement.",
+      "fix": "Descends moins bas et garde le dos neutre pendant toute la descente."
+    }
+  ],
+  "safety": [
+    "Arrête si tu sens une douleur vive dans le bas du dos, la hanche ou l'arrière de la cuisse.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Inspire en penchant le buste, souffle en remontant, sans bloquer ta respiration.",
+  "easier_tip": "Garde les orteils du pied arrière posés au sol, en appui léger.",
+  "harder_tip": "Touche le mur du bout des doigts seulement, puis passe au soulevé de terre roumain unipodal.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Matériel « aucun » : la fiche s'appuie sur un mur ; une chaise stable serait une option à ajouter ? Chaîne possible avec le soulevé de terre roumain unipodal, non déclarée dans le squelette.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

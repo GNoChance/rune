@@ -1,10 +1,14 @@
 {
   "id": "leg-extension",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Leg extension",
+  "aliases": [
+    "Chaise à quadriceps",
+    "Extension des jambes assis"
+  ],
   "movement_pattern": "knee_extension",
   "mechanics": "isolation",
   "unilateral": false,
@@ -20,5 +24,49 @@
     ]
   ],
   "level": 1,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "knees"
+  ],
+  "instructions": [
+    "Assieds-toi, le dos calé contre le dossier, le boudin contre le bas des tibias.",
+    "Tiens les poignées sur les côtés du siège.",
+    "Tends les jambes pour monter le boudin jusqu'à avoir les genoux presque tendus.",
+    "Serre les quadriceps une seconde en haut.",
+    "Redescends lentement, sans laisser la charge retomber."
+  ],
+  "key_points": [
+    "Les fesses restent sur le siège pendant toute la série.",
+    "Monte et descends sans à-coups.",
+    "Les genoux restent alignés avec l'axe de la machine."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Les fesses décollent du siège quand tu montes.",
+      "fix": "Choisis une charge plus légère et tiens fermement les poignées."
+    },
+    {
+      "mistake": "Tu lances le boudin avec un à-coup.",
+      "fix": "Monte en 1 à 2 secondes et marque un temps d'arrêt en haut."
+    },
+    {
+      "mistake": "La charge retombe et les plaques claquent.",
+      "fix": "Redescends en 2 à 3 secondes."
+    }
+  ],
+  "safety": [
+    "Arrête la série si tu sens une douleur vive au genou, surtout autour de la rotule.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Souffle en tendant les jambes, inspire en redescendant.",
+  "setup": "Règle le dossier pour aligner tes genoux avec l'axe de la machine. Place le boudin sur le bas des tibias, juste au-dessus des chevilles.",
+  "easier_tip": "Choisis une charge plus légère, ou limite la descente si le bas du mouvement gêne ton genou.",
+  "harder_tip": "Marque une pause de 2 secondes jambes tendues, puis redescends en 3 secondes.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Le nom anglais est aussi le nom de la fiche, donc absent des alias.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }

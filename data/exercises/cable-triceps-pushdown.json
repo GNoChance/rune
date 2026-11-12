@@ -1,10 +1,14 @@
 {
   "id": "cable-triceps-pushdown",
   "schema_version": 1,
-  "revision": 2,
+  "revision": 3,
   "status": "draft",
   "batch": "A",
   "name": "Extension triceps à la poulie",
+  "aliases": [
+    "Triceps à la poulie haute",
+    "Triceps pushdown"
+  ],
   "movement_pattern": "elbow_extension",
   "mechanics": "isolation",
   "unilateral": false,
@@ -20,5 +24,49 @@
     ]
   ],
   "level": 1,
-  "not_for_minors": false
+  "not_for_minors": false,
+  "stressed_joints": [
+    "elbows"
+  ],
+  "instructions": [
+    "Saisis la barre ou la corde, mains écartées à largeur d'épaules ou moins.",
+    "Tiens-toi debout près de la poulie, genoux légèrement fléchis, buste un peu penché en avant.",
+    "Colle les coudes contre tes côtes, avant-bras à l'horizontale.",
+    "Pousse vers le bas jusqu'à tendre les bras.",
+    "Remonte lentement jusqu'à ce que tes avant-bras reviennent à l'horizontale."
+  ],
+  "key_points": [
+    "Seuls les avant-bras bougent : les coudes restent collés au corps.",
+    "Garde les épaules basses et le buste immobile.",
+    "Contrôle la remontée, sans laisser la charge tirer tes mains vers le haut."
+  ],
+  "mistakes": [
+    {
+      "mistake": "Les coudes avancent et reculent à chaque répétition.",
+      "fix": "Colle les coudes contre tes côtes et allège la charge."
+    },
+    {
+      "mistake": "Le buste plonge pour pousser la charge.",
+      "fix": "Baisse la charge et garde le buste fixe."
+    },
+    {
+      "mistake": "Les mains remontent au-dessus de la poitrine.",
+      "fix": "Arrête la remontée quand tes avant-bras sont à l'horizontale."
+    }
+  ],
+  "safety": [
+    "Arrête la série si tu sens une douleur vive au coude ou au poignet.",
+    "Arrête et demande conseil à un professionnel de santé si une douleur revient à chaque séance."
+  ],
+  "breathing": "Souffle en poussant vers le bas, inspire en remontant, sans bloquer ta respiration.",
+  "setup": "Règle la poulie tout en haut et fixe une barre droite ou une corde. Mets une charge légère pour la première série.",
+  "easier_tip": "Baisse la charge et fais le mouvement plus lentement.",
+  "harder_tip": "Marque une pause d'une seconde bras tendus, ou remonte en 3 secondes.",
+  "review_notes": "Rédigé dans Claude Code (pas par le script exercises:draft), selon le prompt v1. Rien de notable sur le squelette.",
+  "drafting": {
+    "origin": "ai",
+    "model": "claude-opus-5-5",
+    "prompt_version": 1,
+    "generated_at": "2026-11-12T10:31:28.795Z"
+  }
 }
