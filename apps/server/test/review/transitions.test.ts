@@ -39,6 +39,13 @@ const CHAIN = [
 const SHEETS: DraftSheet[] = [
   skeletonFixture('brouillon'),
   sheetFixture('brouillon-complet', { status: 'draft', published_at: undefined, reviewed_at: undefined }),
+  // Brouillon rédigé sans clé `illustrations` (squelette passé par `exercises:draft`).
+  sheetFixture('brouillon-redige', {
+    status: 'draft',
+    published_at: undefined,
+    reviewed_at: undefined,
+    illustrations: undefined,
+  }),
   // Brouillon enregistré invalide (insertion directe, hors API) : seul moyen d'atteindre invalid_sheet.
   skeletonFixture('brouillon-invalide', { safety: ['x'.repeat(121)] }),
   reviewed('relue'),
@@ -185,6 +192,17 @@ describe('draft → reviewed (spec brique 2 §3.6)', () => {
       .execute();
     expect(contents).toHaveLength(2);
     expect(contents[1]?.content).toBe(contents[0]?.content);
+  });
+
+  it('brouillon rédigé sans illustration choisie : relu avec illustrations = [], cases toujours exigées', async () => {
+    const { cookies } = await setup();
+    await blocked(move(cookies.admin, 'brouillon-redige', 'reviewed'), 'brouillon-redige', [
+      'review_unchecked',
+      'minors_unconfirmed',
+    ]);
+    const body = await ok(await move(cookies.admin, 'brouillon-redige', 'reviewed', BOTH));
+    expect(body.sheet.status).toBe('reviewed');
+    expect(body.sheet.illustrations).toEqual([]);
   });
 });
 

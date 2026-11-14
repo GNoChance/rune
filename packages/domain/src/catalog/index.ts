@@ -1,6 +1,7 @@
 export {
   EXERCISE_TRANSITIONS,
   isExerciseTransition,
+  sheetForTransition,
   type TransitionInput,
   templateExerciseIds,
   transitionBlockers,

@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EXERCISE_TRANSITIONS,
   isExerciseTransition,
+  sheetForTransition,
   type TransitionInput,
   templateExerciseIds,
   transitionBlockers,
@@ -449,5 +450,25 @@ describe('templateExerciseIds : fiches citées par les modèles de programmes (0
     ];
     expect([...templateExerciseIds(odd, catalog)]).toEqual(['goblet-squat']);
     expect(templateExerciseIds([], catalog).size).toBe(0);
+  });
+});
+
+describe('sheetForTransition : illustrations absentes à l’entrée en relecture', () => {
+  const drafted = without(sheet({ status: 'draft' }), 'illustrations');
+
+  it('vers reviewed : absente vaut [], la fiche rédigée n’est plus incomplete', () => {
+    expect(blockers(drafted, 'reviewed')).toEqual(['incomplete']);
+    const moved = sheetForTransition(drafted, 'reviewed');
+    expect(moved.illustrations).toEqual([]);
+    expect(blockers(moved, 'reviewed')).toEqual([]);
+  });
+
+  it('les autres champs manquants bloquent toujours ; une liste présente et les autres transitions sont intactes', () => {
+    expect(blockers(sheetForTransition(without(drafted, 'safety'), 'reviewed'), 'reviewed')).toEqual([
+      'incomplete',
+    ]);
+    const withList = sheet({ status: 'draft' });
+    expect(sheetForTransition(withList, 'reviewed')).toBe(withList);
+    expect(sheetForTransition(drafted, 'retired')).toBe(drafted);
   });
 });

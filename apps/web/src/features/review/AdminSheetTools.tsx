@@ -5,7 +5,7 @@ import type {
   ReviewSheetResponse,
   ReviewValidationView,
 } from '@rune/contracts';
-import { EXERCISE_TRANSITIONS, transitionBlockers } from '@rune/domain';
+import { EXERCISE_TRANSITIONS, sheetForTransition, transitionBlockers } from '@rune/domain';
 import { useCallback, useId, useRef, useState } from 'react';
 import { revisionConflictOf, transitionBlockersOf, useRepos } from '../../repos';
 import { Banner, BottomSheet, Button, errorMessage, formatDateTime } from '../../ui';
@@ -57,7 +57,7 @@ function knownBlockers(
 ): PublishBlocker[] {
   if (to === 'published') return publishBlockers(data, manifestIds);
   return transitionBlockers({
-    sheet: data.sheet,
+    sheet: sheetForTransition(data.sheet, to),
     to,
     comments: data.comments,
     greenLight: data.greenLight === 'ok',

@@ -16,6 +16,7 @@ import {
   EXERCISES_DIR,
   healthGreenLight,
   isExerciseTransition,
+  sheetForTransition,
   type TransitionInput,
   templateExerciseIds,
   transitionBlockers,
@@ -255,7 +256,8 @@ export async function transitionSheet(
   id: string,
   req: TransitionRequest,
 ): Promise<ReviewSheetResponse> {
-  const { data, current } = await readForWrite(trx, id, req.baseRevision);
+  const { data, current: stored } = await readForWrite(trx, id, req.baseRevision);
+  const current = sheetForTransition(stored, req.to);
   if (!isExerciseTransition(current.status, req.to)) {
     throw httpError('validation', {
       issues: [

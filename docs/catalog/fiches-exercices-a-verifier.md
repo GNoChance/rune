@@ -1,5 +1,7 @@
 # Fiches exercices : à trancher avant relecture
 
+> **Tranché le 14 novembre 2026** : le propriétaire a tout relu et valide tous les choix tels que rédigés dans les fiches. Aucune fiche n'est corrigée à la suite de ce document. Les points du §7 restent à voir avec la relectrice santé lors du feu vert santé, avant publication.
+
 Les 84 fiches de `data/exercises/` sont en `draft` : les 2 étalons écrits à la main et les 82 brouillons du commit `81ca630` (lots A et B), rédigés dans Claude Code selon `prompt-v1.md`. Chaque `review_notes` liste les doutes de sa fiche. Ce document les regroupe par question, pour trancher une fois ce qui revient sur plusieurs fiches, avant de passer fiche par fiche dans `/admin/exercises`.
 
 Rappels :

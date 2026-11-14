@@ -64,6 +64,16 @@ export function isExerciseTransition(from: ExerciseStatus, to: ExerciseStatus): 
   return EXERCISE_TRANSITIONS[from].includes(to);
 }
 
+/**
+ * Fiche de départ d'une transition vers `to`, telle que `transitionBlockers` et l'écriture doivent la voir. Vers
+ * `reviewed`, `illustrations` absente vaut `[]` : un brouillon sans illustration choisie n'a pas la clé (squelette,
+ * `exercises:draft`) et le formulaire ne la crée pas, il resterait donc `incomplete` pour toujours. Choisir aucune
+ * illustration est permis ; c'est la publication qui vérifie celles qui sont citées (`illustrations_missing`).
+ */
+export function sheetForTransition(sheet: DraftSheet, to: ExerciseStatus): DraftSheet {
+  return to === 'reviewed' && sheet.illustrations === undefined ? { ...sheet, illustrations: [] } : sheet;
+}
+
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const listOf = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
