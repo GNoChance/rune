@@ -26,7 +26,7 @@
     "@biomejs/biome": "^2",
     "@rune/contracts": "workspace:*",
     "@rune/domain": "workspace:*",
-    "@types/node": "^24.7",
+    "@types/node": "^26.6",
     "bats": "^1.13.0",
     "tsx": "4.23.15",
     "typescript": "^7",
