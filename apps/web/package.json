@@ -31,7 +31,7 @@
     "esbuild": "^0.28.2",
     "fake-indexeddb": "^6.2.5",
     "fast-check": "^4.10.2",
-    "happy-dom": "^20",
+    "happy-dom": "^21",
     "vite": "^8.3.3"
   }
 }
