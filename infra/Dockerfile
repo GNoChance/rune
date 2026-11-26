@@ -3,7 +3,7 @@
 #   docker build -f infra/Dockerfile --build-arg VERSION=vX.Y.Z [--build-arg VITE_OWNER_FIRST_NAME=…] -t rune:vX.Y.Z .
 # Contrat vérifié en CI par infra/test/image-contract.sh.
 
-FROM node:24 AS build
+FROM node:25 AS build
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 WORKDIR /src
@@ -17,7 +17,7 @@ ENV VITE_APP_VERSION=${VERSION}
 RUN pnpm build
 
 # Étape finale : server.mjs, la PWA et le contenu, sans node_modules.
-FROM node:24-slim
+FROM node:25-slim
 ARG VERSION=dev
 ENV NODE_ENV=production APP_VERSION=${VERSION} PORT=3000 HOST=0.0.0.0 RUNE_DATA_DIR=/data RUNE_PUBLIC_DIR=/app/public RUNE_CONTENT_DIR=/app/data
 WORKDIR /app
